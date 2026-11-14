@@ -1,0 +1,3279 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";import{t as n}from"./jsx-runtime-CndCZlyt.js";import{n as r,t as i}from"./createLucideIcon-B55dJ-eE.js";var a,o;function s(){return(s=e((()=>{r(),a={name:`circle-question-mark`,size:24,node:[[`circle`,{cx:`12`,cy:`12`,r:`10`,key:`1mglay`}],[`path`,{d:`M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3`,key:`1u773s`}],[`path`,{d:`M12 17h.01`,key:`p32p05`}]],aliases:[`help-circle`,`circle-help`]},a.node,o=i(a)})))()}var c;function l(){return(l=e((()=>{c={"core.camunda.io":{BackupSchedule:{spec:{description:`spec defines the desired state of BackupSchedule`,anchor:`#backupschedule`},"spec.clusterRef":{description:`ClusterRef references the CamundaCluster to back up. At each trigger,
+the operator creates the backup kind for the storage type of the
+cluster: LogicalBackupElasticsearch or LogicalBackupRDBMS.`,anchor:`#backupschedulespec`},"spec.clusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"spec.retained":{description:`Retained limits how many backups of this schedule stay. The schedule
+counts and deletes the backups in its namespace whose
+camunda.io/backup-schedule label names this schedule. A backup that you
+create with that label counts too, and the schedule can delete it. The
+schedule never deletes a backup that is not in a final phase.`,anchor:`#backupschedulespec`},"spec.retained.completed":{description:`Completed is how many completed backups the schedule keeps.`,anchor:`#retainedbackups`},"spec.retained.failed":{description:`Failed is how many failed backups the schedule keeps. With zero, the
+operator deletes a failed backup soon after it fails.`,anchor:`#retainedbackups`},"spec.schedule":{description:`Schedule is when the backups run: a five-field cron expression
+(minute, hour, day of month, month, day of week), evaluated in UTC.`,anchor:`#backupschedulespec`},status:{description:`status defines the observed state of BackupSchedule`,anchor:`#backupschedule`},"status.conditions":{description:`Conditions represent the current state. The Ready condition has the
+reason Healthy when the references and the cron expression are valid,
+and InvalidReference when one of them is not.`,anchor:`#backupschedulestatus`},"status.lastBackupName":{description:`LastBackupName is the backup that the schedule created most recently.`,anchor:`#backupschedulestatus`},"status.lastScheduleTime":{description:`LastScheduleTime is the last trigger that the schedule used, also when
+it skipped the trigger. The schedule never tries a skipped trigger
+again.`,anchor:`#backupschedulestatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#backupschedulestatus`}},CamundaCluster:{spec:{description:`spec defines the desired state of CamundaCluster`,anchor:`#camundacluster`},"spec.admin":{description:`Admin configures the Admin web application (Orchestration Cluster
+Identity before Camunda 8.9). Its Spring profile is admin.`,anchor:`#camundaclusterspec`},"spec.admin.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.admin.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.admin.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.admin.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.admin.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.admin.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.admin.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.admin.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.admin.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.admin.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.admin.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.auth":{description:`Auth holds the credentials of this cluster and the identities that get
+its admin role. Under OIDC, it holds the client credentials and the
+administrators. Under basic authentication, it holds the admin
+credential that the operator owns.`,anchor:`#camundaclusterspec`},"spec.auth.admin":{description:`Admin holds the identities that get the admin role of this cluster. It
+applies under OIDC only. Basic authentication seeds its own
+administrator and ignores this block.`,anchor:`#clusterauthspec`},"spec.auth.admin.clients":{description:`Clients are the values of the client id claim that get the admin role.
+A client entry matches only when the platform config sets
+auth.oidc.clientIdClaim.`,anchor:`#clusteradminspec`},"spec.auth.admin.mappingRules":{description:`MappingRules give the admin role to every token that holds a claim with
+a given value.`,anchor:`#clusteradminspec`},"spec.auth.admin.mappingRules.claimName":{description:`ClaimName is the name of a claim, or a JSONPath expression that points
+at a claim.`,anchor:`#adminmappingrule`},"spec.auth.admin.mappingRules.claimValue":{description:`ClaimValue is the value that the claim must hold for the rule to match.`,anchor:`#adminmappingrule`},"spec.auth.admin.mappingRules.id":{description:`ID names the rule inside the cluster. The Admin web application lists it
+under Mapping Rules.`,anchor:`#adminmappingrule`},"spec.auth.admin.users":{description:`Users are the values of the username claim that get the admin role.`,anchor:`#clusteradminspec`},"spec.auth.audience":{description:`Audience is the audience that access tokens must carry. Defaults to
+the client ID that the cluster uses.`,anchor:`#clusterauthspec`},"spec.auth.basic":{description:`Basic configures the admin credential that the operator owns. It
+applies under basic authentication only. OIDC ignores this block, like
+basic authentication ignores admin.`,anchor:`#clusterauthspec`},"spec.auth.basic.adminEmail":{description:`AdminEmail is the email address of the admin user that the operator
+seeds. The orchestration cluster stores it on that user, and the Admin
+web application shows it. Set the address of the person or the team
+that owns the cluster.
+
+When empty, the operator uses admin@example.com. RFC 2606 reserves this
+domain for documentation, so the default is not the address of a real
+person.
+
+The operator applies a changed value to the running cluster. The
+cluster validates the address and refuses a domain without a dot. When
+the cluster refuses an address, AdminSecretReady shows its answer.`,anchor:`#basicauthspec`},"spec.auth.basic.passwordRotation":{description:`PasswordRotation requests one rotation of the admin password. Set it
+to a value that differs from the applied one, for example a date. The
+operator generates a new password and sets it on the admin user of the
+running cluster. Then it publishes the password in the admin Secret.
+The connectors Deployment restarts with the new password. An empty
+value never rotates. A suspended cluster rotates after it resumes.
+
+status.adminPassword.rotation shows the applied value. A preset can set
+this field. Then every cluster that references the preset rotates, and
+each of these clusters reports its own status.`,anchor:`#basicauthspec`},"spec.auth.clientId":{description:`ClientID is the OIDC client ID of this cluster. A client ID replaces
+the whole client: the audience and the client secret then come from
+this block only. Requires clientSecretRef.`,anchor:`#clusterauthspec`},"spec.auth.clientSecretRef":{description:`ClientSecretRef names the Secret that holds the OIDC client secret of
+this cluster. Required when clientId is set.`,anchor:`#clusterauthspec`},"spec.auth.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.auth.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.backup":{description:`Backup configures the backups of this cluster. It sets the schedule and
+the retention of the primary-storage backups that Zeebe takes, and the
+pod of the database dump Job. A preset can set this block, but not
+backupStorageRef. The block applies only to a cluster with relational
+secondary storage. Only such a cluster has continuous and scheduled
+primary-storage backups and the dump Job.`,anchor:`#camundaclusterspec`},"spec.backup.dump":{description:`Dump configures the Job that writes the logical database to the backup
+bucket. A LogicalBackupRDBMS can replace this block as a whole.`,anchor:`#clusterbackupspec`},"spec.backup.dump.activeDeadlineSeconds":{description:`ActiveDeadlineSeconds is the number of seconds that the dump Job can
+run before it fails, counted from its start. When the dump block that
+applies does not set it, the Job gets 86400 (24 hours). In the block of
+the cluster, an unset value takes the value of the preset. The
+spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+an unset value there gives 86400, not the value of the cluster.
+
+The default is large, so that a very large dump can complete. The Job
+always has a deadline. A pod that cannot start uses no retry, so
+without a deadline a broken Job stays active for the life of the
+backup. A lower value fails a stuck dump sooner. A higher value gives a
+long dump the time that it needs.`,anchor:`#backupdumpspec`},"spec.backup.dump.extraEnv":{description:`ExtraEnv are extra environment variables of the dump pod.
+
+In the spec.dump of a LogicalBackupRDBMS, every name that starts with
+PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is
+connection policy, because libpq reads PGHOSTADDR, PGSERVICE,
+PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of
+a backup reach only the dump container, never the upload container.
+Cloud SDKs read endpoint, proxy, and configuration variables from the
+environment, and the author of a backup must not change where the dump
+goes.
+
+In the spec.backup.dump of the cluster, no name is reserved, and the
+variables reach every container. The cluster owner sets the connection
+policy, PGSSLMODE included.
+
+Unlike the extraEnv of a workload, this list is atomic. One field
+manager owns the whole list, because no extension adds entries to a
+dump pod.`,anchor:`#backupdumpspec`},"spec.backup.dump.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources of the dump pod. In the
+spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+chooses its keys. As with ExtraEnv, the sources of a
+backup reach only the dump container. The block of the cluster needs no
+prefix, and its sources reach every container.`,anchor:`#backupdumpspec`},"spec.backup.dump.podAnnotations":{description:`PodAnnotations are extra annotations of the dump pod. A service mesh
+sidecar keeps running after the dump finishes, and the Job does not
+complete. Set the injection annotation of the mesh to false here.`,anchor:`#backupdumpspec`},"spec.backup.dump.podLabels":{description:`PodLabels are extra labels of the dump pod.`,anchor:`#backupdumpspec`},"spec.backup.dump.postgresImage":{description:`PostgresImage is the full image reference of the dump container. It
+replaces the default postgres:<major> of the upstream registry. Set it
+in an air-gapped installation, where the default image is not
+available.`,anchor:`#backupdumpspec`},"spec.backup.dump.resources":{description:`Resources are the CPU and memory of the dump pod.`,anchor:`#backupdumpspec`},"spec.backup.dump.scheduling":{description:`Scheduling holds the scheduling constraints of the dump pod. When set,
+it replaces the block of a preset, with no merge.`,anchor:`#backupdumpspec`},"spec.backup.dump.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.backup.dump.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.backup.dump.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.backup.dump.scratchVolume":{description:`ScratchVolume is where the pod writes the dump before the upload. When
+set, it replaces the block of a preset, with no merge. The dump pod
+runs with fsGroup 999, the postgres group. Thus pg_dump can write to a
+volume that a storage class gives with the root owner.`,anchor:`#backupdumpspec`},"spec.backup.dump.scratchVolume.sizeLimit":{description:`SizeLimit is the size of the emptyDir that holds the dump. Set it to
+the size the dump needs, with room to spare.`,anchor:`#scratchvolumespec`},"spec.backup.dump.scratchVolume.storageClassName":{description:`StorageClassName makes the scratch volume a PersistentVolumeClaim of
+this class, not an emptyDir. Use it when the dump is larger than the
+ephemeral storage of a node.`,anchor:`#scratchvolumespec`},"spec.backup.primaryStorage":{description:`PrimaryStorage configures the backups that Zeebe takes of its own
+primary storage. A point-in-time restore uses them.`,anchor:`#clusterbackupspec`},"spec.backup.primaryStorage.checkpointInterval":{description:`CheckpointInterval is the interval at which Zeebe writes marker
+checkpoints into the log stream, as an ISO 8601 duration of days and
+time (P2DT3H, PT15M). Camunda parses no week, month, or year units.
+It is the granularity of a point-in-time restore. Defaults to PT15M.`,anchor:`#primarystoragebackupspec`},"spec.backup.primaryStorage.continuous":{description:`Continuous keeps every log segment until it is backed up, so that a
+restore finds a range without gaps. Defaults to true on a relational
+cluster with a backupStorageRef. A preset can turn it on for many
+clusters, and one cluster can still turn it off.`,anchor:`#primarystoragebackupspec`},"spec.backup.primaryStorage.retention":{description:`Retention bounds how long Zeebe keeps its primary-storage backups.`,anchor:`#primarystoragebackupspec`},"spec.backup.primaryStorage.retention.cleanupSchedule":{description:`CleanupSchedule is the interval at which Zeebe looks for backups
+outside the window: an ISO 8601 duration, a CRON expression, or
+"none". Defaults to PT1H.`,anchor:`#primarystorageretentionspec`},"spec.backup.primaryStorage.retention.window":{description:`Window is how far back the backups stay available for a restore, as an
+ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
+week, month, or year units. Defaults to P7D. It limits the restore
+window, so set it at least as long as the recovery point that the
+cluster needs. A BackupSchedule can keep database dumps for longer than
+this window. A restore of such an old dump is not possible.`,anchor:`#primarystorageretentionspec`},"spec.backup.primaryStorage.schedule":{description:`Schedule is the interval at which Zeebe takes a primary-storage
+backup: an ISO 8601 duration, a CRON expression, or "none". Defaults
+to PT1H. Always use a schedule with continuous. Otherwise the log grows
+without limit.`,anchor:`#primarystoragebackupspec`},"spec.backupStorageRef":{description:`BackupStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for backups.`,anchor:`#camundaclusterspec`},"spec.connectors":{description:`Connectors configures the connectors runtime.`,anchor:`#camundaclusterspec`},"spec.connectors.enabled":{description:`Enabled runs the connectors runtime when true. Defaults to false.`,anchor:`#connectorsspec`},"spec.connectors.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#connectorsspec`},"spec.connectors.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#connectorsspec`},"spec.connectors.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#connectorsspec`},"spec.connectors.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#connectorsspec`},"spec.connectors.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#connectorsspec`},"spec.connectors.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#connectorsspec`},"spec.connectors.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#connectorsspec`},"spec.connectors.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.connectors.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.connectors.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.connectors.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the connectors pods.
+When unset, they run under the default ServiceAccount of the namespace.
+When set, they run under <name>-connectors, or under name. Only
+the annotations of this block go on the account, never the identities
+of the buckets. When they carry azure.workload.identity/client-id, the
+connectors pods get the label azure.workload.identity/use: "true". The
+connectors never run under the cluster ServiceAccount: name must differ
+from it, and a spec.serviceAccount.name of default needs this block, or
+Ready reports InvalidReference. The name default needs create false. A
+preset can set this block, except name.`,anchor:`#connectorsspec`},"spec.connectors.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.connectors.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.connectors.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.connectors.version":{description:`Version is the version of the connectors bundle image, as a full
+semantic version. Use the same minor as the cluster, such as 8.9.x for
+a cluster on 8.9. The patch does not follow the cluster patch. Required
+when connectors are enabled, unless the resolved release provides it.
+Forbidden in a preset.`,anchor:`#connectorsspec`},"spec.documentStorageRef":{description:`DocumentStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for document storage.`,anchor:`#camundaclusterspec`},"spec.externalUrl":{description:`ExternalURL is the external base URL of the cluster. The operator uses
+it for OIDC redirect URLs and web application links. It creates no
+Ingress.`,anchor:`#camundaclusterspec`},"spec.extraEnv":{description:`ExtraEnv are extra environment variables of every workload. A
+per-component entry wins over an entry here with the same name.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+A CamundaManagementCluster that serves this cluster owns the four
+CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+later). It replaces what you set under these names. If your entry under
+one of these names has valueFrom, the management cluster removes it. One
+entry cannot hold a value and a reference together.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#camundaclusterspec`},"spec.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
+every workload.`,anchor:`#camundaclusterspec`},"spec.gateway":{description:`Gateway configures the gateway.`,anchor:`#camundaclusterspec`},"spec.gateway.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#gatewayspec`},"spec.gateway.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#gatewayspec`},"spec.gateway.mode":{description:`Mode selects a Deployment of the unified binary (Standalone) or the
+embedded gateway of the brokers (Embedded). Defaults to Standalone.
+The workload fields have an effect only in Standalone mode. The
+exception is extraEnv and extraEnvFrom: in Embedded mode, they apply to
+the brokers.`,anchor:`#gatewayspec`},"spec.gateway.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#gatewayspec`},"spec.gateway.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#gatewayspec`},"spec.gateway.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#gatewayspec`},"spec.gateway.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#gatewayspec`},"spec.gateway.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#gatewayspec`},"spec.gateway.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.gateway.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.gateway.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.indexReplicas":{description:`IndexReplicas is the replica count of each index that the cluster
+creates in an Elasticsearch secondary storage. When it is not set, the
+nodeCount of the storage contract gives the count: 0 on one node, 1 on
+two or more nodes. Without a nodeCount, Camunda keeps its own default.
+When indexReplicas is not set and the extraEnv of a process sets a
+legacy replica key, that process keeps the value of the key.
+
+The cluster applies the count to its existing indices when it starts.
+If the nodes cannot place the count, the operator keeps it and records
+an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+relational secondary
+storage ignores this field.`,anchor:`#camundaclusterspec`},"spec.monitoring":{description:`Monitoring configures the monitoring integrations.`,anchor:`#camundaclusterspec`},"spec.monitoring.serviceMonitor":{description:`ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+the operator creates one ServiceMonitor for each process, with the name
+of the workload. It scrapes /actuator/prometheus on the management port
+9600 of a unified process, and on the HTTP port 8080 of connectors.`,anchor:`#clustermonitoringspec`},"spec.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.operate":{description:`Operate configures the Operate web application.`,anchor:`#camundaclusterspec`},"spec.operate.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.operate.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.operate.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.operate.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.operate.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.operate.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.operate.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.operate.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.operate.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.operate.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.operate.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.pause":{description:`Pause stops the reconciliation of this cluster: the operator changes no
+workload and writes no status. It records a Paused event instead. Other
+resources that use the cluster, such as a BackupSchedule or a restore,
+still act on it. When you delete a paused cluster, the operator still
+releases its storage backends. Defaults to false.`,anchor:`#camundaclusterspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+provides auth, license, and image repositories. Required on a
+CamundaCluster, forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.podAnnotations":{description:`PodAnnotations are extra annotations of every workload pod. The keys
+camunda.io/config-hash and camunda.io/service-account-hash belong to the
+operator. A value for them here, or in the podAnnotations of a process,
+does not reach the pods.`,anchor:`#camundaclusterspec`},"spec.podLabels":{description:`PodLabels are extra labels of every workload pod.`,anchor:`#camundaclusterspec`},"spec.presetRef":{description:`PresetRef names a cluster-scoped CamundaClusterPreset used as the
+configuration baseline. The preset doc lists the merge rules.`,anchor:`#camundaclusterspec`},"spec.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+versions, the pinned images, and the environment of a version. It
+merges over the preset and under this spec. Forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.scheduling":{description:`Scheduling holds the scheduling constraints of every workload that does
+not set its own. When set, it replaces the scheduling block of a preset,
+with no merge.`,anchor:`#camundaclusterspec`},"spec.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of every workload except
+the connectors, which connectors.serviceAccount configures. The
+workloads get access to the buckets of backupStorageRef and
+documentStorageRef through this identity. When the operator creates
+the account, it adds the identity annotation of each bucket that names
+one. When the annotations carry azure.workload.identity/client-id, the
+pods of these workloads, the backup Jobs included, get the label
+azure.workload.identity/use: "true". When name is unset, the account
+is <name>-camunda. The pods need no account while neither the cluster
+nor its preset sets this block and no referenced bucket uses workload
+identity. The operator then deletes the account only when the cluster
+owns it, because the operator created it or took it over. An account
+of that name that you created stays.`,anchor:`#camundaclusterspec`},"spec.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.storageRef":{description:`StorageRef names the SecondaryStorageConfig, in the namespace of this
+cluster, that describes the secondary storage backend. Required on a
+CamundaCluster, forbidden in a preset. One backend serves one
+CamundaCluster. Two contracts that name one address are one backend. If
+another cluster already holds the backend, the operator suspends this
+cluster with Ready reason StorageAlreadyAttached. The suspension stays
+until the other cluster moves to another backend or is deleted.`,anchor:`#camundaclusterspec`},"spec.suspend":{description:`Suspend scales every workload to zero and keeps the data. Defaults to
+false. An annotation with the prefix suspension-hold.camunda.io/ on the
+CamundaCluster also suspends it, whatever this field says.`,anchor:`#camundaclusterspec`},"spec.tasklist":{description:`Tasklist configures the Tasklist web application.`,anchor:`#camundaclusterspec`},"spec.tasklist.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.tasklist.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.tasklist.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.tasklist.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.tasklist.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.tasklist.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.tasklist.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.tasklist.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.tasklist.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.tasklist.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.tasklist.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.version":{description:`Version is the Camunda version to deploy, as a full semantic version.
+Required unless the resolved release provides it. Forbidden in a
+preset. The operator refuses a version below 8.9.0, also when it comes
+from the release. The operator also refuses a version below the
+version that the brokers run, with Ready reason VersionDowngradeRefused.
+The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+set to that version, permits it.
+The operator also refuses a version more than one minor above the
+version that the brokers run, in the same major, with Ready reason
+VersionSkipRefused. No annotation permits that move.`,anchor:`#camundaclusterspec`},"spec.zeebe":{description:`Zeebe configures the brokers.`,anchor:`#camundaclusterspec`},"spec.zeebe.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#zeebespec`},"spec.zeebe.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#zeebespec`},"spec.zeebe.partitions":{description:`Partitions is the number of partitions. Defaults to 1. Once set, it can
+neither be decreased nor removed.`,anchor:`#zeebespec`},"spec.zeebe.persistentVolumeClaimRetentionPolicy":{description:`PersistentVolumeClaimRetentionPolicy says what happens to the broker
+volumes when the CamundaCluster is deleted. A scale-down and a
+suspension always keep them.`,anchor:`#zeebespec`},"spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted":{description:`WhenDeleted is what happens to the data volumes when the resource is
+deleted. Defaults to Delete. Delete removes them with the resource.
+Retain keeps them, and a later resource with the same name attaches
+them again.`,anchor:`#persistentvolumeclaimretentionpolicy`},"spec.zeebe.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#zeebespec`},"spec.zeebe.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#zeebespec`},"spec.zeebe.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#zeebespec`},"spec.zeebe.replicationFactor":{description:`ReplicationFactor is the number of brokers that hold a copy of each
+partition. Defaults to 1. It must not exceed replicas.`,anchor:`#zeebespec`},"spec.zeebe.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#zeebespec`},"spec.zeebe.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#zeebespec`},"spec.zeebe.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.zeebe.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.zeebe.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.zeebe.storageClassName":{description:`StorageClassName is the StorageClass of the broker volumes. Defaults to
+the default StorageClass of the Kubernetes cluster. The class cannot
+change after the broker StatefulSet exists. The API server refuses a
+change of a value that the CamundaCluster sets itself. A preset can
+change the class, and a cluster that got its class from a preset can
+set another one. A cluster whose broker StatefulSet exists, also a
+suspended one, then keeps its class and records a
+StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+takes the new class. Volumes that whenDeleted Retain kept from a
+deleted cluster of the same name keep their class.`,anchor:`#zeebespec`},"spec.zeebe.storageSize":{description:`StorageSize is the size of the data volume of each broker. Defaults to
+10Gi. It can only grow. The API server refuses a change of this field
+in a CamundaCluster to a smaller value. A smaller value is accepted when
+the field was not set before, or when a preset lowers the size. A
+cluster whose volumes are already larger then keeps that size and
+records a StorageShrinkIgnored event.
+When the size grows, the operator expands the existing claims in place.
+The storage class must support volume expansion.`,anchor:`#zeebespec`},status:{description:`status defines the observed state of CamundaCluster`,anchor:`#camundacluster`},"status.adminPassword":{description:`AdminPassword is the state of the admin credential of a basic-auth
+cluster. It is unset under OIDC.`,anchor:`#camundaclusterstatus`},"status.adminPassword.rotation":{description:`Rotation is the last admin password rotation that the operator
+applied. It is the value of spec.auth.basic.passwordRotation, after the
+preset merge, that produced the password in the admin Secret. A
+rotation is in progress while that value is not empty and differs from
+this one. A cleared value does not stop a rotation that has started.
+That rotation completes, and this field then records the value that
+started it. A cluster that gets the value from its preset shows none in
+its own spec.`,anchor:`#adminpasswordstatus`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check, or it follows the conditions of the components that
+the cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
+OperateReady, TasklistReady, AdminReady, ConnectorsReady) also appear
+here.`,anchor:`#camundaclusterstatus`},"status.connectorsServiceAccountName":{description:`ConnectorsServiceAccountName is the ServiceAccount that the connectors
+pods run under. It is empty when neither the cluster nor its preset
+sets connectors.serviceAccount, and when connectors are not enabled.`,anchor:`#camundaclusterstatus`},"status.endpoints":{description:`Endpoints lists the routes of this cluster, sorted by name: each path
+on the external URL, with the Service and the port that serve it. An
+access extension reads it and does not derive a Service from the mode
+fields. The longest matching path prefix wins, and default takes every
+path that no other entry names. The entries stay while the cluster is
+suspended, because the Services stay.`,anchor:`#camundaclusterstatus`},"status.endpoints.name":{description:`Name identifies the route, for example operate or grpc.`,anchor:`#endpoint`},"status.endpoints.pathPrefix":{description:`PathPrefix is the path that the route matches. It is empty for gRPC.`,anchor:`#endpoint`},"status.endpoints.port":{description:`Port is the port of the Service.`,anchor:`#endpoint`},"status.endpoints.protocol":{description:`Protocol is HTTP or GRPC.`,anchor:`#endpoint`},"status.endpoints.service":{description:`Service is the name of a Service in the namespace of the resource.`,anchor:`#endpoint`},"status.gateway":{description:`Gateway is the published address of the client APIs of this cluster.
+Extensions read it and do not derive the Service name and the ports
+themselves. It is unset while the cluster is suspended, so a consumer
+does not use an old endpoint.`,anchor:`#camundaclusterstatus`},"status.gateway.grpcEndpoint":{description:`GRPCEndpoint is the host and the port of the gRPC API, for example
+my-cluster-gateway.my-cluster-ns.svc:26500.`,anchor:`#gatewaybinding`},"status.gateway.restEndpoint":{description:`RESTEndpoint is the base URL of the orchestration cluster REST API, for
+example http://my-cluster-gateway.my-cluster-ns.svc:8080.`,anchor:`#gatewaybinding`},"status.management":{description:`Management is the published address of the management API of this
+cluster. Extensions read it and do not derive the Service name, the
+port, and the authentication themselves. It is unset while the cluster
+is suspended, so a consumer does not use an old endpoint.`,anchor:`#camundaclusterstatus`},"status.management.auth":{description:`Auth is how a consumer authenticates against the endpoint.`,anchor:`#managementbinding`},"status.management.auth.credentialsSecretRef":{description:`CredentialsSecretRef names the username and password of the management
+port. It is set only when Method is basic.`,anchor:`#managementauth`},"status.management.auth.credentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"status.management.auth.credentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"status.management.auth.credentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"status.management.auth.method":{description:`Method is the authentication method of the management port. Camunda
+8.9 serves the actuator endpoints without authentication, so the
+operator publishes none. The value basic is for a user who adds a
+Spring Security configuration to the port, and for a later Camunda
+version that secures it.`,anchor:`#managementauth`},"status.management.backupRepository":{description:`BackupRepository is the snapshot repository that the components write
+backups to. It is set only on a cluster with Elasticsearch storage and a
+backupStorageRef. It comes from the SecondaryStorageConfig.`,anchor:`#managementbinding`},"status.management.endpoint":{description:`Endpoint is the base URL of the management API, for example
+http://my-cluster-zeebe.my-namespace.svc:9600.`,anchor:`#managementbinding`},"status.management.partitions":{description:`Partitions is the partition count of the cluster. A restore must match
+it, so a backup records it.`,anchor:`#managementbinding`},"status.management.version":{description:`Version is the Camunda version of the cluster, for example 8.9.9. A
+consumer selects its endpoint set from the minor version.`,anchor:`#managementbinding`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#camundaclusterstatus`},"status.serviceAccountName":{description:`ServiceAccountName is the ServiceAccount that the pods of this cluster
+run under, except the connectors. It is empty when they run under the
+default account of the namespace. An extension that runs a pod for
+this cluster reads it and does not derive the name itself.`,anchor:`#camundaclusterstatus`},"status.volumes":{description:`Volumes lists the bound broker PersistentVolumeClaims and the capacity
+that each one reports, sorted by name.`,anchor:`#camundaclusterstatus`},"status.volumes.capacity":{description:`Capacity is the storage capacity that the bound claim reports.`,anchor:`#volumestatus`},"status.volumes.name":{description:`Name is the name of the PersistentVolumeClaim.`,anchor:`#volumestatus`}},CamundaClusterPreset:{spec:{description:`spec defines the desired state of CamundaClusterPreset`,anchor:`#camundaclusterpreset`},"spec.cluster":{description:`Cluster is the configuration baseline that the clusters that reference
+the preset get. It uses the CamundaCluster spec type. A preset must not
+set the references of one cluster: platformConfigRef, presetRef,
+releaseRef, storageRef, backupStorageRef, and documentStorageRef. It
+must also not set externalUrl, serviceAccount,
+connectors.serviceAccount.name, monitoring, suspend, or pause.
+It must also not set the fields that belong to a CamundaRelease:
+version and connectors.version. An explicit zero value, such as an
+empty presetRef or suspend: false, counts as unset. Templated YAML
+often renders unset fields in this way. The CamundaCluster doc gives
+the details of each field. The CamundaClusterPreset doc gives the merge
+rules.`,anchor:`#camundaclusterpresetspec`},"spec.cluster.admin":{description:`Admin configures the Admin web application (Orchestration Cluster
+Identity before Camunda 8.9). Its Spring profile is admin.`,anchor:`#camundaclusterspec`},"spec.cluster.admin.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.admin.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.admin.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.admin.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.admin.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.admin.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.admin.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.admin.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.admin.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.admin.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.admin.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.auth":{description:`Auth holds the credentials of this cluster and the identities that get
+its admin role. Under OIDC, it holds the client credentials and the
+administrators. Under basic authentication, it holds the admin
+credential that the operator owns.`,anchor:`#camundaclusterspec`},"spec.cluster.auth.admin":{description:`Admin holds the identities that get the admin role of this cluster. It
+applies under OIDC only. Basic authentication seeds its own
+administrator and ignores this block.`,anchor:`#clusterauthspec`},"spec.cluster.auth.admin.clients":{description:`Clients are the values of the client id claim that get the admin role.
+A client entry matches only when the platform config sets
+auth.oidc.clientIdClaim.`,anchor:`#clusteradminspec`},"spec.cluster.auth.admin.mappingRules":{description:`MappingRules give the admin role to every token that holds a claim with
+a given value.`,anchor:`#clusteradminspec`},"spec.cluster.auth.admin.mappingRules.claimName":{description:`ClaimName is the name of a claim, or a JSONPath expression that points
+at a claim.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.mappingRules.claimValue":{description:`ClaimValue is the value that the claim must hold for the rule to match.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.mappingRules.id":{description:`ID names the rule inside the cluster. The Admin web application lists it
+under Mapping Rules.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.users":{description:`Users are the values of the username claim that get the admin role.`,anchor:`#clusteradminspec`},"spec.cluster.auth.audience":{description:`Audience is the audience that access tokens must carry. Defaults to
+the client ID that the cluster uses.`,anchor:`#clusterauthspec`},"spec.cluster.auth.basic":{description:`Basic configures the admin credential that the operator owns. It
+applies under basic authentication only. OIDC ignores this block, like
+basic authentication ignores admin.`,anchor:`#clusterauthspec`},"spec.cluster.auth.basic.adminEmail":{description:`AdminEmail is the email address of the admin user that the operator
+seeds. The orchestration cluster stores it on that user, and the Admin
+web application shows it. Set the address of the person or the team
+that owns the cluster.
+
+When empty, the operator uses admin@example.com. RFC 2606 reserves this
+domain for documentation, so the default is not the address of a real
+person.
+
+The operator applies a changed value to the running cluster. The
+cluster validates the address and refuses a domain without a dot. When
+the cluster refuses an address, AdminSecretReady shows its answer.`,anchor:`#basicauthspec`},"spec.cluster.auth.basic.passwordRotation":{description:`PasswordRotation requests one rotation of the admin password. Set it
+to a value that differs from the applied one, for example a date. The
+operator generates a new password and sets it on the admin user of the
+running cluster. Then it publishes the password in the admin Secret.
+The connectors Deployment restarts with the new password. An empty
+value never rotates. A suspended cluster rotates after it resumes.
+
+status.adminPassword.rotation shows the applied value. A preset can set
+this field. Then every cluster that references the preset rotates, and
+each of these clusters reports its own status.`,anchor:`#basicauthspec`},"spec.cluster.auth.clientId":{description:`ClientID is the OIDC client ID of this cluster. A client ID replaces
+the whole client: the audience and the client secret then come from
+this block only. Requires clientSecretRef.`,anchor:`#clusterauthspec`},"spec.cluster.auth.clientSecretRef":{description:`ClientSecretRef names the Secret that holds the OIDC client secret of
+this cluster. Required when clientId is set.`,anchor:`#clusterauthspec`},"spec.cluster.auth.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.cluster.auth.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.cluster.backup":{description:`Backup configures the backups of this cluster. It sets the schedule and
+the retention of the primary-storage backups that Zeebe takes, and the
+pod of the database dump Job. A preset can set this block, but not
+backupStorageRef. The block applies only to a cluster with relational
+secondary storage. Only such a cluster has continuous and scheduled
+primary-storage backups and the dump Job.`,anchor:`#camundaclusterspec`},"spec.cluster.backup.dump":{description:`Dump configures the Job that writes the logical database to the backup
+bucket. A LogicalBackupRDBMS can replace this block as a whole.`,anchor:`#clusterbackupspec`},"spec.cluster.backup.dump.activeDeadlineSeconds":{description:`ActiveDeadlineSeconds is the number of seconds that the dump Job can
+run before it fails, counted from its start. When the dump block that
+applies does not set it, the Job gets 86400 (24 hours). In the block of
+the cluster, an unset value takes the value of the preset. The
+spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+an unset value there gives 86400, not the value of the cluster.
+
+The default is large, so that a very large dump can complete. The Job
+always has a deadline. A pod that cannot start uses no retry, so
+without a deadline a broken Job stays active for the life of the
+backup. A lower value fails a stuck dump sooner. A higher value gives a
+long dump the time that it needs.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.extraEnv":{description:`ExtraEnv are extra environment variables of the dump pod.
+
+In the spec.dump of a LogicalBackupRDBMS, every name that starts with
+PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is
+connection policy, because libpq reads PGHOSTADDR, PGSERVICE,
+PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of
+a backup reach only the dump container, never the upload container.
+Cloud SDKs read endpoint, proxy, and configuration variables from the
+environment, and the author of a backup must not change where the dump
+goes.
+
+In the spec.backup.dump of the cluster, no name is reserved, and the
+variables reach every container. The cluster owner sets the connection
+policy, PGSSLMODE included.
+
+Unlike the extraEnv of a workload, this list is atomic. One field
+manager owns the whole list, because no extension adds entries to a
+dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources of the dump pod. In the
+spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+chooses its keys. As with ExtraEnv, the sources of a
+backup reach only the dump container. The block of the cluster needs no
+prefix, and its sources reach every container.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.podAnnotations":{description:`PodAnnotations are extra annotations of the dump pod. A service mesh
+sidecar keeps running after the dump finishes, and the Job does not
+complete. Set the injection annotation of the mesh to false here.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.podLabels":{description:`PodLabels are extra labels of the dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.postgresImage":{description:`PostgresImage is the full image reference of the dump container. It
+replaces the default postgres:<major> of the upstream registry. Set it
+in an air-gapped installation, where the default image is not
+available.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.resources":{description:`Resources are the CPU and memory of the dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scheduling":{description:`Scheduling holds the scheduling constraints of the dump pod. When set,
+it replaces the block of a preset, with no merge.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scratchVolume":{description:`ScratchVolume is where the pod writes the dump before the upload. When
+set, it replaces the block of a preset, with no merge. The dump pod
+runs with fsGroup 999, the postgres group. Thus pg_dump can write to a
+volume that a storage class gives with the root owner.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scratchVolume.sizeLimit":{description:`SizeLimit is the size of the emptyDir that holds the dump. Set it to
+the size the dump needs, with room to spare.`,anchor:`#scratchvolumespec`},"spec.cluster.backup.dump.scratchVolume.storageClassName":{description:`StorageClassName makes the scratch volume a PersistentVolumeClaim of
+this class, not an emptyDir. Use it when the dump is larger than the
+ephemeral storage of a node.`,anchor:`#scratchvolumespec`},"spec.cluster.backup.primaryStorage":{description:`PrimaryStorage configures the backups that Zeebe takes of its own
+primary storage. A point-in-time restore uses them.`,anchor:`#clusterbackupspec`},"spec.cluster.backup.primaryStorage.checkpointInterval":{description:`CheckpointInterval is the interval at which Zeebe writes marker
+checkpoints into the log stream, as an ISO 8601 duration of days and
+time (P2DT3H, PT15M). Camunda parses no week, month, or year units.
+It is the granularity of a point-in-time restore. Defaults to PT15M.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.continuous":{description:`Continuous keeps every log segment until it is backed up, so that a
+restore finds a range without gaps. Defaults to true on a relational
+cluster with a backupStorageRef. A preset can turn it on for many
+clusters, and one cluster can still turn it off.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.retention":{description:`Retention bounds how long Zeebe keeps its primary-storage backups.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.retention.cleanupSchedule":{description:`CleanupSchedule is the interval at which Zeebe looks for backups
+outside the window: an ISO 8601 duration, a CRON expression, or
+"none". Defaults to PT1H.`,anchor:`#primarystorageretentionspec`},"spec.cluster.backup.primaryStorage.retention.window":{description:`Window is how far back the backups stay available for a restore, as an
+ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
+week, month, or year units. Defaults to P7D. It limits the restore
+window, so set it at least as long as the recovery point that the
+cluster needs. A BackupSchedule can keep database dumps for longer than
+this window. A restore of such an old dump is not possible.`,anchor:`#primarystorageretentionspec`},"spec.cluster.backup.primaryStorage.schedule":{description:`Schedule is the interval at which Zeebe takes a primary-storage
+backup: an ISO 8601 duration, a CRON expression, or "none". Defaults
+to PT1H. Always use a schedule with continuous. Otherwise the log grows
+without limit.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backupStorageRef":{description:`BackupStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for backups.`,anchor:`#camundaclusterspec`},"spec.cluster.connectors":{description:`Connectors configures the connectors runtime.`,anchor:`#camundaclusterspec`},"spec.cluster.connectors.enabled":{description:`Enabled runs the connectors runtime when true. Defaults to false.`,anchor:`#connectorsspec`},"spec.cluster.connectors.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#connectorsspec`},"spec.cluster.connectors.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#connectorsspec`},"spec.cluster.connectors.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#connectorsspec`},"spec.cluster.connectors.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#connectorsspec`},"spec.cluster.connectors.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the connectors pods.
+When unset, they run under the default ServiceAccount of the namespace.
+When set, they run under <name>-connectors, or under name. Only
+the annotations of this block go on the account, never the identities
+of the buckets. When they carry azure.workload.identity/client-id, the
+connectors pods get the label azure.workload.identity/use: "true". The
+connectors never run under the cluster ServiceAccount: name must differ
+from it, and a spec.serviceAccount.name of default needs this block, or
+Ready reports InvalidReference. The name default needs create false. A
+preset can set this block, except name.`,anchor:`#connectorsspec`},"spec.cluster.connectors.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.version":{description:`Version is the version of the connectors bundle image, as a full
+semantic version. Use the same minor as the cluster, such as 8.9.x for
+a cluster on 8.9. The patch does not follow the cluster patch. Required
+when connectors are enabled, unless the resolved release provides it.
+Forbidden in a preset.`,anchor:`#connectorsspec`},"spec.cluster.documentStorageRef":{description:`DocumentStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for document storage.`,anchor:`#camundaclusterspec`},"spec.cluster.externalUrl":{description:`ExternalURL is the external base URL of the cluster. The operator uses
+it for OIDC redirect URLs and web application links. It creates no
+Ingress.`,anchor:`#camundaclusterspec`},"spec.cluster.extraEnv":{description:`ExtraEnv are extra environment variables of every workload. A
+per-component entry wins over an entry here with the same name.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+A CamundaManagementCluster that serves this cluster owns the four
+CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+later). It replaces what you set under these names. If your entry under
+one of these names has valueFrom, the management cluster removes it. One
+entry cannot hold a value and a reference together.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#camundaclusterspec`},"spec.cluster.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
+every workload.`,anchor:`#camundaclusterspec`},"spec.cluster.gateway":{description:`Gateway configures the gateway.`,anchor:`#camundaclusterspec`},"spec.cluster.gateway.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#gatewayspec`},"spec.cluster.gateway.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.mode":{description:`Mode selects a Deployment of the unified binary (Standalone) or the
+embedded gateway of the brokers (Embedded). Defaults to Standalone.
+The workload fields have an effect only in Standalone mode. The
+exception is extraEnv and extraEnvFrom: in Embedded mode, they apply to
+the brokers.`,anchor:`#gatewayspec`},"spec.cluster.gateway.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#gatewayspec`},"spec.cluster.gateway.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#gatewayspec`},"spec.cluster.gateway.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#gatewayspec`},"spec.cluster.gateway.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.gateway.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.gateway.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.indexReplicas":{description:`IndexReplicas is the replica count of each index that the cluster
+creates in an Elasticsearch secondary storage. When it is not set, the
+nodeCount of the storage contract gives the count: 0 on one node, 1 on
+two or more nodes. Without a nodeCount, Camunda keeps its own default.
+When indexReplicas is not set and the extraEnv of a process sets a
+legacy replica key, that process keeps the value of the key.
+
+The cluster applies the count to its existing indices when it starts.
+If the nodes cannot place the count, the operator keeps it and records
+an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+relational secondary
+storage ignores this field.`,anchor:`#camundaclusterspec`},"spec.cluster.monitoring":{description:`Monitoring configures the monitoring integrations.`,anchor:`#camundaclusterspec`},"spec.cluster.monitoring.serviceMonitor":{description:`ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+the operator creates one ServiceMonitor for each process, with the name
+of the workload. It scrapes /actuator/prometheus on the management port
+9600 of a unified process, and on the HTTP port 8080 of connectors.`,anchor:`#clustermonitoringspec`},"spec.cluster.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.operate":{description:`Operate configures the Operate web application.`,anchor:`#camundaclusterspec`},"spec.cluster.operate.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.operate.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.operate.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.operate.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.operate.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.operate.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.operate.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.operate.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.operate.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.operate.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.operate.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.pause":{description:`Pause stops the reconciliation of this cluster: the operator changes no
+workload and writes no status. It records a Paused event instead. Other
+resources that use the cluster, such as a BackupSchedule or a restore,
+still act on it. When you delete a paused cluster, the operator still
+releases its storage backends. Defaults to false.`,anchor:`#camundaclusterspec`},"spec.cluster.platformConfigRef":{description:`PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+provides auth, license, and image repositories. Required on a
+CamundaCluster, forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.cluster.podAnnotations":{description:`PodAnnotations are extra annotations of every workload pod. The keys
+camunda.io/config-hash and camunda.io/service-account-hash belong to the
+operator. A value for them here, or in the podAnnotations of a process,
+does not reach the pods.`,anchor:`#camundaclusterspec`},"spec.cluster.podLabels":{description:`PodLabels are extra labels of every workload pod.`,anchor:`#camundaclusterspec`},"spec.cluster.presetRef":{description:`PresetRef names a cluster-scoped CamundaClusterPreset used as the
+configuration baseline. The preset doc lists the merge rules.`,anchor:`#camundaclusterspec`},"spec.cluster.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+versions, the pinned images, and the environment of a version. It
+merges over the preset and under this spec. Forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.cluster.scheduling":{description:`Scheduling holds the scheduling constraints of every workload that does
+not set its own. When set, it replaces the scheduling block of a preset,
+with no merge.`,anchor:`#camundaclusterspec`},"spec.cluster.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of every workload except
+the connectors, which connectors.serviceAccount configures. The
+workloads get access to the buckets of backupStorageRef and
+documentStorageRef through this identity. When the operator creates
+the account, it adds the identity annotation of each bucket that names
+one. When the annotations carry azure.workload.identity/client-id, the
+pods of these workloads, the backup Jobs included, get the label
+azure.workload.identity/use: "true". When name is unset, the account
+is <name>-camunda. The pods need no account while neither the cluster
+nor its preset sets this block and no referenced bucket uses workload
+identity. The operator then deletes the account only when the cluster
+owns it, because the operator created it or took it over. An account
+of that name that you created stays.`,anchor:`#camundaclusterspec`},"spec.cluster.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.cluster.storageRef":{description:`StorageRef names the SecondaryStorageConfig, in the namespace of this
+cluster, that describes the secondary storage backend. Required on a
+CamundaCluster, forbidden in a preset. One backend serves one
+CamundaCluster. Two contracts that name one address are one backend. If
+another cluster already holds the backend, the operator suspends this
+cluster with Ready reason StorageAlreadyAttached. The suspension stays
+until the other cluster moves to another backend or is deleted.`,anchor:`#camundaclusterspec`},"spec.cluster.suspend":{description:`Suspend scales every workload to zero and keeps the data. Defaults to
+false. An annotation with the prefix suspension-hold.camunda.io/ on the
+CamundaCluster also suspends it, whatever this field says.`,anchor:`#camundaclusterspec`},"spec.cluster.tasklist":{description:`Tasklist configures the Tasklist web application.`,anchor:`#camundaclusterspec`},"spec.cluster.tasklist.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.tasklist.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.tasklist.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.tasklist.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.tasklist.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.tasklist.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.tasklist.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.tasklist.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.version":{description:`Version is the Camunda version to deploy, as a full semantic version.
+Required unless the resolved release provides it. Forbidden in a
+preset. The operator refuses a version below 8.9.0, also when it comes
+from the release. The operator also refuses a version below the
+version that the brokers run, with Ready reason VersionDowngradeRefused.
+The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+set to that version, permits it.
+The operator also refuses a version more than one minor above the
+version that the brokers run, in the same major, with Ready reason
+VersionSkipRefused. No annotation permits that move.`,anchor:`#camundaclusterspec`},"spec.cluster.zeebe":{description:`Zeebe configures the brokers.`,anchor:`#camundaclusterspec`},"spec.cluster.zeebe.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#zeebespec`},"spec.cluster.zeebe.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.partitions":{description:`Partitions is the number of partitions. Defaults to 1. Once set, it can
+neither be decreased nor removed.`,anchor:`#zeebespec`},"spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy":{description:`PersistentVolumeClaimRetentionPolicy says what happens to the broker
+volumes when the CamundaCluster is deleted. A scale-down and a
+suspension always keep them.`,anchor:`#zeebespec`},"spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted":{description:`WhenDeleted is what happens to the data volumes when the resource is
+deleted. Defaults to Delete. Delete removes them with the resource.
+Retain keeps them, and a later resource with the same name attaches
+them again.`,anchor:`#persistentvolumeclaimretentionpolicy`},"spec.cluster.zeebe.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#zeebespec`},"spec.cluster.zeebe.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#zeebespec`},"spec.cluster.zeebe.replicationFactor":{description:`ReplicationFactor is the number of brokers that hold a copy of each
+partition. Defaults to 1. It must not exceed replicas.`,anchor:`#zeebespec`},"spec.cluster.zeebe.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#zeebespec`},"spec.cluster.zeebe.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.storageClassName":{description:`StorageClassName is the StorageClass of the broker volumes. Defaults to
+the default StorageClass of the Kubernetes cluster. The class cannot
+change after the broker StatefulSet exists. The API server refuses a
+change of a value that the CamundaCluster sets itself. A preset can
+change the class, and a cluster that got its class from a preset can
+set another one. A cluster whose broker StatefulSet exists, also a
+suspended one, then keeps its class and records a
+StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+takes the new class. Volumes that whenDeleted Retain kept from a
+deleted cluster of the same name keep their class.`,anchor:`#zeebespec`},"spec.cluster.zeebe.storageSize":{description:`StorageSize is the size of the data volume of each broker. Defaults to
+10Gi. It can only grow. The API server refuses a change of this field
+in a CamundaCluster to a smaller value. A smaller value is accepted when
+the field was not set before, or when a preset lowers the size. A
+cluster whose volumes are already larger then keeps that size and
+records a StorageShrinkIgnored event.
+When the size grows, the operator expands the existing claims in place.
+The storage class must support volume expansion.`,anchor:`#zeebespec`}},CamundaManagementCluster:{spec:{description:`spec defines the desired state of CamundaManagementCluster`,anchor:`#camundamanagementcluster`},"spec.clusterSelector":{description:`ClusterSelector selects the CamundaClusters that Console and Web
+Modeler serve, in every namespace that namespaceSelector permits. An
+unset selector selects no cluster. An empty selector ({}) selects every
+cluster.`,anchor:`#camundamanagementclusterspec`},"spec.console":{description:`Console configures Console. While it is unset, the operator does not
+deploy Console.`,anchor:`#camundamanagementclusterspec`},"spec.console.externalUrl":{description:`ExternalURL is the URL where browsers reach Console. Console serves
+under the path of this URL. Every selected CamundaCluster reports to
+Console through its Kubernetes Service. Thus the clusters do not need
+an Ingress in front of Console.`,anchor:`#consolespec`},"spec.console.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#consolespec`},"spec.console.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#consolespec`},"spec.console.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#consolespec`},"spec.console.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#consolespec`},"spec.console.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#consolespec`},"spec.console.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#consolespec`},"spec.console.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#consolespec`},"spec.console.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.console.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.console.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.console.serviceAccount":{description:`ServiceAccount gives the Console pods a ServiceAccount of their own.
+When unset, they run under spec.serviceAccount. When set, they run
+under <name>-console, or under name, and they do not get the access
+that a plugin grants to the account of spec.serviceAccount. The name
+default needs create false.`,anchor:`#consolespec`},"spec.console.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.console.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.console.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.console.version":{description:`Version is the Console version, as a full semantic version. The
+operator supports 8.9.0 and later.`,anchor:`#consolespec`},"spec.identity":{description:`Identity configures Management Identity. Console, Web Modeler, and
+Optimize authenticate through it, so the operator always deploys it.`,anchor:`#camundamanagementclusterspec`},"spec.identity.admin":{description:`Admin names the first administrator of the management plane.`,anchor:`#identityspec`},"spec.identity.admin.claimName":{description:`ClaimName is the token claim that identifies the administrator, for
+example oid or sub. Set it in the oidc mode. The operator records the
+claim as <claimName>=<claimValue> and splits it at the first equals
+sign. Thus the name cannot hold an equals sign.`,anchor:`#identityadminspec`},"spec.identity.admin.claimValue":{description:`ClaimValue is the value of the claim for the administrator.
+Set it in the oidc mode.`,anchor:`#identityadminspec`},"spec.identity.admin.email":{description:`Email is the email address of the first Keycloak user. Web Modeler
+needs an address for every person who signs in. Thus it is required
+when webModeler is set in a Keycloak mode.`,anchor:`#identityadminspec`},"spec.identity.admin.passwordSecretRef":{description:`PasswordSecretRef names the Secret key that holds the password of the
+first Keycloak user. The operator generates a password when this is
+unset.`,anchor:`#identityadminspec`},"spec.identity.admin.passwordSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.identity.admin.passwordSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.identity.admin.username":{description:`Username is the name of the first Keycloak user. Set it in the keycloak
+and the externalKeycloak modes. Management Identity creates the user on
+its first start. A later change of this field creates a second user and
+does not rename the first user.`,anchor:`#identityadminspec`},"spec.identity.databaseConfigRef":{description:`DatabaseConfigRef names the DatabaseConfig of the Management Identity
+database, in the namespace of this resource. Identity needs its own
+PostgreSQL database.`,anchor:`#identityspec`},"spec.identity.externalUrl":{description:`ExternalURL is the URL where browsers reach Management Identity.
+Identity registers it as the redirect URI of its own client. Identity
+serves under the path of this URL, so it can share one host with
+Keycloak, Console, and Web Modeler. A URL with a path other than "/"
+must use https, because Camunda requires https for Identity under a
+path.`,anchor:`#identityspec`},"spec.identity.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#identityspec`},"spec.identity.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#identityspec`},"spec.identity.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#identityspec`},"spec.identity.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#identityspec`},"spec.identity.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#identityspec`},"spec.identity.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#identityspec`},"spec.identity.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#identityspec`},"spec.identity.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.identity.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.identity.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.identity.serviceAccount":{description:`ServiceAccount gives the Management Identity pods a ServiceAccount of their own.
+When unset, they run under spec.serviceAccount. When set, they run
+under <name>-identity, or under name, and they do not get the access that a
+plugin grants to the account of spec.serviceAccount. The name default
+needs create false.`,anchor:`#identityspec`},"spec.identity.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.identity.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.identity.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.identity.version":{description:`Version is the Management Identity version, as a full semantic version.
+The operator supports 8.9.0 and later.`,anchor:`#identityspec`},"spec.identityProvider":{description:`IdentityProvider selects where users authenticate. Exactly one of
+keycloak, externalKeycloak, or oidc is set.`,anchor:`#camundamanagementclusterspec`},"spec.identityProvider.externalKeycloak":{description:`ExternalKeycloak connects Management Identity to a Keycloak that you
+run. Management Identity still creates the realm, the clients, and the
+initial administrator in it.`,anchor:`#identityproviderspec`},"spec.identityProvider.externalKeycloak.adminCredentialsSecretRef":{description:`AdminCredentialsSecretRef names the Secret with the Keycloak
+administrator credentials. Management Identity uses them to create the
+realm, the clients, and the initial administrator.`,anchor:`#externalkeycloakspec`},"spec.identityProvider.externalKeycloak.adminCredentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.identityProvider.externalKeycloak.adminCredentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.identityProvider.externalKeycloak.adminCredentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.identityProvider.externalKeycloak.caBundleSecretRef":{description:`CABundleSecretRef names the Secret key that holds the certificate
+authority of Keycloak, in PEM form. The operator signs in to Keycloak to
+register the login callbacks of Optimize. It then trusts this authority
+and the trust store of its own image. Set it when a public authority did
+not sign the certificate of Keycloak. It is valid only with an https
+url.`,anchor:`#externalkeycloakspec`},"spec.identityProvider.externalKeycloak.caBundleSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.identityProvider.externalKeycloak.caBundleSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.identityProvider.externalKeycloak.realm":{description:`Realm is the realm that Management Identity creates and uses. Empty
+means camunda-platform. The realm is part of the issuer, the token, and
+the JWKS URLs that Management Identity builds. Thus it holds only
+letters, digits, dots, hyphens, and underscores, and its length has a
+limit, as the URL has.`,anchor:`#externalkeycloakspec`},"spec.identityProvider.externalKeycloak.url":{description:`URL is the URL of Keycloak, with the /auth path when Keycloak has one.
+Management Identity uses this URL, so it must resolve from inside the
+Kubernetes cluster.
+
+The operator appends /realms/<realm> to this URL, so the URL has no
+query and no fragment. The URL is also in the annotations of the Lease
+that claims the realm, so its length has a limit.
+
+The URL has no user and no password. The operator does not support a
+Keycloak behind a proxy that needs basic authentication.`,anchor:`#externalkeycloakspec`},"spec.identityProvider.keycloak":{description:`Keycloak runs Keycloak through the Keycloak Operator. The Keycloak
+Operator must be installed on the Kubernetes cluster.`,anchor:`#identityproviderspec`},"spec.identityProvider.keycloak.databaseConfigRef":{description:`DatabaseConfigRef names the DatabaseConfig of the Keycloak database, in
+the namespace of this resource. Keycloak needs its own PostgreSQL
+database.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.externalUrl":{description:`ExternalURL is the URL where browsers reach Keycloak, with the /auth
+path. It is the front-channel issuer of every token. Management
+Identity uses the front-channel URL since 8.5.3, so the Identity pods
+must also reach it. Management Identity administers Keycloak through
+the Service that the Keycloak Operator creates, not through this URL.
+
+The operator appends /realms/<realm> to this URL, so the URL has no
+query and no fragment.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.replicas":{description:`Replicas is the number of Keycloak instances. Defaults to 1.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.resources":{description:`Resources are the CPU and memory of the Keycloak container.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.scheduling":{description:`Scheduling constraints of the Keycloak pods.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.identityProvider.keycloak.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.identityProvider.keycloak.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.identityProvider.keycloak.serviceAccount":{description:`ServiceAccount gives the Keycloak pods a ServiceAccount of their own.
+When unset, they run under spec.serviceAccount. When set, they run
+under <name>-keycloak, or under name, and they do not get the access that a
+plugin grants to the account of spec.serviceAccount. The name default
+needs create false.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.keycloak.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.identityProvider.keycloak.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.identityProvider.keycloak.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.identityProvider.keycloak.version":{description:`Version is the Keycloak version, as a full semantic version. Camunda
+8.9 supports only Keycloak 26. The image is
+camunda/keycloak:quay-optimized-<version>, unless the platform config
+sets another repository.`,anchor:`#managedkeycloakspec`},"spec.identityProvider.oidc":{description:`OIDC connects Management Identity to the identity provider of the
+referenced CamundaPlatformConfig.`,anchor:`#identityproviderspec`},"spec.managementAuthConfigName":{description:`ManagementAuthConfigName is the name of the cluster-scoped
+ManagementAuthConfig that this management cluster writes. A
+CamundaOptimize reads it through its managementAuthRef. Empty means the
+name of this resource.`,anchor:`#camundamanagementclusterspec`},"spec.namespaceSelector":{description:`NamespaceSelector limits clusterSelector to the namespaces whose labels
+match. It selects on the labels of the Namespace objects, as the
+namespaceSelector of an admission webhook does. An unset or empty ({})
+selector permits every namespace.`,anchor:`#camundamanagementclusterspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+holds the license and the image settings. In the oidc mode, it also
+holds the identity provider and every client of the management plane.`,anchor:`#camundamanagementclusterspec`},"spec.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of every workload of this
+management plane, except a component that sets a serviceAccount block of
+its own. A PluginRequest of the plane targets this account, so the
+access that a plugin grants goes to these workloads. When name is unset,
+the account is <name>-management. No two accounts of one management
+plane can have the same name, or Ready reports InvalidReference. The
+name default needs create false.`,anchor:`#camundamanagementclusterspec`},"spec.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.suspend":{description:`Suspend scales every workload of this management cluster to zero. The
+ManagementAuthConfig, the claims on the orchestration clusters, and the
+Console ping settings stay. Thus nothing else must change while the
+management plane is down.`,anchor:`#camundamanagementclusterspec`},"spec.webModeler":{description:`WebModeler configures Web Modeler. While it is unset, the operator does
+not deploy Web Modeler.`,anchor:`#camundamanagementclusterspec`},"spec.webModeler.databaseConfigRef":{description:`DatabaseConfigRef names the DatabaseConfig of the Web Modeler database,
+in the namespace of this resource. Web Modeler needs its own PostgreSQL
+database.`,anchor:`#webmodelerspec`},"spec.webModeler.externalUrl":{description:`ExternalURL is the URL where browsers reach Web Modeler.`,anchor:`#webmodelerspec`},"spec.webModeler.mail":{description:`Mail configures the SMTP server that Web Modeler sends notifications
+through. Web Modeler does not start without it.`,anchor:`#webmodelerspec`},"spec.webModeler.mail.credentialsSecretRef":{description:`CredentialsSecretRef names the Secret with the user and the password of
+the SMTP server. Leave it unset for a server that needs no credentials.`,anchor:`#webmodelermailspec`},"spec.webModeler.mail.credentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.webModeler.mail.credentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.webModeler.mail.credentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.webModeler.mail.fromAddress":{description:`FromAddress is the address that Web Modeler sends from.`,anchor:`#webmodelermailspec`},"spec.webModeler.mail.fromName":{description:`FromName is the display name of the sender of Web Modeler mail.`,anchor:`#webmodelermailspec`},"spec.webModeler.mail.smtpHost":{description:`SMTPHost is the host name of the SMTP server.`,anchor:`#webmodelermailspec`},"spec.webModeler.mail.smtpPort":{description:`SMTPPort is the port of the SMTP server. Defaults to 587.`,anchor:`#webmodelermailspec`},"spec.webModeler.mail.tls":{description:`TLS turns STARTTLS on. Defaults to true.`,anchor:`#webmodelermailspec`},"spec.webModeler.restapi":{description:`Restapi configures the workload of the restapi process.`,anchor:`#webmodelerspec`},"spec.webModeler.restapi.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.webModeler.restapi.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.webModeler.restapi.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.webModeler.restapi.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.webModeler.restapi.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.webModeler.restapi.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.webModeler.restapi.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.webModeler.restapi.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.restapi.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.restapi.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.serviceAccount":{description:`ServiceAccount gives the Web Modeler pods a ServiceAccount of their own.
+When unset, they run under spec.serviceAccount. When set, they run
+under <name>-web-modeler, or under name, and they do not get the access that a
+plugin grants to the account of spec.serviceAccount. The name default
+needs create false.`,anchor:`#webmodelerspec`},"spec.webModeler.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.webModeler.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.webModeler.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.webModeler.version":{description:`Version is the Web Modeler version, as a full semantic version. The
+operator supports 8.9.0 and later.`,anchor:`#webmodelerspec`},"spec.webModeler.websockets":{description:`Websockets configures the workload of the websockets process.`,anchor:`#webmodelerspec`},"spec.webModeler.websockets.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.webModeler.websockets.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.webModeler.websockets.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.webModeler.websockets.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.webModeler.websockets.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.webModeler.websockets.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.webModeler.websockets.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.webModeler.websockets.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.websockets.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.websockets.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.webModeler.websocketsExternalUrl":{description:`WebsocketsExternalURL is the URL where browsers reach the websockets
+process. Web Modeler sends live updates through it.`,anchor:`#webmodelerspec`},status:{description:`status defines the observed state of CamundaManagementCluster`,anchor:`#camundamanagementcluster`},"status.callbackRealm":{description:`CallbackRealm is the Keycloak realm that this management plane last
+gave to Management Identity, in the externalKeycloak mode. Identity
+registers the login callbacks of Optimize in this realm when it starts.
+Thus the field appears with the realm, not with the first registration.
+
+A value does not mean that the callbacks are still in the realm. When
+the spec names another realm or the oidc mode, the operator first
+removes the callbacks from this realm. The field stays until no
+configuration of the old realm can write them back. That is the case
+when no Management Identity pod of the old realm can run, and no
+Deployment or ReplicaSet of it can start one. The field then disappears
+or moves to the new realm. This change shows that the move is complete.
+
+The field is absent after a move into the keycloak or the oidc mode.
+It is also absent while no login callback of this operator is
+registered anywhere and nothing can write one back. The operator runs the
+Keycloak of the keycloak mode, and deletes it with the management plane
+or when the plane leaves that mode. Thus the field never names the
+realm of that Keycloak. During a move into either mode, the field still
+names the realm that the plane leaves.
+
+A Keycloak that is permanently gone never answers. To release its realm
+with the callbacks in it, set the annotation
+camunda.io/forget-callback-realm. Use the value that the
+OptimizeCallbacksReady message names.`,anchor:`#camundamanagementclusterstatus`},"status.callbackRealm.adminCredentialsSecretRef":{description:`AdminCredentialsSecretRef names the Secret with the Keycloak
+administrator that the operator signs in with, in the namespace of this
+resource.`,anchor:`#keycloakrealmtarget`},"status.callbackRealm.adminCredentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"status.callbackRealm.adminCredentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"status.callbackRealm.adminCredentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"status.callbackRealm.caBundleSecretRef":{description:`CABundleSecretRef names the Secret key with the certificate authority of
+Keycloak, in the namespace of this resource. It is absent when a public
+authority signed the certificate of Keycloak.`,anchor:`#keycloakrealmtarget`},"status.callbackRealm.caBundleSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"status.callbackRealm.caBundleSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"status.callbackRealm.realm":{description:`Realm is the Keycloak realm.`,anchor:`#keycloakrealmtarget`},"status.callbackRealm.url":{description:`URL is the URL of Keycloak that the operator uses, with the /auth path
+when Keycloak has one.`,anchor:`#keycloakrealmtarget`},"status.clusters":{description:`Clusters lists every CamundaCluster that clusterSelector matched, and
+shows whether the management plane serves it.`,anchor:`#camundamanagementclusterstatus`},"status.clusters.attached":{description:`Attached shows whether the management plane serves this cluster.
+Console lists the cluster, and Web Modeler deploys to it, only while
+this is true.`,anchor:`#attachedclusterstatus`},"status.clusters.message":{description:`Message explains the reason in one sentence.`,anchor:`#attachedclusterstatus`},"status.clusters.name":{description:`Name is the name of the CamundaCluster.`,anchor:`#attachedclusterstatus`},"status.clusters.namespace":{description:`Namespace is the namespace of the CamundaCluster.`,anchor:`#attachedclusterstatus`},"status.clusters.reason":{description:`Reason names what the management plane found on this cluster. It has
+one of five values. Four values tell why the cluster is not attached.
+ClaimedElsewhere means that another management plane holds the
+cluster. NotReady means that the cluster publishes no gateway endpoints,
+or that it changed while the operator claimed it. InvalidReference
+means that the operator cannot read the platform config of the cluster.
+It also means that the OIDC issuer of the cluster differs from the
+issuer of the management plane. WriteFailed means that the API server refused the
+write of the Console ping settings. The fifth value,
+BasicAuthUserFailed, is on an attached row.
+The management plane serves the cluster, but the Web Modeler user on
+it is missing.`,anchor:`#attachedclusterstatus`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check, or StepFailed for a failed step. When the write of
+the ManagementAuthConfig is the first failed step, Ready holds
+WriteFailed instead. In the oidc mode it holds ImmutableAfterStart when
+spec.identity.admin changed after Management Identity first started.
+Otherwise it follows the conditions of the deployed components. When
+all of them are True, a failed OptimizeCallbacksReady makes Ready False
+with its reason. The per-component conditions (KeycloakReady,
+IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,
+SecretsReady, MirroredSecretsReady, ServiceAccountsReady) and
+OptimizeCallbacksReady also appear here.`,anchor:`#camundamanagementclusterstatus`},"status.endpoints":{description:`Endpoints lists the routes of this management plane, sorted by name.
+Each entry is a path on an external URL, with the Service and the port
+that serve it. An access extension reads it and does not derive a
+Service from the mode fields. The path of an entry is the path of the
+external URL of its app, or / for a URL without a path. The entry
+belongs to the host of that URL. keycloak is present in the keycloak
+mode, console while spec.console is set, and web-modeler and
+web-modeler-websockets while spec.webModeler is set. The longest
+matching path prefix wins. The entries stay while the management plane
+is suspended, because the Services stay.`,anchor:`#camundamanagementclusterstatus`},"status.endpoints.name":{description:`Name identifies the route, for example operate or grpc.`,anchor:`#endpoint`},"status.endpoints.pathPrefix":{description:`PathPrefix is the path that the route matches. It is empty for gRPC.`,anchor:`#endpoint`},"status.endpoints.port":{description:`Port is the port of the Service.`,anchor:`#endpoint`},"status.endpoints.protocol":{description:`Protocol is HTTP or GRPC.`,anchor:`#endpoint`},"status.endpoints.service":{description:`Service is the name of a Service in the namespace of the resource.`,anchor:`#endpoint`},"status.managementAuthConfig":{description:`ManagementAuthConfig is the name of the ManagementAuthConfig that this
+management cluster writes. A CamundaOptimize reads it through its
+managementAuthRef.`,anchor:`#camundamanagementclusterstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#camundamanagementclusterstatus`},"status.optimize":{description:`Optimize lists every CamundaOptimize that names the ManagementAuthConfig
+of this management cluster and sets spec.externalUrl, sorted by
+namespace and name. The management plane registers the login callback
+of each one on the Optimize client of the realm.
+
+The list is empty in the oidc mode. In that mode, the identity provider
+of the platform config holds the callback URLs.`,anchor:`#camundamanagementclusterstatus`},"status.optimize.externalUrl":{description:`ExternalURL is spec.externalUrl of that CamundaOptimize. The registered
+callback is this URL with the login path of Optimize.`,anchor:`#attachedoptimizestatus`},"status.optimize.name":{description:`Name is the name of the CamundaOptimize.`,anchor:`#attachedoptimizestatus`},"status.optimize.namespace":{description:`Namespace is the namespace of the CamundaOptimize.`,anchor:`#attachedoptimizestatus`},"status.serviceAccountName":{description:`ServiceAccountName is the ServiceAccount that the workloads of this
+management plane run under, except a component that sets a
+serviceAccount block of its own. A PluginRequest of the plane targets
+it. An extension that runs a pod for this plane reads it and does not
+derive the name itself.`,anchor:`#camundamanagementclusterstatus`}},CamundaOptimize:{spec:{description:`spec defines the desired state of CamundaOptimize`,anchor:`#camundaoptimize`},"spec.clusterRef":{description:`ClusterRef names the CamundaCluster that this Optimize instance reads.
+The secondary storage of that cluster must be Elasticsearch. No other
+CamundaOptimize can be attached to it.
+
+The reference is immutable. A change to another cluster changes the pod
+selectors of the Deployments, and Kubernetes does not permit that.
+Also, the old cluster keeps the exporter settings of this Optimize.`,anchor:`#camundaoptimizespec`},"spec.clusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"spec.externalUrl":{description:`ExternalURL is the URL where browsers reach this Optimize. With a path,
+such as https://camunda.example.com/optimize, Optimize serves under that
+path, and status.endpoints routes that path. Without a path, Optimize
+serves at the root of the host.
+
+In the two Keycloak modes, the management plane of managementAuthRef
+registers <externalUrl>/api/authentication/callback on the optimize
+client of the realm. Thus a person who signs in here comes back here.
+Without a URL, the plane registers no callback, and Keycloak refuses
+the return. The exception is a callback that somebody added to the
+realm manually.
+
+In the oidc mode, the operator registers no callback. The identity
+provider of the platform config holds the callback URLs, so add
+<externalUrl>/api/authentication/callback there.`,anchor:`#camundaoptimizespec`},"spec.importer":{description:`Importer configures the Deployment that imports the exported cluster
+data into the Optimize indices. Optimize supports one active importer,
+so replicas must be 0 or 1. With 0, the import stops, for example
+during a restore or an index rewrite. The webapp continues to serve the
+data that it already imported.`,anchor:`#camundaoptimizespec`},"spec.importer.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.importer.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.importer.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.importer.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.importer.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.importer.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.importer.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.importer.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.importer.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.importer.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.indexReplicas":{description:`IndexReplicas is the replica count of each Optimize index, and of each
+zeebe-record index that the exporter of the cluster writes for this
+Optimize. When it is not set, the nodeCount of the storage contract of
+the cluster gives the count. The count is 0 on one node, and 1 on two or
+more nodes.
+Without a nodeCount, Optimize and the exporter keep their own defaults.
+
+Optimize applies the count to its existing indices when it starts. The
+exporter applies it to the next zeebe-record indices that it creates.
+If the nodes cannot place the count, the operator keeps it and records
+an IndexReplicasExceedNodes Warning event on the CamundaOptimize.`,anchor:`#camundaoptimizespec`},"spec.managementAuthRef":{description:`ManagementAuthRef names the cluster-scoped ManagementAuthConfig that
+provides the Management Identity OIDC configuration. Optimize
+authenticates against Management Identity, not against the built-in
+auth of the orchestration cluster.`,anchor:`#camundaoptimizespec`},"spec.monitoring":{description:`Monitoring configures the monitoring integrations.`,anchor:`#camundaoptimizespec`},"spec.monitoring.serviceMonitor":{description:`ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+the operator creates one ServiceMonitor for each Deployment, with the
+name of the workload. It scrapes /actuator/prometheus on the management
+port.`,anchor:`#optimizemonitoringspec`},"spec.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.version":{description:`Version is the Optimize version to deploy, as a full semantic version.
+Camunda releases Optimize with the minor and the patch of the
+orchestration cluster, so set it to the effective version of the
+referenced cluster. If the major or the minor differs, Ready reports
+VersionMismatch.`,anchor:`#camundaoptimizespec`},"spec.webapp":{description:`Webapp configures the Deployment that serves the Optimize user
+interface. It runs with data import off.`,anchor:`#camundaoptimizespec`},"spec.webapp.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.webapp.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.webapp.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.webapp.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.webapp.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.webapp.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.webapp.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.webapp.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webapp.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.webapp.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},status:{description:`status defines the observed state of CamundaOptimize`,anchor:`#camundaoptimize`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check. Otherwise it follows the conditions of the two
+workloads, and MirroredSecretsReady when the Optimize references a
+Secret in another namespace. The per-workload conditions (WebappReady,
+ImporterReady) and MirroredSecretsReady also appear here.`,anchor:`#camundaoptimizestatus`},"status.endpoints":{description:`Endpoints lists the routes of this Optimize: one entry, optimize, with
+the webapp Service and its HTTP port. Its path prefix is the path of
+spec.externalUrl without a trailing slash, or / when that path is empty.
+An access extension reads it and does not derive the Service name. The entry
+stays while the workloads are at zero with the cluster, because the
+Service stays. It is empty before the first render. It is also empty
+while another CamundaOptimize holds the cluster or the cluster is gone,
+because the operator then deletes the webapp Service.`,anchor:`#camundaoptimizestatus`},"status.endpoints.name":{description:`Name identifies the route, for example operate or grpc.`,anchor:`#endpoint`},"status.endpoints.pathPrefix":{description:`PathPrefix is the path that the route matches. It is empty for gRPC.`,anchor:`#endpoint`},"status.endpoints.port":{description:`Port is the port of the Service.`,anchor:`#endpoint`},"status.endpoints.protocol":{description:`Protocol is HTTP or GRPC.`,anchor:`#endpoint`},"status.endpoints.service":{description:`Service is the name of a Service in the namespace of the resource.`,anchor:`#endpoint`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#camundaoptimizestatus`},"status.suspendedBy":{description:`SuspendedBy tells why the Optimize workloads are at zero with the
+referenced cluster. It is empty while they follow their spec. It stays
+set while a failed check keeps them at zero after the cluster resumed.`,anchor:`#camundaoptimizestatus`}},CamundaPlatformConfig:{spec:{description:`spec defines the desired state of CamundaPlatformConfig`,anchor:`#camundaplatformconfig`},"spec.auth":{description:`Auth holds the authentication settings of the orchestration clusters.
+Unset means basic authentication.`,anchor:`#camundaplatformconfigspec`},"spec.auth.method":{description:`Method is the authentication method. An unset auth block and an unset
+method both mean basic.`,anchor:`#platformauthspec`},"spec.auth.oidc":{description:`OIDC is the identity provider connection. Required when method is
+oidc. Forbidden with other methods.`,anchor:`#platformauthspec`},"spec.auth.oidc.audience":{description:`Audience is the audience that consumers validate in access tokens.
+When empty, consumers use ClientID.`,anchor:`#oidcspec`},"spec.auth.oidc.authUrl":{description:`AuthURL is an explicit authorization endpoint. It overrides the value
+from OIDC discovery.`,anchor:`#oidcspec`},"spec.auth.oidc.clientId":{description:`ClientID is the default OIDC client ID of all clusters. A preset or a
+cluster can set another value.`,anchor:`#oidcspec`},"spec.auth.oidc.clientIdClaim":{description:`ClientIDClaim is the token claim that holds the id of a machine client.
+Empty means that no claim identifies a client, and every token is a
+person. The tokens of persons must not have this claim, because a
+token with it is always a client.`,anchor:`#oidcspec`},"spec.auth.oidc.clientSecretRef":{description:`ClientSecretRef names the Secret key that holds the default OIDC client
+secret.`,anchor:`#oidcspec`},"spec.auth.oidc.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.clientSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},"spec.auth.oidc.issuerUrl":{description:`IssuerURL is the issuer URL of the identity provider. Consumers get the
+endpoints from its OIDC discovery document, unless the endpoint fields
+below set them.`,anchor:`#oidcspec`},"spec.auth.oidc.jwksUrl":{description:`JWKSURL is an explicit JWKS endpoint. It overrides the value from OIDC
+discovery.`,anchor:`#oidcspec`},"spec.auth.oidc.management":{description:`Management holds the clients that the management plane uses at this
+identity provider. A CamundaManagementCluster in the oidc mode reads
+them. First register one client for each component at the provider.`,anchor:`#oidcspec`},"spec.auth.oidc.management.clients":{description:`Clients holds one entry for each component of the management plane.`,anchor:`#managementoidcclientsspec`},"spec.auth.oidc.management.clients.console":{description:`Console is the client of Console. The browser holds no secret, so it is
+a public client.`,anchor:`#managementclients`},"spec.auth.oidc.management.clients.console.audience":{description:`Audience is the audience that the component validates in access tokens.
+Empty means the client id.`,anchor:`#publicclientspec`},"spec.auth.oidc.management.clients.console.clientId":{description:`ClientID is the client id at the identity provider.`,anchor:`#publicclientspec`},"spec.auth.oidc.management.clients.identity":{description:`Identity is the client of Management Identity.`,anchor:`#managementclients`},"spec.auth.oidc.management.clients.identity.audience":{description:`Audience is the audience that the component validates in access tokens.
+Empty means the client id.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.identity.clientId":{description:`ClientID is the client id at the identity provider.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.identity.clientSecretRef":{description:`ClientSecretRef names the Secret key that holds the client secret.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.identity.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.identity.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.identity.clientSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.optimize":{description:`Optimize is the client of Optimize. The ManagementAuthConfig that the
+management cluster writes holds it, and Optimize reads it from there.`,anchor:`#managementclients`},"spec.auth.oidc.management.clients.optimize.audience":{description:`Audience is the audience that the component validates in access tokens.
+Empty means the client id.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.optimize.clientId":{description:`ClientID is the client id at the identity provider.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.optimize.clientSecretRef":{description:`ClientSecretRef names the Secret key that holds the client secret.`,anchor:`#confidentialclientspec`},"spec.auth.oidc.management.clients.optimize.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.optimize.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.optimize.clientSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.webModeler":{description:`WebModeler is the client of the Web Modeler user interface. The browser
+holds no secret, so it is a public client.`,anchor:`#managementclients`},"spec.auth.oidc.management.clients.webModeler.audience":{description:`Audience is the audience that the component validates in access tokens.
+Empty means the client id.`,anchor:`#publicclientspec`},"spec.auth.oidc.management.clients.webModeler.clientId":{description:`ClientID is the client id at the identity provider.`,anchor:`#publicclientspec`},"spec.auth.oidc.management.clients.webModelerApi":{description:`WebModelerAPI is the client of the Web Modeler API.`,anchor:`#managementclients`},"spec.auth.oidc.management.clients.webModelerApi.audience":{description:`Audience is the audience that the component validates in access tokens.
+Empty means the client id.`,anchor:`#webmodelerapiclientspec`},"spec.auth.oidc.management.clients.webModelerApi.clientId":{description:`ClientID is the client id at the identity provider.`,anchor:`#webmodelerapiclientspec`},"spec.auth.oidc.management.clients.webModelerApi.clientSecretRef":{description:`ClientSecretRef names the Secret key that holds the client secret.`,anchor:`#webmodelerapiclientspec`},"spec.auth.oidc.management.clients.webModelerApi.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.webModelerApi.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.webModelerApi.clientSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},"spec.auth.oidc.management.clients.webModelerApi.publicApiAudience":{description:`PublicAPIAudience is the audience of the Web Modeler public API. Empty
+means web-modeler-public-api.`,anchor:`#webmodelerapiclientspec`},"spec.auth.oidc.providerType":{description:`ProviderType names the kind of identity provider. Management Identity
+reads it and changes how it resolves users and groups. Empty means
+generic, which fits any OIDC-compliant provider. Set microsoft for
+Microsoft Entra ID.`,anchor:`#oidcspec`},"spec.auth.oidc.tokenUrl":{description:`TokenURL is an explicit token endpoint. It overrides the value from OIDC
+discovery.`,anchor:`#oidcspec`},"spec.auth.oidc.usernameClaim":{description:`UsernameClaim is the token claim that holds the username of a person.
+Empty means the default of the orchestration cluster, which is "sub".`,anchor:`#oidcspec`},"spec.images":{description:`Images changes the repositories of the images that the operator pulls,
+one entry for each image, for example to a mirror. Each value is a full
+repository with its registry and no tag. The tag always comes from the
+version field of the resource that runs the image. A registry with a
+port needs a path after the port, as in registry:5000/camunda/optimize.
+The operator appends the tag to the value, as in
+registry:5000/camunda/optimize:<version>.`,anchor:`#camundaplatformconfigspec`},"spec.images.camunda":{description:`Camunda is the image of the orchestration cluster processes. Defaults
+to camunda/camunda.`,anchor:`#imagesspec`},"spec.images.connectors":{description:`Connectors is the image of the connectors runtime. Defaults to
+camunda/connectors-bundle.`,anchor:`#imagesspec`},"spec.images.console":{description:`Console is the image of Console. Defaults to camunda/console.`,anchor:`#imagesspec`},"spec.images.identity":{description:`Identity is the image of Management Identity. Defaults to
+camunda/identity.`,anchor:`#imagesspec`},"spec.images.keycloak":{description:`Keycloak is the image of the Keycloak that the operator runs. Defaults
+to camunda/keycloak.`,anchor:`#imagesspec`},"spec.images.optimize":{description:`Optimize is the image of Optimize. Defaults to camunda/optimize.`,anchor:`#imagesspec`},"spec.images.postgres":{description:`Postgres is the image of the PostgreSQL that a DatabaseServer runs.
+Defaults to ghcr.io/cloudnative-pg/postgresql. The tag is the major
+version of the server, so a replacement must publish the same tags.`,anchor:`#imagesspec`},"spec.images.webModelerRestapi":{description:`WebModelerRestapi is the image of the Web Modeler restapi process.
+Defaults to camunda/web-modeler-restapi below 8.10, and to camunda/hub
+from 8.10 on.`,anchor:`#imagesspec`},"spec.images.webModelerWebsockets":{description:`WebModelerWebsockets is the image of the Web Modeler websockets
+process. Defaults to camunda/web-modeler-websockets below 8.10, and to
+camunda/hub-websockets from 8.10 on.`,anchor:`#imagesspec`},"spec.licenseSecretRef":{description:`LicenseSecretRef names the Secret key that holds the Camunda license
+key. Without it, clusters run in unlicensed non-production mode.`,anchor:`#camundaplatformconfigspec`},"spec.licenseSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.licenseSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.licenseSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},status:{description:`status defines the observed state of CamundaPlatformConfig`,anchor:`#camundaplatformconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready condition
+has the reasons Healthy or MissingSecret.`,anchor:`#camundaplatformconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#camundaplatformconfigstatus`}},CamundaRelease:{spec:{description:`spec defines the desired state of CamundaRelease`,anchor:`#camundarelease`},"spec.admin":{description:`Admin holds the environment of the Admin web application.`,anchor:`#camundareleasespec`},"spec.admin.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseenvspec`},"spec.admin.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseenvspec`},"spec.connectors":{description:`Connectors holds the version and the environment of the connectors
+runtime.`,anchor:`#camundareleasespec`},"spec.connectors.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseconnectorsspec`},"spec.connectors.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseconnectorsspec`},"spec.connectors.version":{description:`Version is the version of the connectors bundle image, as a full
+semantic version. Use the same minor as the Camunda version of the
+release. The patch does not follow the Camunda patch. A cluster that
+runs connectors needs it from the release or from its own spec.`,anchor:`#releaseconnectorsspec`},"spec.databaseServer":{description:`DatabaseServer holds the version of the PostgreSQL servers of this
+release. A DatabaseServer takes it through its releaseRef.`,anchor:`#camundareleasespec`},"spec.databaseServer.version":{description:`Version is the PostgreSQL major version of the servers of this release,
+as a number such as "17". A server that references the release refuses
+an effective version below 14. Its own spec.version wins over this
+value. A server that already runs another major version refuses the
+change and keeps its major version.`,anchor:`#releasedatabaseserverspec`},"spec.elasticsearch":{description:`Elasticsearch holds the version of the Elasticsearch clusters of this
+release. An ElasticsearchCluster takes it through its releaseRef.`,anchor:`#camundareleasespec`},"spec.elasticsearch.version":{description:`Version is the Elasticsearch version of the clusters of this release,
+as a full semantic version. Elasticsearch has its own patch line, so it
+does not follow the Camunda version. A cluster that references the
+release refuses an effective version below 8.19 in the 8 line or below
+9.2 in the 9 line. Its own spec.version wins over this value.`,anchor:`#releaseelasticsearchspec`},"spec.extraEnv":{description:`ExtraEnv are extra environment variables of every workload. The entries
+merge by name over the preset entries and under the cluster entries.`,anchor:`#camundareleasespec`},"spec.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
+every workload. They follow the preset sources and precede the cluster
+sources.`,anchor:`#camundareleasespec`},"spec.gateway":{description:`Gateway holds the environment of the gateway.`,anchor:`#camundareleasespec`},"spec.gateway.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseenvspec`},"spec.gateway.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseenvspec`},"spec.images":{description:`Images replaces the image reference of a process. The operator uses an
+entry as it is, with its tag or digest. It changes only the image that
+the operator pulls. The operator still uses the version above for the
+version rules, the downgrade rule, and the environment that it
+computes.`,anchor:`#camundareleasespec`},"spec.images.camunda":{description:`Camunda is the image of every orchestration cluster process. Unset
+means the camunda image of the platform config at the version of the
+release.`,anchor:`#releaseimagesspec`},"spec.images.connectors":{description:`Connectors is the image of the connectors runtime. Unset means the
+connectors image of the platform config at connectors.version.`,anchor:`#releaseimagesspec`},"spec.operate":{description:`Operate holds the environment of Operate.`,anchor:`#camundareleasespec`},"spec.operate.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseenvspec`},"spec.operate.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseenvspec`},"spec.tasklist":{description:`Tasklist holds the environment of Tasklist.`,anchor:`#camundareleasespec`},"spec.tasklist.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseenvspec`},"spec.tasklist.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseenvspec`},"spec.version":{description:`Version is the Camunda version of the orchestration cluster processes,
+as a full semantic version. A cluster that references the release
+refuses an effective version below 8.9.0. Its own spec.version wins over
+this value.`,anchor:`#camundareleasespec`},"spec.zeebe":{description:`Zeebe holds the environment of the brokers.`,anchor:`#camundareleasespec`},"spec.zeebe.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. An entry here wins over a top-level entry of the release with
+the same name.`,anchor:`#releaseenvspec`},"spec.zeebe.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#releaseenvspec`}},Database:{spec:{description:`spec defines the desired state of Database`,anchor:`#database`},"spec.applicationCredentials":{description:`ApplicationCredentials configures the application credentials Secret.
+The operator always creates it. The Secret name defaults to
+<CR name>-credentials.`,anchor:`#databasespec`},"spec.applicationCredentials.secretName":{description:`SecretName is the name of the credentials Secret. The default comes
+from the CR name, as the field that uses this type states.`,anchor:`#credentialsspec`},"spec.backupCredentials":{description:`BackupCredentials configures the backup credentials Secret. The
+operator creates it unless it is disabled. The Secret name defaults to
+<CR name>-backup-credentials.`,anchor:`#databasespec`},"spec.backupCredentials.disabled":{description:`Disabled stops the operator from creating the backup user and Secret.
+Defaults to false.`,anchor:`#backupcredentialsspec`},"spec.backupCredentials.secretName":{description:`SecretName is the name of the credentials Secret. The default comes
+from the CR name, as the field that uses this type states.`,anchor:`#backupcredentialsspec`},"spec.databaseConfig":{description:`DatabaseConfig names the DatabaseConfig that the operator creates in
+the namespace of this Database. Defaults to the CR name.`,anchor:`#databasespec`},"spec.databaseName":{description:`DatabaseName is the name of the logical database to create, as a valid
+PostgreSQL identifier. It must be unique on each PostgreSQL instance
+that a contract reaches, not only on each contract. The operator
+refuses a Database with the same databaseName as a Database of any
+namespace on the same instance.`,anchor:`#databasespec`},"spec.secondaryStorageConfig":{description:`SecondaryStorageConfig, when set, makes the operator also create a
+SecondaryStorageConfig of type rdbms with this name in the namespace of
+this Database. It references the DatabaseConfig. Omit it for a database
+that is not Camunda secondary storage (Keycloak, Identity, Web
+Modeler).`,anchor:`#databasespec`},"spec.serverRef":{description:`ServerRef names the DatabaseServerConfig, in this namespace, of the
+server on which the operator creates the database.`,anchor:`#databasespec`},status:{description:`status defines the observed state of Database`,anchor:`#database`},"status.collisionKey":{description:`CollisionKey is the logical database that this Database last resolved:
+the system identifier of the server and the database name. Every
+Database records it, also a Database that loses the name to another.
+Thus the field shows what a Database asked for, not what it owns. The
+operator sets it only after it reaches the server. If the spec names a
+missing server, the old key stays until that server answers. The same
+applies to a server that is not probed for the current spec.
+
+A Database whose Ready condition reports InvalidReference and names
+another Database does not own the name that it shows here. The
+operator never clears the field. Thus an owner whose server or
+contract is gone keeps the logical database. Delete that Database to
+release the name.`,anchor:`#databasestatus`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check (InvalidReference, MissingSecret,
+ServerIdentityUnknown, ConnectionFailed). Otherwise it takes the status
+and the reason of the BindingsReady condition, which also appears here.`,anchor:`#databasestatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#databasestatus`}},DatabaseConfig:{spec:{description:`spec defines the desired state of DatabaseConfig`,anchor:`#databaseconfig`},"spec.backupCredentialsSecretRef":{description:`BackupCredentialsSecretRef names a separate user with the privileges
+to dump the database. Backups use this user. A restore uses the
+application user of CredentialsSecretRef.`,anchor:`#databaseconfigspec`},"spec.backupCredentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.backupCredentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.backupCredentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.credentialsSecretRef":{description:`CredentialsSecretRef names an application user with read and write
+access to the database.`,anchor:`#databaseconfigspec`},"spec.credentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.credentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.credentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.databaseName":{description:`DatabaseName is the name of the logical database on the server.`,anchor:`#databaseconfigspec`},"spec.serverRef":{description:`ServerRef names the DatabaseServerConfig of the server that holds this
+database.`,anchor:`#databaseconfigspec`},status:{description:`status defines the observed state of DatabaseConfig`,anchor:`#databaseconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready condition
+has the reasons Healthy, InvalidReference, or MissingSecret.`,anchor:`#databaseconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#databaseconfigstatus`}},DatabaseServer:{spec:{description:`spec defines the desired state of DatabaseServer`,anchor:`#databaseserver`},"spec.archive":{description:`Archive points the server at the bucket that holds its continuous
+archive. Without it the server takes no part in point-in-time restore.`,anchor:`#databaseserverspec`},"spec.archive.baseBackupSchedule":{description:`BaseBackupSchedule is when the server takes a base backup. It is the
+six-field cron of CloudNativePG (seconds first, in UTC), or one of the
+descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
+@hourly and @every. The first base backup runs as soon as the server is
+up, whatever the schedule says. A recovery from the archive is possible
+only after that backup completes.
+
+The API server refuses the five-field cron of a Kubernetes CronJob.
+CloudNativePG reads the first field as seconds, so a five-field value
+runs at a different time than intended.
+
+Each field has the bounds that CloudNativePG accepts. Seconds and
+minutes take 0-59, and hours take 0-23. The day of the month takes
+1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes
+0-6 or SUN-SAT. The schema cannot find a range whose first value is
+above its second, such as FRI-MON. The operator refuses such a range
+with Ready reason InvalidReference, before it applies anything.
+
+A step has at most three digits. An @every number has at most six
+digits on each side of the point. These limits are stricter than the
+parser of CloudNativePG. That parser accepts a longer number, then
+overflows and stops taking base backups.`,anchor:`#databaseserverarchivespec`},"spec.archive.objectStorageRef":{description:`ObjectStorageRef names an ObjectStorageConfig in the namespace of this
+server. The operator writes the archive under a prefix of that bucket
+that only this server uses.`,anchor:`#databaseserverarchivespec`},"spec.archive.retentionPeriodDays":{description:`RetentionPeriodDays is how far into the past a restore can reach. The
+operator enforces this value on the bucket, and the contract of this
+server publishes the same value.
+
+The maximum is 36500 days, which is a hundred years. The operator counts
+the reachable window in nanoseconds, and that count overflows at about
+292 years. The maximum stays well below that limit.`,anchor:`#databaseserverarchivespec`},"spec.databaseServerConfig":{description:`DatabaseServerConfig names the DatabaseServerConfig that the operator
+publishes in the namespace of this server. It holds the endpoint, the
+admin credentials, and the point-in-time recovery capability of the
+server. Required on a DatabaseServer, forbidden in a preset.`,anchor:`#databaseserverspec`},"spec.instances":{description:`Instances is the number of PostgreSQL instances. Defaults to 1. One
+instance has no failover. If its node goes away, the server is down
+until the volume is attached again.`,anchor:`#databaseserverspec`},"spec.monitoring":{description:`Monitoring configures the Prometheus scraping integration.`,anchor:`#databaseserverspec`},"spec.monitoring.podMonitor":{description:`PodMonitor configures the Prometheus PodMonitor over the instance pods.`,anchor:`#databaseservermonitoringspec`},"spec.monitoring.podMonitor.annotations":{description:`Annotations are extra annotations applied to the PodMonitor.`,anchor:`#podmonitorspec`},"spec.monitoring.podMonitor.enabled":{description:`Enabled creates the PodMonitor when true. Defaults to false.`,anchor:`#podmonitorspec`},"spec.monitoring.podMonitor.interval":{description:`Interval is how often Prometheus scrapes the pods, as a Prometheus
+duration such as 30s. Empty leaves the interval to the Prometheus
+configuration.`,anchor:`#podmonitorspec`},"spec.monitoring.podMonitor.labels":{description:`Labels are extra labels applied to the PodMonitor.`,anchor:`#podmonitorspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. The
+server reads only its image settings. spec.images.postgres sets where
+the server pulls the PostgreSQL image from, for example in an air-gapped
+cluster. When empty, the server uses the default image repository.`,anchor:`#databaseserverspec`},"spec.podAnnotations":{description:`PodAnnotations are extra annotations applied to the instance pods.`,anchor:`#databaseserverspec`},"spec.podLabels":{description:`PodLabels are extra labels applied to the instance pods.`,anchor:`#databaseserverspec`},"spec.presetRef":{description:`PresetRef names a cluster-scoped DatabaseServerPreset to use as the
+configuration baseline. A field set on the server replaces the value of
+the preset for that field completely.`,anchor:`#databaseserverspec`},"spec.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+PostgreSQL major version. It merges over the preset and under this spec.
+Forbidden in a preset.`,anchor:`#databaseserverspec`},"spec.resources":{description:`Resources are the CPU and memory of each instance.`,anchor:`#databaseserverspec`},"spec.scheduling":{description:`Scheduling holds the scheduling constraints of the instance pods. When
+set, it replaces the scheduling block of the preset, with no merge.`,anchor:`#databaseserverspec`},"spec.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the instance pods.`,anchor:`#databaseserverspec`},"spec.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount. Usually these are
+workload-identity annotations (IRSA, GCP Workload Identity, and more)
+that give the instance pods access to cloud resources.`,anchor:`#databaseserverserviceaccountspec`},"spec.storageClassName":{description:`StorageClassName is the StorageClass of the data volumes. Defaults to
+the default StorageClass of the Kubernetes cluster.`,anchor:`#databaseserverspec`},"spec.storageSize":{description:`StorageSize is the size of the data volume of each instance. Required
+unless the resolved preset provides it. It cannot shrink, because a
+PostgreSQL data volume cannot become smaller in place. The API server
+refuses a change of this field in a DatabaseServer to a smaller value.
+A smaller value is accepted when the field was not set before, or when
+a preset lowers the size. A server whose volumes are already larger
+then keeps that size and records a StorageShrinkIgnored event.`,anchor:`#databaseserverspec`},"spec.suspend":{description:`Suspend stops the PostgreSQL instances and keeps their data volumes.
+Defaults to false. The operator hibernates the CloudNativePG cluster:
+it removes the instance pods and keeps the volumes. When you set the
+field back to false, the instances start again on the same volumes.`,anchor:`#databaseserverspec`},"spec.version":{description:`Version is the PostgreSQL major version to run, as a number such as
+"17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
+later. The operator refuses a version below 14, also when it comes
+from the release. Required unless the resolved release provides it.
+Forbidden in a preset.
+
+The major version of a running server cannot change. The operator
+refuses another major version, higher or lower, with Ready reason
+VersionChangeRefused. The server then keeps the major version it has.
+The same applies to a new major version from a release. To run another
+major version, create a new server and move the data to it.`,anchor:`#databaseserverspec`},"spec.walStorageSize":{description:`WALStorageSize puts the write-ahead log on a separate volume of this
+size. When unset, the log stays on the data volume. It cannot shrink,
+as storageSize cannot. The server ignores a smaller value from a preset
+in the same way.
+
+You can add it to a running server, but you cannot remove it again.
+CloudNativePG refuses a cluster that removes the volume. If the field
+is cleared, on the server or in a preset, the volume keeps its size and
+the server records a WALStorageKept event.`,anchor:`#databaseserverspec`},status:{description:`status defines the observed state of DatabaseServer`,anchor:`#databaseserver`},"status.archive":{description:`Archive is the observed state of the continuous archive of the server.
+It is unset until the server writes an archive. A removal of
+spec.archive does not clear it. The bucket still holds what the server
+wrote, and a server that archives again can recover from it.`,anchor:`#databaseserverstatus`},"status.archive.boundary":{description:`Boundary is the last move of the archive that no record holds yet. The
+move happens when spec.archive is enabled again on another location,
+or when the location moves again before a base backup opens a record.
+It prevents a base backup of the old location from opening the
+interval of the new location. It is cleared when that interval opens.`,anchor:`#databaseserverarchivestatus`},"status.archive.boundary.at":{description:`At is when the server moved.`,anchor:`#archiveboundary`},"status.archive.boundary.location":{description:`Location is the new location, in the form of ArchiveRecord.Location.
+The boundary ends when the archive of that location opens a record. It
+moves when the location moves again.`,anchor:`#archiveboundary`},"status.archive.boundary.objectStorageRef":{description:`ObjectStorageRef is the ObjectStorageConfig of that location. It is
+information for the reader only.`,anchor:`#archiveboundary`},"status.archive.history":{description:`History lists every archive that the server wrote, oldest first. A
+recovery uses the record whose interval holds the requested point. The
+operator never removes a record. Thus a restore can reach back across
+an earlier recovery for as long as the bucket keeps the objects. When
+you remove spec.archive, the open record closes and the list stays.
+When you add an archive again, a new record opens. A move of
+spec.archive to another bucket does the same. No restore can reach a
+point in a time without an archive.`,anchor:`#databaseserverarchivestatus`},"status.archive.history.from":{description:`From is the earliest point that a recovery from this archive can reach:
+the time when its first base backup completed.`,anchor:`#archiverecord`},"status.archive.history.location":{description:`Location is where in object storage the server wrote this archive: the
+provider, the bucket, and the path, as one URL. Two intervals hold the
+same archive only when their locations are equal. The name of an
+ObjectStorageConfig is not sufficient, because you can edit the object
+or create it again with the same name. A record without a location gets
+the current location of the server.`,anchor:`#archiverecord`},"status.archive.history.objectStorageRef":{description:`ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+server, that holds this archive. When the server moves to another
+bucket, it closes this record and opens a new one. Thus every interval
+names the bucket that a restore of that interval reads.`,anchor:`#archiverecord`},"status.archive.history.serverName":{description:`ServerName is the archive directory in the bucket, equal to the name of
+the CloudNativePG cluster that wrote it.`,anchor:`#archiverecord`},"status.archive.history.to":{description:`To is the latest point that a recovery from this archive can reach. It
+is unset while the server still writes to this archive.`,anchor:`#archiverecord`},"status.archive.history.unverifiedFrom":{description:`UnverifiedFrom is the point after which this archive can miss parts of
+the write-ahead log. It is set while CloudNativePG reports that the
+uploads of the server fail. A restore cannot reach a point after it.
+When the uploads work again, the plugin uploads the segments that it
+held back. The field is then cleared, and a restore can reach the whole
+interval again. Only the record that the server writes to now has it.`,anchor:`#archiverecord`},"status.archive.reachableFrom":{description:`ReachableFrom is the oldest point that the objects in the bucket still
+cover, rounded down to the minute. The bucket can miss up to one minute
+after it. The retention period removes old objects from the bucket. A
+longer retention period does not bring back what a shorter one already
+removed. The window grows to the new retention period only as the
+archive writes past this point. The server refuses a rollback to a
+point before it. When it is unset, only the retention period limits
+the window.`,anchor:`#databaseserverarchivestatus`},"status.cluster":{description:`Cluster is the CloudNativePG cluster that the published contract points
+at. It is the name of the server until a recovery replaces it.`,anchor:`#databaseserverstatus`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check (InvalidReference, MissingSecret, CNPGNotInstalled,
+BarmanPluginNotInstalled). Otherwise it follows the cluster, the
+contract, and, when the server has an archive, the archive. The
+per-component conditions (ClusterReady, ArchiveReady, ContractReady,
+MonitoringReady) also appear here. MonitoringReady never affects Ready,
+so a broken PodMonitor does not make the server not ready. ArchiveReady
+without spec.archive does not affect Ready either.`,anchor:`#databaseserverstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#databaseserverstatus`},"status.recovery":{description:`Recovery is the recovery request that the server works on now, or the
+last one it answered. The answer itself is published on the contract,
+in spec.pitr.lastRecovery.`,anchor:`#databaseserverstatus`},"status.recovery.archive":{description:`Archive is the archive that the recovery reads. The server records it
+before the recovery builds anything. A spec change to another bucket
+does not move a recovery that is already running.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.archive.baseBackupSchedule":{description:`BaseBackupSchedule is spec.archive.baseBackupSchedule as it stood when
+the rollback started.`,anchor:`#recoveryarchiveref`},"status.recovery.archive.identity":{description:`Identity is the workload identity of that bucket when the rollback
+started. The pods keep this identity while they read the bucket. It is
+unset for a bucket with static credentials, and for a bucket that
+names no identity.`,anchor:`#recoveryarchiveref`},"status.recovery.archive.identity.annotations":{description:`Annotations are the annotations of the ServiceAccount of the pods.`,anchor:`#recoveryarchiveidentity`},"status.recovery.archive.identity.podLabels":{description:`PodLabels are the labels that the pods need. Only Azure needs one.`,anchor:`#recoveryarchiveidentity`},"status.recovery.archive.location":{description:`Location is where in object storage the archive is, in the form of
+ArchiveRecord.Location. A running recovery reads the location that it
+recorded, so an edit of the ObjectStorageConfig does not move it.`,anchor:`#recoveryarchiveref`},"status.recovery.archive.objectStorageRef":{description:`ObjectStorageRef is the ObjectStorageConfig, in the namespace of this
+server, that the archive lives in.`,anchor:`#recoveryarchiveref`},"status.recovery.archive.retentionPeriodDays":{description:`RetentionPeriodDays is spec.archive.retentionPeriodDays as it stood
+when the rollback started.`,anchor:`#recoveryarchiveref`},"status.recovery.archive.serverName":{description:`ServerName is the archive directory, equal to the name of the
+CloudNativePG cluster that wrote it.`,anchor:`#recoveryarchiveref`},"status.recovery.cluster":{description:`Cluster is the CloudNativePG cluster that the recovery builds. It is
+empty for a request that the server refused, also when the server had
+built a cluster before.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.completedAt":{description:`CompletedAt is when the server answered the request. It is unset while
+the recovery runs.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.contract":{description:`Contract is the DatabaseServerConfig that carried the request. The
+server answers on that contract. Until it answers, it does not change
+the contract that it publishes.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.message":{description:`Message is the message that the server published with Result.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.previousCluster":{description:`PreviousCluster is the cluster that the contract pointed at before the
+recovery moved it. If a recovery fails after the move, the contract
+points at this cluster again, because it still holds the data.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.requestID":{description:`RequestID is the requestID of the request, as the contract carries it.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.requestedBy":{description:`RequestedBy is the requestedBy of the request, as the contract carries
+it.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.result":{description:`Result is the result that the server published for the request. It is
+unset while the recovery runs.`,anchor:`#databaseserverrecoverystatus`},"status.recovery.targetTime":{description:`TargetTime is the targetTime of the request, as the contract carries it.`,anchor:`#databaseserverrecoverystatus`},"status.systemIdentifier":{description:`SystemIdentifier is the identity of the PostgreSQL instance behind the
+contract, as CloudNativePG reports it. A recovery restores the
+pg_control of its base backup, so the recovered instance keeps the
+identity and this value does not change. A recovery replaces the
+endpoint of the contract.`,anchor:`#databaseserverstatus`},"status.version":{description:`Version is the PostgreSQL major version that the server runs, as a
+number such as "17". It comes from the merged spec, so it is correct
+when the release or the server gives the version. While
+the operator refuses a version change, it shows the major version of the
+data directory. It is empty until the operator resolves the references
+of the server for the first time.`,anchor:`#databaseserverstatus`},"status.volumes":{description:`Volumes lists the bound PersistentVolumeClaims of the current cluster
+and the capacity that each one reports, sorted by name. A server with a
+write-ahead log volume also shows that claim. A server that does not own
+the cluster of its derived name shows no claims, because they belong
+to the other cluster.`,anchor:`#databaseserverstatus`},"status.volumes.capacity":{description:`Capacity is the storage capacity that the bound claim reports.`,anchor:`#volumestatus`},"status.volumes.name":{description:`Name is the name of the PersistentVolumeClaim.`,anchor:`#volumestatus`}},DatabaseServerConfig:{spec:{description:`spec defines the desired state of DatabaseServerConfig`,anchor:`#databaseserverconfig`},"spec.adminCredentialsSecretRef":{description:`AdminCredentialsSecretRef names an admin user that can create databases
+and roles. The operator uses it to probe the server and to create the
+database and the roles of a Database. The Secret is in the namespace of
+this contract.`,anchor:`#databaseserverconfigspec`},"spec.adminCredentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.adminCredentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.adminCredentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.engine":{description:`Engine is the database engine of the server. See DatabaseEngine for
+the accepted values.`,anchor:`#databaseserverconfigspec`},"spec.host":{description:`Host is the host name or the address of the server.`,anchor:`#databaseserverconfigspec`},"spec.pitr":{description:`PITR declares the point-in-time recovery capability of the server.`,anchor:`#databaseserverconfigspec`},"spec.pitr.enabled":{description:`Enabled reports whether the server performs continuous WAL archiving.`,anchor:`#pitrcapability`},"spec.pitr.lastRecovery":{description:`LastRecovery is how the last recovery request ended. It is unset until
+the first answer. The answer to each later request replaces it.`,anchor:`#pitrcapability`},"spec.pitr.lastRecovery.completedAt":{description:`CompletedAt is when the request ended.`,anchor:`#recoveryoutcome`},"spec.pitr.lastRecovery.message":{description:`Message says what happened. It is empty for a result of Completed.`,anchor:`#recoveryoutcome`},"spec.pitr.lastRecovery.requestID":{description:`RequestID is the requestID of the request that this outcome answers.`,anchor:`#recoveryoutcome`},"spec.pitr.lastRecovery.requestedBy":{description:`RequestedBy is the requestedBy of the request that this outcome
+answers.`,anchor:`#recoveryoutcome`},"spec.pitr.lastRecovery.result":{description:`Result is how the request ended. See RecoveryResult for the values.`,anchor:`#recoveryoutcome`},"spec.pitr.lastRecovery.targetTime":{description:`TargetTime is the targetTime of the request that this outcome answers,
+in the same form as in the request. Thus a consumer can compare the
+two as text.`,anchor:`#recoveryoutcome`},"spec.pitr.recovery":{description:`Recovery says who rolls the server back to a point in time. Defaults to
+external. The value operator means that the publisher of this contract
+answers spec.recovery. It requires enabled: true. The value external
+means that nobody answers, and you roll the server back manually.`,anchor:`#pitrcapability`},"spec.pitr.retentionPeriodDays":{description:`RetentionPeriodDays is how many days into the past a point-in-time
+restore can go. Required when enabled is true.
+
+The maximum is 36500 days, which is a hundred years. A reader counts
+the reachable window in nanoseconds, and that count overflows at about
+292 years. The maximum stays well below that limit.`,anchor:`#pitrcapability`},"spec.port":{description:`Port is the port of the server.`,anchor:`#databaseserverconfigspec`},"spec.recovery":{description:`Recovery asks for a rollback of the server to a point in time. A
+consumer writes it. The answer is in pitr.lastRecovery, only when
+pitr.recovery is operator. The request stays on the contract after the
+answer, as the record of the last request.`,anchor:`#databaseserverconfigspec`},"spec.recovery.requestID":{description:`RequestID identifies this request, and only this one. A controller sets
+the uid of the resource that asks. A manual request can use any UUID.
+Two requests can name the same resource and the same point. The
+RequestID tells them apart. A resource that is deleted and created
+again with the same name is another requester. The answer to the first
+request says nothing about the state that the second requester asks
+for.`,anchor:`#recoveryrequest`},"spec.recovery.requestedBy":{description:`RequestedBy is the namespace and the name of the resource that asks, as
+"<namespace>/<name>". It comes back in pitr.lastRecovery. Thus the
+requester can find its own answer.`,anchor:`#recoveryrequest`},"spec.recovery.targetTime":{description:`TargetTime is the point to roll back to, as RFC 3339 with a zone, for
+example 2026-08-20T14:30:00Z. The API server refuses a timestamp
+without a zone. PostgreSQL reads such a timestamp as the local time of
+the server, which can be a different point from the one that the
+writer intended.`,anchor:`#recoveryrequest`},status:{description:`status defines the observed state of DatabaseServerConfig`,anchor:`#databaseserverconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready condition
+has the reasons Healthy, MissingSecret, or ConnectionFailed.`,anchor:`#databaseserverconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#databaseserverconfigstatus`},"status.probedAt":{description:`ProbedAt is when the operator last reached the server and read
+ServerVersion and SystemIdentifier. The operator probes the server
+again when this is older than the probe interval, or when the admin
+credentials Secret changed. Between probes, it does not change.
+
+A change to the endpoint or to adminCredentialsSecretRef clears this
+field, and also ServerVersion, SystemIdentifier, ProbedEndpoint,
+ProbedSecretName, ProbedSecretKeys, and ProbedSecretVersion. These
+fields describe the server of the old spec. A change to another field,
+for example a recovery request, does not clear them, because it cannot
+move the server.`,anchor:`#databaseserverconfigstatus`},"status.probedEndpoint":{description:`ProbedEndpoint is the host and the port that the last probe reached, as
+"<host>:<port>". With it, the operator knows whether a spec change
+moves the server.`,anchor:`#databaseserverconfigstatus`},"status.probedSecretKeys":{description:`ProbedSecretKeys are the keys of that Secret that the last probe read,
+as "<usernameKey>/<passwordKey>". One Secret can hold the credentials
+of more than one user, so the keys identify the user.`,anchor:`#databaseserverconfigstatus`},"status.probedSecretName":{description:`ProbedSecretName is the admin credentials Secret that the last probe
+read. When the spec names another Secret, the operator clears the
+record of the probe.`,anchor:`#databaseserverconfigstatus`},"status.probedSecretVersion":{description:`ProbedSecretVersion is the resourceVersion of the admin credentials
+Secret that the last probe used. When the Secret changes, the operator
+probes again before the interval ends, so it validates new credentials
+quickly.`,anchor:`#databaseserverconfigstatus`},"status.serverVersion":{description:`ServerVersion is the major version that the server reported the last
+time that the operator reached it, for example "17". A dump of a
+database on this server uses client tools of this major version. Thus
+a backup waits until the operator publishes it.`,anchor:`#databaseserverconfigstatus`},"status.systemIdentifier":{description:`SystemIdentifier is the identity of the PostgreSQL instance behind this
+endpoint, as the server reported it on the last probe. It identifies
+the server itself. Thus two contracts that describe one server with
+different hosts publish the same value. The operator uses it to keep
+each logical database unique. A change to the endpoint or to
+adminCredentialsSecretRef clears it.`,anchor:`#databaseserverconfigstatus`}},DatabaseServerPreset:{spec:{description:`spec defines the desired state of DatabaseServerPreset`,anchor:`#databaseserverpreset`},"spec.server":{description:`Server is the complete configuration baseline that the servers that
+reference the preset get. It uses the DatabaseServer spec type. A
+preset must not set the fields that belong to one server only:
+presetRef, releaseRef, databaseServerConfig, and suspend. It must also
+not set the version, which belongs to a CamundaRelease. An explicit
+zero value, such as an empty presetRef or suspend: false, counts as
+unset. Templated YAML often renders unset fields in this way. A preset
+can set archive like any other field. One bucket can serve many
+servers, because every server writes under its own prefix.`,anchor:`#databaseserverpresetspec`},"spec.server.archive":{description:`Archive points the server at the bucket that holds its continuous
+archive. Without it the server takes no part in point-in-time restore.`,anchor:`#databaseserverspec`},"spec.server.archive.baseBackupSchedule":{description:`BaseBackupSchedule is when the server takes a base backup. It is the
+six-field cron of CloudNativePG (seconds first, in UTC), or one of the
+descriptors @yearly, @annually, @monthly, @weekly, @daily, @midnight,
+@hourly and @every. The first base backup runs as soon as the server is
+up, whatever the schedule says. A recovery from the archive is possible
+only after that backup completes.
+
+The API server refuses the five-field cron of a Kubernetes CronJob.
+CloudNativePG reads the first field as seconds, so a five-field value
+runs at a different time than intended.
+
+Each field has the bounds that CloudNativePG accepts. Seconds and
+minutes take 0-59, and hours take 0-23. The day of the month takes
+1-31, and the month takes 1-12 or JAN-DEC. The day of the week takes
+0-6 or SUN-SAT. The schema cannot find a range whose first value is
+above its second, such as FRI-MON. The operator refuses such a range
+with Ready reason InvalidReference, before it applies anything.
+
+A step has at most three digits. An @every number has at most six
+digits on each side of the point. These limits are stricter than the
+parser of CloudNativePG. That parser accepts a longer number, then
+overflows and stops taking base backups.`,anchor:`#databaseserverarchivespec`},"spec.server.archive.objectStorageRef":{description:`ObjectStorageRef names an ObjectStorageConfig in the namespace of this
+server. The operator writes the archive under a prefix of that bucket
+that only this server uses.`,anchor:`#databaseserverarchivespec`},"spec.server.archive.retentionPeriodDays":{description:`RetentionPeriodDays is how far into the past a restore can reach. The
+operator enforces this value on the bucket, and the contract of this
+server publishes the same value.
+
+The maximum is 36500 days, which is a hundred years. The operator counts
+the reachable window in nanoseconds, and that count overflows at about
+292 years. The maximum stays well below that limit.`,anchor:`#databaseserverarchivespec`},"spec.server.databaseServerConfig":{description:`DatabaseServerConfig names the DatabaseServerConfig that the operator
+publishes in the namespace of this server. It holds the endpoint, the
+admin credentials, and the point-in-time recovery capability of the
+server. Required on a DatabaseServer, forbidden in a preset.`,anchor:`#databaseserverspec`},"spec.server.instances":{description:`Instances is the number of PostgreSQL instances. Defaults to 1. One
+instance has no failover. If its node goes away, the server is down
+until the volume is attached again.`,anchor:`#databaseserverspec`},"spec.server.monitoring":{description:`Monitoring configures the Prometheus scraping integration.`,anchor:`#databaseserverspec`},"spec.server.monitoring.podMonitor":{description:`PodMonitor configures the Prometheus PodMonitor over the instance pods.`,anchor:`#databaseservermonitoringspec`},"spec.server.monitoring.podMonitor.annotations":{description:`Annotations are extra annotations applied to the PodMonitor.`,anchor:`#podmonitorspec`},"spec.server.monitoring.podMonitor.enabled":{description:`Enabled creates the PodMonitor when true. Defaults to false.`,anchor:`#podmonitorspec`},"spec.server.monitoring.podMonitor.interval":{description:`Interval is how often Prometheus scrapes the pods, as a Prometheus
+duration such as 30s. Empty leaves the interval to the Prometheus
+configuration.`,anchor:`#podmonitorspec`},"spec.server.monitoring.podMonitor.labels":{description:`Labels are extra labels applied to the PodMonitor.`,anchor:`#podmonitorspec`},"spec.server.platformConfigRef":{description:`PlatformConfigRef names a cluster-scoped CamundaPlatformConfig. The
+server reads only its image settings. spec.images.postgres sets where
+the server pulls the PostgreSQL image from, for example in an air-gapped
+cluster. When empty, the server uses the default image repository.`,anchor:`#databaseserverspec`},"spec.server.podAnnotations":{description:`PodAnnotations are extra annotations applied to the instance pods.`,anchor:`#databaseserverspec`},"spec.server.podLabels":{description:`PodLabels are extra labels applied to the instance pods.`,anchor:`#databaseserverspec`},"spec.server.presetRef":{description:`PresetRef names a cluster-scoped DatabaseServerPreset to use as the
+configuration baseline. A field set on the server replaces the value of
+the preset for that field completely.`,anchor:`#databaseserverspec`},"spec.server.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+PostgreSQL major version. It merges over the preset and under this spec.
+Forbidden in a preset.`,anchor:`#databaseserverspec`},"spec.server.resources":{description:`Resources are the CPU and memory of each instance.`,anchor:`#databaseserverspec`},"spec.server.scheduling":{description:`Scheduling holds the scheduling constraints of the instance pods. When
+set, it replaces the scheduling block of the preset, with no merge.`,anchor:`#databaseserverspec`},"spec.server.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.server.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.server.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.server.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the instance pods.`,anchor:`#databaseserverspec`},"spec.server.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount. Usually these are
+workload-identity annotations (IRSA, GCP Workload Identity, and more)
+that give the instance pods access to cloud resources.`,anchor:`#databaseserverserviceaccountspec`},"spec.server.storageClassName":{description:`StorageClassName is the StorageClass of the data volumes. Defaults to
+the default StorageClass of the Kubernetes cluster.`,anchor:`#databaseserverspec`},"spec.server.storageSize":{description:`StorageSize is the size of the data volume of each instance. Required
+unless the resolved preset provides it. It cannot shrink, because a
+PostgreSQL data volume cannot become smaller in place. The API server
+refuses a change of this field in a DatabaseServer to a smaller value.
+A smaller value is accepted when the field was not set before, or when
+a preset lowers the size. A server whose volumes are already larger
+then keeps that size and records a StorageShrinkIgnored event.`,anchor:`#databaseserverspec`},"spec.server.suspend":{description:`Suspend stops the PostgreSQL instances and keeps their data volumes.
+Defaults to false. The operator hibernates the CloudNativePG cluster:
+it removes the instance pods and keeps the volumes. When you set the
+field back to false, the instances start again on the same volumes.`,anchor:`#databaseserverspec`},"spec.server.version":{description:`Version is the PostgreSQL major version to run, as a number such as
+"17". It selects the image tag. Camunda 8.9 supports PostgreSQL 14 and
+later. The operator refuses a version below 14, also when it comes
+from the release. Required unless the resolved release provides it.
+Forbidden in a preset.
+
+The major version of a running server cannot change. The operator
+refuses another major version, higher or lower, with Ready reason
+VersionChangeRefused. The server then keeps the major version it has.
+The same applies to a new major version from a release. To run another
+major version, create a new server and move the data to it.`,anchor:`#databaseserverspec`},"spec.server.walStorageSize":{description:`WALStorageSize puts the write-ahead log on a separate volume of this
+size. When unset, the log stays on the data volume. It cannot shrink,
+as storageSize cannot. The server ignores a smaller value from a preset
+in the same way.
+
+You can add it to a running server, but you cannot remove it again.
+CloudNativePG refuses a cluster that removes the volume. If the field
+is cleared, on the server or in a preset, the volume keeps its size and
+the server records a WALStorageKept event.`,anchor:`#databaseserverspec`}},ElasticsearchCluster:{spec:{description:`spec defines the desired state of ElasticsearchCluster`,anchor:`#elasticsearchcluster`},"spec.extraEnv":{description:`ExtraEnv are extra environment variables for every Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) for
+every Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.monitoring":{description:`Monitoring configures the Prometheus scraping integration.`,anchor:`#elasticsearchclusterspec`},"spec.monitoring.exporter":{description:`Exporter tunes the exporter Deployment.`,anchor:`#monitoringspec`},"spec.monitoring.exporter.image":{description:`Image overrides the exporter image. Defaults to the pinned
+quay.io/prometheuscommunity/elasticsearch-exporter release of the
+operator.`,anchor:`#exporterspec`},"spec.monitoring.exporter.resources":{description:`Resources are the CPU and memory of the exporter container.`,anchor:`#exporterspec`},"spec.monitoring.serviceMonitor":{description:`ServiceMonitor configures the exporter and the Prometheus
+ServiceMonitor.`,anchor:`#monitoringspec`},"spec.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.persistentVolumeClaimRetentionPolicy":{description:`PersistentVolumeClaimRetentionPolicy says what happens to the data
+volumes when the ElasticsearchCluster is deleted. Suspension always
+keeps them.`,anchor:`#elasticsearchclusterspec`},"spec.persistentVolumeClaimRetentionPolicy.whenDeleted":{description:`WhenDeleted is what happens to the data volumes when the resource is
+deleted. Defaults to Delete. Delete removes them with the resource.
+Retain keeps them, and a later resource with the same name attaches
+them again.`,anchor:`#persistentvolumeclaimretentionpolicy`},"spec.podAnnotations":{description:`PodAnnotations are extra annotations applied to the Elasticsearch pods.
+The key camunda.io/service-account-hash belongs to the operator, and a
+value for it does not reach the pods.`,anchor:`#elasticsearchclusterspec`},"spec.podLabels":{description:`PodLabels are extra labels applied to the Elasticsearch pods.`,anchor:`#elasticsearchclusterspec`},"spec.presetRef":{description:`PresetRef names a cluster-scoped ElasticsearchClusterPreset to use as
+the configuration baseline. A field set on the cluster replaces the
+value of the preset for that field completely.`,anchor:`#elasticsearchclusterspec`},"spec.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+Elasticsearch version. It merges over the preset and under this spec.
+Forbidden in a preset.`,anchor:`#elasticsearchclusterspec`},"spec.replicas":{description:`Replicas is the number of Elasticsearch nodes. Required unless the
+resolved preset provides it.`,anchor:`#elasticsearchclusterspec`},"spec.resources":{description:`Resources are the CPU and memory for each Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.scheduling":{description:`Scheduling holds the scheduling constraints of the Elasticsearch pods.
+When set, it replaces the scheduling block of the preset, with no merge.`,anchor:`#elasticsearchclusterspec`},"spec.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.secondaryStorageConfig":{description:`SecondaryStorageConfig names the SecondaryStorageConfig that the
+operator creates in the namespace of this cluster. It holds the
+connection details and the generated credentials. Required on an
+ElasticsearchCluster, forbidden in a preset.`,anchor:`#elasticsearchclusterspec`},"spec.secureSettings":{description:`SecureSettings are Secrets that ECK loads into the keystore of every
+node. The operator adds the credentials of snapshotStorageRef to the
+keystore itself. Use this field for all other keystore entries.`,anchor:`#elasticsearchclusterspec`},"spec.secureSettings.entries":{description:`Entries maps single keys to keystore entries. An empty list loads
+every key of the Secret under its own name.`,anchor:`#securesettingssource`},"spec.secureSettings.entries.key":{description:`Key in the Secret.`,anchor:`#securesettingentry`},"spec.secureSettings.entries.path":{description:`Path is the keystore entry that the key becomes, for example
+s3.client.default.access_key.`,anchor:`#securesettingentry`},"spec.secureSettings.secretName":{description:`SecretName is the Secret, in the namespace of the ElasticsearchCluster.`,anchor:`#securesettingssource`},"spec.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
+When name is unset, the account is <name>-es. The pods need no account
+while neither the cluster nor its preset sets this block and the
+snapshot bucket uses no workload identity. The operator then deletes the
+account only when the cluster owns it, because the operator created it
+or took it over. An account of that name that you created stays.`,anchor:`#elasticsearchclusterspec`},"spec.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.snapshotStorageRef":{description:`SnapshotStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for the bucket of the snapshot repository of this
+cluster. When it is set, the operator does all the Elasticsearch work
+for that bucket. It gives the nodes their credentials, registers the
+repository, and publishes the repository name in the
+SecondaryStorageConfig. A CamundaCluster on this storage needs it for
+backups. The CamundaCluster must reference the same bucket.`,anchor:`#elasticsearchclusterspec`},"spec.storageClassName":{description:`StorageClassName is the StorageClass of the data volumes. Defaults to
+the default StorageClass of the Kubernetes cluster. The class cannot
+change after the ECK Elasticsearch resource exists. A cluster whose ECK
+resource exists keeps its class and records a
+StorageClassChangeIgnored event. A cluster without an ECK resource
+takes the new class, also a suspended cluster when it resumes. Volumes
+that a suspension or whenDeleted Retain kept keep their class.`,anchor:`#elasticsearchclusterspec`},"spec.storageSize":{description:`StorageSize is the size of the data volume of each node. Required
+unless the resolved preset provides it. It cannot shrink, because an
+Elasticsearch data volume cannot become smaller in place. The API
+server refuses a change of this field in an ElasticsearchCluster to a
+smaller value. A smaller value is accepted when the field was not set
+before, or when a preset lowers the size. A cluster whose volumes are
+already larger then keeps that size and records a StorageShrinkIgnored
+event.`,anchor:`#elasticsearchclusterspec`},"spec.suspend":{description:`Suspend stops the Elasticsearch cluster and keeps its data volumes.
+Defaults to false. The operator deletes the ECK Elasticsearch resource
+and keeps the volumes. When you set the field back to false, the
+operator creates the resource again, and ECK attaches the volumes
+again.`,anchor:`#elasticsearchclusterspec`},"spec.version":{description:`Version is the Elasticsearch version to deploy, as a full semantic
+version. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from
+9.2. The operator refuses a version below 8.19, and 9.0 and 9.1, also
+when it comes from the release, with Ready reason InvalidReference. Required unless the
+resolved release provides it. Forbidden in a preset.`,anchor:`#elasticsearchclusterspec`},status:{description:`status defines the observed state of ElasticsearchCluster`,anchor:`#elasticsearchcluster`},"status.conditions":{description:`Conditions represent the current state. Ready holds the reason of a
+failed pre-check (InvalidReference, MissingSecret, ECKNotInstalled).
+Otherwise it follows the component conditions and, when the cluster or
+its preset sets snapshotStorageRef and the cluster is not suspended,
+SnapshotRepositoryReady. The per-component conditions (CredentialsReady,
+KeystoreReady, ElasticsearchReady, StorageContractReady) also appear
+here.
+MetricsReady reports the exporter and never affects Ready.`,anchor:`#elasticsearchclusterstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#elasticsearchclusterstatus`},"status.snapshotRepository":{description:`SnapshotRepository is the snapshot repository that the operator
+registered in Elasticsearch for this cluster. The published
+SecondaryStorageConfig holds the same name. It is empty until the first
+registration succeeds. It shows the last registration that succeeded,
+not a new check that the repository still exists.`,anchor:`#elasticsearchclusterstatus`},"status.version":{description:`Version is the effective Elasticsearch version of the cluster, as a
+full semantic version. It comes from the merged spec, so it is correct
+when the release or the cluster gives the version. During
+an upgrade, or when the operator cannot apply the change, the old
+version can still run. It is empty
+until the operator resolves the references of the cluster for the first
+time.`,anchor:`#elasticsearchclusterstatus`},"status.volumes":{description:`Volumes lists the bound data PersistentVolumeClaims of the cluster and
+the capacity that each one reports, sorted by name.`,anchor:`#elasticsearchclusterstatus`},"status.volumes.capacity":{description:`Capacity is the storage capacity that the bound claim reports.`,anchor:`#volumestatus`},"status.volumes.name":{description:`Name is the name of the PersistentVolumeClaim.`,anchor:`#volumestatus`}},ElasticsearchClusterPreset:{spec:{description:`spec defines the desired state of ElasticsearchClusterPreset`,anchor:`#elasticsearchclusterpreset`},"spec.cluster":{description:`Cluster is the complete configuration baseline that the clusters that
+reference the preset get. It uses the ElasticsearchCluster spec type. A
+preset must not set the fields that belong to one cluster only:
+presetRef, releaseRef, secondaryStorageConfig, and suspend. It must
+also not set the version, which belongs to a CamundaRelease. An explicit
+zero value, such as an empty presetRef or suspend: false, counts as
+unset. Templated YAML often renders unset fields in this way. A preset
+can set monitoring like any other field. Thus it can enable scraping
+and set the exporter image and resources for every cluster that
+references it.`,anchor:`#elasticsearchclusterpresetspec`},"spec.cluster.extraEnv":{description:`ExtraEnv are extra environment variables for every Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) for
+every Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.monitoring":{description:`Monitoring configures the Prometheus scraping integration.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.monitoring.exporter":{description:`Exporter tunes the exporter Deployment.`,anchor:`#monitoringspec`},"spec.cluster.monitoring.exporter.image":{description:`Image overrides the exporter image. Defaults to the pinned
+quay.io/prometheuscommunity/elasticsearch-exporter release of the
+operator.`,anchor:`#exporterspec`},"spec.cluster.monitoring.exporter.resources":{description:`Resources are the CPU and memory of the exporter container.`,anchor:`#exporterspec`},"spec.cluster.monitoring.serviceMonitor":{description:`ServiceMonitor configures the exporter and the Prometheus
+ServiceMonitor.`,anchor:`#monitoringspec`},"spec.cluster.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.persistentVolumeClaimRetentionPolicy":{description:`PersistentVolumeClaimRetentionPolicy says what happens to the data
+volumes when the ElasticsearchCluster is deleted. Suspension always
+keeps them.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.persistentVolumeClaimRetentionPolicy.whenDeleted":{description:`WhenDeleted is what happens to the data volumes when the resource is
+deleted. Defaults to Delete. Delete removes them with the resource.
+Retain keeps them, and a later resource with the same name attaches
+them again.`,anchor:`#persistentvolumeclaimretentionpolicy`},"spec.cluster.podAnnotations":{description:`PodAnnotations are extra annotations applied to the Elasticsearch pods.
+The key camunda.io/service-account-hash belongs to the operator, and a
+value for it does not reach the pods.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.podLabels":{description:`PodLabels are extra labels applied to the Elasticsearch pods.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.presetRef":{description:`PresetRef names a cluster-scoped ElasticsearchClusterPreset to use as
+the configuration baseline. A field set on the cluster replaces the
+value of the preset for that field completely.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+Elasticsearch version. It merges over the preset and under this spec.
+Forbidden in a preset.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.replicas":{description:`Replicas is the number of Elasticsearch nodes. Required unless the
+resolved preset provides it.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.resources":{description:`Resources are the CPU and memory for each Elasticsearch node.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.scheduling":{description:`Scheduling holds the scheduling constraints of the Elasticsearch pods.
+When set, it replaces the scheduling block of the preset, with no merge.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.secondaryStorageConfig":{description:`SecondaryStorageConfig names the SecondaryStorageConfig that the
+operator creates in the namespace of this cluster. It holds the
+connection details and the generated credentials. Required on an
+ElasticsearchCluster, forbidden in a preset.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.secureSettings":{description:`SecureSettings are Secrets that ECK loads into the keystore of every
+node. The operator adds the credentials of snapshotStorageRef to the
+keystore itself. Use this field for all other keystore entries.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.secureSettings.entries":{description:`Entries maps single keys to keystore entries. An empty list loads
+every key of the Secret under its own name.`,anchor:`#securesettingssource`},"spec.cluster.secureSettings.entries.key":{description:`Key in the Secret.`,anchor:`#securesettingentry`},"spec.cluster.secureSettings.entries.path":{description:`Path is the keystore entry that the key becomes, for example
+s3.client.default.access_key.`,anchor:`#securesettingentry`},"spec.cluster.secureSettings.secretName":{description:`SecretName is the Secret, in the namespace of the ElasticsearchCluster.`,anchor:`#securesettingssource`},"spec.cluster.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
+When name is unset, the account is <name>-es. The pods need no account
+while neither the cluster nor its preset sets this block and the
+snapshot bucket uses no workload identity. The operator then deletes the
+account only when the cluster owns it, because the operator created it
+or took it over. An account of that name that you created stays.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.cluster.snapshotStorageRef":{description:`SnapshotStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for the bucket of the snapshot repository of this
+cluster. When it is set, the operator does all the Elasticsearch work
+for that bucket. It gives the nodes their credentials, registers the
+repository, and publishes the repository name in the
+SecondaryStorageConfig. A CamundaCluster on this storage needs it for
+backups. The CamundaCluster must reference the same bucket.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.storageClassName":{description:`StorageClassName is the StorageClass of the data volumes. Defaults to
+the default StorageClass of the Kubernetes cluster. The class cannot
+change after the ECK Elasticsearch resource exists. A cluster whose ECK
+resource exists keeps its class and records a
+StorageClassChangeIgnored event. A cluster without an ECK resource
+takes the new class, also a suspended cluster when it resumes. Volumes
+that a suspension or whenDeleted Retain kept keep their class.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.storageSize":{description:`StorageSize is the size of the data volume of each node. Required
+unless the resolved preset provides it. It cannot shrink, because an
+Elasticsearch data volume cannot become smaller in place. The API
+server refuses a change of this field in an ElasticsearchCluster to a
+smaller value. A smaller value is accepted when the field was not set
+before, or when a preset lowers the size. A cluster whose volumes are
+already larger then keeps that size and records a StorageShrinkIgnored
+event.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.suspend":{description:`Suspend stops the Elasticsearch cluster and keeps its data volumes.
+Defaults to false. The operator deletes the ECK Elasticsearch resource
+and keeps the volumes. When you set the field back to false, the
+operator creates the resource again, and ECK attaches the volumes
+again.`,anchor:`#elasticsearchclusterspec`},"spec.cluster.version":{description:`Version is the Elasticsearch version to deploy, as a full semantic
+version. Camunda 8.9 supports Elasticsearch 8.x from 8.19, and 9.x from
+9.2. The operator refuses a version below 8.19, and 9.0 and 9.1, also
+when it comes from the release, with Ready reason InvalidReference. Required unless the
+resolved release provides it. Forbidden in a preset.`,anchor:`#elasticsearchclusterspec`}},LogicalBackupElasticsearch:{spec:{description:`spec identifies the cluster to back up. It is immutable. A backup runs
+one time. To try again, create a new resource.`,anchor:`#logicalbackupelasticsearch`},"spec.clusterRef":{description:`ClusterRef references the CamundaCluster to back up, in the namespace
+of this backup. Its secondary storage must be Elasticsearch.`,anchor:`#logicalbackupelasticsearchspec`},"spec.clusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},status:{description:`status defines the observed state of the backup`,anchor:`#logicalbackupelasticsearch`},"status.backupId":{description:`BackupID identifies every part of the backup set: the web-application
+snapshots, the record snapshot, and the partition backup. A restore
+finds the set by this ID.`,anchor:`#logicalbackupelasticsearchstatus`},"status.clusterUID":{description:`ClusterUID records the identity of the CamundaCluster of the backup. A
+cluster that is deleted and created again with the same name is
+another cluster. This backup never paused the exporting of the new
+cluster. Every management call after the start compares the cluster
+with this UID. If they differ, the backup ends and does not change the
+new cluster.`,anchor:`#logicalbackupelasticsearchstatus`},"status.completionTime":{description:`CompletionTime is when the backup reached a final phase.`,anchor:`#logicalbackupelasticsearchstatus`},"status.conditions":{description:`Conditions represent the current state. The Ready condition shows the
+backup with the reasons Progressing, Completed, Failed, ResumeFailed,
+ClusterSuspended, BackupInProgress, StorageTypeMismatch,
+InvalidReference, MissingSecret, and ConnectionFailed.`,anchor:`#logicalbackupelasticsearchstatus`},"status.failureMessage":{description:`FailureMessage names the failed step and its error. The operator
+records it when a step fails and exporting must still resume. Thus the
+final condition shows the reason after the resume.`,anchor:`#logicalbackupelasticsearchstatus`},"status.history":{description:`History is the backup of the web-application indices.`,anchor:`#logicalbackupelasticsearchstatus`},"status.history.failureReason":{description:`FailureReason is set when State is Failed.`,anchor:`#backuppart`},"status.history.state":{description:`State is the state of this part.`,anchor:`#backuppart`},"status.historyAcceptedTime":{description:`HistoryAcceptedTime is when the cluster accepted the history backup
+request of this backup. Only this field shows that the history backup
+with this ID belongs to this backup. If such a history backup exists
+without this field, the step fails, and the operator does not delete
+its snapshots. A crash between the request and the write of this field
+fails the backup. The cluster can then keep a history backup with this
+ID, which you remove manually.`,anchor:`#logicalbackupelasticsearchstatus`},"status.historyRequestedTime":{description:`HistoryRequestedTime is when the operator decided to request the
+backup of the web-application indices. The operator writes it before
+it sends the request, so the decision stays after a lost response or a
+restart. It shows that this backup intended to send the request. It
+does not prove that a history backup with this ID belongs to this
+backup.`,anchor:`#logicalbackupelasticsearchstatus`},"status.historySnapshots":{description:`HistorySnapshots names the Elasticsearch snapshots of the
+web-application indices. The operator records the names as soon as the
+management API gives them. Thus the deletion of the backup and a
+restore can find the snapshots after the cluster is gone.`,anchor:`#logicalbackupelasticsearchstatus`},"status.lastResumeAttemptTime":{description:`LastResumeAttemptTime is when the last resume attempt ended. The time
+from it to the start of the next attempt decides whether the start of
+the deadline moves. The time inside an attempt always counts.`,anchor:`#logicalbackupelasticsearchstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#logicalbackupelasticsearchstatus`},"status.partitionsCount":{description:`PartitionsCount is the partition count of the cluster when the backup
+started. A restore must match it.`,anchor:`#logicalbackupelasticsearchstatus`},"status.phase":{description:`Phase is the phase of the backup. Completed and Failed are final.`,anchor:`#logicalbackupelasticsearchstatus`},"status.records":{description:`Records is the snapshot of the exported Zeebe record indices.`,anchor:`#logicalbackupelasticsearchstatus`},"status.records.failureReason":{description:`FailureReason is set when State is Failed.`,anchor:`#backuppart`},"status.records.state":{description:`State is the state of this part.`,anchor:`#backuppart`},"status.repository":{description:`Repository records the snapshot repository of every part of the set.
+The operator records it when the backup starts, and every later step
+and the deletion use this name. Thus the whole set goes to one
+repository, also when the storage contract changes its repository
+during the backup. The deletion also goes to the correct repository.`,anchor:`#logicalbackupelasticsearchstatus`},"status.resumeFailureMessage":{description:`ResumeFailureMessage is the last error of the resume of exporting,
+when the backup stopped the attempts. A backup that failed a step and
+then failed to resume reports this field and FailureMessage.`,anchor:`#logicalbackupelasticsearchstatus`},"status.resumeStartedTime":{description:`ResumeStartedTime is the start of the resume deadline. Only the time
+of active resume attempts counts against the deadline. A time in which
+the backup waits, for example for a suspended cluster or an
+unpublished binding, moves the start forward and does not count. The
+value stays after a restart of the operator.`,anchor:`#logicalbackupelasticsearchstatus`},"status.runtime":{description:`Runtime is the backup of the Zeebe partitions.`,anchor:`#logicalbackupelasticsearchstatus`},"status.runtime.failureReason":{description:`FailureReason is set when State is Failed.`,anchor:`#backuppart`},"status.runtime.state":{description:`State is the state of this part.`,anchor:`#backuppart`},"status.runtimeAcceptedTime":{description:`RuntimeAcceptedTime is when the cluster accepted the runtime backup
+request of this backup. Only this field shows that the runtime backup
+with this ID belongs to this backup. A runtime backup can exist without
+this field, after a lost response or when another client used the ID
+first. Then the step fails, and the operator does not delete that
+runtime backup. A crash between the request and the write of this
+field fails the backup. The cluster can then keep such a runtime
+backup, which you remove manually.
+
+The cluster registers the backup some time after it accepts it. For a
+short grace period after this time, the operator waits for an absent
+backup. After the grace period, an absent backup fails the step.`,anchor:`#logicalbackupelasticsearchstatus`},"status.runtimeRequestedTime":{description:`RuntimeRequestedTime is when the operator decided to request the
+runtime backup. The operator writes it before it sends the request, so
+the decision stays after a lost response or a restart. It shows that
+this backup intended to send the request. It does not prove that a
+runtime backup with this ID belongs to this backup.`,anchor:`#logicalbackupelasticsearchstatus`},"status.step":{description:`Step is the current step of the backup. After an interruption, the
+backup continues at this step.`,anchor:`#logicalbackupelasticsearchstatus`},"status.storage":{description:`Storage records the Elasticsearch destination of the set: the storage
+contract and its endpoint when the backup started. The repository name
+alone does not identify a cluster. If the storage contract or the
+endpoint changes during the backup, the step fails. The deletion never
+runs against another cluster.`,anchor:`#logicalbackupelasticsearchstatus`},"status.storage.bucketLocation":{description:`BucketLocation is where that contract pointed: the storage type, the
+bucket, the base path, and the endpoint. The steps write, and the
+operator deletes, only while the contract still points there.`,anchor:`#pinnedstorage`},"status.storage.bucketRef":{description:`BucketRef is the ObjectStorageConfig that the cluster used for backups
+when the backup started: its spec.backupStorageRef at that time. The
+runtime backup goes to that bucket.`,anchor:`#pinnedstorage`},"status.storage.endpoint":{description:`Endpoint is the Elasticsearch endpoint that the contract named.`,anchor:`#pinnedstorage`},"status.storage.secondaryStorageConfig":{description:`SecondaryStorageConfig is the name of the storage contract, in the
+namespace of the backup.`,anchor:`#pinnedstorage`},"status.storageSizes":{description:`StorageSizes are the effective restore sizes. The operator computes
+them when the backup starts. If a value is not available then, the
+operator adds it later while exporting runs: before the pause, or after
+the resume. It does not add a value while exporting is paused. Thus an
+absent value can still appear later in the backup.`,anchor:`#logicalbackupelasticsearchstatus`},"status.storageSizes.elasticsearch":{description:`Elasticsearch is the effective restore size of one Elasticsearch data
+volume.`,anchor:`#logicalbackupstoragesizes`},"status.storageSizes.zeebe":{description:`Zeebe is the effective restore size of one broker data volume.`,anchor:`#logicalbackupstoragesizes`},"status.terminalReason":{description:`TerminalReason is the Ready reason that the operator recorded when the
+backup reached its final phase: Completed, Failed, or ResumeFailed.`,anchor:`#logicalbackupelasticsearchstatus`},"status.unreachableSince":{description:`UnreachableSince is when a step first failed to reach its endpoint:
+the management API or Elasticsearch. Exporting can be paused during
+every step, so the retries have a time limit. After the limit, the step
+fails, and the backup resumes exporting. The field clears when all
+calls succeed again.`,anchor:`#logicalbackupelasticsearchstatus`},"status.version":{description:`Version is the Camunda version of the cluster when the backup started,
+as the management binding reported it. A restore compares it with the
+version of its target. An Elasticsearch backup restores only to the
+same version. A restore can read the version only here, because a
+suspended cluster has no management binding. The backup starts only
+when Zeebe runs this version. If a step finds Zeebe on another version
+before the runtime backup is final, the step fails at once with both
+versions in the message.`,anchor:`#logicalbackupelasticsearchstatus`},"status.workloadConfigHash":{description:`WorkloadConfigHash records the configuration of Zeebe when the backup
+started. It is the config hash of the Zeebe pod template. The backup
+starts only after the cluster runs its current spec. Zeebe must also
+run the Elasticsearch endpoint, the snapshot repository, and the bucket
+that the contracts of the cluster declare. Until the runtime backup is final, each step compares
+the current hash with this value, after it reads the state of its part.
+If the hash differs, the step fails at once. The generation of the cluster is not sufficient, because
+a change of a referenced object changes the hash but not the generation.`,anchor:`#logicalbackupelasticsearchstatus`}},LogicalBackupRDBMS:{spec:{description:`spec defines the desired state of LogicalBackupRDBMS`,anchor:`#logicalbackuprdbms`},"spec.clusterRef":{description:`ClusterRef references the CamundaCluster to back up. The cluster must
+store its data in a relational database and have a backupStorageRef.`,anchor:`#logicalbackuprdbmsspec`},"spec.clusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"spec.dump":{description:`Dump replaces all the pod settings of the spec.backup.dump block of
+the cluster for this backup. When unset, the settings of the cluster
+apply. The two never merge. The image of the dump is not one of these
+settings. The Job runs under the ServiceAccount of the cluster, so the
+image always comes from the block of the cluster.
+
+The environment has limits too. The extraEnv of a backup cannot set a
+name that starts with PG or UPLOAD_, and the API server refuses such a
+name. Every extraEnvFrom source needs a prefix that cannot make such a
+name. libpq prefers PGHOSTADDR over the PGHOST of the Job. Without the
+limit, a source can send the dump, with the credentials of the Job, to
+another host. The API server accepts a source without a safe prefix.
+The backup then stays Pending with reason InvalidReference, and its Job
+never starts.
+
+The environment of this block reaches only the dump container, never
+the upload container. Cloud SDKs read endpoint, proxy, and
+configuration variables from the environment, and a backup must not
+change where its dump goes. The block of the cluster has no prefix
+limit, and its environment reaches every container.`,anchor:`#logicalbackuprdbmsspec`},"spec.dump.activeDeadlineSeconds":{description:`ActiveDeadlineSeconds is the number of seconds that the dump Job can
+run before it fails, counted from its start. When the dump block that
+applies does not set it, the Job gets 86400 (24 hours). In the block of
+the cluster, an unset value takes the value of the preset. The
+spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+an unset value there gives 86400, not the value of the cluster.
+
+The default is large, so that a very large dump can complete. The Job
+always has a deadline. A pod that cannot start uses no retry, so
+without a deadline a broken Job stays active for the life of the
+backup. A lower value fails a stuck dump sooner. A higher value gives a
+long dump the time that it needs.`,anchor:`#dumppodspec`},"spec.dump.extraEnv":{description:`ExtraEnv are extra environment variables of the dump pod.
+
+In the spec.dump of a LogicalBackupRDBMS, every name that starts with
+PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is
+connection policy, because libpq reads PGHOSTADDR, PGSERVICE,
+PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of
+a backup reach only the dump container, never the upload container.
+Cloud SDKs read endpoint, proxy, and configuration variables from the
+environment, and the author of a backup must not change where the dump
+goes.
+
+In the spec.backup.dump of the cluster, no name is reserved, and the
+variables reach every container. The cluster owner sets the connection
+policy, PGSSLMODE included.
+
+Unlike the extraEnv of a workload, this list is atomic. One field
+manager owns the whole list, because no extension adds entries to a
+dump pod.`,anchor:`#dumppodspec`},"spec.dump.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources of the dump pod. In the
+spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+chooses its keys. As with ExtraEnv, the sources of a
+backup reach only the dump container. The block of the cluster needs no
+prefix, and its sources reach every container.`,anchor:`#dumppodspec`},"spec.dump.podAnnotations":{description:`PodAnnotations are extra annotations of the dump pod. A service mesh
+sidecar keeps running after the dump finishes, and the Job does not
+complete. Set the injection annotation of the mesh to false here.`,anchor:`#dumppodspec`},"spec.dump.podLabels":{description:`PodLabels are extra labels of the dump pod.`,anchor:`#dumppodspec`},"spec.dump.resources":{description:`Resources are the CPU and memory of the dump pod.`,anchor:`#dumppodspec`},"spec.dump.scheduling":{description:`Scheduling holds the scheduling constraints of the dump pod. When set,
+it replaces the block of a preset, with no merge.`,anchor:`#dumppodspec`},"spec.dump.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.dump.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.dump.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.dump.scratchVolume":{description:`ScratchVolume is where the pod writes the dump before the upload. When
+set, it replaces the block of a preset, with no merge. The dump pod
+runs with fsGroup 999, the postgres group. Thus pg_dump can write to a
+volume that a storage class gives with the root owner.`,anchor:`#dumppodspec`},"spec.dump.scratchVolume.sizeLimit":{description:`SizeLimit is the size of the emptyDir that holds the dump. Set it to
+the size the dump needs, with room to spare.`,anchor:`#scratchvolumespec`},"spec.dump.scratchVolume.storageClassName":{description:`StorageClassName makes the scratch volume a PersistentVolumeClaim of
+this class, not an emptyDir. Use it when the dump is larger than the
+ephemeral storage of a node.`,anchor:`#scratchvolumespec`},status:{description:`status defines the observed state of LogicalBackupRDBMS`,anchor:`#logicalbackuprdbms`},"status.backupId":{description:`BackupID identifies the dump object in the bucket. The operator sets
+it one time, when the backup leaves Pending.`,anchor:`#logicalbackuprdbmsstatus`},"status.bucketGeneration":{description:`BucketGeneration is the generation of the recorded ObjectStorageConfig
+when the backup started. It is information only. BucketLocation
+decides whether a deletion can run.`,anchor:`#logicalbackuprdbmsstatus`},"status.bucketLocation":{description:`BucketLocation records where the Job wrote the object: the storage
+type, the bucket, the base path, and the endpoint of the
+ObjectStorageConfig at the start. On deletion, the operator removes the
+object only while the contract still points there. If the contract
+points somewhere else, the object stays. Thus the operator never
+deletes an unrelated object with the same key.`,anchor:`#logicalbackuprdbmsstatus`},"status.bucketRef":{description:`BucketRef records the ObjectStorageConfig through which the Job wrote
+the dump. On deletion, the operator uses this contract, not the
+current backupStorageRef of the cluster. It removes the object only
+while the cluster and this contract exist, and the contract points to
+the same place. For a bucket with static credentials, the credentials
+Secret must also exist.`,anchor:`#logicalbackuprdbmsstatus`},"status.clusterUID":{description:`ClusterUID records the CamundaCluster of the backup. A cluster that is
+deleted and created again with the same name is another cluster, with
+other primary storage. If the UID of the cluster changes, the backup
+fails. Thus a dump never pairs with the Zeebe backup of another
+cluster.`,anchor:`#logicalbackuprdbmsstatus`},"status.completionTime":{description:`CompletionTime is when the backup reached a final phase.`,anchor:`#logicalbackuprdbmsstatus`},"status.conditions":{description:`Conditions represent the current state. The Ready condition has the
+phase as its reason, and its message names a failed step. For a
+Pending backup, Ready has the reason of the check that holds it, and
+the message explains that check.`,anchor:`#logicalbackuprdbmsstatus`},"status.failureMessage":{description:`FailureMessage tells why the backup failed. It is set with the Failed
+phase. The Ready condition has the same message.`,anchor:`#logicalbackuprdbmsstatus`},"status.firstFailedAt":{description:`FirstFailedAt is when a dependency of the running backup first stopped
+resolving, or the management API first stopped answering. The grace
+period starts at this time. It clears when the backup recovers.`,anchor:`#logicalbackuprdbmsstatus`},"status.jobName":{description:`JobName is the Job that dumps and uploads the database, while the Job
+exists. It clears when the operator recorded the dump and removed the
+Job. A failed Job stays until the backup is deleted, and its name stays
+too.`,anchor:`#logicalbackuprdbmsstatus`},"status.objectKey":{description:`ObjectKey is the full key of the dump in the backup bucket:
+<basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump. The
+uid is the UID of this resource. Thus a backup id that is used again
+never names the dump of another backup.`,anchor:`#logicalbackuprdbmsstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#logicalbackuprdbmsstatus`},"status.phase":{description:`Phase is the phase of the backup. Completed and Failed are final.`,anchor:`#logicalbackuprdbmsstatus`},"status.step":{description:`Step is the current step of the backup. After an interruption, the
+backup continues at this step.`,anchor:`#logicalbackuprdbmsstatus`},"status.storageSizes":{description:`StorageSizes are the effective restore sizes that the operator
+recorded when the backup started. The RDBMS kind records only the Zeebe
+size.`,anchor:`#logicalbackuprdbmsstatus`},"status.storageSizes.elasticsearch":{description:`Elasticsearch is the effective restore size of one Elasticsearch data
+volume.`,anchor:`#logicalbackupstoragesizes`},"status.storageSizes.zeebe":{description:`Zeebe is the effective restore size of one broker data volume.`,anchor:`#logicalbackupstoragesizes`},"status.version":{description:`Version is the Camunda version of the cluster when the backup started,
+as the management binding reported it. A restore sets this version on
+its target, and it refuses a backup that recorded no version of the
+form x.y.z. A restore can read the version only here,
+because a suspended cluster has no management binding. The backup
+starts only when Zeebe runs this version. After the Zeebe backup
+request, a poll that finds Zeebe on another version fails the backup
+at once with both versions in the message.`,anchor:`#logicalbackuprdbmsstatus`},"status.workloadConfigHash":{description:`WorkloadConfigHash records the configuration of Zeebe when the backup
+started. It is the config hash of the Zeebe pod template. The backup
+starts only after every Zeebe pod runs this template, and the template
+uses the bucket of the backup storage contract. The operator compares
+it with the current hash before it renders the dump Job and before it
+requests the Zeebe backup. It compares again until the Zeebe
+backup is final. Before the request, a different hash fails the backup
+after the grace period. After the request, a different hash fails the
+backup at once, also when the Zeebe backup completed. The generation
+of the cluster is not sufficient, because a change of a referenced
+object changes the hash but not the generation.`,anchor:`#logicalbackuprdbmsstatus`},"status.zeebeBackupId":{description:`ZeebeBackupID is the id of the Zeebe backup that the cluster generated
+after the dump. It is unset until the operator requests that backup.`,anchor:`#logicalbackuprdbmsstatus`},"status.zeebeBackupRequestedAt":{description:`ZeebeBackupRequestedAt is when the operator requested the Zeebe
+backup. It limits how long the operator waits for the cluster to report
+the backup.`,anchor:`#logicalbackuprdbmsstatus`}},LogicalRestoreElasticsearch:{spec:{description:`spec names the backup to restore and the cluster to restore into. It
+is immutable. A restore runs one time. To try again, create a new
+resource.`,anchor:`#logicalrestoreelasticsearch`},"spec.backupRef":{description:`BackupRef references the completed LogicalBackupElasticsearch to
+restore from, in the namespace of this restore.`,anchor:`#logicalrestoreelasticsearchspec`},"spec.backupRef.name":{description:`Name is the name of the backup, in the namespace of this restore.`,anchor:`#logicalbackupref`},"spec.targetClusterRef":{description:`TargetClusterRef references the CamundaCluster to restore into. It
+must name the cluster of the backup, because the restore application
+reads the primary-storage backup under the prefix of that cluster. The
+cluster must stay suspended for the whole restore.`,anchor:`#logicalrestoreelasticsearchspec`},"spec.targetClusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},status:{description:`status defines the observed state of the restore`,anchor:`#logicalrestoreelasticsearch`},"status.backend":{description:`Backend is the Elasticsearch that the restore writes, as the scheme,
+the host, and the port. The operator records it when the restore
+starts. From then until the final phase, and after it while
+recoveryHeld is true, no other CamundaCluster starts on this backend.
+The restore waits while its target does not hold the backend.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.backupId":{description:`BackupID is the backup that the restore reads. The operator records it
+when the restore starts. Later phases of the restore still read the
+backup resource, so keep it until the restore completes.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.brokers":{description:`Brokers is the broker count of the broker StatefulSet. The operator
+records it before the restore deletes a volume. It sets how many
+volumes the restore creates again and how many Jobs run.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.clusterSuspended":{description:`ClusterSuspended records that this restore suspended its target
+cluster. The restore removes that suspension when it reaches
+Completed. A cluster that its owner suspended has no such record, so
+it stays suspended. The cluster of a failed restore also stays
+suspended.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.completionTime":{description:`CompletionTime is when the restore reached a final phase.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.conditions":{description:`Conditions represent the current state of the restore.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.contract":{description:`Contract is the SecondaryStorageConfig that held the endpoint of
+Backend when the restore started. When the endpoint of that contract
+moves, the restore still holds this contract.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.failureMessage":{description:`FailureMessage names the failed phase and its error. The Ready
+condition has the same message.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.firstFailedAt":{description:`FirstFailedAt is when a dependency of the running restore first stopped
+resolving. The grace period starts at this time. The field can clear if
+the dependency recovers before the restore deletes target indices or
+records a recreated broker volume or a broker Job. After that point, the
+field stays set, so a dependency that fails and recovers again and
+again does not reset the grace period.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.phase":{description:`Phase is the phase of the restore. After an interruption, the restore
+continues at this phase.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.primaryJobNames":{description:`PrimaryJobNames are the restore application Jobs, one for each broker,
+in broker order. The operator records them before it creates the Jobs.
+A completed restore removes these Jobs. The logs of these Jobs explain
+a failed restore.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.recoveryHeld":{description:`RecoveryHeld is true while a failed or deleted restore keeps the
+backend, because Elasticsearch can still recover snapshots that the
+restore asked for. While it is true, no other CamundaCluster starts on
+the backend, and the target stays suspended. No other backup or restore
+of the target starts. A deleted restore stays while it is true. It is
+unset on a restore that was never held, and false when the hold ends.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.recoveryUnknownSince":{description:`RecoveryUnknownSince is the start of the current period in which a held
+restore cannot read the recovery from Elasticsearch. If the recovery stays unknown for ten
+minutes, the restore releases the backend.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.recreatedClaims":{description:`RecreatedClaims names the broker data claims that the restore deleted
+and created again. Thus the restore does not delete a claim two times.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.repository":{description:`Repository is the Elasticsearch snapshot repository that the restore
+reads from, on the Elasticsearch of the target.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.restoredSnapshots":{description:`RestoredSnapshots names every snapshot that the restore asked
+Elasticsearch to restore. After the operator records the names, the
+restore does not delete the indices again when it continues after an
+interruption.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.targetClusterUID":{description:`TargetClusterUID records the identity of the target cluster. A cluster
+that is deleted and created again with the same name is another
+cluster, and this restore does not apply to it.`,anchor:`#logicalrestoreelasticsearchstatus`},"status.terminalReason":{description:`TerminalReason is the Ready reason that the operator recorded when the
+restore reached its final phase.`,anchor:`#logicalrestoreelasticsearchstatus`}},LogicalRestoreRDBMS:{spec:{description:`spec names the backup to read and the cluster to restore into. It is
+immutable. A restore runs one time. To try again, create a new
+resource.`,anchor:`#logicalrestorerdbms`},"spec.backupRef":{description:`BackupRef references the completed LogicalBackupRDBMS to restore from,
+in the namespace of this restore.`,anchor:`#logicalrestorerdbmsspec`},"spec.backupRef.name":{description:`Name is the name of the backup, in the namespace of this restore.`,anchor:`#logicalbackupref`},"spec.targetClusterRef":{description:`TargetClusterRef references the CamundaCluster to restore into. It
+must name the cluster of the backup, because the restore application
+reads the primary-storage backup under the prefix of that cluster. The
+cluster must be suspended for the whole restore.`,anchor:`#logicalrestorerdbmsspec`},"spec.targetClusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},status:{description:`status defines the observed state of the restore`,anchor:`#logicalrestorerdbms`},"status.backend":{description:`Backend is the logical database that the restore writes, as the host,
+the port, and the database name. The operator records it when the
+restore starts. From then until the final phase, no other
+CamundaCluster starts on this backend. The restore waits while its
+target does not hold the backend.`,anchor:`#logicalrestorerdbmsstatus`},"status.backupId":{description:`BackupID is the id of the dump that the restore reads, as the backup
+records it. The operator records it when the restore starts. Later
+phases of the restore still read the backup resource, so keep it until
+the restore completes.`,anchor:`#logicalrestorerdbmsstatus`},"status.brokers":{description:`Brokers is the broker count of the broker StatefulSet. The operator
+records it before the restore deletes a volume. It sets how many
+volumes the restore creates again and how many Jobs run.`,anchor:`#logicalrestorerdbmsstatus`},"status.clusterSuspended":{description:`ClusterSuspended records that this restore suspended its target
+cluster. The restore removes that suspension when it reaches
+Completed. A cluster that its owner suspended has no such record, so
+it stays suspended. The cluster of a failed restore also stays
+suspended.`,anchor:`#logicalrestorerdbmsstatus`},"status.completionTime":{description:`CompletionTime is when the restore reached a final phase.`,anchor:`#logicalrestorerdbmsstatus`},"status.conditions":{description:`Conditions represent the current state of the restore.`,anchor:`#logicalrestorerdbmsstatus`},"status.contract":{description:`Contract is the DatabaseServerConfig and the database name of Backend
+when the restore started. When the DatabaseServerConfig moves to
+another address, the restore still holds this contract.`,anchor:`#logicalrestorerdbmsstatus`},"status.failureMessage":{description:`FailureMessage names the failed phase and its error. The Ready
+condition has the same message.`,anchor:`#logicalrestorerdbmsstatus`},"status.firstFailedAt":{description:`FirstFailedAt is when a dependency of the running restore first stopped
+resolving. The grace period starts at this time. The field can clear if
+the dependency recovers before the restore deletes target indices or
+records a recreated broker volume or a broker Job. After that point, the
+field stays set, so a dependency that fails and recovers again and
+again does not reset the grace period.`,anchor:`#logicalrestorerdbmsstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#logicalrestorerdbmsstatus`},"status.phase":{description:`Phase is the phase of the restore. After an interruption, the restore
+continues at this phase.`,anchor:`#logicalrestorerdbmsstatus`},"status.primaryJobNames":{description:`PrimaryJobNames are the restore application Jobs, one for each broker,
+in broker order. The operator records them before it creates the Jobs.
+A completed restore removes these Jobs. The logs of these Jobs explain
+a failed restore.`,anchor:`#logicalrestorerdbmsstatus`},"status.recreatedClaims":{description:`RecreatedClaims names the broker data claims that the restore deleted
+and created again. Thus the restore does not delete a claim two times.`,anchor:`#logicalrestorerdbmsstatus`},"status.secondaryJobName":{description:`SecondaryJobName is the Job that runs pg_restore, while the Job exists.`,anchor:`#logicalrestorerdbmsstatus`},"status.targetClusterUID":{description:`TargetClusterUID records the identity of the target cluster. A cluster
+that is deleted and created again with the same name is another
+cluster, and this restore does not apply to it.`,anchor:`#logicalrestorerdbmsstatus`},"status.terminalReason":{description:`TerminalReason is the Ready reason that the operator recorded when the
+restore reached its final phase.`,anchor:`#logicalrestorerdbmsstatus`}},ManagementAuthConfig:{spec:{description:`spec defines the desired state of ManagementAuthConfig`,anchor:`#managementauthconfig`},"spec.audience":{description:`Audience is the audience that access tokens for this client must have.`,anchor:`#managementauthconfigspec`},"spec.authUrl":{description:`AuthURL is the OIDC authorization endpoint for the login redirects of
+the browser.`,anchor:`#managementauthconfigspec`},"spec.baseUrl":{description:`BaseURL is the base URL of the Management Identity service.`,anchor:`#managementauthconfigspec`},"spec.clientId":{description:`ClientID is the ID of the client that Optimize signs in with.`,anchor:`#managementauthconfigspec`},"spec.clientSecretRef":{description:`ClientSecretRef names the Secret key that holds the secret of that
+client.`,anchor:`#managementauthconfigspec`},"spec.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#secretkeyref`},"spec.clientSecretRef.namespace":{description:`Namespace is the namespace of the Secret.`,anchor:`#secretkeyref`},"spec.issuerBackendUrl":{description:`IssuerBackendURL is the issuer URL for calls between containers inside
+the Kubernetes cluster. When empty, consumers use IssuerURL.`,anchor:`#managementauthconfigspec`},"spec.issuerUrl":{description:`IssuerURL is the OIDC issuer URL for the validation of tokens.`,anchor:`#managementauthconfigspec`},"spec.jwksUrl":{description:`JwksURL is the JWKS endpoint that gives the token signing keys.`,anchor:`#managementauthconfigspec`},"spec.tokenUrl":{description:`TokenURL is the OIDC token endpoint for machine-to-machine tokens.`,anchor:`#managementauthconfigspec`},status:{description:`status defines the observed state of ManagementAuthConfig`,anchor:`#managementauthconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready condition
+has the reasons Healthy or MissingSecret.`,anchor:`#managementauthconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#managementauthconfigstatus`}},ObjectStorageConfig:{spec:{description:`spec defines the desired state of ObjectStorageConfig`,anchor:`#objectstorageconfig`},"spec.azureBlob":{description:`AzureBlob describes an Azure Blob Storage container. Required when
+type is AzureBlob. Forbidden with other types.`,anchor:`#objectstorageconfigspec`},"spec.azureBlob.accountName":{description:`AccountName is the storage account that holds the container.`,anchor:`#azureblobstorage`},"spec.azureBlob.auth":{description:`Auth selects how consumers authenticate. An absent block means
+workload identity through the ServiceAccount.`,anchor:`#azureblobstorage`},"spec.azureBlob.auth.credentials":{description:`Credentials is a static storage account key. Required with type
+credentials. Forbidden with other types.`,anchor:`#azureblobstorageauth`},"spec.azureBlob.auth.credentials.secretRef":{description:`SecretRef names the Secret key that holds the storage account key.`,anchor:`#azureblobcredentials`},"spec.azureBlob.auth.credentials.secretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.azureBlob.auth.credentials.secretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.azureBlob.auth.type":{description:`Type is the authentication choice. Defaults to workloadIdentity.`,anchor:`#azureblobstorageauth`},"spec.azureBlob.auth.workloadIdentity":{description:`WorkloadIdentity names the trusted principal. It is valid only with
+type workloadIdentity. With an empty or absent block, the operator adds
+no annotation to the ServiceAccount. The operator still adds the
+azure.workload.identity/use label to the pods.`,anchor:`#azureblobstorageauth`},"spec.azureBlob.auth.workloadIdentity.clientId":{description:`ClientID is the managed identity that consumers use. When set, the
+operator puts it in the azure.workload.identity/client-id annotation
+of a ServiceAccount that it creates for the consumer. On an existing
+ServiceAccount, add the annotation yourself.`,anchor:`#azureblobworkloadidentity`},"spec.azureBlob.basePath":{description:`BasePath is the blob prefix under which consumers write objects,
+without leading or trailing slashes. Empty means the container root.`,anchor:`#azureblobstorage`},"spec.azureBlob.container":{description:`Container is the blob container that consumers write to.`,anchor:`#azureblobstorage`},"spec.azureBlob.endpoint":{description:`Endpoint is the URL of the blob service. Empty means the public Azure
+endpoint of the account. Set it for Azurite and sovereign clouds.`,anchor:`#azureblobstorage`},"spec.gcs":{description:`GCS describes a Google Cloud Storage bucket. Required when type is
+GCS. Forbidden with other types.`,anchor:`#objectstorageconfigspec`},"spec.gcs.auth":{description:`Auth selects how consumers authenticate. An absent block means
+workload identity through the ServiceAccount.`,anchor:`#gcsstorage`},"spec.gcs.auth.credentials":{description:`Credentials is a static service-account key. Required with type
+credentials. Forbidden with other types.`,anchor:`#gcsstorageauth`},"spec.gcs.auth.credentials.secretRef":{description:`SecretRef names the Secret key that holds the service-account JSON
+key.`,anchor:`#gcscredentials`},"spec.gcs.auth.credentials.secretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.gcs.auth.credentials.secretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.gcs.auth.type":{description:`Type is the authentication choice. Defaults to workloadIdentity.`,anchor:`#gcsstorageauth`},"spec.gcs.auth.workloadIdentity":{description:`WorkloadIdentity names the trusted principal. It is valid only with
+type workloadIdentity. With an empty or absent block, the operator adds
+no annotation. The identity must then be bound on the cloud side, for
+example with Workload Identity Federation for GKE.`,anchor:`#gcsstorageauth`},"spec.gcs.auth.workloadIdentity.serviceAccountEmail":{description:`ServiceAccountEmail is the Google service account that consumers
+impersonate. When set, the operator puts it in the
+iam.gke.io/gcp-service-account annotation of a ServiceAccount that it
+creates for the consumer. On an existing ServiceAccount, add the
+annotation yourself.`,anchor:`#gcsworkloadidentity`},"spec.gcs.basePath":{description:`BasePath is the key prefix under which consumers write objects,
+without leading or trailing slashes. Empty means the bucket root.`,anchor:`#gcsstorage`},"spec.gcs.bucketName":{description:`BucketName is the name of the bucket, as storage client SDKs use it.`,anchor:`#gcsstorage`},"spec.s3":{description:`S3 describes an S3 or S3-compatible bucket. Required when type is S3.
+Forbidden with other types.`,anchor:`#objectstorageconfigspec`},"spec.s3.auth":{description:`Auth selects how consumers authenticate. An absent block means
+workload identity through the ServiceAccount.`,anchor:`#s3storage`},"spec.s3.auth.credentials":{description:`Credentials are static keys. Required with type credentials. Forbidden
+with other types.`,anchor:`#s3storageauth`},"spec.s3.auth.credentials.secretRef":{description:`SecretRef names the Secret keys that hold the access-key pair.`,anchor:`#s3credentials`},"spec.s3.auth.credentials.secretRef.accessKeyIdKey":{description:`AccessKeyIDKey is the key in the Secret that holds the access key ID.`,anchor:`#s3credentialssecretref`},"spec.s3.auth.credentials.secretRef.name":{description:`Name is the name of the Secret that holds the keys.`,anchor:`#s3credentialssecretref`},"spec.s3.auth.credentials.secretRef.secretAccessKeyKey":{description:`SecretAccessKeyKey is the key in the Secret that holds the secret
+access key.`,anchor:`#s3credentialssecretref`},"spec.s3.auth.type":{description:`Type is the authentication choice. Defaults to workloadIdentity.`,anchor:`#s3storageauth`},"spec.s3.auth.workloadIdentity":{description:`WorkloadIdentity names the trusted principal. It is valid only with
+type workloadIdentity. With an empty or absent block, the operator adds
+no annotation. The identity must then be bound on the cloud side, for
+example with EKS Pod Identity.`,anchor:`#s3storageauth`},"spec.s3.auth.workloadIdentity.roleArn":{description:`RoleARN is the IAM role that consumers assume. When set, the operator
+puts it in the eks.amazonaws.com/role-arn annotation of a ServiceAccount
+that it creates for the consumer (IRSA). On an existing ServiceAccount,
+add the annotation yourself.`,anchor:`#s3workloadidentity`},"spec.s3.basePath":{description:`BasePath is the key prefix under which consumers write objects,
+without leading or trailing slashes. Empty means the bucket root.`,anchor:`#s3storage`},"spec.s3.bucketName":{description:`BucketName is the name of the bucket, as storage client SDKs use it.`,anchor:`#s3storage`},"spec.s3.endpoint":{description:`Endpoint is the URL of an S3-compatible store (MinIO, Ceph, and more).
+Empty means AWS S3, addressed through region.`,anchor:`#s3storage`},"spec.s3.forcePathStyle":{description:`ForcePathStyle forces path-style bucket addressing. Set it for
+S3-compatible stores that do not serve virtual-hosted-style requests.`,anchor:`#s3storage`},"spec.s3.region":{description:`Region is the region of the bucket. Required unless endpoint is set.`,anchor:`#s3storage`},"spec.type":{description:`Type selects the storage API of the bucket.`,anchor:`#objectstorageconfigspec`},status:{description:`status defines the observed state of ObjectStorageConfig`,anchor:`#objectstorageconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready
+condition has the reasons Healthy and MissingSecret.`,anchor:`#objectstorageconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#objectstorageconfigstatus`}},PointInTimeRestore:{spec:{description:`spec names the cluster to restore and the point that its database
+holds. It is immutable. A restore runs one time. To try again, create
+a new resource.`,anchor:`#pointintimerestore`},"spec.clusterRef":{description:`ClusterRef references the CamundaCluster to restore, in the namespace
+of this restore. Its secondary storage must be a relational database.`,anchor:`#pointintimerestorespec`},"spec.clusterRef.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"spec.timestamp":{description:`Timestamp is the point to restore to.
+DatabaseServerConfig.spec.pitr.recovery sets who rolls the database
+server back to it. With operator, the restore asks the server to roll
+back to this point. With external, you roll the server back to it
+before you create the restore.
+
+Choose a point at least one backup interval before the cluster stopped
+writing. Also choose a point inside the window in which Zeebe keeps its
+primary-storage backups. The CamundaCluster sets these with
+spec.backup.primaryStorage.schedule and retention.window. The defaults
+are one hour and seven days. If no backup covers the point, the restore
+fails after it erased the broker volumes.
+
+The point must be inside the retention period of the database server,
+and it must not be in the future. The operator does these two checks.`,anchor:`#pointintimerestorespec`},status:{description:`status defines the observed state of the restore`,anchor:`#pointintimerestore`},"status.backend":{description:`Backend names the database that the restore holds while its server
+rolls back: the host, the port, and the database name. The operator
+records it just before it asks for the rollback. It follows each
+endpoint that the contract names. From then until the final phase, no
+other CamundaCluster starts on this database, also when the contract
+names another endpoint. A restore whose server
+rolls back outside the operator records no backend.`,anchor:`#pointintimerestorestatus`},"status.brokers":{description:`Brokers is the broker count of the broker StatefulSet. The operator
+records it before the restore deletes a volume. It sets how many
+volumes the restore creates again and how many Jobs run.`,anchor:`#pointintimerestorestatus`},"status.clusterSuspended":{description:`ClusterSuspended records that this restore suspended its target
+cluster. The restore removes that suspension when it reaches
+Completed. A cluster that its owner suspended has no such record, so
+it stays suspended. The cluster of a failed restore also stays
+suspended.`,anchor:`#pointintimerestorestatus`},"status.completionTime":{description:`CompletionTime is when the restore reached a final phase.`,anchor:`#pointintimerestorestatus`},"status.conditions":{description:`Conditions represent the current state of the restore.`,anchor:`#pointintimerestorestatus`},"status.failureMessage":{description:`FailureMessage names the failed phase and its error. The Ready
+condition has the same message.`,anchor:`#pointintimerestorestatus`},"status.firstFailedAt":{description:`FirstFailedAt is when a dependency of the running restore first stopped
+resolving. The grace period starts at this time. The field can clear if
+the dependency recovers before the restore deletes target indices or
+records a recreated broker volume or a broker Job. After that point, the
+field stays set, so a dependency that fails and recovers again and
+again does not reset the grace period.`,anchor:`#pointintimerestorestatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#pointintimerestorestatus`},"status.observedPositions":{description:`ObservedPositions are the exporter positions that the pre-check read,
+in partition order. They show what the operator saw when the restore
+passed the database-state check, or what stopped it.`,anchor:`#pointintimerestorestatus`},"status.observedPositions.lastUpdated":{description:`LastUpdated is the LAST_UPDATED value of the row of the partition in the
+EXPORTER_POSITION table.`,anchor:`#partitionposition`},"status.observedPositions.partitionId":{description:`PartitionID is the Zeebe partition.`,anchor:`#partitionposition`},"status.phase":{description:`Phase is the phase of the restore. The restore continues from it after
+an interruption.`,anchor:`#pointintimerestorestatus`},"status.primaryJobNames":{description:`PrimaryJobNames are the restore application Jobs, one for each broker,
+in broker order. The operator records them before it creates the Jobs.
+A completed restore removes these Jobs. The logs of these Jobs explain
+a failed restore.`,anchor:`#pointintimerestorestatus`},"status.recreatedClaims":{description:`RecreatedClaims names the broker data claims that the restore deleted
+and created again. Thus the restore does not delete a claim two times.`,anchor:`#pointintimerestorestatus`},"status.storage":{description:`Storage records the storage chain that the restore validated. The
+operator records it before it reads the database, and again after a
+rollback that the restore asked for. If a later read does not agree,
+the restore fails.`,anchor:`#pointintimerestorestatus`},"status.storage.databaseConfig":{description:`DatabaseConfig is the contract of the logical database.`,anchor:`#pointintimerestorestorage`},"status.storage.databaseConfigUID":{description:`DatabaseConfigUID records the identity of that contract.`,anchor:`#pointintimerestorestorage`},"status.storage.databaseName":{description:`DatabaseName is the logical database whose exporter position the
+pre-check read.`,anchor:`#pointintimerestorestorage`},"status.storage.databaseServerConfig":{description:`DatabaseServerConfig is the contract of the server that holds the
+database and declares its point-in-time recovery.`,anchor:`#pointintimerestorestorage`},"status.storage.databaseServerConfigUID":{description:`DatabaseServerConfigUID records the identity of that contract.`,anchor:`#pointintimerestorestorage`},"status.storage.endpoint":{description:`Endpoint is the host and port of the server, as the pre-check used it.
+A contract that now names another endpoint names another server.`,anchor:`#pointintimerestorestorage`},"status.storage.secondaryStorageConfig":{description:`SecondaryStorageConfig is the storage contract of the cluster.`,anchor:`#pointintimerestorestorage`},"status.storage.secondaryStorageConfigUID":{description:`SecondaryStorageConfigUID records the identity of that contract. Thus
+the restore finds a contract that was deleted and created again with
+the same name.`,anchor:`#pointintimerestorestorage`},"status.storage.systemIdentifier":{description:`SystemIdentifier is the identity of the PostgreSQL instance behind that
+endpoint, as the contract published it. The rule for a dedicated server
+counted this identity. An endpoint that later reports another identity
+is another instance.`,anchor:`#pointintimerestorestorage`},"status.targetClusterUID":{description:`TargetClusterUID records the identity of the target cluster. A cluster
+that is deleted and created again with the same name is another
+cluster, and this restore does not apply to it.`,anchor:`#pointintimerestorestatus`},"status.terminalReason":{description:`TerminalReason is the Ready reason that the operator recorded when the
+restore reached its final phase.`,anchor:`#pointintimerestorestatus`}},SecondaryStorageConfig:{spec:{description:`spec defines the desired state of SecondaryStorageConfig`,anchor:`#secondarystorageconfig`},"spec.elasticsearch":{description:`Elasticsearch holds the Elasticsearch connection details. Required
+when type is elasticsearch. Forbidden with other types.`,anchor:`#secondarystorageconfigspec`},"spec.elasticsearch.caSecretRef":{description:`CASecretRef names the CA bundle that consumers use to verify the TLS
+certificate of the endpoint. Set it when a well-known CA did not sign
+the certificate of the endpoint. An example is the self-signed
+certificate of a cluster that ECK runs. Omit it for an endpoint with a
+publicly trusted certificate. It is valid only with an https endpoint.`,anchor:`#elasticsearchstorage`},"spec.elasticsearch.caSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.elasticsearch.caSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.elasticsearch.credentialsSecretRef":{description:`CredentialsSecretRef names a basic-auth user with read and write
+access to the Camunda indices.`,anchor:`#elasticsearchstorage`},"spec.elasticsearch.credentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.elasticsearch.credentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.elasticsearch.credentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.elasticsearch.endpoint":{description:`Endpoint is the HTTP(S) endpoint of the Elasticsearch cluster.`,anchor:`#elasticsearchstorage`},"spec.elasticsearch.nodeCount":{description:`NodeCount is the number of data nodes of the Elasticsearch cluster. An
+ElasticsearchCluster sets it in the contract that it publishes. For an
+Elasticsearch cluster that this operator does not manage, set it
+yourself.
+A consumer that sets no index replica count of its own gets 0 replicas
+on one node and 1 replica on two or more nodes. Without a node count,
+the consumer keeps the default of the Camunda application.`,anchor:`#elasticsearchstorage`},"spec.elasticsearch.snapshotRepository":{description:`SnapshotRepository names the snapshot repository in this Elasticsearch
+cluster that backups write to. An ElasticsearchCluster with a
+snapshotStorageRef registers the repository and sets this field in the
+contract that it publishes. For an Elasticsearch cluster that this
+operator does not manage, register the repository yourself and then
+set this field. A cluster that takes backups needs it. Without it, the
+backup components have no place to write. The name is part of a URL
+path of the Elasticsearch API, so it permits only a small set of
+characters.`,anchor:`#elasticsearchstorage`},"spec.rdbms":{description:`RDBMS holds the relational database details. Required when type is
+rdbms. Forbidden with other types.`,anchor:`#secondarystorageconfigspec`},"spec.rdbms.databaseConfigRef":{description:`DatabaseConfigRef names the DatabaseConfig of the logical database to
+use, in the namespace of this contract.`,anchor:`#rdbmsstorage`},"spec.type":{description:`Type selects the secondary storage backend that this contract
+describes.`,anchor:`#secondarystorageconfigspec`},status:{description:`status defines the observed state of SecondaryStorageConfig`,anchor:`#secondarystorageconfig`},"status.conditions":{description:`Conditions represent the current validation state. The Ready condition
+has the reasons Healthy, MissingSecret, or InvalidReference.`,anchor:`#secondarystorageconfigstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the operator processed.`,anchor:`#secondarystorageconfigstatus`}}},"fleet.camunda.io":{CamundaClusterClaim:{spec:{description:`spec is the cluster that the claim asks for`,anchor:`#camundaclusterclaim`},"spec.allowVersionDowngrade":{description:`AllowVersionDowngrade is the target version of a confirmed downgrade,
+as a full version such as 8.9.3. Set it to the version of the release
+of the claim. The claim controller sets the annotation
+camunda.io/allow-version-downgrade on the CamundaCluster to this
+version, and keeps it until the operator removes it. A version that
+the release does not have sets no annotation, and neither does a
+CamundaCluster whose spec.version another writer set. While the
+cluster is suspended, the claim controller neither adds nor removes
+the annotation, so a downgrade set during a suspension waits for the
+resume. The fleet manager clears the field after the cluster reports
+the target version.`,anchor:`#camundaclusterclaimspec`},"spec.attachments":{description:`Attachments are the resources that the claim controller attaches to
+the cluster.`,anchor:`#camundaclusterclaimspec`},"spec.attachments.backupSchedule":{description:`BackupSchedule adds a BackupSchedule named <claim>-backups for the
+cluster. Unset, the claim has no backup schedule.`,anchor:`#clusterattachments`},"spec.attachments.backupSchedule.retained":{description:`Retained limits how many backups of the schedule stay. Unset, the
+defaults of the BackupSchedule apply.`,anchor:`#backupscheduleattachment`},"spec.attachments.backupSchedule.retained.completed":{description:`Completed is how many completed backups the schedule keeps.`,anchor:`#retainedbackups`},"spec.attachments.backupSchedule.retained.failed":{description:`Failed is how many failed backups the schedule keeps. With zero, the
+operator deletes a failed backup soon after it fails.`,anchor:`#retainedbackups`},"spec.attachments.backupSchedule.schedule":{description:`Schedule is when the backups run: a five-field cron expression
+(minute, hour, day of month, month, day of week), evaluated in UTC.`,anchor:`#backupscheduleattachment`},"spec.attachments.optimize":{description:`Optimize adds a CamundaOptimize named <claim>-optimize that reads the
+cluster. Unset, the claim has no Optimize.`,anchor:`#clusterattachments`},"spec.attachments.optimize.externalUrl":{description:`ExternalURL is the URL where browsers reach this Optimize, with the
+rules of externalUrl on the CamundaOptimize. The claim controller
+refuses it with reason SlotConflict when the access section has a
+selection, because that section fills it.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.importer":{description:`Importer configures the Deployment that imports the cluster data into
+the Optimize indices. Optimize supports one active importer, so
+replicas must be 0 or 1.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.importer.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.attachments.optimize.importer.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.attachments.optimize.importer.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.attachments.optimize.importer.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.attachments.optimize.indexReplicas":{description:`IndexReplicas is the replica count of each Optimize index. Unset, the
+storage of the cluster gives the count, as on the CamundaOptimize.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.managementAuthConfigRef":{description:`ManagementAuthConfigRef names the cluster-scoped ManagementAuthConfig
+that Optimize signs in against. The claim controller writes it to
+managementAuthRef of the CamundaOptimize.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.monitoring":{description:`Monitoring configures the monitoring integrations of Optimize.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.monitoring.serviceMonitor":{description:`ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+the operator creates one ServiceMonitor for each Deployment, with the
+name of the workload. It scrapes /actuator/prometheus on the management
+port.`,anchor:`#optimizemonitoringspec`},"spec.attachments.optimize.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.attachments.optimize.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.attachments.optimize.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.attachments.optimize.webapp":{description:`Webapp configures the Deployment that serves the Optimize user
+interface.`,anchor:`#optimizeattachment`},"spec.attachments.optimize.webapp.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.attachments.optimize.webapp.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.attachments.optimize.webapp.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.attachments.optimize.webapp.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster":{description:`Cluster holds the overrides of the cluster. It has the shape of the
+CamundaCluster spec, and it merges over the preset and the release.
+
+The API server refuses these fields here. suspend: false and an empty
+presetRef, releaseRef, storageRef, or backupStorageRef count as unset.
+  - presetRef, releaseRef, platformConfigRef, and suspend: the claim
+    has its own fields for them.
+  - version and connectors.version: the release sets them. Use
+    allowVersionDowngrade for a downgrade.
+  - serviceAccount.name and connectors.serviceAccount.name: the claim
+    controller sets them.
+  - storageRef and backupStorageRef: the secondary-storage and
+    backup-storage sections fill them.
+
+A selected section fills these fields. The claim controller refuses a
+claim that sets one of them with reason SlotConflict. Without a
+selection in that section, the claim can set the field.
+  - externalUrl: access.
+  - serviceAccount.annotations: cloud-identity.
+  - connectors.serviceAccount.annotations: connectors-permissions.
+  - zeebe.storageClassName: volume-encryption.`,anchor:`#camundaclusterclaimspec`},"spec.cluster.admin":{description:`Admin configures the Admin web application (Orchestration Cluster
+Identity before Camunda 8.9). Its Spring profile is admin.`,anchor:`#camundaclusterspec`},"spec.cluster.admin.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.admin.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.admin.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.admin.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.admin.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.admin.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.admin.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.admin.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.admin.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.admin.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.admin.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.auth":{description:`Auth holds the credentials of this cluster and the identities that get
+its admin role. Under OIDC, it holds the client credentials and the
+administrators. Under basic authentication, it holds the admin
+credential that the operator owns.`,anchor:`#camundaclusterspec`},"spec.cluster.auth.admin":{description:`Admin holds the identities that get the admin role of this cluster. It
+applies under OIDC only. Basic authentication seeds its own
+administrator and ignores this block.`,anchor:`#clusterauthspec`},"spec.cluster.auth.admin.clients":{description:`Clients are the values of the client id claim that get the admin role.
+A client entry matches only when the platform config sets
+auth.oidc.clientIdClaim.`,anchor:`#clusteradminspec`},"spec.cluster.auth.admin.mappingRules":{description:`MappingRules give the admin role to every token that holds a claim with
+a given value.`,anchor:`#clusteradminspec`},"spec.cluster.auth.admin.mappingRules.claimName":{description:`ClaimName is the name of a claim, or a JSONPath expression that points
+at a claim.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.mappingRules.claimValue":{description:`ClaimValue is the value that the claim must hold for the rule to match.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.mappingRules.id":{description:`ID names the rule inside the cluster. The Admin web application lists it
+under Mapping Rules.`,anchor:`#adminmappingrule`},"spec.cluster.auth.admin.users":{description:`Users are the values of the username claim that get the admin role.`,anchor:`#clusteradminspec`},"spec.cluster.auth.audience":{description:`Audience is the audience that access tokens must carry. Defaults to
+the client ID that the cluster uses.`,anchor:`#clusterauthspec`},"spec.cluster.auth.basic":{description:`Basic configures the admin credential that the operator owns. It
+applies under basic authentication only. OIDC ignores this block, like
+basic authentication ignores admin.`,anchor:`#clusterauthspec`},"spec.cluster.auth.basic.adminEmail":{description:`AdminEmail is the email address of the admin user that the operator
+seeds. The orchestration cluster stores it on that user, and the Admin
+web application shows it. Set the address of the person or the team
+that owns the cluster.
+
+When empty, the operator uses admin@example.com. RFC 2606 reserves this
+domain for documentation, so the default is not the address of a real
+person.
+
+The operator applies a changed value to the running cluster. The
+cluster validates the address and refuses a domain without a dot. When
+the cluster refuses an address, AdminSecretReady shows its answer.`,anchor:`#basicauthspec`},"spec.cluster.auth.basic.passwordRotation":{description:`PasswordRotation requests one rotation of the admin password. Set it
+to a value that differs from the applied one, for example a date. The
+operator generates a new password and sets it on the admin user of the
+running cluster. Then it publishes the password in the admin Secret.
+The connectors Deployment restarts with the new password. An empty
+value never rotates. A suspended cluster rotates after it resumes.
+
+status.adminPassword.rotation shows the applied value. A preset can set
+this field. Then every cluster that references the preset rotates, and
+each of these clusters reports its own status.`,anchor:`#basicauthspec`},"spec.cluster.auth.clientId":{description:`ClientID is the OIDC client ID of this cluster. A client ID replaces
+the whole client: the audience and the client secret then come from
+this block only. Requires clientSecretRef.`,anchor:`#clusterauthspec`},"spec.cluster.auth.clientSecretRef":{description:`ClientSecretRef names the Secret that holds the OIDC client secret of
+this cluster. Required when clientId is set.`,anchor:`#clusterauthspec`},"spec.cluster.auth.clientSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.cluster.auth.clientSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.cluster.backup":{description:`Backup configures the backups of this cluster. It sets the schedule and
+the retention of the primary-storage backups that Zeebe takes, and the
+pod of the database dump Job. A preset can set this block, but not
+backupStorageRef. The block applies only to a cluster with relational
+secondary storage. Only such a cluster has continuous and scheduled
+primary-storage backups and the dump Job.`,anchor:`#camundaclusterspec`},"spec.cluster.backup.dump":{description:`Dump configures the Job that writes the logical database to the backup
+bucket. A LogicalBackupRDBMS can replace this block as a whole.`,anchor:`#clusterbackupspec`},"spec.cluster.backup.dump.activeDeadlineSeconds":{description:`ActiveDeadlineSeconds is the number of seconds that the dump Job can
+run before it fails, counted from its start. When the dump block that
+applies does not set it, the Job gets 86400 (24 hours). In the block of
+the cluster, an unset value takes the value of the preset. The
+spec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so
+an unset value there gives 86400, not the value of the cluster.
+
+The default is large, so that a very large dump can complete. The Job
+always has a deadline. A pod that cannot start uses no retry, so
+without a deadline a broken Job stays active for the life of the
+backup. A lower value fails a stuck dump sooner. A higher value gives a
+long dump the time that it needs.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.extraEnv":{description:`ExtraEnv are extra environment variables of the dump pod.
+
+In the spec.dump of a LogicalBackupRDBMS, every name that starts with
+PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is
+connection policy, because libpq reads PGHOSTADDR, PGSERVICE,
+PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of
+a backup reach only the dump container, never the upload container.
+Cloud SDKs read endpoint, proxy, and configuration variables from the
+environment, and the author of a backup must not change where the dump
+goes.
+
+In the spec.backup.dump of the cluster, no name is reserved, and the
+variables reach every container. The cluster owner sets the connection
+policy, PGSSLMODE included.
+
+Unlike the extraEnv of a workload, this list is atomic. One field
+manager owns the whole list, because no extension adds entries to a
+dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources of the dump pod. In the
+spec.dump of a LogicalBackupRDBMS, every source needs a prefix that
+cannot make a PG* or UPLOAD_* name. The writer of the referenced object
+chooses its keys. As with ExtraEnv, the sources of a
+backup reach only the dump container. The block of the cluster needs no
+prefix, and its sources reach every container.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.podAnnotations":{description:`PodAnnotations are extra annotations of the dump pod. A service mesh
+sidecar keeps running after the dump finishes, and the Job does not
+complete. Set the injection annotation of the mesh to false here.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.podLabels":{description:`PodLabels are extra labels of the dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.postgresImage":{description:`PostgresImage is the full image reference of the dump container. It
+replaces the default postgres:<major> of the upstream registry. Set it
+in an air-gapped installation, where the default image is not
+available.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.resources":{description:`Resources are the CPU and memory of the dump pod.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scheduling":{description:`Scheduling holds the scheduling constraints of the dump pod. When set,
+it replaces the block of a preset, with no merge.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.backup.dump.scratchVolume":{description:`ScratchVolume is where the pod writes the dump before the upload. When
+set, it replaces the block of a preset, with no merge. The dump pod
+runs with fsGroup 999, the postgres group. Thus pg_dump can write to a
+volume that a storage class gives with the root owner.`,anchor:`#backupdumpspec`},"spec.cluster.backup.dump.scratchVolume.sizeLimit":{description:`SizeLimit is the size of the emptyDir that holds the dump. Set it to
+the size the dump needs, with room to spare.`,anchor:`#scratchvolumespec`},"spec.cluster.backup.dump.scratchVolume.storageClassName":{description:`StorageClassName makes the scratch volume a PersistentVolumeClaim of
+this class, not an emptyDir. Use it when the dump is larger than the
+ephemeral storage of a node.`,anchor:`#scratchvolumespec`},"spec.cluster.backup.primaryStorage":{description:`PrimaryStorage configures the backups that Zeebe takes of its own
+primary storage. A point-in-time restore uses them.`,anchor:`#clusterbackupspec`},"spec.cluster.backup.primaryStorage.checkpointInterval":{description:`CheckpointInterval is the interval at which Zeebe writes marker
+checkpoints into the log stream, as an ISO 8601 duration of days and
+time (P2DT3H, PT15M). Camunda parses no week, month, or year units.
+It is the granularity of a point-in-time restore. Defaults to PT15M.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.continuous":{description:`Continuous keeps every log segment until it is backed up, so that a
+restore finds a range without gaps. Defaults to true on a relational
+cluster with a backupStorageRef. A preset can turn it on for many
+clusters, and one cluster can still turn it off.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.retention":{description:`Retention bounds how long Zeebe keeps its primary-storage backups.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backup.primaryStorage.retention.cleanupSchedule":{description:`CleanupSchedule is the interval at which Zeebe looks for backups
+outside the window: an ISO 8601 duration, a CRON expression, or
+"none". Defaults to PT1H.`,anchor:`#primarystorageretentionspec`},"spec.cluster.backup.primaryStorage.retention.window":{description:`Window is how far back the backups stay available for a restore, as an
+ISO 8601 duration of days and time (P7D, PT12H). Camunda parses no
+week, month, or year units. Defaults to P7D. It limits the restore
+window, so set it at least as long as the recovery point that the
+cluster needs. A BackupSchedule can keep database dumps for longer than
+this window. A restore of such an old dump is not possible.`,anchor:`#primarystorageretentionspec`},"spec.cluster.backup.primaryStorage.schedule":{description:`Schedule is the interval at which Zeebe takes a primary-storage
+backup: an ISO 8601 duration, a CRON expression, or "none". Defaults
+to PT1H. Always use a schedule with continuous. Otherwise the log grows
+without limit.`,anchor:`#primarystoragebackupspec`},"spec.cluster.backupStorageRef":{description:`BackupStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for backups.`,anchor:`#camundaclusterspec`},"spec.cluster.connectors":{description:`Connectors configures the connectors runtime.`,anchor:`#camundaclusterspec`},"spec.cluster.connectors.enabled":{description:`Enabled runs the connectors runtime when true. Defaults to false.`,anchor:`#connectorsspec`},"spec.cluster.connectors.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#connectorsspec`},"spec.cluster.connectors.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#connectorsspec`},"spec.cluster.connectors.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#connectorsspec`},"spec.cluster.connectors.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#connectorsspec`},"spec.cluster.connectors.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#connectorsspec`},"spec.cluster.connectors.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.connectors.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of the connectors pods.
+When unset, they run under the default ServiceAccount of the namespace.
+When set, they run under <name>-connectors, or under name. Only
+the annotations of this block go on the account, never the identities
+of the buckets. When they carry azure.workload.identity/client-id, the
+connectors pods get the label azure.workload.identity/use: "true". The
+connectors never run under the cluster ServiceAccount: name must differ
+from it, and a spec.serviceAccount.name of default needs this block, or
+Ready reports InvalidReference. The name default needs create false. A
+preset can set this block, except name.`,anchor:`#connectorsspec`},"spec.cluster.connectors.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.cluster.connectors.version":{description:`Version is the version of the connectors bundle image, as a full
+semantic version. Use the same minor as the cluster, such as 8.9.x for
+a cluster on 8.9. The patch does not follow the cluster patch. Required
+when connectors are enabled, unless the resolved release provides it.
+Forbidden in a preset.`,anchor:`#connectorsspec`},"spec.cluster.documentStorageRef":{description:`DocumentStorageRef names an ObjectStorageConfig, in the namespace of
+this cluster, for document storage.`,anchor:`#camundaclusterspec`},"spec.cluster.externalUrl":{description:`ExternalURL is the external base URL of the cluster. The operator uses
+it for OIDC redirect URLs and web application links. It creates no
+Ingress.`,anchor:`#camundaclusterspec`},"spec.cluster.extraEnv":{description:`ExtraEnv are extra environment variables of every workload. A
+per-component entry wins over an entry here with the same name.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+A CamundaManagementCluster that serves this cluster owns the four
+CAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and
+later). It replaces what you set under these names. If your entry under
+one of these names has valueFrom, the management cluster removes it. One
+entry cannot hold a value and a reference together.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#camundaclusterspec`},"spec.cluster.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of
+every workload.`,anchor:`#camundaclusterspec`},"spec.cluster.gateway":{description:`Gateway configures the gateway.`,anchor:`#camundaclusterspec`},"spec.cluster.gateway.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#gatewayspec`},"spec.cluster.gateway.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.mode":{description:`Mode selects a Deployment of the unified binary (Standalone) or the
+embedded gateway of the brokers (Embedded). Defaults to Standalone.
+The workload fields have an effect only in Standalone mode. The
+exception is extraEnv and extraEnvFrom: in Embedded mode, they apply to
+the brokers.`,anchor:`#gatewayspec`},"spec.cluster.gateway.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#gatewayspec`},"spec.cluster.gateway.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#gatewayspec`},"spec.cluster.gateway.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#gatewayspec`},"spec.cluster.gateway.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#gatewayspec`},"spec.cluster.gateway.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.gateway.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.gateway.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.indexReplicas":{description:`IndexReplicas is the replica count of each index that the cluster
+creates in an Elasticsearch secondary storage. When it is not set, the
+nodeCount of the storage contract gives the count: 0 on one node, 1 on
+two or more nodes. Without a nodeCount, Camunda keeps its own default.
+When indexReplicas is not set and the extraEnv of a process sets a
+legacy replica key, that process keeps the value of the key.
+
+The cluster applies the count to its existing indices when it starts.
+If the nodes cannot place the count, the operator keeps it and records
+an IndexReplicasExceedNodes Warning event on the CamundaCluster. A
+relational secondary
+storage ignores this field.`,anchor:`#camundaclusterspec`},"spec.cluster.monitoring":{description:`Monitoring configures the monitoring integrations.`,anchor:`#camundaclusterspec`},"spec.cluster.monitoring.serviceMonitor":{description:`ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,
+the operator creates one ServiceMonitor for each process, with the name
+of the workload. It scrapes /actuator/prometheus on the management port
+9600 of a unified process, and on the HTTP port 8080 of connectors.`,anchor:`#clustermonitoringspec`},"spec.cluster.monitoring.serviceMonitor.annotations":{description:`Annotations are extra annotations applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.enabled":{description:`Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,
+the exporter) when true. Defaults to false.`,anchor:`#servicemonitorspec`},"spec.cluster.monitoring.serviceMonitor.labels":{description:`Labels are extra labels applied to the ServiceMonitor.`,anchor:`#servicemonitorspec`},"spec.cluster.operate":{description:`Operate configures the Operate web application.`,anchor:`#camundaclusterspec`},"spec.cluster.operate.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.operate.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.operate.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.operate.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.operate.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.operate.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.operate.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.operate.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.operate.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.operate.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.operate.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.pause":{description:`Pause stops the reconciliation of this cluster: the operator changes no
+workload and writes no status. It records a Paused event instead. Other
+resources that use the cluster, such as a BackupSchedule or a restore,
+still act on it. When you delete a paused cluster, the operator still
+releases its storage backends. Defaults to false.`,anchor:`#camundaclusterspec`},"spec.cluster.platformConfigRef":{description:`PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that
+provides auth, license, and image repositories. Required on a
+CamundaCluster, forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.cluster.podAnnotations":{description:`PodAnnotations are extra annotations of every workload pod. The keys
+camunda.io/config-hash and camunda.io/service-account-hash belong to the
+operator. A value for them here, or in the podAnnotations of a process,
+does not reach the pods.`,anchor:`#camundaclusterspec`},"spec.cluster.podLabels":{description:`PodLabels are extra labels of every workload pod.`,anchor:`#camundaclusterspec`},"spec.cluster.presetRef":{description:`PresetRef names a cluster-scoped CamundaClusterPreset used as the
+configuration baseline. The preset doc lists the merge rules.`,anchor:`#camundaclusterspec`},"spec.cluster.releaseRef":{description:`ReleaseRef names a cluster-scoped CamundaRelease that provides the
+versions, the pinned images, and the environment of a version. It
+merges over the preset and under this spec. Forbidden in a preset.`,anchor:`#camundaclusterspec`},"spec.cluster.scheduling":{description:`Scheduling holds the scheduling constraints of every workload that does
+not set its own. When set, it replaces the scheduling block of a preset,
+with no merge.`,anchor:`#camundaclusterspec`},"spec.cluster.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.serviceAccount":{description:`ServiceAccount configures the ServiceAccount of every workload except
+the connectors, which connectors.serviceAccount configures. The
+workloads get access to the buckets of backupStorageRef and
+documentStorageRef through this identity. When the operator creates
+the account, it adds the identity annotation of each bucket that names
+one. When the annotations carry azure.workload.identity/client-id, the
+pods of these workloads, the backup Jobs included, get the label
+azure.workload.identity/use: "true". When name is unset, the account
+is <name>-camunda. The pods need no account while neither the cluster
+nor its preset sets this block and no referenced bucket uses workload
+identity. The operator then deletes the account only when the cluster
+owns it, because the operator created it or took it over. An account
+of that name that you created stays.`,anchor:`#camundaclusterspec`},"spec.cluster.serviceAccount.annotations":{description:`Annotations to set on the ServiceAccount that the operator creates.
+Usually these are workload-identity annotations (IRSA, GCP Workload
+Identity, and more) that give the pods access to cloud resources, such
+as the snapshot bucket for backups. Except on connectors.serviceAccount
+of a CamundaCluster, the operator also adds the identity annotation of
+each referenced bucket that names an identity. An annotation set here
+wins over it. With create false, the operator sets no annotation. Add them
+to the existing ServiceAccount yourself.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.create":{description:`Create makes the operator create and own the ServiceAccount. Defaults
+to true. False names a ServiceAccount that already exists. The operator
+then does not create, annotate, or own it. If it does not exist, Ready
+reports InvalidReference. Ready does not report it on a suspended
+ElasticsearchCluster or for connectors that are not enabled. It also
+does not report it for a component of a CamundaManagementCluster that
+does not run.
+While create is false, the operator never takes ownership of the
+ServiceAccount, because it deletes an owned one with the resource. A
+switch to false removes the owner reference from the account that the
+operator created. The account then stays when the resource is deleted.
+With create true, the operator owns and annotates the account of that
+name, also one that it did not create. An account that another
+resource controls is not taken over, and the apply fails.`,anchor:`#serviceaccountspec`},"spec.cluster.serviceAccount.name":{description:`Name is the name of the ServiceAccount. When empty, the operator
+derives the name from the name of the resource, as the doc of each kind
+states. The cloud provider uses this name. A workload identity that
+needs no annotation, such as EKS Pod Identity, binds the principal
+system:serviceaccount:<namespace>:<name>.`,anchor:`#serviceaccountspec`},"spec.cluster.storageRef":{description:`StorageRef names the SecondaryStorageConfig, in the namespace of this
+cluster, that describes the secondary storage backend. Required on a
+CamundaCluster, forbidden in a preset. One backend serves one
+CamundaCluster. Two contracts that name one address are one backend. If
+another cluster already holds the backend, the operator suspends this
+cluster with Ready reason StorageAlreadyAttached. The suspension stays
+until the other cluster moves to another backend or is deleted.`,anchor:`#camundaclusterspec`},"spec.cluster.suspend":{description:`Suspend scales every workload to zero and keeps the data. Defaults to
+false. An annotation with the prefix suspension-hold.camunda.io/ on the
+CamundaCluster also suspends it, whatever this field says.`,anchor:`#camundaclusterspec`},"spec.cluster.tasklist":{description:`Tasklist configures the Tasklist web application.`,anchor:`#camundaclusterspec`},"spec.cluster.tasklist.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#webappspec`},"spec.cluster.tasklist.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.mode":{description:`Mode selects a Deployment of the unified binary that serves only this
+application (Standalone) or the nearest standalone host up the chain
+(Embedded). Defaults to Embedded. The workload fields have an effect
+only in Standalone mode. The exception is extraEnv and extraEnvFrom: in
+Embedded mode, they apply to the host process.`,anchor:`#webappspec`},"spec.cluster.tasklist.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#webappspec`},"spec.cluster.tasklist.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#webappspec`},"spec.cluster.tasklist.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#webappspec`},"spec.cluster.tasklist.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#webappspec`},"spec.cluster.tasklist.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.tasklist.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.tasklist.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.version":{description:`Version is the Camunda version to deploy, as a full semantic version.
+Required unless the resolved release provides it. Forbidden in a
+preset. The operator refuses a version below 8.9.0, also when it comes
+from the release. The operator also refuses a version below the
+version that the brokers run, with Ready reason VersionDowngradeRefused.
+The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
+set to that version, permits it.
+The operator also refuses a version more than one minor above the
+version that the brokers run, in the same major, with Ready reason
+VersionSkipRefused. No annotation permits that move.`,anchor:`#camundaclusterspec`},"spec.cluster.zeebe":{description:`Zeebe configures the brokers.`,anchor:`#camundaclusterspec`},"spec.cluster.zeebe.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#zeebespec`},"spec.cluster.zeebe.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.partitions":{description:`Partitions is the number of partitions. Defaults to 1. Once set, it can
+neither be decreased nor removed.`,anchor:`#zeebespec`},"spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy":{description:`PersistentVolumeClaimRetentionPolicy says what happens to the broker
+volumes when the CamundaCluster is deleted. A scale-down and a
+suspension always keep them.`,anchor:`#zeebespec`},"spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted":{description:`WhenDeleted is what happens to the data volumes when the resource is
+deleted. Defaults to Delete. Delete removes them with the resource.
+Retain keeps them, and a later resource with the same name attaches
+them again.`,anchor:`#persistentvolumeclaimretentionpolicy`},"spec.cluster.zeebe.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#zeebespec`},"spec.cluster.zeebe.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#zeebespec`},"spec.cluster.zeebe.replicationFactor":{description:`ReplicationFactor is the number of brokers that hold a copy of each
+partition. Defaults to 1. It must not exceed replicas.`,anchor:`#zeebespec`},"spec.cluster.zeebe.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#zeebespec`},"spec.cluster.zeebe.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#zeebespec`},"spec.cluster.zeebe.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.cluster.zeebe.storageClassName":{description:`StorageClassName is the StorageClass of the broker volumes. Defaults to
+the default StorageClass of the Kubernetes cluster. The class cannot
+change after the broker StatefulSet exists. The API server refuses a
+change of a value that the CamundaCluster sets itself. A preset can
+change the class, and a cluster that got its class from a preset can
+set another one. A cluster whose broker StatefulSet exists, also a
+suspended one, then keeps its class and records a
+StorageClassChangeIgnored event. A cluster without a broker StatefulSet
+takes the new class. Volumes that whenDeleted Retain kept from a
+deleted cluster of the same name keep their class.`,anchor:`#zeebespec`},"spec.cluster.zeebe.storageSize":{description:`StorageSize is the size of the data volume of each broker. Defaults to
+10Gi. It can only grow. The API server refuses a change of this field
+in a CamundaCluster to a smaller value. A smaller value is accepted when
+the field was not set before, or when a preset lowers the size. A
+cluster whose volumes are already larger then keeps that size and
+records a StorageShrinkIgnored event.
+When the size grows, the operator expands the existing claims in place.
+The storage class must support volume expansion.`,anchor:`#zeebespec`},"spec.deletionPolicy":{description:`DeletionPolicy says what happens to the resources of the plugin
+requests when the claim is deleted. Delete deletes them. Orphan keeps
+them. Empty means the deletion default that the claim recorded from its
+Environment at creation, or Delete when it recorded none. The claim
+controller refuses Orphan with the reason NotAllowed when a selected
+registration does not support it. The CamundaCluster and the
+attachments are always deleted with the claim, under their own
+retention rules.`,anchor:`#camundaclusterclaimspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names the CamundaPlatformConfig of the cluster.
+Empty means spec.platformConfigRef of the Environment.`,anchor:`#camundaclusterclaimspec`},"spec.plugins":{description:`Plugins are the registrations that the claim selects, one item for
+each section and registration. The sections and their registrations
+are fixed after creation. Only the parameters of a selection can
+change.`,anchor:`#camundaclusterclaimspec`},"spec.plugins.parameters":{description:`Parameters are the parameter values of the selection. Only the
+claim-editable parameters of the policy can differ from the policy
+values. The claim controller refuses another change with NotAllowed.`,anchor:`#pluginselection`},"spec.plugins.registration":{description:`Registration is the name of the PluginRegistration.`,anchor:`#pluginselection`},"spec.plugins.section":{description:`Section is the name of the PluginSection.`,anchor:`#pluginselection`},"spec.presetRef":{description:`PresetRef names the CamundaClusterPreset of the cluster. When the
+namespace belongs to an Environment, the Environment must list the
+preset in spec.presets.camundaCluster. The claim controller checks a
+change of an existing claim against the current Environment.`,anchor:`#camundaclusterclaimspec`},"spec.releaseRef":{description:`ReleaseRef names the CamundaRelease of the cluster, which sets its
+versions. Empty means the default release of the Environment. The
+claim controller checks a change of an existing claim against the
+current Environment.`,anchor:`#camundaclusterclaimspec`},"spec.suspend":{description:`Suspend scales every workload of the cluster to zero and keeps the
+data.`,anchor:`#camundaclusterclaimspec`},status:{description:`status is the state of the claim`,anchor:`#camundaclusterclaim`},"status.cluster":{description:`Cluster names the CamundaCluster of the claim. It is unset until the
+claim controller writes the cluster.`,anchor:`#camundaclusterclaimstatus`},"status.cluster.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"status.conditions":{description:`Conditions report the state of the claim. Ready is False with reason
+NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
+InvalidReference, SlotConflict, or WiringCycle when a check of the
+claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
+AttachmentsReady. When ClusterReady has the reason Creating, Updating,
+Failing, Degraded, or Down, its message holds the Ready reason and
+message of the CamundaCluster. If the CamundaCluster has no Ready
+condition yet, the message says so. With other reasons, such as
+Error or PrerequisiteNotMet, the message gives that cause. While the
+claim is deleted and waits for objects, Ready is False with the reason
+Deleting, and the message names those objects.`,anchor:`#camundaclusterclaimstatus`},"status.environment":{description:`Environment is the Environment of the namespace when the claim was
+created. It is empty when no Environment applied.`,anchor:`#camundaclusterclaimstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the cluster claim
+controller processed.`,anchor:`#camundaclusterclaimstatus`},"status.requests":{description:`Requests is the state of each PluginRequest of the claim.`,anchor:`#camundaclusterclaimstatus`},"status.requests.name":{description:`Name is the name of the PluginRequest.`,anchor:`#requeststatus`},"status.requests.outputsReady":{description:`OutputsReady is the status of the OutputsReady condition of the
+request.`,anchor:`#requeststatus`},"status.requests.ready":{description:`Ready is the status of the Ready condition of the request.`,anchor:`#requeststatus`},"status.requests.registration":{description:`Registration is the name of the PluginRegistration of the request.`,anchor:`#requeststatus`},"status.requests.section":{description:`Section is the name of the PluginSection of the request.`,anchor:`#requeststatus`},"status.resolvedPolicy":{description:`ResolvedPolicy is the policy that the claim recorded from its
+Environment at creation. A later change of the Environment does not
+change it.`,anchor:`#camundaclusterclaimstatus`},"status.resolvedPolicy.deletionPolicy":{description:`DeletionPolicy is the deletion default of the environment.`,anchor:`#resolvedpolicy`},"status.resolvedPolicy.parameters":{description:`Parameters holds the parameter values and the claim-editable
+parameters, by registration name.`,anchor:`#resolvedpolicy`},"status.resolvedPolicy.sections":{description:`Sections holds the policy of each section, by section name.`,anchor:`#resolvedpolicy`}},CamundaManagementClusterClaim:{spec:{description:`spec is the management plane that the claim asks for`,anchor:`#camundamanagementclusterclaim`},"spec.clusterSelector":{description:`ClusterSelector selects the CamundaClusters that Console and Web
+Modeler serve, in the namespaces of the environments. An unset
+selector selects no cluster. An empty selector ({}) selects every
+cluster.`,anchor:`#camundamanagementclusterclaimspec`},"spec.deletionPolicy":{description:`DeletionPolicy says what happens to the resources of the
+PluginRequests of the claim when the claim is deleted. Delete deletes
+them. Orphan keeps them. Empty means the deletion default that the
+claim recorded from its Environment at creation, or Delete when it
+recorded none. The claim controller refuses Orphan with the reason
+NotAllowed when a selected registration does not support it. The
+CamundaManagementCluster is always deleted with the claim.`,anchor:`#camundamanagementclusterclaimspec`},"spec.environments":{description:`Environments are the names of the Environments that the plane serves.
+The plane serves the CamundaClusters in the namespaces of these
+environments. The claim controller refuses a name that no Environment
+has, with the reason InvalidReference.`,anchor:`#camundamanagementclusterclaimspec`},"spec.management":{description:`Management holds the settings of the plane that the claim can set: the
+identity provider, Management Identity, Console, and Web Modeler. The
+versions are in versions. The database references come from the
+management-database section.`,anchor:`#camundamanagementclusterclaimspec`},"spec.management.console":{description:`Console configures Console. While it is unset, the plane has no
+Console.`,anchor:`#managementoverrides`},"spec.management.console.externalUrl":{description:`ExternalURL is the URL where browsers reach Console. The claim
+controller refuses this field with the reason SlotConflict when the
+access section has a selection, because the access section then gives
+the URL. Without a selection, set it here.`,anchor:`#consoleoverrides`},"spec.management.console.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#consoleoverrides`},"spec.management.console.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#consoleoverrides`},"spec.management.console.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#consoleoverrides`},"spec.management.console.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#consoleoverrides`},"spec.management.console.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#consoleoverrides`},"spec.management.console.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#consoleoverrides`},"spec.management.console.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#consoleoverrides`},"spec.management.console.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.console.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.console.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.management.identity":{description:`Identity configures Management Identity. The plane always runs it.`,anchor:`#managementoverrides`},"spec.management.identity.admin":{description:`Admin names the first administrator of the plane. Set claimName and
+claimValue in the oidc mode, and username in the Keycloak modes.
+Management Identity reads it only on its first start.`,anchor:`#identityoverrides`},"spec.management.identity.admin.claimName":{description:`ClaimName is the token claim that identifies the administrator, for
+example oid or sub. Set it in the oidc mode. The operator records the
+claim as <claimName>=<claimValue> and splits it at the first equals
+sign. Thus the name cannot hold an equals sign.`,anchor:`#identityadminspec`},"spec.management.identity.admin.claimValue":{description:`ClaimValue is the value of the claim for the administrator.
+Set it in the oidc mode.`,anchor:`#identityadminspec`},"spec.management.identity.admin.email":{description:`Email is the email address of the first Keycloak user. Web Modeler
+needs an address for every person who signs in. Thus it is required
+when webModeler is set in a Keycloak mode.`,anchor:`#identityadminspec`},"spec.management.identity.admin.passwordSecretRef":{description:`PasswordSecretRef names the Secret key that holds the password of the
+first Keycloak user. The operator generates a password when this is
+unset.`,anchor:`#identityadminspec`},"spec.management.identity.admin.passwordSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.management.identity.admin.passwordSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.management.identity.admin.username":{description:`Username is the name of the first Keycloak user. Set it in the keycloak
+and the externalKeycloak modes. Management Identity creates the user on
+its first start. A later change of this field creates a second user and
+does not rename the first user.`,anchor:`#identityadminspec`},"spec.management.identity.externalUrl":{description:`ExternalURL is the URL where browsers reach Management Identity. A URL
+with a path other than / must use https. The claim controller refuses
+this field with the reason SlotConflict when the access section has a
+selection, because the access section then gives the URL. Without a
+selection, set it here.`,anchor:`#identityoverrides`},"spec.management.identity.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#identityoverrides`},"spec.management.identity.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#identityoverrides`},"spec.management.identity.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#identityoverrides`},"spec.management.identity.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#identityoverrides`},"spec.management.identity.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#identityoverrides`},"spec.management.identity.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#identityoverrides`},"spec.management.identity.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#identityoverrides`},"spec.management.identity.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.identity.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.identity.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.management.identityProvider":{description:`IdentityProvider selects where users sign in. Exactly one of keycloak,
+externalKeycloak, or oidc is set. The mode can change after creation.`,anchor:`#managementoverrides`},"spec.management.identityProvider.externalKeycloak":{description:`ExternalKeycloak connects Management Identity to a Keycloak that you
+run.`,anchor:`#managementidentityprovider`},"spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef":{description:`AdminCredentialsSecretRef names the Secret with the Keycloak
+administrator credentials. Management Identity uses them to create the
+realm, the clients, and the initial administrator.`,anchor:`#externalkeycloakspec`},"spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.management.identityProvider.externalKeycloak.caBundleSecretRef":{description:`CABundleSecretRef names the Secret key that holds the certificate
+authority of Keycloak, in PEM form. The operator signs in to Keycloak to
+register the login callbacks of Optimize. It then trusts this authority
+and the trust store of its own image. Set it when a public authority did
+not sign the certificate of Keycloak. It is valid only with an https
+url.`,anchor:`#externalkeycloakspec`},"spec.management.identityProvider.externalKeycloak.caBundleSecretRef.key":{description:`Key is the key in the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.management.identityProvider.externalKeycloak.caBundleSecretRef.name":{description:`Name is the name of the Secret that holds the value.`,anchor:`#localsecretkeyref`},"spec.management.identityProvider.externalKeycloak.realm":{description:`Realm is the realm that Management Identity creates and uses. Empty
+means camunda-platform. The realm is part of the issuer, the token, and
+the JWKS URLs that Management Identity builds. Thus it holds only
+letters, digits, dots, hyphens, and underscores, and its length has a
+limit, as the URL has.`,anchor:`#externalkeycloakspec`},"spec.management.identityProvider.externalKeycloak.url":{description:`URL is the URL of Keycloak, with the /auth path when Keycloak has one.
+Management Identity uses this URL, so it must resolve from inside the
+Kubernetes cluster.
+
+The operator appends /realms/<realm> to this URL, so the URL has no
+query and no fragment. The URL is also in the annotations of the Lease
+that claims the realm, so its length has a limit.
+
+The URL has no user and no password. The operator does not support a
+Keycloak behind a proxy that needs basic authentication.`,anchor:`#externalkeycloakspec`},"spec.management.identityProvider.keycloak":{description:`Keycloak runs Keycloak through the Keycloak Operator. The Keycloak
+Operator must be installed on the Kubernetes cluster. versions.keycloak
+is required in this mode.`,anchor:`#managementidentityprovider`},"spec.management.identityProvider.keycloak.externalUrl":{description:`ExternalURL is the URL where browsers reach Keycloak, with the /auth
+path and no query and no fragment. The claim controller refuses this
+field with the reason SlotConflict when the access section has a
+selection, because the access section then gives the URL. Without a
+selection, set it here.`,anchor:`#keycloakoverrides`},"spec.management.identityProvider.keycloak.replicas":{description:`Replicas is the number of Keycloak instances. Defaults to 1.`,anchor:`#keycloakoverrides`},"spec.management.identityProvider.keycloak.resources":{description:`Resources are the CPU and memory of the Keycloak container.`,anchor:`#keycloakoverrides`},"spec.management.identityProvider.keycloak.scheduling":{description:`Scheduling constraints of the Keycloak pods.`,anchor:`#keycloakoverrides`},"spec.management.identityProvider.keycloak.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.identityProvider.keycloak.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.identityProvider.keycloak.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.management.identityProvider.oidc":{description:`OIDC connects Management Identity to the identity provider of the
+CamundaPlatformConfig of the plane.`,anchor:`#managementidentityprovider`},"spec.management.webModeler":{description:`WebModeler configures Web Modeler. While it is unset, the plane has no
+Web Modeler.`,anchor:`#managementoverrides`},"spec.management.webModeler.externalUrl":{description:`ExternalURL is the URL where browsers reach Web Modeler. The claim
+controller refuses this field with the reason SlotConflict when the
+access section has a selection, because the access section then gives
+the URL. Without a selection, set it here.`,anchor:`#webmodeleroverrides`},"spec.management.webModeler.mail":{description:`Mail configures the SMTP server that Web Modeler sends notifications
+through. Web Modeler does not start without it.`,anchor:`#webmodeleroverrides`},"spec.management.webModeler.mail.credentialsSecretRef":{description:`CredentialsSecretRef names the Secret with the user and the password of
+the SMTP server. Leave it unset for a server that needs no credentials.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.mail.credentialsSecretRef.name":{description:`Name is the name of the Secret that holds the credentials.`,anchor:`#localcredentialssecretref`},"spec.management.webModeler.mail.credentialsSecretRef.passwordKey":{description:`PasswordKey is the key in the Secret that holds the plaintext password.`,anchor:`#localcredentialssecretref`},"spec.management.webModeler.mail.credentialsSecretRef.usernameKey":{description:`UsernameKey is the key in the Secret that holds the plaintext username.`,anchor:`#localcredentialssecretref`},"spec.management.webModeler.mail.fromAddress":{description:`FromAddress is the address that Web Modeler sends from.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.mail.fromName":{description:`FromName is the display name of the sender of Web Modeler mail.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.mail.smtpHost":{description:`SMTPHost is the host name of the SMTP server.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.mail.smtpPort":{description:`SMTPPort is the port of the SMTP server. Defaults to 587.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.mail.tls":{description:`TLS turns STARTTLS on. Defaults to true.`,anchor:`#webmodelermailspec`},"spec.management.webModeler.restapi":{description:`Restapi configures the workload of the restapi process.`,anchor:`#webmodeleroverrides`},"spec.management.webModeler.restapi.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.management.webModeler.restapi.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.restapi.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.restapi.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.websockets":{description:`Websockets configures the workload of the websockets process.`,anchor:`#webmodeleroverrides`},"spec.management.webModeler.websockets.extraEnv":{description:`ExtraEnv are extra environment variables of the container of this
+process. On a CamundaCluster, an entry here wins over a top-level entry
+with the same name. The entries of an embedded web application apply to
+its host process.
+
+The list merges by name under server-side apply. Each field manager owns
+only the entries that it applies, so an extension controller can add its
+own entry next to yours. One applied manifest cannot hold two entries
+with the same name.
+
+Two field managers that apply the same name do not conflict, because the
+merge is per field inside the entry. One manager can own value and the
+other valueFrom. A container rejects an entry that has both, so the API
+server refuses to store such an entry.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.extraEnvFrom":{description:`ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the
+container of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.podAnnotations":{description:`PodAnnotations are extra annotations of the pods of this process. In a
+CamundaCluster, the keys camunda.io/config-hash and
+camunda.io/service-account-hash belong to the operator, and a value for
+them does not reach the pods.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.podLabels":{description:`PodLabels are extra labels of the pods of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.replicas":{description:`Replicas is the number of pods of this process. Defaults to 1. On a
+CamundaCluster it has no effect on an embedded web application.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.resources":{description:`Resources are the CPU and memory of the container of this process.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.scheduling":{description:`Scheduling holds the scheduling constraints of the pods of this process.
+When set, it replaces all other scheduling blocks for this process, with
+no merge. On a CamundaCluster, these are the top-level block and the
+block of a preset.`,anchor:`#workloadspec`},"spec.management.webModeler.websockets.scheduling.nodeAffinity":{description:`NodeAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.websockets.scheduling.podAffinity":{description:`PodAffinity rules for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.websockets.scheduling.tolerations":{description:`Tolerations for the pods.`,anchor:`#schedulingspec`},"spec.management.webModeler.websocketsExternalUrl":{description:`WebsocketsExternalURL is the URL where browsers get the live updates
+of Web Modeler. The claim controller refuses this field with the
+reason SlotConflict when the access section has a selection, because
+the access section then gives the URL. Without a selection, set it
+here.`,anchor:`#webmodeleroverrides`},"spec.managementAuthConfigName":{description:`ManagementAuthConfigName is the name of the cluster-scoped
+ManagementAuthConfig that the plane writes. A CamundaOptimize reads it
+through its managementAuthRef. Empty means the name of the claim.`,anchor:`#camundamanagementclusterclaimspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names the CamundaPlatformConfig of the plane. Empty
+means the platformConfigRef of the Environment of the namespace of the
+claim.`,anchor:`#camundamanagementclusterclaimspec`},"spec.plugins":{description:`Plugins holds the registration that the claim selects for each
+section, for example access and management-database. The sections and
+their registrations are fixed after creation. Only the parameters can
+change.`,anchor:`#camundamanagementclusterclaimspec`},"spec.plugins.parameters":{description:`Parameters are the parameter values of the selection. Only the
+claim-editable parameters of the policy can differ from the policy
+values. The claim controller refuses another change with NotAllowed.`,anchor:`#pluginselection`},"spec.plugins.registration":{description:`Registration is the name of the PluginRegistration.`,anchor:`#pluginselection`},"spec.plugins.section":{description:`Section is the name of the PluginSection.`,anchor:`#pluginselection`},"spec.suspend":{description:`Suspend scales every workload of the plane to zero. The PluginRequests
+do not change.`,anchor:`#camundamanagementclusterclaimspec`},"spec.versions":{description:`Versions holds the version of each component of the plane. The fleet
+manager fills them from its images table, because Identity, Console,
+and Web Modeler have their own version lines. For example, with
+Camunda 8.9.23, Identity is 8.9.10.`,anchor:`#camundamanagementclusterclaimspec`},"spec.versions.console":{description:`Console is the Console version. It is required while
+management.console is set.`,anchor:`#managementversions`},"spec.versions.identity":{description:`Identity is the Management Identity version, for example 8.9.10.`,anchor:`#managementversions`},"spec.versions.keycloak":{description:`Keycloak is the Keycloak version. It is required in the keycloak mode.
+Camunda 8.9 supports only Keycloak 26.`,anchor:`#managementversions`},"spec.versions.webModeler":{description:`WebModeler is the Web Modeler version. It is required while
+management.webModeler is set.`,anchor:`#managementversions`},status:{description:`status is the state of the claim`,anchor:`#camundamanagementclusterclaim`},"status.conditions":{description:`Conditions report the state of the claim. Ready is False with the
+reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
+InvalidReference, SlotConflict, or WiringCycle when the plane claim
+controller refuses the claim. The message names the cause. Otherwise
+Ready follows RequestsReady and ManagementClusterReady. When
+ManagementClusterReady has the reason Creating, Updating, Failing,
+Degraded, or Down, its message holds the Ready reason and message of
+the CamundaManagementCluster. If the CamundaManagementCluster has no
+Ready condition yet, the message says so. With other reasons, such as
+Error or PrerequisiteNotMet, the message gives that cause. While the
+claim is deleted and waits for objects, Ready is False with the reason
+Deleting, and the message names those objects.`,anchor:`#camundamanagementclusterclaimstatus`},"status.environment":{description:`Environment is the Environment of the namespace of the claim when the
+claim was created.`,anchor:`#camundamanagementclusterclaimstatus`},"status.managementCluster":{description:`ManagementCluster names the CamundaManagementCluster of the claim. It
+has the name of the claim.`,anchor:`#camundamanagementclusterclaimstatus`},"status.managementCluster.name":{description:`Name is the name of the CamundaManagementCluster.`,anchor:`#managementclusterref`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the plane claim
+controller processed.`,anchor:`#camundamanagementclusterclaimstatus`},"status.requests":{description:`Requests lists the PluginRequests of the claim, one for each selected
+section.`,anchor:`#camundamanagementclusterclaimstatus`},"status.requests.name":{description:`Name is the name of the PluginRequest.`,anchor:`#requeststatus`},"status.requests.outputsReady":{description:`OutputsReady is the status of the OutputsReady condition of the
+request.`,anchor:`#requeststatus`},"status.requests.ready":{description:`Ready is the status of the Ready condition of the request.`,anchor:`#requeststatus`},"status.requests.registration":{description:`Registration is the name of the PluginRegistration of the request.`,anchor:`#requeststatus`},"status.requests.section":{description:`Section is the name of the PluginSection of the request.`,anchor:`#requeststatus`},"status.resolvedPolicy":{description:`ResolvedPolicy is the policy of the environment when the claim was
+created. A later change of the environment does not change it.`,anchor:`#camundamanagementclusterclaimstatus`},"status.resolvedPolicy.deletionPolicy":{description:`DeletionPolicy is the deletion default of the environment.`,anchor:`#resolvedpolicy`},"status.resolvedPolicy.parameters":{description:`Parameters holds the parameter values and the claim-editable
+parameters, by registration name.`,anchor:`#resolvedpolicy`},"status.resolvedPolicy.sections":{description:`Sections holds the policy of each section, by section name.`,anchor:`#resolvedpolicy`}},Environment:{spec:{description:`spec is the policy of the environment`,anchor:`#environment`},"spec.color":{description:`Color is the color that the fleet manager shows for the environment,
+as a hex color such as #2E7D32. It changes nothing for a claim.`,anchor:`#environmentspec`},"spec.deletionPolicy":{description:`DeletionPolicy is the deletion policy of a claim of the environment
+that sets none itself. Delete deletes the resources of its plugin
+requests with the claim. Orphan keeps them. Unset means Delete. A
+change applies to new claims only.`,anchor:`#environmentspec`},"spec.displayName":{description:`DisplayName is the name that the fleet manager shows for the
+environment, at most 64 characters. It changes nothing for a claim.`,anchor:`#environmentspec`},"spec.namespaceCreation":{description:`NamespaceCreation lets the create flow of the fleet manager create a
+namespace in the environment. Unset, the create flow cannot create a
+namespace.`,anchor:`#environmentspec`},"spec.namespaceCreation.allowed":{description:`Allowed lets the create flow create a namespace in the environment.`,anchor:`#namespacecreation`},"spec.namespaceCreation.labels":{description:`Labels are fixed labels of a new namespace. Each is a valid label. The
+label fleet.camunda.io/environment is not allowed here, because the
+create flow sets it.`,anchor:`#namespacecreation`},"spec.namespaceCreation.requiredLabelKeys":{description:`RequiredLabelKeys are label keys, for example team. The create flow
+asks for a value of each key and sets the label on the new namespace.
+Each key is a valid label key. The key fleet.camunda.io/environment is
+not allowed here.`,anchor:`#namespacecreation`},"spec.parameters":{description:`Parameters holds the policy of the parameters of each
+PluginRegistration, by registration name and then by parameter name.
+A parameter without a policy keeps the value of its registration, and
+a claim cannot change it. A change applies to new claims only.`,anchor:`#environmentspec`},"spec.platformConfigRef":{description:`PlatformConfigRef names the CamundaPlatformConfig of a claim of the
+environment that names none itself.`,anchor:`#environmentspec`},"spec.presets":{description:`Presets lists, for each preset kind, the presets that a claim of the
+environment can use. The claim controller checks a new claim, and a
+preset change of an existing claim, against the current lists. A list
+that is empty or not set allows no preset of its kind. A preset that
+an existing claim already uses stays allowed when a list drops it.`,anchor:`#environmentspec`},"spec.presets.camundaCluster":{description:`CamundaCluster are the names of the CamundaClusterPresets that a
+cluster claim can use.`,anchor:`#environmentpresets`},"spec.presets.databaseServer":{description:`DatabaseServer are the names of the DatabaseServerPresets that the
+built-in PostgreSQL of a claim can use: the parameter preset of the
+registrations database-server and management-database-server.`,anchor:`#environmentpresets`},"spec.presets.elasticsearchCluster":{description:`ElasticsearchCluster are the names of the ElasticsearchClusterPresets
+that the built-in Elasticsearch of a claim can use: the parameter
+preset of the registration elasticsearch.`,anchor:`#environmentpresets`},"spec.releases":{description:`Releases lists the CamundaReleases that a claim of the environment can
+use. The claim controller checks a new claim, and a release change of
+an existing claim, against the current list.`,anchor:`#environmentspec`},"spec.releases.allowed":{description:`Allowed are the names of the CamundaReleases that a claim can use.`,anchor:`#environmentreleases`},"spec.releases.default":{description:`Default is the release of a claim that names none. It is one of
+allowed.`,anchor:`#environmentreleases`},"spec.sections":{description:`Sections holds the policy of each PluginSection, by section name. A
+claim of the environment can select only a registration that the
+policy of its section allows. A section that is not listed offers
+only the empty option. A change applies to new claims only.`,anchor:`#environmentspec`},status:{description:`status is the state of the environment`,anchor:`#environment`},"status.conditions":{description:`Conditions report the state of the environment. Ready is False with
+reason InvalidReference when a release, preset, platform config,
+section, or registration that the spec names does not exist. The
+message names each missing object.`,anchor:`#environmentstatus`},"status.namespaces":{description:`Namespaces is the number of namespaces that carry the label of this
+environment. It is unset until the environment controller counts the
+namespaces.`,anchor:`#environmentstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation that the environment
+controller processed.`,anchor:`#environmentstatus`}}},"plugins.camunda.io":{Grant:{spec:{description:`spec defines the desired state of Grant`,anchor:`#grant`},"spec.cluster":{description:`Cluster names the CamundaCluster whose identity gets the permission,
+in the namespace of the grant. It cannot change after the grant is
+created.`,anchor:`#grantspec`},"spec.cluster.name":{description:`Name is the name of the CamundaCluster, in the namespace of this
+object.`,anchor:`#clusterref`},"spec.format":{description:`Format is the format of the fragment. It cannot change after the
+grant is created.`,anchor:`#grantspec`},"spec.fragment":{description:`Fragment is one permission statement, filled in from the template. It
+is a JSON object.`,anchor:`#grantspec`},"spec.template":{description:`Template is the name of the grant template in the registration that
+the fragment is rendered from. It cannot change after the grant is
+created.`,anchor:`#grantspec`},status:{description:`status defines the observed state of Grant`,anchor:`#grant`},"status.conditions":{description:`Conditions are Applied, MatchesTemplate, and Ready. Applied is False
+with reason OverCeiling, OverSizeLimit, or Rejected when the identity
+extension refuses the fragment. MatchesTemplate is False with reason
+TemplateChanged when the fragment no longer matches its template.
+Ready is True with reason Healthy when both are True. Otherwise Ready
+has the reason and the message of the first of them that is False.`,anchor:`#grantstatus`}},PluginRegistration:{spec:{description:`spec defines the option`,anchor:`#pluginregistration`},"spec.choices":{description:`Choices are the presets or existing resources that a claim can pick
+for a parameter. The claim stores the name of the pick in its
+parameters. Display only. No controller reads it.`,anchor:`#pluginregistrationspec`},"spec.choices.name":{description:`Name is the value that the claim stores when it picks the choice.`,anchor:`#choice`},"spec.choices.specs":{description:`Specs are the facts that the fleet manager shows for the choice, for
+example the version, the node count, or the memory.`,anchor:`#choice`},"spec.choices.specs.label":{description:`Label names the fact.`,anchor:`#choicespec`},"spec.choices.specs.value":{description:`Value is the value of the fact.`,anchor:`#choicespec`},"spec.claimEditable":{description:`ClaimEditable lists the parameters that a claim can change when no
+Environment says otherwise.`,anchor:`#pluginregistrationspec`},"spec.controller":{description:`Controller names the plugin controller that serves the option and its
+version. Display only. No controller reads it.`,anchor:`#pluginregistrationspec`},"spec.controller.name":{description:`Name is the name of the plugin controller.`,anchor:`#controllerinfo`},"spec.controller.version":{description:`Version is the version of the plugin controller, from its build info.`,anchor:`#controllerinfo`},"spec.deletionPolicies":{description:`DeletionPolicies lists the deletion policies that the plugin supports.
+Every plugin supports Delete.`,anchor:`#pluginregistrationspec`},"spec.description":{description:`Description says what the option does. Display only. No controller
+reads it.`,anchor:`#pluginregistrationspec`},"spec.docsUrl":{description:`DocsURL is the address of the documentation of the option. Display
+only. No controller reads it.`,anchor:`#pluginregistrationspec`},"spec.grantTemplates":{description:`GrantTemplates are the permission statements that the option asks for,
+one Grant for each template. Each name is unique.`,anchor:`#pluginregistrationspec`},"spec.grantTemplates.description":{description:`Description says what the permission is for.`,anchor:`#granttemplate`},"spec.grantTemplates.format":{description:`Format is the format of the statement.`,anchor:`#granttemplate`},"spec.grantTemplates.name":{description:`Name is the name of the template. A Grant names the template it was
+rendered from.`,anchor:`#granttemplate`},"spec.grantTemplates.requiresInputs":{description:`RequiresInputs names the inputs that must have a value before the
+plugin writes the grant.`,anchor:`#granttemplate`},"spec.grantTemplates.template":{description:`Template is the statement, with Go template placeholders such as
+{{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like
+the fragment of a Grant.`,anchor:`#granttemplate`},"spec.inputs":{description:`Inputs declares the values that the option reads from the outputs of
+other sections. Each name is unique.`,anchor:`#pluginregistrationspec`},"spec.inputs.formats":{description:`Formats lists the formats of the value that the registration accepts,
+for example aws-kms-arn. Empty accepts every format.`,anchor:`#inputdecl`},"spec.inputs.from":{description:`From names the output that gives the value, in the form
+<section>/<output>.`,anchor:`#inputdecl`},"spec.inputs.name":{description:`Name is the name of the input. The request carries its value under
+this name.`,anchor:`#inputdecl`},"spec.inputs.required":{description:`Required refuses a selection of the option when the input has no value.`,anchor:`#inputdecl`},"spec.label":{description:`Label is the name of the option in the fleet manager. It names the
+outcome, for example "New S3 bucket". Display only. No controller reads
+it.`,anchor:`#pluginregistrationspec`},"spec.limits":{description:`Limits are the values that the plugin chart fixes, which no
+Environment and no claim can change, for example a permissions
+boundary. The plugin enforces them from its chart. Display only. No
+controller reads it.`,anchor:`#pluginregistrationspec`},"spec.limits.description":{description:`Description says what the limit means for a claim.`,anchor:`#limit`},"spec.limits.label":{description:`Label names the limit.`,anchor:`#limit`},"spec.limits.value":{description:`Value is the value of the limit.`,anchor:`#limit`},"spec.metricQueries":{description:`MetricQueries are the Prometheus queries that the fleet manager shows
+for a request of the option. Display only. No controller reads it.`,anchor:`#pluginregistrationspec`},"spec.metricQueries.label":{description:`Label names the metric.`,anchor:`#metricquery`},"spec.metricQueries.query":{description:`Query is PromQL with Go template placeholders, for example
+{{ .namespace }} and {{ .pods }}.`,anchor:`#metricquery`},"spec.metricQueries.unit":{description:`Unit is the unit of the value, for example bytes.`,anchor:`#metricquery`},"spec.mode":{description:`Mode says whether a new claim selects the option when no Environment
+exists.`,anchor:`#pluginregistrationspec`},"spec.operatorVersions":{description:`OperatorVersions is the semver range of the operator versions that the
+plugin supports, for example ">=0.3.0 <1.0.0". The operator reports a
+range that does not hold its version, or that is not a valid range.`,anchor:`#pluginregistrationspec`},"spec.outputs":{description:`Outputs declares the values that the plugin writes to the status of a
+request. It includes the outputs of each section that the option
+serves. Each key is unique.`,anchor:`#pluginregistrationspec`},"spec.outputs.description":{description:`Description says what the value is.`,anchor:`#outputdecl`},"spec.outputs.format":{description:`Format is the format of the value, for example aws-kms-arn.`,anchor:`#outputdecl`},"spec.outputs.key":{description:`Key is the key of the output in the status of the request. It starts
+with a letter and holds only letters and digits.`,anchor:`#outputdecl`},"spec.parameterValues":{description:`ParameterValues are the parameter values that the admin set in the
+plugin chart. An Environment can override them.`,anchor:`#pluginregistrationspec`},"spec.parameters":{description:`Parameters is the OpenAPI v3 schema of the parameters of a request for
+the option.`,anchor:`#pluginregistrationspec`},"spec.sections":{description:`Sections lists the names of the PluginSections that the option serves.`,anchor:`#pluginregistrationspec`},"spec.serviceAccount":{description:`ServiceAccount is the ServiceAccount of the plugin controller. The app
+shows it. The API server admits a Grant for the option only from a
+requester that has the RBAC verb serve on this registration.`,anchor:`#pluginregistrationspec`},"spec.serviceAccount.name":{description:`Name is the name of the ServiceAccount.`,anchor:`#serviceaccountref`},"spec.serviceAccount.namespace":{description:`Namespace is the namespace of the ServiceAccount.`,anchor:`#serviceaccountref`},status:{description:`status defines the observed state of PluginRegistration`,anchor:`#pluginregistration`},"status.conditions":{description:`Conditions holds Accepted and Ready. The operator sets Accepted. Its
+False reasons are SectionMissing, OperatorVersionUnsupported, and
+DefaultConflict. The plugin controller sets Ready from its health and
+its credentials. On the built-in registrations whose requests the
+operator serves, the operator sets Ready. The fleet manager offers the
+option only when both are True.`,anchor:`#pluginregistrationstatus`},"status.observedGeneration":{description:`ObservedGeneration is the last generation of the registration that the
+plugin controller processed. Only the plugin controller sets it, so the
+field is absent until the plugin controller processes the registration.
+The operator is the plugin controller of the built-in registrations
+whose requests it serves.`,anchor:`#pluginregistrationstatus`}},PluginRequest:{spec:{description:`spec defines the desired state of PluginRequest`,anchor:`#pluginrequest`},"spec.claimRef":{description:`ClaimRef names the claim that wrote the request. It cannot change
+after the request is created.`,anchor:`#pluginrequestspec`},"spec.claimRef.kind":{description:`Kind is the kind of the claim.`,anchor:`#claimref`},"spec.claimRef.name":{description:`Name is the name of the claim, in the namespace of the request.`,anchor:`#claimref`},"spec.deletionPolicy":{description:`DeletionPolicy says what the plugin does with the resources of the
+request when the request is deleted. The claim controller copies it
+from the claim before it deletes the request.`,anchor:`#pluginrequestspec`},"spec.inputs":{description:`Inputs are the values of the inputs of the registration, by input
+name. The claim controller resolves them from the outputs of other
+requests of the same claim.`,anchor:`#pluginrequestspec`},"spec.parameters":{description:`Parameters are the settings of the request, as free-form JSON. The
+plugin checks them against the parameter schema of the registration.`,anchor:`#pluginrequestspec`},"spec.registration":{description:`Registration is the name of the PluginRegistration that serves the
+request. It cannot change after the request is created.`,anchor:`#pluginrequestspec`},"spec.section":{description:`Section is the name of the PluginSection that the request fills. It
+cannot change after the request is created.`,anchor:`#pluginrequestspec`},"spec.target":{description:`Target names the resource that the request serves, before the
+resource exists. target.kind and target.name cannot change after the
+request is created.`,anchor:`#pluginrequestspec`},"spec.target.additionalServiceAccounts":{description:`AdditionalServiceAccounts are the names of more ServiceAccounts that
+the cloud identity of the request also trusts. Examples are the
+ServiceAccounts of the built-in storage that takes the backup storage
+input. Each name is a ServiceAccount in the namespace of the request.
+A name with a namespace part is refused, so that a request never makes
+a cloud identity trust a ServiceAccount of another namespace.`,anchor:`#targetref`},"spec.target.kind":{description:`Kind is the kind of the resource, for example CamundaCluster.`,anchor:`#targetref`},"spec.target.name":{description:`Name is the name of the resource, in the namespace of the request.`,anchor:`#targetref`},"spec.target.serviceAccountName":{description:`ServiceAccountName is the ServiceAccount that the pods of the resource
+run under.`,anchor:`#targetref`},status:{description:`status defines the observed state of PluginRequest`,anchor:`#pluginrequest`},"status.conditions":{description:`Conditions are OutputsReady and Ready. OutputsReady is True when the
+outputs are written for the current generation. Ready is False with
+reason GrantRejected while a Grant of the request has Ready=False.
+Ready is False with reason WaitingForGrants while no Grant of the
+request has Ready=False and a Grant does not have Ready=True yet. Ready
+is False with reason WaitingForEndpoints while an access request waits
+for the endpoints of its target. Ready is False with reason
+InvalidParameters when the parameters do not pass the registration.
+The plugin sets the other reasons.`,anchor:`#pluginrequeststatus`},"status.links":{description:`Links are named URLs about the request, for example the console page
+of a bucket, for display only.`,anchor:`#pluginrequeststatus`},"status.links.name":{description:`Name names the link.`,anchor:`#link`},"status.links.url":{description:`URL is the address of the link.`,anchor:`#link`},"status.observedGeneration":{description:`ObservedGeneration is the generation of the spec that the plugin
+processed last.`,anchor:`#pluginrequeststatus`},"status.outputs":{description:`Outputs are the values that the plugin publishes for the request, by
+output key. A reader trusts them only while OutputsReady is True and
+the observedGeneration of that condition equals metadata.generation.`,anchor:`#pluginrequeststatus`},"status.podSelector":{description:`PodSelector selects the pods that the plugin runs for the request, for
+display only.`,anchor:`#pluginrequeststatus`},"status.resources":{description:`Resources are the resources that the plugin made for the request, in
+the cluster or in a cloud, for display only.`,anchor:`#pluginrequeststatus`},"status.resources.id":{description:`ID is the identifier of the resource in its system, for example an ARN.`,anchor:`#resourceref`},"status.resources.kind":{description:`Kind is the kind of the resource, for example S3Bucket or StorageClass.`,anchor:`#resourceref`},"status.resources.location":{description:`Location is where the resource is, for example a cloud region.`,anchor:`#resourceref`},"status.resources.name":{description:`Name is the name of the resource.`,anchor:`#resourceref`},"status.resources.onOrphan":{description:`OnOrphan says what happens to the resource with the deletion policy
+Orphan.`,anchor:`#resourceref`},"status.resources.role":{description:`Role says what the resource does for the request.`,anchor:`#resourceref`},"status.summary":{description:`Summary is a list of facts about the request, for display only. No
+controller reads it. The first item is the headline.`,anchor:`#pluginrequeststatus`},"status.summary.label":{description:`Label names the fact.`,anchor:`#summaryitem`},"status.summary.severity":{description:`Severity is the weight of the fact. The fleet manager lists Warning
+and Error items as warnings.`,anchor:`#summaryitem`},"status.summary.value":{description:`Value is the value of the fact.`,anchor:`#summaryitem`},"status.summaryTime":{description:`SummaryTime is when the plugin wrote the summary last, for display
+only.`,anchor:`#pluginrequeststatus`}},PluginSection:{spec:{description:`spec defines the section`,anchor:`#pluginsection`},"spec.appliesTo":{description:`AppliesTo lists the claim kinds that can select an option of the
+section. A claim of another kind that selects one is refused with
+NotAllowed. For that kind, the section is never required, also when the
+Environment marks it required.`,anchor:`#pluginsectionspec`},"spec.description":{description:`Description says what the section is for. Display only. No controller
+reads it.`,anchor:`#pluginsectionspec`},"spec.emptyOptionLabel":{description:`EmptyOptionLabel is the label of the option that selects nothing, for
+example "No backups". When it is empty, the section has no empty
+option. Display only. No controller reads it.`,anchor:`#pluginsectionspec`},"spec.label":{description:`Label is the name of the section in the fleet manager, for example
+"Backup storage". Display only. No controller reads it.`,anchor:`#pluginsectionspec`},"spec.order":{description:`Order is the position of the section in the create flow. A section
+with a lower value comes first. Display only. No controller reads it.`,anchor:`#pluginsectionspec`},"spec.outputs":{description:`Outputs declares the outputs that every registration of the section
+writes.`,anchor:`#pluginsectionspec`},"spec.outputs.description":{description:`Description says what the value is.`,anchor:`#outputdecl`},"spec.outputs.format":{description:`Format is the format of the value, for example aws-kms-arn.`,anchor:`#outputdecl`},"spec.outputs.key":{description:`Key is the key of the output in the status of the request. It starts
+with a letter and holds only letters and digits.`,anchor:`#outputdecl`},"spec.selection":{description:`Selection says how many options of the section one claim can select.`,anchor:`#pluginsectionspec`},"spec.slot":{description:`Slot names the fields of the generated resource that the outputs of
+the section fill. When it is empty, the outputs are only inputs of
+other registrations.`,anchor:`#pluginsectionspec`}}}}})))()}function u(e,t){let n=/^v?(\d+)\.(\d+)\.\d+$/.exec(e),r=n?`${n[1]}.${n[2]}`:`dev`;return`${d}${r}/crds/api-reference/${t}`}var d;function f(){return(f=e((()=>{d=`https://konsole-is.github.io/camunda-operator/`})))()}function p(e,t,n){let r=g(c,e),i=r&&g(r,t),a=i&&g(i,n);return a?.description?a:void 0}function m(e,t,n){for(let r=n.length;r>0;r--){let i=p(e,t,n.slice(0,r).join(`.`));if(i)return i}}function h(e){let t={};for(let n of e){if(!n.docNames)continue;let e=m(`core.camunda.io`,n.target.kind,n.docNames);e&&(t[n.key]=e)}return t}function g(e,t){return Object.hasOwn(e,t)?e[t]:void 0}function _(){return(_=e((()=>{l()})))()}function v({label:e,doc:t,operatorVersion:n,defaultOpen:r=!1}){let i=(0,x.useId)(),[a,s]=(0,x.useState)(r),c=(0,x.useRef)(null);return t?.description?(0,b.jsxs)(`span`,{className:`relative inline-flex align-middle`,onMouseEnter:()=>s(!0),onMouseLeave:e=>{e.currentTarget.contains(document.activeElement)||s(!1)},onFocus:()=>s(!0),onBlur:e=>{e.currentTarget.contains(e.relatedTarget)||s(!1)},onKeyDown:e=>{e.key===`Escape`&&(c.current?.focus(),s(!1))},children:[(0,b.jsx)(`button`,{ref:c,type:`button`,"aria-label":`About ${e}`,"aria-expanded":a,"aria-controls":i,className:`inline-flex size-6 items-center justify-center rounded-full text-muted outline-none hover:text-text focus-visible:ring-3 focus-visible:ring-ring/50`,children:(0,b.jsx)(o,{"aria-hidden":!0,className:`size-4`})}),a&&(0,b.jsx)(`span`,{className:`absolute top-full left-0 z-20 pt-1`,ref:e=>{if(!e)return;let{left:t,right:n}=e.getBoundingClientRect(),r=n-document.documentElement.clientWidth;r>0&&(e.style.left=`${-Math.min(r,t)}px`)},children:(0,b.jsxs)(`span`,{id:i,role:`note`,className:`flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal text-text-2 shadow-lg`,children:[y(t.description).map((e,t)=>(0,b.jsx)(`span`,{children:e},t)),(0,b.jsx)(`a`,{href:u(n,t.anchor),target:`_blank`,rel:`noreferrer`,className:`text-info underline-offset-4 hover:underline`,children:`API reference`})]})})]}):null}function y(e){return e.split(/\n{2,}/).map(e=>e.replace(/\s*\n\s*/g,` `).trim())}var b,x;function S(){return(S=e((()=>{b=n(),s(),x=t(),f(),v.__docgenInfo={description:`FieldHelp is the (?) next to a form label. On hover or keyboard focus it
+shows the description of the field and a link to the API reference of the
+running operator version. Escape, or moving the pointer or the focus away,
+closes it. The label stays the words of the page: the description adds
+detail. Without a doc it renders nothing.`,methods:[],displayName:`FieldHelp`,props:{label:{required:!0,tsType:{name:`string`},description:``},doc:{required:!0,tsType:{name:`union`,raw:`FieldDoc | undefined`,elements:[{name:`FieldDoc`},{name:`undefined`}]},description:``},operatorVersion:{required:!0,tsType:{name:`string`},description:``},defaultOpen:{required:!1,tsType:{name:`boolean`},description:``,defaultValue:{value:`false`,computed:!1}}}}})))()}export{_ as a,h as i,S as n,p as r,v as t};
