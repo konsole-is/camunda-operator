@@ -1,0 +1,3 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{r as t,t as n}from"./typed-confirm-BLmCfvkq.js";var r,i,a,o;function s(){return(s=e((()=>{t(),{fn:r}=__STORYBOOK_MODULE_TEST__,i={title:`fleet/TypedConfirm`,component:n,args:{name:`orders`,confirmLabel:`Delete cluster`,children:`The cluster orders and its data go. The backups in the bucket stay.`,onConfirm:r()}},a={name:`Waiting for the name`},o=[`WaitingForTheName`],a.parameters={...a.parameters,docs:{...a.parameters?.docs,source:{originalSource:`{
+  name: "Waiting for the name"
+}`,...a.parameters?.docs?.source}}}})))()}s();export{a as WaitingForTheName,o as __namedExportsOrder,i as default};
