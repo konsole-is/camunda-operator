@@ -14,6 +14,7 @@ import {
   type EnvironmentActions,
 } from "./environment-editor";
 import { environmentFixtures } from "./fixtures";
+import { NamespaceCreationSection } from "./namespace-creation-section";
 import type { EnvironmentSources } from "./sources";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -117,5 +118,33 @@ describe("NamespaceCreationSection", () => {
         requiredLabelKeys: ["cost-center"],
       },
     });
+  });
+
+  it("describes the rows by the hint and the errors of their list", () => {
+    render(
+      <NamespaceCreationSection
+        value={{ labels: { team: "a" }, requiredLabelKeys: ["cost-center"] }}
+        errors={[
+          { path: "spec.namespaceCreation.labels", message: "Too many labels" },
+          {
+            path: "spec.namespaceCreation.requiredLabelKeys",
+            message: "Too many keys",
+          },
+        ]}
+        onChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("textbox", {
+        name: "Key",
+        description: "Too many labels",
+      }),
+    ).toBeTruthy();
+    const key = screen.getByRole("textbox", {
+      name: "Required label key 1",
+      description:
+        "The create flow asks for a value of each key. Too many keys",
+    });
+    expect(key.getAttribute("aria-invalid")).toBe("true");
   });
 });

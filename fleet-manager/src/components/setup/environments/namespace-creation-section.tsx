@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,9 @@ export function NamespaceCreationSection({
   };
   const errorAt = (path: string) =>
     errors.find((e) => e.path === `spec.namespaceCreation.${path}`)?.message;
+  const id = useId();
+  const labelsError = errorAt("labels");
+  const keysError = errorAt("requiredLabelKeys");
   return (
     <div className="flex flex-col gap-4 border-t border-divider pt-4">
       <h3 className="font-heading text-sm font-semibold">Namespace creation</h3>
@@ -75,18 +78,19 @@ export function NamespaceCreationSection({
           label="Fixed labels of a new namespace"
           defaultValue={shownLabels}
           format="label"
+          describedBy={labelsError && `${id}-labels-error`}
           onChange={(labels, rowErrors) => {
             labelRowErrors.current = rowErrors;
-            onChange({ ...value, labels }, rowErrors);
+            onChange({ ...value, labels: labels ?? {} }, rowErrors);
           }}
         />
-        <ErrorText error={errorAt("labels")} />
+        <ErrorText id={`${id}-labels-error`} error={labelsError} />
       </div>
       <fieldset className="flex max-w-md flex-col gap-2">
         <legend className="mb-1 text-sm font-medium text-muted">
           Required label keys
         </legend>
-        <p className="text-xs text-muted">
+        <p id={`${id}-keys-hint`} className="text-xs text-muted">
           The create flow asks for a value of each key.
         </p>
         {keys.map((row, index) => (
@@ -97,6 +101,13 @@ export function NamespaceCreationSection({
               value={row.key}
               spellCheck={false}
               className="font-mono"
+              aria-invalid={keysError ? true : undefined}
+              aria-describedby={[
+                `${id}-keys-hint`,
+                keysError && `${id}-keys-error`,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onChange={(event) =>
                 updateKeys(
                   keys.map((r) =>
@@ -125,7 +136,7 @@ export function NamespaceCreationSection({
           <Plus aria-hidden />
           Add a key
         </Button>
-        <ErrorText error={errorAt("requiredLabelKeys")} />
+        <ErrorText id={`${id}-keys-error`} error={keysError} />
       </fieldset>
     </div>
   );

@@ -48,6 +48,23 @@ The preset can set a block such as `scheduling` as one value. A claim value of t
 
 When you empty a field, for example when you remove the last label, the claim no longer sets the field. The value of the preset then applies again.
 
+To replace that value with no entries, use an empty map. A map that has a value when the editor opens shows **Set to an empty map** while it has no rows. Select it, and the editor shows **Empty map, overrides the inherited value**. The claim then sets the map to `{}`:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  cluster:
+    zeebe:
+      podLabels: {}
+  # ... the rest of your claim
+```
+
+**Use the inherited value** removes `{}` from the claim, and the value of the preset applies again.
+
 ## Change the topology
 
 The topology of a cluster shows where each process runs. The **Topology** panel on the **Overview** tab of the cluster page draws it. On a cluster that a claim made, the panel has the button **Change topology**.

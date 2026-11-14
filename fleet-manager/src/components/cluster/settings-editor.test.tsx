@@ -116,6 +116,32 @@ describe("SettingsEditor", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
+  it("a map set to empty sets {} over the value below", async () => {
+    const { set } = renderEditor("zeebe", "zeebe", {
+      preset: { zeebe: { podLabels: { team: "a" } } },
+    });
+    const row = settingRow("podLabels");
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Remove entry 1" }),
+    );
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Set to an empty map" }),
+    );
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "podLabels"),
+      {},
+    );
+  });
+
+  it("offers no empty map for a map that no layer sets", () => {
+    renderEditor("zeebe", "zeebe");
+    expect(
+      within(settingRow("podLabels")).queryByRole("button", {
+        name: "Set to an empty map",
+      }),
+    ).toBeNull();
+  });
+
   it("Reset to preset resets the claim value", async () => {
     const { reset } = renderEditor("zeebe", "zeebe", {
       preset: { zeebe: { replicas: 3 } },
@@ -369,5 +395,20 @@ describe("SettingsEditor", () => {
     expect(
       within(settingRow("partitions")).queryByText("replicas must be odd"),
     ).toBeNull();
+  });
+
+  it("a refusal of the server describes the inputs of the rows at its field", () => {
+    renderEditor(
+      "zeebe",
+      "zeebe",
+      { claim: { cluster: { zeebe: { podLabels: { team: "a" } } } } },
+      [{ path: "spec.cluster.zeebe.podLabels", message: "too many labels" }],
+    );
+    expect(
+      within(settingRow("podLabels")).getByRole("textbox", {
+        name: "Key",
+        description: "too many labels",
+      }),
+    ).toBeDefined();
   });
 });

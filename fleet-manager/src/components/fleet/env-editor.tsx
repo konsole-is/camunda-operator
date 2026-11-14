@@ -33,17 +33,20 @@ type Row =
  * Secret is dropped. An entry from another source, such as a ConfigMap key
  * or a field of the pod, stays unchanged and read only. onChange gets the
  * entries and the errors after each edit. An error path is
- * "<row>.name" or "<row>.secret", counting rows from 0.
+ * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
+ * the hint and error elements of the field for each name and value.
  */
 export function EnvEditor({
   label,
   secrets,
   defaultValue = [],
+  describedBy,
   onChange,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue?: EnvVar[];
+  describedBy?: string;
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -103,7 +106,9 @@ export function EnvEditor({
                     value={row.name}
                     aria-invalid={nameError ? true : undefined}
                     aria-describedby={
-                      nameError || secretError ? errorId : undefined
+                      [(nameError || secretError) && errorId, describedBy]
+                        .filter(Boolean)
+                        .join(" ") || undefined
                     }
                     onChange={(event) =>
                       replace({ ...row, name: event.target.value })
@@ -140,6 +145,7 @@ export function EnvEditor({
                       placeholder="Value"
                       className="min-w-32 flex-1"
                       value={row.value}
+                      aria-describedby={describedBy}
                       onChange={(event) =>
                         replace({ ...row, value: event.target.value })
                       }

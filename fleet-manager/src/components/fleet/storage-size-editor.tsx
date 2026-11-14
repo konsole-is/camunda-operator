@@ -24,17 +24,20 @@ const NOT_POSITIVE = "Enter a size above 0";
  * Ti). A value in another unit keeps its unit. Empty means not set. A size
  * below current shows that volumes cannot shrink. onChange gets the size,
  * or undefined when empty, and the errors: an amount that is not a
- * positive number, at the path "".
+ * positive number, at the path "". describedBy names the hint and error
+ * elements of the field for the amount.
  */
 export function StorageSizeEditor({
   label,
   defaultValue,
   current,
+  describedBy,
   onChange,
 }: {
   label: string;
   defaultValue?: string;
   current?: string;
+  describedBy?: string;
   onChange?: (value: string | undefined, errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -65,7 +68,9 @@ export function StorageSizeEditor({
           value={size.amount}
           aria-invalid={error ? true : undefined}
           aria-describedby={
-            error ? `${id}-error` : shrinks ? `${id}-shrink` : undefined
+            [error ? `${id}-error` : shrinks && `${id}-shrink`, describedBy]
+              .filter(Boolean)
+              .join(" ") || undefined
           }
           onChange={(event) => update({ ...size, amount: event.target.value })}
         />

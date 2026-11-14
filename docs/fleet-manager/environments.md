@@ -118,9 +118,9 @@ spec:
   # ... the rest of your environment
 ```
 
-A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example `From the registration: 3`. **A claim can change it** lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.
+A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example `From the registration: 3`. A map that the option gives a value shows **Set to an empty map** while it has no rows. The environment value is then `{}`, which replaces the map of the option with no entries. **A claim can change it** lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.
 
-When **A claim can change it** is on, the parameter can get a list of choices, `allowed` in the YAML. Select **Add a choice** and give each choice a name, a label, and a value. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
+When **A claim can change it** is on, the parameter can get a list of choices, `allowed` in the YAML. Select **Add a choice** and give each choice a name, a label, and a value. The value of a map can be **Set to an empty map**, `{}`. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
 
 A choice that another field manager set stays when you remove it, and the review names it, as [Changes apply to new claims only](#changes-apply-to-new-claims-only) says. While such a choice is in the list, a save that turns **A claim can change it** off fails with `allowed needs claimEditable: true`. Remove the choice with the tool that set it first.
 

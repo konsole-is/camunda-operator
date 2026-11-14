@@ -3,7 +3,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
 import { FieldValue } from "@/components/fleet/field-state";
-import { KeyValueEditor } from "@/components/fleet/key-value-editor";
+import {
+  type EmptyMap,
+  KeyValueEditor,
+} from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
   ResourcesEditor,
@@ -105,8 +108,9 @@ export function SettingsEditor({
 /**
  * SettingRow is one setting: its editor with its state and reset link, or
  * its lock reason. A change with errors shows them and is not passed on. A
- * claim value of undefined resets the field. errors are field errors from
- * outside the row. onReset runs after a click on the reset link: the caller
+ * claim value of undefined resets the field. A map of strings that starts
+ * with a value can be set to {}, which overrides the value below the
+ * claim. errors are field errors from outside the row. onReset runs after a click on the reset link: the caller
  * remounts the rows, so that they show the values below the claim. invalid
  * gets the claim steps of the shown field and "<label>: <error>" while the
  * editor shows an error, and undefined once the error goes or the row
@@ -130,6 +134,7 @@ export function SettingRow({
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
+  const errorId = useId();
   // The caller remounts the rows when the pending changes end.
   const { generation, own } = useEditorGeneration(0, setting.value);
   // YAML can give a value that rows read, and a swap to rows would drop
@@ -176,6 +181,10 @@ export function SettingRow({
         editor={editor}
         value={setting.value}
         current={"current" in setting ? setting.current : mounted}
+        emptyMap={mounted === undefined ? undefined : "inherited"}
+        describedBy={
+          errors.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
+        }
         secrets={secrets ?? []}
         onChange={change}
         onInvalid={own((message: string | undefined) =>
@@ -208,7 +217,12 @@ export function SettingRow({
         )}
       </div>
       {errors.map((e, i) => (
-        <p key={i} role="alert" className="text-xs text-bad">
+        <p
+          key={i}
+          id={`${errorId}-${i}`}
+          role="alert"
+          className="text-xs text-bad"
+        >
           {e.message}
         </p>
       ))}
@@ -235,12 +249,15 @@ function useShownError(
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
 // reported; onInvalid gets its first error, and undefined after a valid
-// change. current is the value before the pending changes.
+// change. current is the value before the pending changes. emptyMap and
+// describedBy reach the editors with rows only.
 function Editor({
   label,
   editor,
   value,
   current,
+  emptyMap,
+  describedBy,
   secrets,
   onChange,
   onInvalid,
@@ -249,6 +266,8 @@ function Editor({
   editor: SettingEditor;
   value: unknown;
   current: unknown;
+  emptyMap?: EmptyMap;
+  describedBy?: string;
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
@@ -308,6 +327,7 @@ function Editor({
         <ResourcesEditor
           label={label}
           defaultValue={initial as Resources}
+          describedBy={describedBy}
           onChange={valid}
         />
       );
@@ -321,6 +341,7 @@ function Editor({
               ? String(current)
               : undefined
           }
+          describedBy={describedBy}
           onChange={valid}
         />
       );
@@ -330,6 +351,7 @@ function Editor({
           label={label}
           secrets={secrets}
           defaultValue={initial as EnvVar[]}
+          describedBy={describedBy}
           onChange={valid}
         />
       );
@@ -338,7 +360,9 @@ function Editor({
         <KeyValueEditor
           label={label}
           format={editor.format}
-          defaultValue={initial as Record<string, string>}
+          defaultValue={initial as Record<string, string> | undefined}
+          emptyMap={emptyMap}
+          describedBy={describedBy}
           onChange={valid}
         />
       );
@@ -347,6 +371,7 @@ function Editor({
         <SchedulingEditor
           label={label}
           defaultValue={initial as Toleration[]}
+          describedBy={describedBy}
           onChange={valid}
         />
       );
@@ -398,11 +423,13 @@ function EnvSetting({
   label,
   secrets,
   defaultValue,
+  describedBy,
   onChange,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue: EnvVar[];
+  describedBy?: string;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
 }) {
   const { mark, only } = useUserEdit(secrets);
@@ -412,6 +439,7 @@ function EnvSetting({
         label={label}
         secrets={secrets}
         defaultValue={defaultValue}
+        describedBy={describedBy}
         onChange={only(onChange)}
       />
     </div>

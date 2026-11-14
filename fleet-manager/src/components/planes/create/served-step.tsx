@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import { EnvironmentCards } from "@/components/create/environment-cards";
 import type { DraftPath } from "@/components/create/use-create-flow";
@@ -60,6 +60,7 @@ export function ServedStep({
   planes: readonly Plane[];
   onSelectorErrors: (errors: ValidationError[]) => void;
 }) {
+  const hintId = useId();
   // The editor restores only the rows of the draft, so errors of rows that
   // the draft dropped would block the step with nothing left to fix.
   const restored = useRef(draft.clusterLabels);
@@ -122,12 +123,13 @@ export function ServedStep({
           label="Cluster labels"
           format="label"
           defaultValue={draft.clusterLabels}
+          describedBy={`${hintId}-labels-hint`}
           onChange={(labels, errors) => {
-            set(["clusterLabels"], labels);
+            set(["clusterLabels"], labels ?? {});
             onSelectorErrors(errors);
           }}
         />
-        <p className="text-sm text-muted">
+        <p id={`${hintId}-labels-hint`} className="text-sm text-muted">
           Leave empty to serve every cluster in these environments.
         </p>
       </div>
