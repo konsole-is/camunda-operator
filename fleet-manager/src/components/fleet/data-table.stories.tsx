@@ -1,6 +1,7 @@
-import type { Story } from "@/gallery/registry";
-import { StatusChip } from "./status-chip";
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import { type DataTableRow, DataTable } from "./data-table";
+import { StatusChip } from "./status-chip";
 
 const columns = [
   { key: "name", label: "Name", sortable: true },
@@ -48,50 +49,35 @@ const filters = [
     ],
   },
 ];
+const selection = {
+  applicableLabel: "clusters that can upgrade",
+  onChange: fn(),
+};
 
-export const dataTableStories: Story[] = [
-  {
-    component: "DataTable",
-    name: "Nothing selected",
-    render: () => (
-      <DataTable
-        label="Clusters"
-        columns={columns}
-        rows={rows}
-        filters={filters}
-        selection={{ applicableLabel: "clusters that can upgrade" }}
-      />
-    ),
+const meta = {
+  title: "fleet/DataTable",
+  component: DataTable,
+  args: { label: "Clusters", columns, rows },
+} satisfies Meta<typeof DataTable>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const NothingSelected: Story = {
+  name: "Nothing selected",
+  args: { filters, selection },
+};
+
+export const RowsThatAreNotApplicable: Story = {
+  name: "Rows that are not applicable",
+  args: {
+    rows: rows.map((r) => ({ ...r, applicable: r.id === "orders" })),
+    selection,
   },
-  {
-    component: "DataTable",
-    name: "Rows that are not applicable",
-    render: () => (
-      <DataTable
-        label="Clusters"
-        columns={columns}
-        rows={rows.map((r) => ({ ...r, applicable: r.id === "orders" }))}
-        selection={{ applicableLabel: "clusters that can upgrade" }}
-      />
-    ),
-  },
-  {
-    component: "DataTable",
-    name: "Pages",
-    render: () => (
-      <DataTable label="Clusters" columns={columns} rows={rows} pageSize={2} />
-    ),
-  },
-  {
-    component: "DataTable",
-    name: "Empty",
-    render: () => (
-      <DataTable
-        label="Clusters"
-        columns={columns}
-        rows={[]}
-        emptyText="No clusters yet. Create one to see it here."
-      />
-    ),
-  },
-];
+};
+
+export const Pages: Story = { name: "Pages", args: { pageSize: 2 } };
+
+export const Empty: Story = {
+  name: "Empty",
+  args: { rows: [], emptyText: "No clusters yet. Create one to see it here." },
+};
