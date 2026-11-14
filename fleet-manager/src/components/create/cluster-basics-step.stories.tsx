@@ -1,5 +1,7 @@
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import type { ComponentProps } from "react";
+import { fn } from "storybook/test";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
@@ -47,6 +49,7 @@ function BasicsFlow({
   initial,
   hosts = [],
   conflicts = [],
+  set,
 }: {
   environments: Environment[];
   namespaces: V1Namespace[];
@@ -55,6 +58,7 @@ function BasicsFlow({
   initial: ClusterDraft;
   hosts?: RenderedHost[];
   conflicts?: string[];
+  set: ComponentProps<typeof ClusterBasicsStep>["set"];
 }) {
   const offered = (draft: ClusterDraft) =>
     offeredPresets(
@@ -90,7 +94,10 @@ function BasicsFlow({
     >
       <ClusterBasicsStep
         draft={flow.draft}
-        set={flow.set}
+        set={(path, value) => {
+          set(path, value);
+          flow.set(path, value);
+        }}
         environments={environments}
         counts={environmentCounts(environments, namespaces, [])}
         namespaces={namespaces}
@@ -119,6 +126,7 @@ const meta = {
       namespace: { kind: "existing", name: "team-orders" },
       claim: { metadata: { name: "search" }, spec: { presetRef: "medium" } },
     },
+    set: fn(),
   },
 } satisfies Meta<typeof BasicsFlow>;
 export default meta;

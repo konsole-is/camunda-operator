@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
+import { fn } from "storybook/test";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
@@ -199,12 +200,16 @@ function StorageFlow({
   environment,
   objects = {},
   initial,
+  onSection,
+  onDeletion,
 }: {
   sections: PluginSection[];
   registrations: PluginRegistration[];
   environment?: Environment;
   objects?: BuiltinObjects;
   initial: ClusterDraft;
+  onSection: ComponentProps<typeof ClusterStorageStep>["onSection"];
+  onDeletion: ComponentProps<typeof ClusterStorageStep>["onDeletion"];
 }) {
   const data: StorageData = { environment, sections, registrations, objects };
   const [cardErrors, setCardErrors] = useState<
@@ -235,13 +240,15 @@ function StorageFlow({
         hosts={[]}
         conflicts={[]}
         onSection={(name, selections, errors) => {
+          onSection(name, selections, errors);
           flow.set(["storage", name], selections);
           setCardErrors((current) => ({ ...current, [name]: errors }));
         }}
         deletion={clusterDeletion(flow.draft, data)}
-        onDeletion={(policy) =>
-          flow.set(["claim", "spec", "deletionPolicy"], policy)
-        }
+        onDeletion={(policy) => {
+          onDeletion(policy);
+          flow.set(["claim", "spec", "deletionPolicy"], policy);
+        }}
       />
     </WizardStepper>
   );
@@ -258,6 +265,8 @@ const meta = {
       namespace: { kind: "existing", name: "team-orders" },
       claim: { metadata: { name: "search" }, spec: { presetRef: "medium" } },
     },
+    onSection: fn(),
+    onDeletion: fn(),
   },
 } satisfies Meta<typeof StorageFlow>;
 export default meta;
