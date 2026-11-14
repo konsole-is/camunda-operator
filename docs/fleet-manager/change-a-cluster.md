@@ -63,7 +63,7 @@ spec:
   # ... the rest of your claim
 ```
 
-**Use the inherited value** removes `{}` from the claim, and the value of the preset applies again.
+Next to the empty map, **Use the inherited value** removes `{}` from the claim. The value of the preset then applies again.
 
 ## Change the topology
 
