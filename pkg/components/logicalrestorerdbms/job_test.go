@@ -199,14 +199,10 @@ func TestBuildJobConnectsAsTheOwnerOfTheTargetDatabase(t *testing.T) {
 	require.NoError(t, err)
 
 	pod := job.Spec.Template.Spec
-	require.Len(t, pod.InitContainers, 1)
+	require.Len(t, pod.InitContainers, 2)
 	require.Len(t, pod.Containers, 1)
 
 	restoreContainer := pod.Containers[0]
-	assert.Equal(t, "postgres.databases.svc", envValue(restoreContainer, "PGHOST"))
-	assert.Equal(t, "5432", envValue(restoreContainer, "PGPORT"))
-	assert.Equal(t, "camunda", envValue(restoreContainer, "PGDATABASE"))
-	assert.Equal(t, "postgres:17", restoreContainer.Image)
 	assert.Equal(
 		t,
 		[]string{
@@ -216,13 +212,22 @@ func TestBuildJobConnectsAsTheOwnerOfTheTargetDatabase(t *testing.T) {
 		restoreContainer.Command,
 	)
 
-	user := secretRef(t, restoreContainer, "PGUSER")
-	assert.Equal(t, "my-cluster-camunda-db-credentials", user.Name)
-	assert.Equal(t, "username", user.Key)
+	// The drop and the restore both connect as the owner, because only the
+	// owner of an object can drop it.
+	for _, container := range []corev1.Container{pod.InitContainers[1], restoreContainer} {
+		assert.Equal(t, "postgres.databases.svc", envValue(container, "PGHOST"), container.Name)
+		assert.Equal(t, "5432", envValue(container, "PGPORT"), container.Name)
+		assert.Equal(t, "camunda", envValue(container, "PGDATABASE"), container.Name)
+		assert.Equal(t, "postgres:17", container.Image, container.Name)
 
-	password := secretRef(t, restoreContainer, "PGPASSWORD")
-	assert.Equal(t, "my-cluster-camunda-db-credentials", password.Name)
-	assert.Equal(t, "password", password.Key)
+		user := secretRef(t, container, "PGUSER")
+		assert.Equal(t, "my-cluster-camunda-db-credentials", user.Name, container.Name)
+		assert.Equal(t, "username", user.Key, container.Name)
+
+		password := secretRef(t, container, "PGPASSWORD")
+		assert.Equal(t, "my-cluster-camunda-db-credentials", password.Name, container.Name)
+		assert.Equal(t, "password", password.Key, container.Name)
+	}
 
 	// The init container reads the object that the backup recorded.
 	download := pod.InitContainers[0]
@@ -393,7 +398,7 @@ func TestJobBelongsToChecksTheUIDLabel(t *testing.T) {
 }
 
 // TestBuildJobEnvOfTheJobWins pins the precedence. The pod settings come from
-// the target cluster, so their extras reach both containers. An extra that
+// the target cluster, so their extras reach every container. An extra that
 // names a connection variable or a contract variable does not replace the
 // Job's own, and no name appears twice.
 func TestBuildJobEnvOfTheJobWins(t *testing.T) {
@@ -421,12 +426,15 @@ func TestBuildJobEnvOfTheJobWins(t *testing.T) {
 	assert.Equal(t, 1, countEnv(download, EnvDownloadKey))
 	assert.Equal(t, "require", envValue(download, "PGSSLMODE"))
 
+	drop := job.Spec.Template.Spec.InitContainers[1]
 	restoreContainer := job.Spec.Template.Spec.Containers[0]
-	assert.Equal(t, "postgres.databases.svc", envValue(restoreContainer, "PGHOST"))
-	assert.Equal(t, 1, countEnv(restoreContainer, "PGHOST"))
-	assert.Equal(t, "require", envValue(restoreContainer, "PGSSLMODE"))
+	for _, container := range []corev1.Container{drop, restoreContainer} {
+		assert.Equal(t, "postgres.databases.svc", envValue(container, "PGHOST"), container.Name)
+		assert.Equal(t, 1, countEnv(container, "PGHOST"), container.Name)
+		assert.Equal(t, "require", envValue(container, "PGSSLMODE"), container.Name)
+	}
 
-	for _, container := range []corev1.Container{download, restoreContainer} {
+	for _, container := range []corev1.Container{download, drop, restoreContainer} {
 		require.Len(t, container.EnvFrom, 1, container.Name)
 		assert.Equal(t, "X_", container.EnvFrom[0].Prefix, container.Name)
 	}
@@ -442,6 +450,7 @@ func TestBuildJobHonorsAnExplicitDeadlineAndImage(t *testing.T) {
 	job, err := BuildJob(in)
 	require.NoError(t, err)
 	assert.Equal(t, int64(7200), *job.Spec.ActiveDeadlineSeconds)
+	assert.Equal(t, "mirror.example/postgres:17.4", job.Spec.Template.Spec.InitContainers[1].Image)
 	assert.Equal(t, "mirror.example/postgres:17.4", job.Spec.Template.Spec.Containers[0].Image)
 }
 

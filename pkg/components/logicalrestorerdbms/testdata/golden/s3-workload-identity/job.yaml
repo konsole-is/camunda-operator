@@ -88,6 +88,74 @@ spec:
         volumeMounts:
         - mountPath: /scratch
           name: scratch
+      - command:
+        - psql
+        - --no-psqlrc
+        - --set=ON_ERROR_STOP=1
+        - |-
+          --command=DO $$
+          DECLARE
+            r record;
+          BEGIN
+            FOR r IN
+              SELECT c.relkind, n.nspname, c.relname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE pg_get_userbyid(c.relowner) = current_user
+                AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                AND n.nspname <> 'information_schema'
+                AND n.nspname NOT LIKE 'pg\_%'
+                AND NOT EXISTS (
+                  SELECT FROM pg_depend d
+                  WHERE d.classid = 'pg_class'::regclass
+                    AND d.objid = c.oid
+                    AND d.deptype IN ('a', 'i', 'e')
+                )
+              ORDER BY n.nspname, c.relname
+            LOOP
+              EXECUTE format(
+                'DROP %s IF EXISTS %I.%I CASCADE',
+                CASE r.relkind
+                  WHEN 'v' THEN 'VIEW'
+                  WHEN 'm' THEN 'MATERIALIZED VIEW'
+                  WHEN 'S' THEN 'SEQUENCE'
+                  WHEN 'f' THEN 'FOREIGN TABLE'
+                  ELSE 'TABLE'
+                END,
+                r.nspname,
+                r.relname
+              );
+            END LOOP;
+          END
+          $$
+        env:
+        - name: PGHOST
+          value: postgres.databases.svc
+        - name: PGPORT
+          value: "5432"
+        - name: PGDATABASE
+          value: camunda
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: my-cluster-camunda-db-credentials
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: my-cluster-camunda-db-credentials
+        image: postgres:17
+        name: drop
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 999
+          runAsNonRoot: true
+          runAsUser: 999
       restartPolicy: Never
       securityContext:
         fsGroup: 999
