@@ -403,6 +403,30 @@ describe("SelectionSettingsEditor", () => {
         .getAllByRole<HTMLTextAreaElement>("textbox")
         .find((t) => t.tagName === "TEXTAREA");
 
+    it("sets a map of the environment to {} and back", async () => {
+      const { set, reset } = renderEditor({
+        fields: [field("labels", { team: "a" })],
+        schema: {
+          type: "object",
+          properties: {
+            labels: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+          },
+        },
+      });
+      const row = settingRow("labels");
+      await userEvent.click(
+        within(row).getByRole("button", { name: "Remove entry 1" }),
+      );
+      expect(reset).toHaveBeenLastCalledWith(field("labels", {}).claimSteps);
+      await userEvent.click(
+        within(row).getByRole("button", { name: "Set to an empty map" }),
+      );
+      expect(set).toHaveBeenLastCalledWith(field("labels", {}).claimSteps, {});
+    });
+
     it("edits an extraEnv map of strings with key and value rows", () => {
       renderEditor({
         fields: [field("extraEnv", { TZ: "UTC" })],

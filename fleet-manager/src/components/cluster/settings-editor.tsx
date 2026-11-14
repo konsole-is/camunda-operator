@@ -108,9 +108,9 @@ export function SettingsEditor({
 /**
  * SettingRow is one setting: its editor with its state and reset link, or
  * its lock reason. A change with errors shows them and is not passed on. A
- * claim value of undefined resets the field. A map of strings that starts
- * with a value can be set to {}, which overrides the value below the
- * claim. errors are field errors from outside the row. onReset runs after a click on the reset link: the caller
+ * claim value of undefined resets the field. A map of strings of a setting
+ * that replaces the value below it can be set to {} when it starts with a
+ * value. errors are field errors from outside the row. onReset runs after a click on the reset link: the caller
  * remounts the rows, so that they show the values below the claim. invalid
  * gets the claim steps of the shown field and "<label>: <error>" while the
  * editor shows an error, and undefined once the error goes or the row
@@ -181,7 +181,9 @@ export function SettingRow({
         editor={editor}
         value={setting.value}
         current={"current" in setting ? setting.current : mounted}
-        emptyMap={mounted === undefined ? undefined : "inherited"}
+        emptyMap={
+          setting.replaces && mounted !== undefined ? "inherited" : undefined
+        }
         describedBy={
           errors.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
         }

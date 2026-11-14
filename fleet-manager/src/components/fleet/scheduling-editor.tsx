@@ -34,7 +34,7 @@ type Row = {
  * operator, value, effect, and seconds. A field that the row does not use
  * is not written. onChange gets the tolerations and the errors after each
  * edit. describedBy names the hint and error elements of the field for
- * each text input.
+ * each control of a row.
  */
 export function SchedulingEditor({
   label,
@@ -97,6 +97,7 @@ export function SchedulingEditor({
             <NativeSelect
               id={at(field)}
               value={value}
+              aria-describedby={described}
               onChange={(event) => onPick(event.target.value)}
             >
               {options.map(([v, l]) => (

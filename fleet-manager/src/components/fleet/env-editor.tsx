@@ -34,7 +34,7 @@ type Row =
  * or a field of the pod, stays unchanged and read only. onChange gets the
  * entries and the errors after each edit. An error path is
  * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
- * the hint and error elements of the field for each name and value.
+ * the hint and error elements of the field for each control of a row.
  */
 export function EnvEditor({
   label,
@@ -80,6 +80,10 @@ export function EnvEditor({
           (e) => e.path === `${index}.secret`,
         )?.message;
         const errorId = `${id}-${row.id}-error`;
+        const described =
+          [(nameError || secretError) && errorId, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined;
         return (
           <div
             key={row.id}
@@ -105,11 +109,7 @@ export function EnvEditor({
                     className="w-full sm:w-48"
                     value={row.name}
                     aria-invalid={nameError ? true : undefined}
-                    aria-describedby={
-                      [(nameError || secretError) && errorId, describedBy]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
+                    aria-describedby={described}
                     onChange={(event) =>
                       replace({ ...row, name: event.target.value })
                     }
@@ -121,6 +121,7 @@ export function EnvEditor({
                     id={`${id}-${row.id}-source`}
                     className="w-40"
                     value={row.source}
+                    aria-describedby={described}
                     onChange={(event) =>
                       replace(
                         event.target.value === "secret"
@@ -145,7 +146,7 @@ export function EnvEditor({
                       placeholder="Value"
                       className="min-w-32 flex-1"
                       value={row.value}
-                      aria-describedby={describedBy}
+                      aria-describedby={described}
                       onChange={(event) =>
                         replace({ ...row, value: event.target.value })
                       }
@@ -156,6 +157,7 @@ export function EnvEditor({
                       secrets={secrets}
                       defaultValue={row.ref}
                       invalid={!!secretError}
+                      describedBy={described}
                       onChange={(ref) => replace({ ...row, ref })}
                     />
                   )}

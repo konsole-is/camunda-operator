@@ -116,29 +116,16 @@ describe("SettingsEditor", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
-  it("a map set to empty sets {} over the value below", async () => {
-    const { set } = renderEditor("zeebe", "zeebe", {
+  it("offers no empty map over a map of the preset, which a claim map cannot hide", async () => {
+    renderEditor("zeebe", "zeebe", {
       preset: { zeebe: { podLabels: { team: "a" } } },
     });
     const row = settingRow("podLabels");
     await userEvent.click(
       within(row).getByRole("button", { name: "Remove entry 1" }),
     );
-    await userEvent.click(
-      within(row).getByRole("button", { name: "Set to an empty map" }),
-    );
-    expect(set).toHaveBeenLastCalledWith(
-      steps("spec", "cluster", "zeebe", "podLabels"),
-      {},
-    );
-  });
-
-  it("offers no empty map for a map that no layer sets", () => {
-    renderEditor("zeebe", "zeebe");
     expect(
-      within(settingRow("podLabels")).queryByRole("button", {
-        name: "Set to an empty map",
-      }),
+      within(row).queryByRole("button", { name: "Set to an empty map" }),
     ).toBeNull();
   });
 

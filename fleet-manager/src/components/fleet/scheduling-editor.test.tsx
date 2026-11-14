@@ -152,6 +152,14 @@ describe("SchedulingEditor", () => {
         "Enter a key, or use the operator Exists Checked after you save",
     });
     expect(key.getAttribute("aria-invalid")).toBe("true");
+    for (const name of ["Operator", "Effect"])
+      expect(
+        within(row).getByRole("combobox", {
+          name,
+          description:
+            "Enter a key, or use the operator Exists Checked after you save",
+        }),
+      ).toBeTruthy();
   });
 
   it("marks seconds that are not whole as invalid", async () => {

@@ -216,6 +216,27 @@ describe("EnvEditor", () => {
       ).toBeTruthy();
   });
 
+  it("describes the Secret and key selects by the error of their row", async () => {
+    render(
+      <EnvEditor
+        label="Environment variables"
+        secrets={secrets}
+        defaultValue={[{ name: "DB_PASSWORD", value: "" }]}
+      />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Source" }),
+      "secret",
+    );
+    for (const name of ["Secret", "Key"])
+      expect(
+        screen.getByRole("combobox", {
+          name,
+          description: "Pick a Secret and a key",
+        }),
+      ).toBeTruthy();
+  });
+
   it("describes the name by the error of its row", async () => {
     render(
       <EnvEditor
