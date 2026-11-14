@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";function t(e){return`${e.kind}/${e.namespace??``}/${e.name}`}function n(){return(n=e((()=>{})))()}export{t as n,n as t};
