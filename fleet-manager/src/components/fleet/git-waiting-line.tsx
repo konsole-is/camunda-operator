@@ -25,7 +25,7 @@ export function GitWaitingLine({
   const deleted = "deleted" in pushed;
   if (!deleted && liveRevision === pushed.revision) return null;
   return (
-    <p role="status" className="text-sm text-warn">
+    <p role="status" className="text-sm break-words text-warn">
       1 {deleted ? "delete" : "change"} waiting for GitOps:{" "}
       <code className="font-mono">{pushed.path}</code>, pushed{" "}
       {age(pushed.pushedAt, now)} ago.

@@ -172,7 +172,11 @@ export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
                 {row.label}
               </span>
             ),
-            why: row.message ?? "—",
+            why: (
+              <span className="block min-w-48 whitespace-normal">
+                {row.message ?? "—"}
+              </span>
+            ),
           },
         }))}
       />

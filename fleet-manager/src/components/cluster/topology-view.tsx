@@ -71,7 +71,7 @@ export function TopologyBoxes({
                 : "border-border bg-panel-2"
             }`}
           >
-            <div className="flex items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="flex items-center gap-2 font-medium text-text">
                 {conditions?.[box.process] && (
                   <StatusDot

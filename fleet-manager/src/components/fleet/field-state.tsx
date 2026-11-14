@@ -37,8 +37,8 @@ export function FieldState({
       <span className="text-text-2">{stateLabel(field.state)}</span>
       {note && <span className="text-xs text-muted">{note}</span>}
       {field.lock && (
-        <span className="flex items-center gap-1.5 text-xs text-muted">
-          <Lock aria-hidden className="size-3.5 shrink-0" />
+        <span className="flex items-start gap-1.5 text-xs text-muted">
+          <Lock aria-hidden className="mt-px size-3.5 shrink-0" />
           {lockLabel(field.lock)}
         </span>
       )}
