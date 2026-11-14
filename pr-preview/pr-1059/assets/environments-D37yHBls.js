@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";function t(e){let t=e.status?.conditions?.find(e=>e.type===n);return t?.status===`False`?{ready:!1,message:t.message}:{ready:!0}}var n;function r(){return(r=e((()=>{n=`Ready`})))()}export{r as n,t};

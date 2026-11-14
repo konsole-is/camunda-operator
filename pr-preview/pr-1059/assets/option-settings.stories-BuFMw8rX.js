@@ -1,6 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";import{t as n}from"./jsx-runtime-CndCZlyt.js";import{n as r,r as i}from"./settings-DXqwoAEl.js";import{n as a,t as o}from"./option-settings-Bw03Apyq.js";import{n as s,r as c}from"./fixtures-ODd7kMxO.js";function l({sources:e,environment:t,registration:n,onSpec:r,onTextErrors:a}){let[s,c]=(0,d.useState)(t.spec);return(0,u.jsx)(o,{settings:i(e.registrations,s).filter(e=>e.registration===n),sources:e,environment:{...t,spec:s},errors:[],onSpec:e=>{r(e),c(e)},onTextErrors:a})}var u,d,f,p,m,h,g;function _(){return(_=e((()=>{u=n(),d=t(),s(),a(),r(),{fn:f}=__STORYBOOK_MODULE_TEST__,p=c(),m={title:`setup/environments/OptionSettings`,component:l,args:{sources:p,environment:p.environments[0],onSpec:f(),onTextErrors:f()},render:e=>(0,u.jsx)(l,{...e},JSON.stringify(e.environment))},h={name:`Connectors role with allowed values`,args:{registration:`aws-connectors-role`}},g=[`ConnectorsRoleWithAllowedValues`],h.parameters={...h.parameters,docs:{...h.parameters?.docs,source:{originalSource:`{
-  name: "Connectors role with allowed values",
-  args: {
-    registration: "aws-connectors-role"
-  }
-}`,...h.parameters?.docs?.source}}}})))()}_();export{h as ConnectorsRoleWithAllowedValues,g as __namedExportsOrder,m as default};
