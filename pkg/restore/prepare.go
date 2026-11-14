@@ -76,6 +76,12 @@ type PrepareInput struct {
 // StatefulSet carries the Camunda version of the backup when WritesVersion
 // accepts that version. A re-entry repeats no write.
 //
+// It reports a Failure with v1.ReasonIncompatibleTarget, and writes nothing,
+// when the backup version is more than one minor above the version that the
+// brokers carry: the CamundaCluster controller refuses that move. No later
+// look clears that failure, so end the restore on it. Every other Failure
+// clears once the target changes.
+//
 // Add HoldFinalizer to the restore first. Run Prepare during admission, before
 // the restore destroys anything.
 func Prepare(
@@ -89,6 +95,12 @@ func Prepare(
 	}
 
 	key := client.ObjectKeyFromObject(in.Cluster)
+
+	// The restore writes only a version that passes this check, and the brokers
+	// move only to that version, so a later look gives the same answer.
+	if failure := skippedMinor(in, key); failure != nil {
+		return Outcome{Failure: failure}, nil
+	}
 
 	if err := holdTarget(ctx, c, in.Owner, in.Cluster); err != nil {
 		return Outcome{}, err
@@ -124,6 +136,26 @@ func Prepare(
 	}
 
 	return versionTarget(ctx, c, in, key)
+}
+
+// skippedMinor applies components.VersionSkip, the rule with which the
+// CamundaCluster controller refuses a version. Target.Version and that
+// controller read the same annotation of the broker StatefulSet.
+func skippedMinor(in PrepareInput, key types.NamespacedName) *conditions.PreCheckFailure {
+	if !components.VersionSkip(in.Version, in.Target.Version) {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonIncompatibleTarget,
+		Message: fmt.Sprintf(
+			"the backup was taken with Camunda %s, and the brokers of CamundaCluster %s run %s. "+
+				"Camunda upgrades one minor at a time, so the cluster cannot move to the version of the "+
+				"backup. Upgrade the cluster one minor at a time, first to the latest patch of %s, until "+
+				"it runs at most one minor below %s. Then create a new restore",
+			in.Version, key, in.Target.Version, components.NextMinor(in.Target.Version), in.Version,
+		),
+	}
 }
 
 // suspendTarget makes its record durable before it writes.

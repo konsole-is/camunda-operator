@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	restorepkg "github.com/konsole-is/camunda-operator/pkg/restore"
 )
@@ -317,6 +318,29 @@ var _ = Describe("LogicalRestoreElasticsearch compatibility", func() {
 		By("continuing once the CamundaCluster controller rolled it out")
 		w.rollBrokerImage("8.9.10")
 		expectPhase(restore, v1.LogicalRestoreRestoringSecondaryStorage)
+	})
+
+	// The CamundaCluster controller refuses a version more than one minor above
+	// the version that the brokers carry, so the brokers would never reach the
+	// version of the backup.
+	It("fails a backup two Camunda minors newer than the brokers and leaves the cluster as it was", func() {
+		w := newWorld()
+		backup := createBackup(w, func(b *v1.LogicalBackupElasticsearch) {
+			b.Status.Version = "8.11.0"
+		})
+
+		restore := createRestore(w, backup.Name)
+
+		reached := expectReason(restore, v1.LogicalRestoreFailed, v1.ReasonIncompatibleTarget)
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("8.11.0"))
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("run " + worldVersion))
+		Expect(reached.Status.FailureMessage).To(ContainSubstring("create a new restore"))
+
+		var cluster v1.CamundaCluster
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+		Expect(cluster.Spec.Version).To(Equal(worldVersion))
+		Expect(cluster.Annotations).NotTo(HaveKey(camundacluster.AllowVersionDowngradeAnnotation))
+		Expect(cluster.Annotations).NotTo(HaveKey(v1.SuspensionHoldPrefix + string(restore.UID)))
 	})
 
 	// A version that the restore cannot write is not a wait. Such a backup

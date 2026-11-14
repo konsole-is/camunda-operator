@@ -54,8 +54,32 @@ Before it erases anything, the operator compares the backup against the target. 
 - The target stores its data in a relational database. For an Elasticsearch cluster, use a [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md).
 - The `spec.backupStorageRef` of the target names the `ObjectStorageConfig` that the backup wrote to.
 - The target runs the exact Camunda version that the backup recorded in `status.version`. The restore sets this version on the target in `Pending`. So this rule fails only when the backup recorded no version, or a value that is not of the form `x.y.z`.
+- The backup is at most one minor newer than the version that the brokers of the target run. The cluster refuses a larger step, see [CamundaCluster: A skipped minor is refused](camundacluster.md#a-skipped-minor-is-refused).
 
 After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. The rules compare no partition count, because a relational backup records none.
+
+### A backup more than one minor newer than the brokers
+
+An older backup, a backup of the same minor, and a backup one minor newer pass this rule. The restore compares the two versions in `Pending`, before it suspends the target or sets its version. A breach fails the restore at once and leaves the target as it was. A breach of any other rule fails the restore after it suspended the target.
+
+The failed restore reports the breach:
+
+```yaml
+status:
+  phase: Failed
+  terminalReason: IncompatibleTarget
+  failureMessage: the backup was taken with Camunda 8.11.0, and the brokers of CamundaCluster
+    my-cluster-ns/my-cluster run 8.9.9. Camunda upgrades one minor at a time, so the cluster
+    cannot move to the version of the backup. Upgrade the cluster one minor at a time, first
+    to the latest patch of 8.10, until it runs at most one minor below 8.11.0. Then create
+    a new restore
+```
+
+To restore this backup:
+
+1. Upgrade the target one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. Stop when the brokers run at most one minor below the version of the backup.
+2. Delete the failed restore.
+3. Create a new restore of the same backup.
 
 ### Why the downgrade is safe here
 
@@ -118,7 +142,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster, or a claim Lease that no backup or restore holds. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. | Read [The backend](#the-backend). |
 | `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods still write it. | Wait. The message names what the restore waits for. |
-| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
+| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. A backup more than one minor newer than the brokers also fails with this reason. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not `Completed`. Or the database server has no `status.serverVersion`. | Correct what the message names. |
 | `Ready` | `MissingSecret` | The Secret of the database credentials is missing or lacks a key. Or a pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |
 | `Ready` | `MissingCredentials` | The Secret of the bucket credentials is missing or lacks a key. | Create the Secret that the message names. |
