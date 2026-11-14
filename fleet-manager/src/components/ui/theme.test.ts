@@ -21,6 +21,27 @@ const FOREIGN = [
   /(?<![\w-])border-input(?![\w-])/,
 ];
 
+// The rest edge is under 3:1, so the fill must also mark a control at rest,
+// and each other state must give an edge of 3:1 or more. A checkbox is too
+// small for the rest edge, so it keeps the strong edge at rest.
+const STATES = [
+  "bg-input/30",
+  "focus-visible:border-ring",
+  "aria-invalid:border-destructive",
+];
+const FIELD = [
+  "border-control-edge",
+  "hover:not-disabled:border-control-edge-strong",
+  ...STATES,
+];
+const CONTROLS: Record<string, string[]> = {
+  "checkbox.tsx": ["border-control-edge-strong", ...STATES],
+  "input.tsx": FIELD,
+  "native-select.tsx": FIELD,
+  "select.tsx": FIELD,
+  "textarea.tsx": FIELD,
+};
+
 describe("shadcn primitives", () => {
   it("has the twelve primitives the pages need", () => {
     expect(primitives.sort()).toEqual(
@@ -72,4 +93,16 @@ describe("shadcn primitives", () => {
     const source = readFileSync(path.join(dir, file), "utf8");
     expect(source).not.toMatch(/aria-invalid:border-destructive\//);
   });
+
+  it.each(Object.entries(CONTROLS))(
+    "%s fills the control and gives each state other than rest a strong edge",
+    (file, classes) => {
+      const source = readFileSync(path.join(dir, file), "utf8");
+      for (const name of classes) {
+        expect(source, `${file} has ${name}`).toMatch(
+          new RegExp(`(?<![\\w:-])${name}(?![\\w/-])`),
+        );
+      }
+    },
+  );
 });

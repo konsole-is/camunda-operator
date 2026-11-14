@@ -21,7 +21,7 @@
    value. light-dark() needs Chrome 123, Firefox 120, or Safari 17.5.
    The light values meet the same floors as the dark values: 4.5:1 for text
    on --bg, --panel, and --panel-2, also on the 10 and 15 percent tint of its
-   own status color, and 3:1 for --faint as the edge of a form control. */
+   own status color, and 3:1 for --control-edge-strong. */
 :root {
   color-scheme: light dark;
   --bg: light-dark(#f4f6fa, #0a0f1e);
@@ -45,6 +45,13 @@
   --info: light-dark(#1a55bf, #5b9bff);
   /* A dot color only. As text it is under the contrast floor. */
   --off: light-dark(#aab4cf, #3c4c85);
+  /* The edge of a form control at rest. It is under 3:1 on purpose: the
+     fill of the control marks it too, and a brighter edge cuts through the
+     dark surfaces. */
+  --control-edge: light-dark(#aeb6c8, #3b466b);
+  /* The edge of a hovered control, a checkbox, a selected tab, and the
+     chosen theme. A checkbox is too small for the rest edge. */
+  --control-edge-strong: light-dark(#80899f, #5f6987);
   --radius: 0.5rem;
 }
 
@@ -73,6 +80,8 @@
   --color-bad: var(--bad);
   --color-info: var(--info);
   --color-off: var(--off);
+  --color-control-edge: var(--control-edge);
+  --color-control-edge-strong: var(--control-edge-strong);
 
   /* The color names of the shadcn primitives. accent and muted are not here:
      the tokens give those names another meaning, so the primitives use
@@ -91,8 +100,6 @@
   --color-destructive: var(--bad);
   --color-destructive-foreground: var(--bg);
   --color-input: var(--border);
-  /* The edge of a form control. --border is under 3:1 on the surfaces. */
-  --color-control-edge: var(--faint);
   --color-ring: var(--info);
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;

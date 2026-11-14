@@ -77,7 +77,7 @@ export function ThemeSwitch() {
             className={cn(
               "inline-flex size-9 items-center justify-center rounded-md",
               pressed
-                ? "bg-panel-2 text-text ring-1 ring-control-edge"
+                ? "bg-panel-2 text-text ring-1 ring-control-edge-strong"
                 : "text-muted hover:text-text",
             )}
           >
