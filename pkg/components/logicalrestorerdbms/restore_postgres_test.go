@@ -22,6 +22,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +141,39 @@ func TestRestoreLeavesOnlyTheObjectsOfTheDump(t *testing.T) {
 	assert.Equal(t, dumped, target.objects(t))
 	assert.Equal(t, olderChangesets, target.changesets(t))
 	assert.Equal(t, "ACTIVE", target.queryString(t, "SELECT state FROM process_instance"))
+}
+
+// TestRestoreDropsOnlyTheRelationsOfTheApplicationRole pins the bounds of the
+// drop: a relation of the application role goes in every schema, a table of
+// another role stays, and a view of another role over a dropped table goes
+// with that table.
+func TestRestoreDropsOnlyTheRelationsOfTheApplicationRole(t *testing.T) {
+	t.Parallel()
+
+	target := startTarget(t)
+	target.exec(t, olderSchema)
+	target.dump(t)
+
+	target.exec(t, `
+CREATE SCHEMA extra;
+CREATE TABLE extra.wait_state (wait_state_key BIGINT PRIMARY KEY);
+`)
+	backupConn := target.connect(t, backupRole)
+	_, err := backupConn.Exec(t.Context(), `
+CREATE TABLE table_of_another_role (id BIGINT);
+CREATE VIEW view_of_another_role AS SELECT * FROM process_instance;
+`)
+	require.NoError(t, err)
+
+	code, output := target.restore(t)
+	require.Zero(t, code, output)
+
+	relations := target.queryString(t, `
+SELECT string_agg(n.nspname || '.' || c.relname, ',' ORDER BY n.nspname, c.relname)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relname IN ('wait_state', 'table_of_another_role', 'view_of_another_role')`)
+	assert.Equal(t, "public.table_of_another_role", relations)
 }
 
 func TestBackupRoleReadsTheDatabaseAfterTheRestore(t *testing.T) {
@@ -397,8 +431,14 @@ func (r *restoreTarget) run(t *testing.T, container corev1.Container, extra ...s
 	}
 	env = append(env, extra...)
 
+	// Kubernetes turns $$ in a container command into $.
+	command := make([]string, 0, len(container.Command))
+	for _, arg := range container.Command {
+		command = append(command, strings.ReplaceAll(arg, "$$", "$"))
+	}
+
 	code, reader, err := r.container.Exec(
-		t.Context(), container.Command, tcexec.Multiplexed(), tcexec.WithEnv(env),
+		t.Context(), command, tcexec.Multiplexed(), tcexec.WithEnv(env),
 	)
 	require.NoError(t, err)
 	output, err := io.ReadAll(reader)

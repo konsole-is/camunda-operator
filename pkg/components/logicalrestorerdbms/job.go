@@ -115,8 +115,8 @@ type JobInput struct {
 	BucketSecretName string
 	// DBSecretName is the Secret of the role that owns the target database,
 	// which is its application role, reachable the same way. DBUsernameKey
-	// and DBPasswordKey name its keys. The Job drops only what this role owns,
-	// because PostgreSQL lets only the owner of an object drop it.
+	// and DBPasswordKey name its keys. The Job drops the relations of this
+	// role, because PostgreSQL lets only the owner of an object drop it.
 	DBSecretName  string
 	DBUsernameKey string
 	DBPasswordKey string
@@ -352,8 +352,9 @@ func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
 // the connected role owns outside the system schemas, which are the schemas
 // that pg_dump skips. It is one transaction, so a failed drop leaves every
 // relation in place. A sequence of a column and an extension member go with
-// their owner.
-const dropOwnedRelations = `DO $$
+// their owner. Kubernetes turns $$ in a container command into $, so the DO
+// block uses a named delimiter.
+const dropOwnedRelations = `DO $drop$
 DECLARE
   r record;
 BEGIN
@@ -387,7 +388,7 @@ BEGIN
     );
   END LOOP;
 END
-$$`
+$drop$`
 
 // dropContainer drops the relations of the application role before
 // pg_restore. Without it, a table of a newer Camunda minor that the dump does

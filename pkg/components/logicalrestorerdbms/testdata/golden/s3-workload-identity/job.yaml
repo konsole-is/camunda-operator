@@ -93,7 +93,7 @@ spec:
         - --no-psqlrc
         - --set=ON_ERROR_STOP=1
         - |-
-          --command=DO $$
+          --command=DO $drop$
           DECLARE
             r record;
           BEGIN
@@ -127,7 +127,7 @@ spec:
               );
             END LOOP;
           END
-          $$
+          $drop$
         env:
         - name: PGHOST
           value: postgres.databases.svc

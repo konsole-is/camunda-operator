@@ -81,7 +81,7 @@ In `Pending` this wait has no limit. After `Pending`, these reasons hold the res
 
 One Job downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists --no-owner` on it. `status.secondaryJobName` names the Job while it exists.
 
-**After the restore, the database holds the tables of the backup and no others.** Before `pg_restore`, the Job drops every table, view, and sequence that the application role owns. A table that a newer Camunda minor created after the backup does not stay. Objects that another role owns stay.
+**After the restore, the application role owns the tables of the backup and no others.** Before `pg_restore`, the Job drops every table, view, and sequence that the application role owns, in every schema. A table that a newer Camunda minor created after the backup does not stay. An object of another role stays, unless it depends on a dropped table. For example, a view of another role over a Camunda table goes with that table.
 
 **The Job connects as the application role of the target**, the role in `DatabaseConfig.spec.credentialsSecretRef`. Only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.
 

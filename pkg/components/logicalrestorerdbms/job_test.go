@@ -18,6 +18,7 @@ package logicalrestorerdbms
 
 import (
 	"flag"
+	"slices"
 	"strings"
 	"testing"
 
@@ -437,6 +438,24 @@ func TestBuildJobEnvOfTheJobWins(t *testing.T) {
 	for _, container := range []corev1.Container{download, drop, restoreContainer} {
 		require.Len(t, container.EnvFrom, 1, container.Name)
 		assert.Equal(t, "X_", container.EnvFrom[0].Prefix, container.Name)
+	}
+}
+
+// TestBuildJobCommandsSurviveKubernetesExpansion pins that the containers start
+// with the commands as rendered. Kubernetes turns $$ into $ and expands
+// $(NAME) in a command and its arguments.
+func TestBuildJobCommandsSurviveKubernetesExpansion(t *testing.T) {
+	t.Parallel()
+
+	job, err := BuildJob(input())
+	require.NoError(t, err)
+
+	pod := job.Spec.Template.Spec
+	for _, container := range append(slices.Clone(pod.InitContainers), pod.Containers...) {
+		for _, arg := range append(slices.Clone(container.Command), container.Args...) {
+			assert.NotContains(t, arg, "$$", container.Name)
+			assert.NotContains(t, arg, "$(", container.Name)
+		}
 	}
 }
 
