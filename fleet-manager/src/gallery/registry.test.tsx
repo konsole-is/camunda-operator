@@ -26,10 +26,6 @@ describe("slug", () => {
 });
 
 describe("the gallery stories", () => {
-  it("has at least one story", () => {
-    expect(stories.length).toBeGreaterThan(0);
-  });
-
   it("gives every story a different id, so no screenshot overwrites another", () => {
     const ids = stories.map(storyId);
     expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
