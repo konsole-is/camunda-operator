@@ -9,6 +9,7 @@ import {
   type FieldState,
   fieldSchemaOf,
   optimizeClaimNames,
+  overrideEditorOf,
   parameterEditorOf,
   type SchemaRoot,
   type SettingEditor,
@@ -123,7 +124,7 @@ export function settingsOf(input: {
     if (lock) return { ...setting, lock };
     const editor = secretRef
       ? ({ kind: "secretRef" } as const)
-      : editorOf(path, fieldSchemaOf(root, path));
+      : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
     if (holder?.field.claimSteps)
       return {
@@ -182,10 +183,12 @@ export function settingChange(
  * spec.parameters of its registration. A locked parameter is read only. An
  * object parameter with properties gives one setting for each property,
  * and a change of one writes the whole parameter. Any other parameter is
- * one setting. A parameter in choices picks the names of its choices,
- * whatever its schema, because the claim stores the names: one name, or a
- * list of names for a list parameter. A parameter resets to the
- * environment, and its value replaces the value of the environment.
+ * one setting. A property of overrides gets its editor from
+ * overrideEditorOf, and any other parameter from parameterEditorOf. A
+ * parameter in choices picks the names of its choices, whatever its schema,
+ * because the claim stores the names: one name, or a list of names for a
+ * list parameter. A parameter resets to the environment, and its value
+ * replaces the value of the environment.
  */
 export function selectionSettingsOf(
   fields: readonly ClusterField[],
@@ -215,7 +218,6 @@ export function selectionSettingsOf(
     if (options) {
       // Without a schema, the value tells whether the parameter is a list.
       const editor = parameterEditorOf(
-        name,
         property ?? (Array.isArray(field.value) ? { type: "array" } : {}),
         { choices: options },
       );
@@ -225,7 +227,10 @@ export function selectionSettingsOf(
     if (Object.keys(inner).length > 0)
       return Object.entries(inner).map(([part, partSchema]) => {
         const value = valueAt(field.value, [{ field: part }]);
-        const editor = parameterEditorOf(part, partSchema, { value });
+        const editor =
+          name === "overrides"
+            ? overrideEditorOf(part, partSchema, { value })
+            : parameterEditorOf(partSchema, { value });
         return {
           ...base,
           key: `${field.key}.${part}`,
@@ -239,7 +244,7 @@ export function selectionSettingsOf(
           }),
         };
       });
-    const editor = parameterEditorOf(name, property, { value: field.value });
+    const editor = parameterEditorOf(property, { value: field.value });
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
 }

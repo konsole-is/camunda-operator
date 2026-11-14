@@ -287,21 +287,6 @@ describe("ParameterField", () => {
     expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
   });
 
-  it("picks the editor of a field that the name gives", () => {
-    render(
-      <ParameterField
-        id="p"
-        rule={editable({ type: "string" }, { name: "storageSize" })}
-        value="50Gi"
-        onValue={() => {}}
-      />,
-    );
-    expect(screen.getByRole("textbox", { name: "Amount" })).toHaveProperty(
-      "value",
-      "50",
-    );
-  });
-
   it("checks its YAML against the registration schema, not the field of its name", async () => {
     const onValue = vi.fn();
     render(
@@ -339,55 +324,42 @@ describe("ParameterField", () => {
     expect(screen.queryByRole("textbox", { name: "Key" })).toBeNull();
   });
 
-  it("keeps the Secret keys of environment variables without a Secret list", () => {
-    const onValue = vi.fn();
-    render(
-      <ParameterField
-        id="p"
-        rule={editable({ type: "array" }, { name: "extraEnv" })}
-        value={[
-          {
-            name: "DB_PASSWORD",
-            valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
-          },
-        ]}
-        onValue={onValue}
-      />,
+  describe("a name of a cluster field", () => {
+    it.each<[string, ParameterRule["schema"]]>([
+      [
+        "resources",
+        { type: "object", properties: { requests: { type: "object" } } },
+      ],
+      ["extraEnv", { type: "array", items: { type: "object" } }],
+      ["tolerations", { type: "array" }],
+    ])(
+      "edits a %s parameter with a schema of the cluster field as YAML",
+      (name, schema) => {
+        render(
+          <ParameterField
+            id="p"
+            rule={editable(schema, { name })}
+            value={undefined}
+            onValue={() => {}}
+          />,
+        );
+        expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+      },
     );
-    expect(onValue).not.toHaveBeenCalled();
-    expect(screen.getByRole("combobox", { name: "Secret" })).toHaveProperty(
-      "value",
-      "orders-db",
-    );
-  });
 
-  it("keeps offering a Secret of the value after the draft drops it", () => {
-    const rule = editable({ type: "array" }, { name: "extraEnv" });
-    const { rerender } = render(
-      <ParameterField
-        id="p"
-        rule={rule}
-        value={[
-          {
-            name: "DB_PASSWORD",
-            valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
-          },
-        ]}
-        onValue={() => {}}
-      />,
-    );
-    rerender(
-      <ParameterField
-        id="p"
-        rule={rule}
-        value={[{ name: "DB_PASSWORD" }]}
-        onValue={() => {}}
-      />,
-    );
-    expect(screen.getByRole("option", { name: "orders-db" })).toBeTruthy();
-  });
+    it("edits a storageSize string parameter as text", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable({ type: "string" }, { name: "storageSize" })}
+          value="50Gi"
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Replicas")).toHaveProperty("value", "50Gi");
+      expect(screen.queryByRole("textbox", { name: "Amount" })).toBeNull();
+    });
 
-  describe("a name of a cluster field with another shape", () => {
     it("edits an extraEnv map of strings with key and value rows", () => {
       render(
         <ParameterField
@@ -423,7 +395,7 @@ describe("ParameterField", () => {
       ["tolerations", undefined, "all", "all"],
       ["resources", {}, "big", "big"],
     ])(
-      "shows a %s value that the editor of the name cannot read as YAML",
+      "shows a %s value of another shape as YAML",
       (name, schema, value, text) => {
         render(
           <ParameterField
@@ -438,22 +410,44 @@ describe("ParameterField", () => {
         expect((input as HTMLTextAreaElement).value).toContain(text);
       },
     );
+  });
 
-    it("keeps the YAML editor once the YAML gives a value that rows read", () => {
-      const rule = editable(undefined, { name: "tolerations" });
-      const { rerender } = render(
-        <ParameterField id="p" rule={rule} value="all" onValue={() => {}} />,
-      );
-      rerender(
-        <ParameterField
-          id="p"
-          rule={rule}
-          value={[{ key: "a" }]}
-          onValue={() => {}}
-        />,
-      );
-      expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+  it("keeps the YAML editor once the YAML gives a value that rows read", () => {
+    const rule = editable({
+      type: "object",
+      additionalProperties: { type: "string" },
     });
+    const { rerender } = render(
+      <ParameterField
+        id="p"
+        rule={rule}
+        value={{ team: 1 }}
+        onValue={() => {}}
+      />,
+    );
+    rerender(
+      <ParameterField
+        id="p"
+        rule={rule}
+        value={{ team: "1" }}
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+  });
+
+  it("shows an int-or-string that is a number as YAML", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({ "x-kubernetes-int-or-string": true })}
+        value={1024}
+        onValue={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText("Replicas");
+    expect(input.tagName).toBe("TEXTAREA");
+    expect((input as HTMLTextAreaElement).value).toContain("1024");
   });
 
   it("edits an object with a declared property that is not a string as YAML", () => {

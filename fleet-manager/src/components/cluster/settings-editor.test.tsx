@@ -184,6 +184,76 @@ describe("SettingsEditor", () => {
     expect(screen.getByText(SHRINK)).toBeDefined();
   });
 
+  it("a plain amount keeps a storage size that is a number a number", async () => {
+    const { set } = renderEditor("zeebe", "zeebe", {
+      claim: { cluster: { zeebe: { storageSize: 34359738368 } } },
+    });
+    const amount = within(settingRow("storageSize")).getByRole("textbox", {
+      name: "Amount",
+    });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "68719476736");
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "storageSize"),
+      68719476736,
+    );
+  });
+
+  it("a whole amount typed after a clear keeps a storage size that is a number a number", async () => {
+    const set = vi.fn();
+    const reset = vi.fn();
+    const preset = { zeebe: { storageSize: "10Gi" } };
+    const editor = (page: SettingsPage) => {
+      const { group, settings } = settingsGroupOf("zeebe", "zeebe", page);
+      return (
+        <SettingsEditor
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={set}
+          reset={reset}
+        />
+      );
+    };
+    const { rerender } = render(
+      editor({
+        preset,
+        claim: { cluster: { zeebe: { storageSize: 34359738368 } } },
+      }),
+    );
+    const amount = () =>
+      within(settingRow("storageSize")).getByRole("textbox", {
+        name: "Amount",
+      });
+    await userEvent.clear(amount());
+    expect(reset).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "storageSize"),
+    );
+    rerender(editor({ preset }));
+    await userEvent.type(amount(), "68719476736");
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "storageSize"),
+      68719476736,
+    );
+  });
+
+  it("an amount with a unit writes a storage size that is a number as a string", async () => {
+    const { set } = renderEditor("zeebe", "zeebe", {
+      claim: { cluster: { zeebe: { storageSize: 34359738368 } } },
+    });
+    const row = within(settingRow("storageSize"));
+    await userEvent.clear(row.getByRole("textbox", { name: "Amount" }));
+    await userEvent.type(row.getByRole("textbox", { name: "Amount" }), "64");
+    await userEvent.selectOptions(
+      row.getByRole("combobox", { name: "Unit" }),
+      "Gi",
+    );
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "storageSize"),
+      "64Gi",
+    );
+  });
+
   it("a Secret reference is picked by name and key", async () => {
     const { set } = renderEditor("cluster", "cluster");
     const ref = settingRow("auth.clientSecretRef");

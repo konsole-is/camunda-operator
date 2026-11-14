@@ -341,7 +341,14 @@ function Editor({
               : undefined
           }
           describedBy={describedBy}
-          onChange={valid}
+          onChange={(size, errors) =>
+            valid(
+              typeof current === "number" && /^\d+$/.test(size ?? "")
+                ? Number(size)
+                : size,
+              errors,
+            )
+          }
         />
       );
     case "env":

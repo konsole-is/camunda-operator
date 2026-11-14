@@ -21,6 +21,8 @@ A component also offers the fields that neither the preset nor the claim sets, f
 | `scheduling.tolerations` | One row for each toleration. |
 | `scheduling.nodeAffinity`, `scheduling.podAffinity`, `extraEnvFrom`, and the other lists | YAML, checked against the schema of the field. |
 
+A value that the editor of its field cannot keep as it is opens in YAML. Examples are a toleration with a field that the rows do not show and a variable with both a value and a Secret key.
+
 **From a Secret** shows the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.
 
 The preset and the release can add their own `extraEnvFrom` sources. In the pods, these sources come before the sources of the claim. For this reason, the editor of `extraEnvFrom` shows only the sources of the claim. It also shows how many sources the preset and the release add.
@@ -137,7 +139,7 @@ spec:
 
 The operator removes the annotation `camunda.io/allow-version-downgrade` from the `CamundaCluster` when the downgrade is complete. After that, the next save also removes `allowVersionDowngrade` from the claim. The review shows this removal as a line of the change. With no other unsaved change, the panel shows **Clear**, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.
 
-Each storage and access option has its own panel. The option shows **Chosen at creation**, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in `spec.plugins` of the claim. When you remove the last row of a map, the claim no longer sets the parameter, and the value of the environment applies again.
+Each storage and access option has its own panel. The option shows **Chosen at creation**, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. The schema of the parameter in the `PluginRegistration` decides its editor, also when the parameter has the name of a cluster field. For example, a `storageSize` string is a text input, and a `tolerations` list is YAML. Only the parts of `overrides` get the editor of a field of the same name, such as an amount and a unit for `overrides.storageSize`. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in `spec.plugins` of the claim. When you remove the last row of a map, the claim no longer sets the parameter, and the value of the environment applies again.
 
 To replace that value with no entries, use an empty map. A map that has a value when the editor opens shows **Set to an empty map** while it has no rows. Select it, and the editor shows **Empty map, overrides the inherited value**. The claim then sets the parameter to `{}`:
 
