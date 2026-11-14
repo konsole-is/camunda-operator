@@ -419,9 +419,11 @@ function resourcesOf(value: unknown): unknown {
   return Object.keys(result).length === 0 ? undefined : result;
 }
 
-// openAPIOf returns the schema of the type of schema, or undefined when it
-// has no type.
+// openAPIOf returns the schema of the type of schema, an integer or a string
+// for an int-or-string, or undefined when it has neither.
 function openAPIOf(schema: FieldSchema | undefined): OpenAPISchema | undefined {
+  if (schema?.intOrString)
+    return { anyOf: [{ type: "integer" }, { type: "string" }] };
   if (schema?.type === undefined) return undefined;
   const items = openAPIOf(schema.items);
   return { type: schema.type, ...(items && { items }) };

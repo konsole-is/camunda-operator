@@ -143,6 +143,19 @@ describe("editorOf", () => {
       expect(editorFor(path, value)?.kind).toBe("yaml");
     });
 
+    it.each<[string, unknown]>([
+      ["backup.dump.scratchVolume.sizeLimit", 1073741824],
+      ["zeebe.storageSize", { size: "50Gi" }],
+    ])(
+      "checks the YAML of the int-or-string %s against an integer or a string",
+      (path, value) => {
+        expect(editorFor(path, value)).toEqual({
+          kind: "yaml",
+          schema: { anyOf: [{ type: "integer" }, { type: "string" }] },
+        });
+      },
+    );
+
     it("checks the YAML against the schema of the field", () => {
       expect(editorFor(tolerations, [{ ...toleration, extra: true }])).toEqual({
         kind: "yaml",
