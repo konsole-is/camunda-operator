@@ -2933,6 +2933,7 @@
 </tbody>
 </table>
 <p><strong>Restore</strong> has one version rule for both kinds: the backup recorded a version of the form <code>x.y.z</code>. The restore sets that version on the cluster, as <a href="../../crds/logicalrestoreelasticsearch/#compatibility">LogicalRestoreElasticsearch: Compatibility</a> and <a href="../../crds/logicalrestorerdbms/#compatibility">LogicalRestoreRDBMS: Compatibility</a> show. A cluster that ran a newer version comes back on the version of the backup. <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a> shows how to upgrade it again.</p>
+<p><strong>Restore</strong> stays on for a backup more than one minor newer than the brokers of the cluster. Such a restore fails at once with the reason <code>IncompatibleTarget</code>, and it leaves the cluster as it was. <a href="../../crds/logicalrestorerdbms/#a-backup-more-than-one-minor-newer-than-the-brokers">LogicalRestoreRDBMS: A backup more than one minor newer than the brokers</a> says what to do. The same rule applies to an Elasticsearch backup.</p>
 <p>While a backup of the cluster runs, <strong>Restore</strong> stays on, and the confirm says that the new restore waits. For example:</p>
 <blockquote>
 <p>Backup my-cluster-manual-1 is running. The new restore waits until it ends.</p>

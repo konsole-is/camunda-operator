@@ -3396,6 +3396,7 @@
 <li>A logical restore also sets <code>spec.version</code> to the Camunda version that the backup recorded. See <a href="#the-version-after-a-logical-restore">The version after a logical restore</a>.</li>
 </ul>
 <p>The restore waits in <code>Pending</code> until the brokers are stopped and the cluster carries that version. It erases nothing in <code>Pending</code>. Then it rebuilds the secondary storage (logical kinds only) and gives every broker a new data volume.</p>
+<p>A logical restore fails at once when the backup is more than one minor newer than the brokers. It leaves the cluster as it was. The <a href="../../crds/logicalrestorerdbms/#a-backup-more-than-one-minor-newer-than-the-brokers">LogicalRestoreRDBMS</a> and <a href="../../crds/logicalrestoreelasticsearch/#a-backup-more-than-one-minor-newer-than-the-brokers">LogicalRestoreElasticsearch</a> pages say what to do.</p>
 <p>Each write carries a field manager of its own. A GitOps tool shows these names in a conflict message:</p>
 <table>
 <thead>
@@ -3426,7 +3427,7 @@
 <h3 id="when-the-cluster-starts-again">When the cluster starts again<a class="headerlink" href="#when-the-cluster-starts-again" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>The restore reaches <code>Completed</code>.</strong> It removes its hold and withdraws <code>spec.suspend</code>, and the cluster starts a moment later. A cluster that you suspended yourself stays suspended. <code>status.clusterSuspended</code> on the restore is <code>true</code> only when the restore applied the suspension.</li>
-<li><strong>The restore fails.</strong> The cluster stays suspended, and the restore keeps its hold until you delete it. The broker volumes can be empty or half written. Brokers that start over such volumes do more damage than a cluster that is down. Read <code>status.failureMessage</code>, correct the cause, delete the failed restore, and create a new one.</li>
+<li><strong>The restore fails after it suspended the cluster.</strong> The cluster stays suspended, and the restore keeps its hold until you delete it. The broker volumes can be empty or half written. Brokers that start over such volumes do more damage than a cluster that is down. Read <code>status.failureMessage</code>, correct the cause, delete the failed restore, and create a new one.</li>
 <li><strong>You delete a restore that runs.</strong> The restore removes its hold when its work stops, and <code>spec.suspend: true</code> stays. Start the cluster yourself when you know what its volumes hold.</li>
 </ul>
 <h3 id="find-out-what-suspended-the-cluster">Find out what suspended the cluster<a class="headerlink" href="#find-out-what-suspended-the-cluster" title="Permanent link">&para;</a></h3>

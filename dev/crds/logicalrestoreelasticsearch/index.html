@@ -2186,6 +2186,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-backup-more-than-one-minor-newer-than-the-brokers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A backup more than one minor newer than the brokers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#why-the-downgrade-is-safe-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2799,6 +2810,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-backup-more-than-one-minor-newer-than-the-brokers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A backup more than one minor newer than the brokers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#why-the-downgrade-is-safe-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3040,8 +3062,27 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li>The partition count of the target is the count that the backup recorded in <code>status.partitionsCount</code>.</li>
 <li>The <code>spec.backupStorageRef</code> of the target names the <code>ObjectStorageConfig</code> that the backup wrote to.</li>
 <li>The target runs the exact Camunda version that the backup recorded in <code>status.version</code>, because that version is part of every snapshot name. The restore sets this version on the target in <code>Pending</code>. So this rule fails only when the backup recorded no version, or a value that is not of the form <code>x.y.z</code>.</li>
+<li>The backup is at most one minor newer than the version that the brokers of the target run. The cluster refuses a larger step, see <a href="../camundacluster/#a-skipped-minor-is-refused">CamundaCluster: A skipped minor is refused</a>.</li>
 </ul>
 <p>After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as <a href="../camundacluster/#upgrade">CamundaCluster: Upgrade</a> says.</p>
+<h3 id="a-backup-more-than-one-minor-newer-than-the-brokers">A backup more than one minor newer than the brokers<a class="headerlink" href="#a-backup-more-than-one-minor-newer-than-the-brokers" title="Permanent link">&para;</a></h3>
+<p>An older backup, a backup of the same minor, and a backup one minor newer pass this rule. The restore compares the two versions in <code>Pending</code>, before it suspends the target or sets its version. A breach fails the restore at once and leaves the target as it was. A breach of any other rule fails the restore after it suspended the target.</p>
+<p>The failed restore reports the breach:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Failed</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">terminalReason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IncompatibleTarget</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">failureMessage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">the backup was taken with Camunda 8.11.0, and the brokers of CamundaCluster</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns/my-cluster run 8.9.9. Camunda upgrades one minor at a time, so the cluster</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">cannot move to the version of the backup. Upgrade the cluster one minor at a time, first</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">to the latest patch of 8.10, until it runs at most one minor below 8.11.0. Then create</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">a new restore</span>
+</span></code></pre></div>
+<p>To restore this backup:</p>
+<ol>
+<li>Upgrade the target one minor at a time, as <a href="../camundacluster/#upgrade">CamundaCluster: Upgrade</a> says. Stop when the brokers run at most one minor below the version of the backup.</li>
+<li>Delete the failed restore.</li>
+<li>Create a new restore of the same backup.</li>
+</ol>
 <h3 id="why-the-downgrade-is-safe-here">Why the downgrade is safe here<a class="headerlink" href="#why-the-downgrade-is-safe-here" title="Permanent link">&para;</a></h3>
 <p>The restore can set a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, but a restore is not one. No broker runs while the version changes, and the restore erases the broker volumes before a broker of the older version starts. Outside a restore, the cluster refuses a downgrade with <code>VersionDowngradeRefused</code>, see <a href="../camundacluster/#downgrade-on-purpose">CamundaCluster: Downgrade on purpose</a>. What stays on the cluster after the restore is in <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a>.</p>
 <h2 id="the-backend">The backend<a class="headerlink" href="#the-backend" title="Permanent link">&para;</a></h2>
@@ -3073,9 +3114,9 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>In <code>Pending</code> this wait has no limit. After <code>Pending</code>, these reasons hold the restore for 10 minutes, and then it fails. A target that now resolves to another backend than <code>status.backend</code> holds it with <code>InvalidReference</code> for the same time.</p>
 <h3 id="after-a-failure-or-a-delete">After a failure or a delete<a class="headerlink" href="#after-a-failure-or-a-delete" title="Permanent link">&para;</a></h3>
 <p>Elasticsearch recovers the snapshots that it accepted, even when the restore fails or you delete it. The restore keeps the backend until each shard of the indices that it replaces is on a node and recovered. An unassigned replica does not count, and neither does a primary shard that Elasticsearch cannot place on any node. Until then, <code>status.recoveryHeld</code> is <code>true</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Failed</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">recoveryHeld</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Failed</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">recoveryHeld</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <p>While the hold lasts:</p>
 <ul>
@@ -3096,15 +3137,15 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>The operator deletes the Camunda indices on the Elasticsearch of the target, then restores every snapshot of the backup. It deletes the Optimize indices only when the backup holds an Optimize snapshot. Give one Elasticsearch to one cluster: a second cluster on the same Elasticsearch loses its Camunda indices too.</p>
 <p><code>status.restoredSnapshots</code> names every snapshot that the restore asked for. The phase ends when the restored indices exist and each of their shards is on a node and recovered. An unassigned replica does not count.</p>
 <p>If Elasticsearch cannot place a primary shard of a restored index on any node, that index stays red and the restore fails. This happens, for example, when the disks of the nodes are over the high watermark, or when the recovery of the shard fails too often. <code>status.failureMessage</code> names the index and the shard:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Failed</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">failureMessage</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="no">Elasticsearch gives no node to shard 0 of the restored index</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="no">operate-flownode-instance-8.3.1_ (unassigned reason NEW_INDEX_RESTORED,</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="no">allocation status deciders_no), so the index stays red.</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="no">GET _cluster/allocation/explain with the body</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="no">{"index":"operate-flownode-instance-8.3.1_","shard":0,"primary":true}</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="no">tells you why</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">phase</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Failed</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">failureMessage</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="no">Elasticsearch gives no node to shard 0 of the restored index</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="no">operate-flownode-instance-8.3.1_ (unassigned reason NEW_INDEX_RESTORED,</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="no">allocation status deciders_no), so the index stays red.</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="no">GET _cluster/allocation/explain with the body</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="no">{"index":"operate-flownode-instance-8.3.1_","shard":0,"primary":true}</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="no">tells you why</span>
 </span></code></pre></div>
 <p>Send the request that the message names. Its answer tells you why that shard has no node. Correct the cause that it names. Then delete the failed restore and create a new one.</p>
 <p>CAUTION: Do not delete the backup while the restore runs. A failure after the delete of the indices leaves the secondary storage of the target empty until the restore finishes or you restore again.</p>
@@ -3171,7 +3212,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>Ready</code></td>
 <td><code>IncompatibleTarget</code></td>
-<td>The target cannot hold the backup, or its version moved after <code>Pending</code>. The message names both values.</td>
+<td>The target cannot hold the backup, or its version moved after <code>Pending</code>. A backup more than one minor newer than the brokers also fails with this reason. The message names both values.</td>
 <td>Read <a href="#compatibility">Compatibility</a>. Create a new restore against a target that fits.</td>
 </tr>
 <tr>
