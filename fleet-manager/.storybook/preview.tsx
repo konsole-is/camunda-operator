@@ -11,6 +11,7 @@ import "../src/app/globals.css";
 import type { Preview } from "@storybook/nextjs-vite";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { QueryProvider } from "@/components/fleet/query-provider";
+import { theme } from "./theme";
 
 // The app has one theme. The root layout sets the class dark on <html>.
 document.documentElement.classList.add("dark");
@@ -20,6 +21,8 @@ const preview: Preview = {
   parameters: {
     nextjs: { appDirectory: true },
     layout: "padded",
+    docs: { theme },
+    backgrounds: { disable: true },
     // The stories check runs axe and fails only on a serious or critical
     // violation. The accessibility panel still shows every violation.
     a11y: { test: "off" },
