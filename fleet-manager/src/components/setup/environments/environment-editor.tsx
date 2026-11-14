@@ -2,12 +2,6 @@
 
 import { CircleAlert } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
-import {
-  applyEnvironmentChange,
-  applyNamespaceLabel,
-  previewEnvironmentChange,
-  previewNamespaceLabel,
-} from "@/app/setup/environments/actions";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ChangeReview } from "@/components/fleet/change-review";
@@ -423,15 +417,17 @@ function keptSpec(
   return after?.spec as Environment["spec"] | undefined;
 }
 
-/** EnvironmentEditorLive is EnvironmentEditor on the live sources and the server actions of the page. */
+/** EnvironmentEditorLive is EnvironmentEditor on the live sources. */
 export function EnvironmentEditorLive({
   initial,
   name,
   mode,
+  actions,
 }: {
   initial: EnvironmentSources;
   name?: string;
   mode?: WriteMode;
+  actions: EnvironmentActions;
 }) {
   const sources = useEnvironmentSources(initial);
   return (
@@ -439,17 +435,10 @@ export function EnvironmentEditorLive({
       sources={sources}
       name={name}
       mode={mode}
-      actions={SERVER_ACTIONS}
+      actions={actions}
     />
   );
 }
-
-const SERVER_ACTIONS: EnvironmentActions = {
-  previewChange: previewEnvironmentChange,
-  applyChange: applyEnvironmentChange,
-  previewLabel: previewNamespaceLabel,
-  applyLabel: applyNamespaceLabel,
-};
 
 const POLICIES = [
   ["Delete", "Delete the resources of the claim"],
