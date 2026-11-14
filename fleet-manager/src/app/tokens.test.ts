@@ -6,10 +6,10 @@ import { themes } from "../../.storybook/theme";
 type Theme = "light" | "dark";
 const THEMES: Theme[] = ["light", "dark"];
 
-// Each token as [light, dark]. The dark values are those of the UI draft, as
-// issue #611 lists them, with one change: --faint is lighter than the
-// draft's #6B7591, which is under 4.5:1 as text.
-const TOKENS: Record<string, [string, string]> = {
+// The dark values are those of the UI draft, as issue #611 lists them, with
+// one change: --faint is lighter than the draft's #6B7591, which is under
+// 4.5:1 as text.
+const TOKENS: Record<string, [light: string, dark: string]> = {
   "--bg": ["#F4F6FA", "#0A0F1E"],
   "--panel": ["#FFFFFF", "#0F1630"],
   "--panel-2": ["#EBEFF6", "#151D3B"],

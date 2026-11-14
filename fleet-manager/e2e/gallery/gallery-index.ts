@@ -23,8 +23,8 @@ const escape = (text: string) =>
  * renderIndex returns one HTML page with every shot: a section per component
  * in first-seen order, a row per story, and its widths side by side, widest
  * first, with the dark shot of a width before its light shot. The caption of
- * a light shot names the theme. The image paths stay relative, so the page works from the artifact.
- * title is the title and the heading of the page.
+ * a light shot names the theme. The image paths stay relative, so the page
+ * works from the artifact. title is the title and the heading of the page.
  */
 export function renderIndex(
   shots: readonly Shot[],

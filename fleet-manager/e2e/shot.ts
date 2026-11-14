@@ -20,9 +20,8 @@ const counts = new Map<string, number>();
 /**
  * shot saves a full-page PNG of the page into options.dir and records it for
  * the index that writeShotIndex writes there. Call it from a test. The
- * images are not compared with a baseline. With options.theme "light", the
- * shot is the light copy of the shot before it in the same test: its file
- * gets the suffix -light, and the numbers of the later shots do not change.
+ * images are not compared with a baseline. With options.theme "light", call
+ * it right after a dark shot in the same test, once for that shot.
  */
 export async function shot(
   page: Page,
