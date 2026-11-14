@@ -21,7 +21,7 @@ A component also offers the fields that neither the preset nor the claim sets, f
 | `scheduling.tolerations` | One row for each toleration. |
 | `scheduling.nodeAffinity`, `scheduling.podAffinity`, `extraEnvFrom`, and the other lists | YAML, checked against the schema of the field. |
 
-A value that the editor of its field cannot keep as it is opens in YAML. Examples are a toleration with a field that the rows do not show and a variable with both a value and a Secret key. A `storageSize` that is a number also opens in YAML.
+A value that the editor of its field cannot keep as it is opens in YAML. Examples are a toleration with a field that the rows do not show and a variable with both a value and a Secret key.
 
 **From a Secret** shows the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.
 

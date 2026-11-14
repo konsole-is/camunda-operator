@@ -239,8 +239,7 @@ function reads(editor: SchemaEditor, value: unknown): boolean {
         )
       );
     case "storageSize":
-      // The editor writes a string, also for a number.
-      return isString(value);
+      return isString(value) || typeof value === "number";
     case "env":
       return Array.isArray(value) && value.every(keepsEnv);
     case "tolerations":

@@ -134,7 +134,6 @@ describe("editorOf", () => {
           },
         ],
       ],
-      ["a storage size that is a number", "zeebe.storageSize", 10737418240],
     ])("opens %s as YAML", (_, path, value) => {
       expect(editorFor(path, value)?.kind).toBe("yaml");
     });
@@ -188,6 +187,7 @@ describe("editorOf", () => {
         { requests: { cpu: 1, memory: "1Gi" }, claims: [{ name: "gpu" }] },
       ],
       ["a storage size that is a string", "zeebe.storageSize", "50Gi"],
+      ["a storage size that is a number", "zeebe.storageSize", 10737418240],
       ["null", tolerations, null],
     ])("keeps the editor of the field for %s", (_, path, value) => {
       expect(editorFor(path, value)).toEqual(editorFor(path, undefined));
@@ -428,7 +428,6 @@ describe("overrideEditorOf", () => {
     ["resources", { type: "object" }, { requests: "1" }],
     ["resources", { type: "object" }, { limits: { cpu: true } }],
     ["storageSize", undefined, { size: "1Gi" }],
-    ["storageSize", undefined, 1024],
     [
       "podLabels",
       { type: "object", additionalProperties: { type: "string" } },
@@ -467,6 +466,7 @@ describe("overrideEditorOf", () => {
       "resources",
     ],
     ["storageSize", undefined, "50Gi", "storageSize"],
+    ["storageSize", undefined, 1024, "storageSize"],
     [
       "podLabels",
       { type: "object", additionalProperties: { type: "string" } },

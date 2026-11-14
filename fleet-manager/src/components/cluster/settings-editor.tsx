@@ -321,7 +321,15 @@ function Editor({
               ? String(current)
               : undefined
           }
-          onChange={valid}
+          // A number stays a number for a whole amount without a unit.
+          onChange={(size, errors) =>
+            valid(
+              typeof value === "number" && /^\d+$/.test(size ?? "")
+                ? Number(size)
+                : size,
+              errors,
+            )
+          }
         />
       );
     case "env":
