@@ -52,6 +52,9 @@ const meta = {
     onSpec: fn(),
     onTextErrors: fn(),
   },
+  render: (args) => (
+    <OptionSettingsHarness key={JSON.stringify(args.environment)} {...args} />
+  ),
 } satisfies Meta<typeof OptionSettingsHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;

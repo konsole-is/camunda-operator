@@ -485,6 +485,11 @@ const meta = {
     create: fn(async () => ({ ok: true as const, mode: "direct" as const })),
     onWritten: fn(),
   },
+  // useCreateFlow reads initial only when it mounts, so a new initial from
+  // the Controls panel remounts the harness.
+  render: (args) => (
+    <PlaneCreateHarness key={JSON.stringify(args.initial)} {...args} />
+  ),
 } satisfies Meta<typeof PlaneCreateHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;

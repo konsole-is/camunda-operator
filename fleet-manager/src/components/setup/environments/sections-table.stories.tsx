@@ -56,6 +56,9 @@ const meta = {
     spec: platform.environments[2].spec,
     onPolicy: fn(),
   },
+  render: (args) => (
+    <SectionsTableHarness key={JSON.stringify(args.spec)} {...args} />
+  ),
 } satisfies Meta<typeof SectionsTableHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
