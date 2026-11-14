@@ -217,23 +217,32 @@ func TestRetryAfterAFailedRestoreReachesTheDatabaseOfTheDump(t *testing.T) {
 
 	target := startTarget(t)
 	target.exec(t, olderSchema)
+	// Rows of random text make the table data most of the dump, so a cut
+	// falls after the definitions of the tables.
+	target.exec(t, `INSERT INTO process_instance
+SELECT g, left(md5(random()::text), 20) FROM generate_series(2, 100000) AS g`)
 	dumped := target.objects(t)
 	target.dump(t)
 	target.exec(t, newerSchema)
 
-	// A dump cut in half fails pg_restore after it created the tables, as an
+	// A dump cut short fails pg_restore after it created the tables, as an
 	// interrupted download or a killed pod does.
 	target.shell(t, "cp /scratch/camunda.dump /scratch/full.dump && "+
-		"head -c $(($(stat -c %s /scratch/full.dump) / 2)) /scratch/full.dump > /scratch/camunda.dump")
+		"head -c $(($(stat -c %s /scratch/full.dump) * 3 / 4)) /scratch/full.dump > /scratch/camunda.dump")
 	code, _ := target.restore(t)
 	require.NotZero(t, code)
+	half := target.objects(t)
+	require.Contains(t, half, "table process_instance", "the failed run created tables")
+	require.NotEqual(t, dumped, half, "the failed run left a half restore")
 
 	target.shell(t, "cp /scratch/full.dump /scratch/camunda.dump")
 	code, output := target.restore(t)
 
 	require.Zero(t, code, output)
 	assert.Equal(t, dumped, target.objects(t))
-	assert.Equal(t, "ACTIVE", target.queryString(t, "SELECT state FROM process_instance"))
+	state := target.queryString(t, "SELECT state FROM process_instance WHERE process_instance_key = 1")
+	assert.Equal(t, "ACTIVE", state)
+	assert.Equal(t, "100000", target.queryString(t, "SELECT count(*)::text FROM process_instance"))
 }
 
 func TestRetryAfterAFailedDropReachesTheDatabaseOfTheDump(t *testing.T) {
