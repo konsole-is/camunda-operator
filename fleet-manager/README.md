@@ -125,7 +125,9 @@ link and the commit of the build.
 - CI publishes the preview when Storybook builds, also when another check fails.
 - A pull request from a fork gets no preview. To see its stories, download the `storybook` artifact of its run.
 - When the pull request closes, merged or not, CI removes the preview and edits the comment. A weekly run removes a
-  preview that a closed pull request left.
+  preview that a closed pull request left. The same run then replaces the history of the `gh-pages` branch with one
+  commit, so that old previews do not make the repository larger. A local copy of `gh-pages` from before that run
+  cannot push to the branch, so fetch the branch again before you push to it.
 - The Storybook of `main` is at <https://konsole-is.github.io/camunda-operator/storybook/>.
 
 The preview is public, so a story uses invented fixture data only.

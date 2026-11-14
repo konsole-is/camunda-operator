@@ -2,13 +2,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PREVIEW_MARKER,
   placePreview,
   previewComment,
   previewFolder,
   removePreview,
+  squashSite,
   stalePreviews,
 } from "./storybook-preview.mjs";
 
@@ -248,6 +249,158 @@ describe("previewComment", () => {
   });
 });
 
+// The global git config of the machine, such as core.hooksPath, must not
+// change what the git commands of the tests and of squashSite do.
+function isolateGit(): void {
+  const empty = path.join(tempDir("gitconfig-"), "config");
+  fs.writeFileSync(empty, "");
+  vi.stubEnv("GIT_CONFIG_GLOBAL", empty);
+  vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
+}
+
+function git(dir: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", dir, ...args], {
+    encoding: "utf8",
+  }).trim();
+}
+
+function commitAll(dir: string, message: string): void {
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", message);
+}
+
+/** A clone of remote on gh-pages with an author, as the workflow makes it. */
+function clone(remote: string, depth?: number): string {
+  const dir = tempDir("clone-");
+  const args = ["clone", "-q", "--branch", "gh-pages"];
+  if (depth !== undefined) args.push(`--depth=${depth}`);
+  execFileSync("git", [...args, `file://${remote}`, dir]);
+  git(dir, "config", "user.name", "test");
+  git(dir, "config", "user.email", "test@example.com");
+  return dir;
+}
+
+/** A bare remote whose gh-pages has three commits, the last with the files of site(). */
+function remoteWithHistory(): string {
+  const remote = tempDir("remote-");
+  git(remote, "init", "-q", "--bare", "--initial-branch=gh-pages");
+  const work = site();
+  git(work, "init", "-q", "--initial-branch=gh-pages");
+  git(work, "config", "user.name", "test");
+  git(work, "config", "user.email", "test@example.com");
+  write(work, "pr-preview/pr-3/index.html", "preview 3");
+  commitAll(work, "Publish the Storybook of pull request 3");
+  fs.rmSync(path.join(work, "pr-preview/pr-3"), { recursive: true });
+  commitAll(work, "Remove the Storybook of pull request 3");
+  write(work, "dev/index.html", "dev docs, newer");
+  commitAll(work, "Deploy dev");
+  git(work, "push", "-q", `file://${remote}`, "gh-pages");
+  return remote;
+}
+
+/**
+ * Makes another writer push a new commit to gh-pages just before each of the
+ * first `times` pushes from site start, after site read the branch, and
+ * returns the clone of that writer. It puts a git in front of the real one on
+ * PATH.
+ */
+function raceEachPush(remote: string, site: string, times: number): string {
+  const writer = clone(remote);
+  const real = execFileSync("sh", ["-c", "command -v git"], {
+    encoding: "utf8",
+  }).trim();
+  const bin = tempDir("bin-");
+  const count = path.join(bin, "count");
+  fs.writeFileSync(
+    path.join(bin, "git"),
+    `#!/bin/sh
+if [ "$1" = -C ] && [ "$2" = "${site}" ] && [ "$3" = push ]; then
+  n=$(cat "${count}" 2>/dev/null || echo 0)
+  if [ "$n" -lt ${times} ]; then
+    n=$((n + 1))
+    echo "$n" > "${count}"
+    "${real}" -C "${writer}" pull -q --rebase origin gh-pages
+    echo "push $n" > "${writer}/writer-$n.txt"
+    "${real}" -C "${writer}" add -A
+    "${real}" -C "${writer}" commit -q -m "Writer push $n"
+    "${real}" -C "${writer}" push -q origin HEAD:gh-pages
+  fi
+fi
+exec "${real}" "$@"
+`,
+  );
+  fs.chmodSync(path.join(bin, "git"), 0o755);
+  vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH ?? ""}`);
+  return writer;
+}
+
+describe("squashSite", () => {
+  beforeEach(isolateGit);
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("leaves gh-pages with one commit that holds the tree of its head", () => {
+    const remote = remoteWithHistory();
+    const tree = git(remote, "rev-parse", "gh-pages^{tree}");
+
+    expect(squashSite(clone(remote, 1))).toBe(true);
+
+    expect(git(remote, "rev-list", "--count", "gh-pages")).toBe("1");
+    expect(git(remote, "rev-parse", "gh-pages^{tree}")).toBe(tree);
+  });
+
+  it("returns false and pushes nothing when gh-pages has one commit", () => {
+    const remote = remoteWithHistory();
+    squashSite(clone(remote, 1));
+    const head = git(remote, "rev-parse", "gh-pages");
+
+    expect(squashSite(clone(remote, 1))).toBe(false);
+
+    expect(git(remote, "rev-parse", "gh-pages")).toBe(head);
+  });
+
+  it("squashes the commits that landed after the clone", () => {
+    const remote = remoteWithHistory();
+    const dir = clone(remote, 1);
+    const writer = clone(remote);
+    write(writer, "pr-preview/pr-9/index.html", "preview 9");
+    commitAll(writer, "Publish the Storybook of pull request 9");
+    git(writer, "push", "-q", "origin", "gh-pages");
+
+    expect(squashSite(dir)).toBe(true);
+
+    expect(git(remote, "rev-list", "--count", "gh-pages")).toBe("1");
+    expect(git(remote, "show", "gh-pages:pr-preview/pr-9/index.html")).toBe(
+      "preview 9",
+    );
+  });
+
+  it("keeps the commit that another writer pushes during the squash", () => {
+    const remote = remoteWithHistory();
+    const dir = clone(remote, 1);
+    raceEachPush(remote, dir, 1);
+
+    expect(squashSite(dir)).toBe(true);
+
+    expect(git(remote, "rev-list", "--count", "gh-pages")).toBe("1");
+    expect(git(remote, "show", "gh-pages:writer-1.txt")).toBe("push 1");
+  });
+
+  it("throws after the last attempt and keeps the history of the other writer", () => {
+    const remote = remoteWithHistory();
+    const dir = clone(remote, 1);
+    const writer = raceEachPush(remote, dir, 2);
+
+    expect(() => squashSite(dir, 2)).toThrow(/2 attempts/);
+
+    expect(git(remote, "rev-parse", "gh-pages")).toBe(
+      git(writer, "rev-parse", "HEAD"),
+    );
+    expect(git(remote, "rev-list", "--count", "gh-pages")).toBe("5");
+  });
+});
+
 describe("the command line", () => {
   function run(...args: string[]) {
     return spawnSync(process.execPath, [script, ...args], {
@@ -290,6 +443,22 @@ describe("the command line", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('"8x"');
+  });
+
+  it("squashes the history of the site and says whether it did", () => {
+    isolateGit();
+    try {
+      const dir = clone(remoteWithHistory(), 1);
+
+      const first = run("squash", dir);
+      const second = run("squash", dir);
+
+      expect(first.status).toBe(0);
+      expect(second.status).toBe(0);
+      expect(first.stdout).not.toBe(second.stdout);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("prints the comment", () => {

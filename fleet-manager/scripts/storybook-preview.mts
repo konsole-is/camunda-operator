@@ -1,13 +1,16 @@
 // Places and removes the Storybook previews on a checkout of the gh-pages
-// branch, and writes the text of the preview comment. The workflows run it
-// with plain Node.js and no install, so it imports Node.js built-ins only.
+// branch, squashes the history of the branch, and writes the text of the
+// preview comment. The workflows run it with plain Node.js and no install, so
+// it imports Node.js built-ins only.
 //
 // Usage:
 //   node scripts/storybook-preview.mts place <site> <from> <folder>
 //   node scripts/storybook-preview.mts remove <site> <folder>
 //   node scripts/storybook-preview.mts stale <site> [<open pull request number>...]
+//   node scripts/storybook-preview.mts squash <site>
 //   node scripts/storybook-preview.mts comment published <url> <sha>
 //   node scripts/storybook-preview.mts comment removed <url>
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -92,6 +95,65 @@ export function stalePreviews(
     .map((n) => previewFolder({ pr: n }));
 }
 
+function git(siteDir: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", siteDir, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+/**
+ * squashSite replaces the history of gh-pages on the remote origin of
+ * siteDir with one commit that holds the tree of its head, and returns false
+ * when the branch already has one commit. siteDir is a clone, shallow or not,
+ * that can push, with a commit author in its config. When another push lands
+ * during the squash, it reads the branch again, for a maximum of attempts
+ * reads. It never removes a commit that it did not read, and it throws when
+ * the last attempt fails.
+ */
+export function squashSite(siteDir: string, attempts = 3): boolean {
+  let failure = "";
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    git(
+      siteDir,
+      "fetch",
+      "--quiet",
+      "--depth=1",
+      "origin",
+      "+refs/heads/gh-pages:refs/remotes/origin/gh-pages",
+    );
+    const head = git(siteDir, "rev-parse", "refs/remotes/origin/gh-pages");
+    // A shallow clone hides the parents from the history, but the commit
+    // object still names them.
+    if (!/^parent /m.test(git(siteDir, "cat-file", "commit", head))) {
+      return false;
+    }
+    const root = git(
+      siteDir,
+      "commit-tree",
+      `${head}^{tree}`,
+      "-m",
+      "Squash the history of gh-pages into one commit",
+    );
+    try {
+      git(
+        siteDir,
+        "push",
+        "--quiet",
+        `--force-with-lease=refs/heads/gh-pages:${head}`,
+        "origin",
+        `${root}:refs/heads/gh-pages`,
+      );
+      return true;
+    } catch (error) {
+      failure = String((error as { stderr?: unknown }).stderr ?? error).trim();
+    }
+  }
+  throw new Error(
+    `Could not push the squashed gh-pages in ${attempts} attempts: ${failure}`,
+  );
+}
+
 /**
  * previewComment returns the body of the preview comment. It starts with
  * PREVIEW_MARKER. A published comment names the commit by its short SHA. A
@@ -145,6 +207,15 @@ function main(args: string[]): void {
       for (const folder of folders) console.log(folder);
       return;
     }
+    case "squash": {
+      const [site] = rest;
+      console.log(
+        squashSite(site ?? "")
+          ? "Squashed the history of gh-pages into one commit"
+          : "gh-pages has one commit",
+      );
+      return;
+    }
     case "comment": {
       const [state, url, sha] = rest;
       if (state !== "published" && state !== "removed") {
@@ -157,7 +228,7 @@ function main(args: string[]): void {
     }
     default:
       throw new Error(
-        `${JSON.stringify(command)} is not a command: use place, remove, stale, or comment`,
+        `${JSON.stringify(command)} is not a command: use place, remove, stale, squash, or comment`,
       );
   }
 }
