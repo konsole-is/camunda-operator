@@ -134,6 +134,11 @@ describe("editorOf", () => {
           },
         ],
       ],
+      [
+        "a scratch size limit that is a number",
+        "backup.dump.scratchVolume.sizeLimit",
+        1073741824,
+      ],
     ])("opens %s as YAML", (_, path, value) => {
       expect(editorFor(path, value)?.kind).toBe("yaml");
     });
@@ -312,6 +317,23 @@ describe("parameterEditorOf", () => {
       kind: "yaml",
       schema,
     });
+  });
+
+  it("edits an int-or-string with a value that is a number as YAML", () => {
+    const schema = { "x-kubernetes-int-or-string": true };
+    expect(parameterEditorOf(schema, { value: 1024 })).toEqual({
+      kind: "yaml",
+      schema,
+    });
+  });
+
+  it("keeps the text input of an int-or-string for a string", () => {
+    expect(
+      parameterEditorOf(
+        { "x-kubernetes-int-or-string": true },
+        { value: "50Gi" },
+      ),
+    ).toEqual({ kind: "text" });
   });
 
   it.each([{ team: "orders" }, null])(

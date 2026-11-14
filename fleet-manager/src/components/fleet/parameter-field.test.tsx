@@ -377,6 +377,20 @@ describe("ParameterField", () => {
     expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
   });
 
+  it("shows an int-or-string that is a number as YAML", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({ "x-kubernetes-int-or-string": true })}
+        value={1024}
+        onValue={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText("Replicas");
+    expect(input.tagName).toBe("TEXTAREA");
+    expect((input as HTMLTextAreaElement).value).toContain("1024");
+  });
+
   it("edits an object with a declared property that is not a string as YAML", () => {
     render(
       <ParameterField

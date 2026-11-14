@@ -51,8 +51,8 @@ type YamlEditor = Extract<SchemaEditor, { kind: "yaml" }>;
  *  6. Anything else: YAML, checked against openAPI, else against the type
  *     of the schema when it has one.
  *
- * value is the value that the editor opens with. When the editor of rule 2
- * or 5 cannot keep it as it is, the result is YAML, checked as in rule 6.
+ * value is the value that the editor opens with. When the editor of rule 2,
+ * 4, or 5 cannot keep it as it is, the result is YAML, checked as in rule 6.
  */
 export function editorOf(
   path: string,
@@ -88,8 +88,8 @@ export function editorOf(
  * schema its property schema, or undefined only when schema is not an
  * object and there are no choices. choices are the names that the claim
  * stores in place of the values. The editor depends on the schema only, not
- * on the name of the parameter: rules 1 and 4 to 6 of editorOf. A map of
- * strings with a value that is not a map of strings gives YAML.
+ * on the name of the parameter: rules 1 and 4 to 6 of editorOf. A value
+ * that the editor cannot keep as it is gives YAML.
  */
 export function parameterEditorOf(
   schema: unknown,
@@ -150,8 +150,9 @@ function schemaEditorOf(
       ...(schema.minimum !== undefined && { minimum: schema.minimum }),
       ...(schema.maximum !== undefined && { maximum: schema.maximum }),
     };
-  if (schema.type === "string" || schema.intOrString) return { kind: "text" };
   const yaml = openAPI ?? openAPIOf(schema);
+  if (schema.type === "string" || schema.intOrString)
+    return kept({ kind: "text" }, value, yaml);
   if (schema.type === "object")
     return kept(
       labels ? { kind: "keyValue", format: "label" } : { kind: "keyValue" },
@@ -224,6 +225,8 @@ function isListOfObjects(schema: Record<string, unknown>): boolean {
 function reads(editor: SchemaEditor, value: unknown): boolean {
   if (value === undefined || value === null) return true;
   switch (editor.kind) {
+    case "text":
+      return isString(value);
     case "keyValue":
       return isObject(value) && Object.values(value).every(isString);
     case "resources":
