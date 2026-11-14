@@ -299,13 +299,9 @@ type databaseResolution struct {
 // dump.
 //
 // The database is reached with the application role of the target, the role
-// that owns the database and every object in it. pg_restore --clean drops
-// each object before it recreates it, and PostgreSQL lets only the owner of
-// an object drop it. The backup role that wrote the dump owns nothing: it
-// holds USAGE and CREATE on the schema and DML on the tables
-// (pkg/pgbootstrap EnsureBackupUser). A restore that connected as the backup
-// role would fail every DROP with "must be owner of table" and would restore
-// no data.
+// that owns the database and every object in it. The restore drops the
+// objects of the target before it recreates them, and PostgreSQL lets only
+// the owner of an object drop it. The backup role owns nothing.
 func (r *Reconciler) resolveDatabase(
 	ctx context.Context,
 	resolved *resolution,

@@ -18,8 +18,9 @@ limitations under the License.
 // into the relational database of a suspended orchestration cluster. The Job is
 // the mirror image of the dump Job in pkg/components/logicalbackuprdbms: an
 // init container downloads the archive from the backup bucket into a scratch
-// volume, then the main container runs pg_restore against the target. The
-// package is pure: spec in, resources out, no API calls.
+// volume, a second one drops the tables of the target, then the main container
+// runs pg_restore against the target. The package is pure: spec in, resources
+// out, no API calls.
 package logicalrestorerdbms
 
 import (
@@ -62,10 +63,10 @@ const (
 	// scratchMountPath is where both containers see the scratch volume.
 	scratchMountPath = "/scratch"
 	// defaultBackoffLimit bounds the pod retries of the Job. It is the limit
-	// of the dump Job. A retry is safe: pg_restore --clean --if-exists drops
-	// what it restores before it restores it, so a second pod starts from the
-	// same state as the first. A restore that fails three times needs a human,
-	// not a fourth pod.
+	// of the dump Job. A retry is safe: every pod drops the tables of the
+	// target before pg_restore, so a second pod starts from the same state as
+	// the first. A restore that fails three times needs a human, not a fourth
+	// pod.
 	defaultBackoffLimit = int32(3)
 	// postgresUID is the uid of the postgres user in the upstream image. It is
 	// also the fsGroup of the pod. A storage class commonly hands over a
@@ -114,13 +115,8 @@ type JobInput struct {
 	BucketSecretName string
 	// DBSecretName is the Secret of the role that owns the target database,
 	// which is its application role, reachable the same way. DBUsernameKey
-	// and DBPasswordKey name its keys.
-	//
-	// pg_restore --clean drops every object before it recreates it, and
-	// PostgreSQL lets only the owner of an object drop it. The backup role
-	// that wrote the archive owns nothing of what it dumped, so a restore
-	// that connected as it would fail every DROP with "must be owner of
-	// table" and would restore no data.
+	// and DBPasswordKey name its keys. The Job drops the relations of this
+	// role, because PostgreSQL lets only the owner of an object drop it.
 	DBSecretName  string
 	DBUsernameKey string
 	DBPasswordKey string
@@ -151,11 +147,11 @@ type JobInput struct {
 }
 
 // BuildJob renders the Job that downloads the dump and restores it into the
-// target database. An initContainer streams the object into the scratch
-// volume. The main container runs pg_restore from that file, so the Job
-// succeeds only when the restore succeeded. The two containers run in turn,
-// and one resource block sizes both. The effective request of the pod is the
-// maximum, not the sum.
+// target database. The target then holds the objects of the dump and no other
+// relation of the application role, so a dump of an older Camunda minor leaves
+// no table of a newer one. The Job succeeds only when the restore succeeded.
+// The containers run in turn, and one resource block sizes them all. The
+// effective request of the pod is the maximum, not the sum.
 //
 // The Job carries no owner reference. The caller sets the controller reference
 // before it applies the Job.
@@ -218,7 +214,7 @@ func BuildJob(in JobInput) (*batchv1.Job, error) {
 				FSGroup:        new(postgresUID),
 				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
-			InitContainers: []corev1.Container{downloadContainer(in, pod, string(spec))},
+			InitContainers: []corev1.Container{downloadContainer(in, pod, string(spec)), dropContainer(in, pod)},
 			Containers:     []corev1.Container{restoreContainer(in, pod)},
 			Volumes:        []corev1.Volume{scratchVolume(pod)},
 		},
@@ -352,12 +348,83 @@ func mergeEnv(own, extra []corev1.EnvVar) []corev1.EnvVar {
 	return merged
 }
 
+// dropOwnedRelations drops every table, view, sequence, and foreign table that
+// the connected role owns outside the system schemas, which are the schemas
+// that pg_dump skips. It is one transaction, so a failed drop leaves every
+// relation in place. A sequence of a column and an extension member go with
+// their owner. Kubernetes turns $$ in a container command into $, so the DO
+// block uses a named delimiter.
+const dropOwnedRelations = `DO $drop$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.relkind, n.nspname, c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE pg_get_userbyid(c.relowner) = current_user
+      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+      AND n.nspname <> 'information_schema'
+      AND n.nspname NOT LIKE 'pg\_%'
+      AND NOT EXISTS (
+        SELECT FROM pg_depend d
+        WHERE d.classid = 'pg_class'::regclass
+          AND d.objid = c.oid
+          AND d.deptype IN ('a', 'i', 'e')
+      )
+    ORDER BY n.nspname, c.relname
+  LOOP
+    EXECUTE format(
+      'DROP %s IF EXISTS %I.%I CASCADE',
+      CASE r.relkind
+        WHEN 'v' THEN 'VIEW'
+        WHEN 'm' THEN 'MATERIALIZED VIEW'
+        WHEN 'S' THEN 'SEQUENCE'
+        WHEN 'f' THEN 'FOREIGN TABLE'
+        ELSE 'TABLE'
+      END,
+      r.nspname,
+      r.relname
+    );
+  END LOOP;
+END
+$drop$`
+
+// dropContainer drops the relations of the application role before
+// pg_restore. Without it, a table of a newer Camunda minor that the dump does
+// not hold stays, and its foreign key into a table of the dump makes the DROP
+// of pg_restore --clean fail.
+func dropContainer(in JobInput, pod *v1.DumpPodSpec) corev1.Container {
+	return postgresContainer(in, pod, "drop", []string{
+		"psql",
+		"--no-psqlrc",
+		"--set=ON_ERROR_STOP=1",
+		"--command=" + dropOwnedRelations,
+	})
+}
+
 // restoreContainer runs pg_restore of the downloaded archive into the target
-// database. The --clean and --if-exists pair drops each object before it
-// restores it, so a retried pod starts from the same state as the first one.
-// The --no-owner flag restores every object as the connected user, because the
-// target cluster does not have to hold the roles of the source.
+// database. The --clean and --if-exists pair drops each object of the dump
+// that dropContainer leaves, such as a function. The --no-owner flag restores
+// every object as the connected user, because the target cluster does not have
+// to hold the roles of the source.
 func restoreContainer(in JobInput, pod *v1.DumpPodSpec) corev1.Container {
+	container := postgresContainer(in, pod, "restore", []string{
+		"pg_restore",
+		"--clean",
+		"--if-exists",
+		"--no-owner",
+		"--dbname=" + in.Database,
+		scratchMountPath + "/" + backup.DumpFileName,
+	})
+	container.VolumeMounts = []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}}
+
+	return container
+}
+
+// postgresContainer runs command with the client tools of the target server,
+// connected to the target database as the application role.
+func postgresContainer(in JobInput, pod *v1.DumpPodSpec, name string, command []string) corev1.Container {
 	env := []corev1.EnvVar{
 		{Name: "PGHOST", Value: in.Host},
 		{Name: "PGPORT", Value: strconv.FormatInt(int64(in.Port), 10)},
@@ -372,20 +439,12 @@ func restoreContainer(in JobInput, pod *v1.DumpPodSpec) corev1.Container {
 	}
 
 	container := corev1.Container{
-		Name:  "restore",
-		Image: image,
-		Command: []string{
-			"pg_restore",
-			"--clean",
-			"--if-exists",
-			"--no-owner",
-			"--dbname=" + in.Database,
-			scratchMountPath + "/" + backup.DumpFileName,
-		},
+		Name:            name,
+		Image:           image,
+		Command:         command,
 		Env:             mergeEnv(env, pod.ExtraEnv),
 		EnvFrom:         pod.ExtraEnvFrom,
 		SecurityContext: containerSecurity(postgresUID),
-		VolumeMounts:    []corev1.VolumeMount{{Name: scratchVolumeName, MountPath: scratchMountPath}},
 	}
 	if pod.Resources != nil {
 		container.Resources = *pod.Resources

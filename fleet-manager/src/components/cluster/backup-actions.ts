@@ -397,7 +397,7 @@ export function restoreConfirm(
       `Backup ${row.name} has Camunda ${row.version}. ${cluster} The restore sets the cluster to ${row.version}.`,
       es
         ? `The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. ${volumes}`
-        : `The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. ${volumes}`,
+        : `The restore drops the tables in the database of the cluster and restores the tables of the backup with pg_restore. ${volumes}`,
       startsAgain(context.suspension),
       failed(
         es

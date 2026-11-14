@@ -41,7 +41,7 @@ graph LR
 | --- | --- |
 | `Pending` | The restore waits. The backup or the target does not exist, the backup is not completed, another operation holds the target, or the target is not prepared. The restore suspends the target and sets its version here. It erases nothing. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
-| `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket and runs `pg_restore` against the logical database of the target. |
+| `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket, drops the tables of the logical database of the target, and runs `pg_restore` against it. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
 | `Completed` | The restore finished. The target starts again, unless you suspended it yourself or another hold remains. |
 | `Failed` | The restore ended. `status.failureMessage` says why. |
@@ -81,7 +81,9 @@ In `Pending` this wait has no limit. After `Pending`, these reasons hold the res
 
 One Job downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists --no-owner` on it. `status.secondaryJobName` names the Job while it exists.
 
-**The Job connects as the application role of the target**, the role in `DatabaseConfig.spec.credentialsSecretRef`. `pg_restore --clean` drops each object before it creates it again, and only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.
+**After the restore, the application role owns the tables of the backup and no others.** Before `pg_restore`, the Job drops every table, view, and sequence that the application role owns, in every schema. A table that a newer Camunda minor created after the backup does not stay. An object of another role stays, unless it depends on a dropped table. For example, a view of another role over a Camunda table goes with that table.
+
+**The Job connects as the application role of the target**, the role in `DatabaseConfig.spec.credentialsSecretRef`. Only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.
 
 The Job takes its pod settings and its `postgres` image from `spec.backup.dump` of the target, through its preset when it names one. It runs under the ServiceAccount of the cluster. The restore resource carries no pod settings of its own.
 
@@ -91,7 +93,7 @@ The Job needs these, and holds the restore until they exist:
 - The Secret of the bucket credentials in the namespace of the target. If it is missing or lacks a key, the reason is `MissingCredentials`.
 - `status.serverVersion` on the `DatabaseServerConfig`, for its current spec. The Job runs the client tools of that PostgreSQL major. If it is not there, the reason is `InvalidReference`.
 
-A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs.
+A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs. A new restore of the same backup gives the same database as a restore that did not fail.
 
 ## Primary storage
 
