@@ -22,8 +22,10 @@ import (
 	"strings"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -61,11 +63,12 @@ type WriteAheadLog interface {
 // It sets startedAt and closedSegment of status.recovery when they are
 // missing.
 //
-// The wait ends at once for an archive that the server no longer writes, and
-// for one whose uploads the server reports as failing. It ends at the latest
-// when the wait passes, also when the archive has not shown that it holds the
-// point: the recovery then decides, and CloudNativePG fails a recovery whose
-// target the archive does not reach.
+// The wait ends at once for an archive that the server no longer writes, for
+// one whose uploads the server reports as failing, and when the server no
+// longer owns the cluster it runs from. It ends at the latest when the wait
+// passes, also when the archive has not shown that it holds the point: the
+// recovery then decides, and CloudNativePG fails a recovery whose target the
+// archive does not reach.
 func (r *DatabaseServerReconciler) awaitArchivedTarget(
 	ctx context.Context,
 	server *v1.DatabaseServer,
@@ -99,6 +102,16 @@ func (r *DatabaseServerReconciler) awaitArchivedTarget(
 
 	ctx, cancel := context.WithTimeout(ctx, walTimeout)
 	defer cancel()
+
+	// The Secret and the primary of a cluster that another owner took hold
+	// the database of that owner.
+	owned, err := r.ownsRunningCluster(ctx, server)
+	if err != nil {
+		return unanswered(log, err)
+	}
+	if !owned {
+		return false
+	}
 
 	conn, err := r.primaryConnection(ctx, server)
 	if err != nil {
@@ -149,6 +162,24 @@ func (r *DatabaseServerReconciler) archiveWait() time.Duration {
 	}
 
 	return defaultArchiveWait
+}
+
+// ownsRunningCluster reports whether the server owns the CloudNativePG
+// cluster that it runs from. A cluster that is gone is not owned.
+func (r *DatabaseServerReconciler) ownsRunningCluster(ctx context.Context, server *v1.DatabaseServer) (bool, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
+
+	// Live: another owner can take the name at any moment.
+	var cluster cnpgv1.Cluster
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("reading the cluster %s: %w", key, err)
+	}
+
+	return ownedByServer(server, &cluster), nil
 }
 
 // primaryConnection returns the connection to the primary instance of the

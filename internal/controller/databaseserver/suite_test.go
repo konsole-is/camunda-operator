@@ -148,6 +148,14 @@ func (f *fakeWAL) silence(namespace string) {
 	f.silent[namespace] = true
 }
 
+// wake makes the primary of namespace answer again.
+func (f *fakeWAL) wake(namespace string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.silent, namespace)
+}
+
 // closedIn returns how many segments the primary of namespace closed.
 func (f *fakeWAL) closedIn(namespace string) int {
 	f.mu.Lock()

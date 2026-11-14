@@ -1206,9 +1206,10 @@ spec:
                       ClosedSegment is the write-ahead log file that the server closed after
                       it took the request. This file and the files before it hold the
                       requested point. The server starts the recovery when the archive holds
-                      this file, or after five minutes. It is empty for a recovery from an
-                      earlier archive, while ArchiveReady reports ArchiveFailing, and while
-                      the primary instance does not answer.
+                      this file, or after five minutes. The server closes no file for a
+                      recovery from an earlier archive. It closes none while ArchiveReady
+                      reports ArchiveFailing, while the primary instance does not answer, or
+                      while another owner controls the cluster it runs from.
                     type: string
                   cluster:
                     description: |-

@@ -2905,7 +2905,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#recoveryarchiveref"
       },
       "status.recovery.closedSegment": {
-        "description": "ClosedSegment is the write-ahead log file that the server closed after\nit took the request. This file and the files before it hold the\nrequested point. The server starts the recovery when the archive holds\nthis file, or after five minutes. It is empty for a recovery from an\nearlier archive, while ArchiveReady reports ArchiveFailing, and while\nthe primary instance does not answer.",
+        "description": "ClosedSegment is the write-ahead log file that the server closed after\nit took the request. This file and the files before it hold the\nrequested point. The server starts the recovery when the archive holds\nthis file, or after five minutes. The server closes no file for a\nrecovery from an earlier archive. It closes none while ArchiveReady\nreports ArchiveFailing, while the primary instance does not answer, or\nwhile another owner controls the cluster it runs from.",
         "anchor": "#databaseserverrecoverystatus"
       },
       "status.recovery.cluster": {

@@ -126,6 +126,45 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 			To(BeNumerically(">=", suiteArchiveWait-time.Second))
 	})
 
+	It("closes no segment on a cluster that another owner took", func() {
+		server, from := archivingServer()
+		primaries.silence(server.Namespace)
+		askForRecovery(server, from.Add(time.Hour))
+
+		Eventually(func(g Gomega) {
+			recovery := reconciledServer(server).Status.Recovery
+			g.Expect(recovery).NotTo(BeNil())
+			g.Expect(recovery.StartedAt).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		// The primary answers again only once the cluster is not this
+		// server's, so any segment it closes is one on the database of
+		// somebody else.
+		By("taking the cluster the server runs from away from it")
+		running := client.ObjectKey{Namespace: server.Namespace, Name: server.Name}
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, running, &cluster)).To(Succeed())
+			cluster.OwnerReferences = nil
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		primaries.wake(server.Namespace)
+
+		key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
+		var recovered cnpgv1.Cluster
+		Eventually(func() error {
+			return k8sClient.Get(ctx, key, &recovered)
+		}, timeout, interval).Should(Succeed())
+
+		recovery := reconciledServer(server).Status.Recovery
+		Expect(recovery.ClosedSegment).To(BeEmpty())
+		Expect(primaries.closedIn(server.Namespace)).To(BeZero())
+		// Built when the owner changed, not when the wait ran out. Both times
+		// are whole seconds.
+		Expect(recovered.CreationTimestamp.Sub(recovery.StartedAt.Time)).
+			To(BeNumerically("<", suiteArchiveWait-2*time.Second))
+	})
+
 	It("builds the recovered cluster at once from an archive that the server no longer writes", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))
