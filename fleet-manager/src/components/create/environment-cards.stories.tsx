@@ -9,16 +9,16 @@ import { development, legacy, production } from "./fixtures";
 
 // The create flow holds the picked environments, so the story holds them too.
 function EnvironmentCardsHarness(props: EnvironmentCardsProps) {
-  const [value, setValue] = useState(props.value);
+  const [picked, setPicked] = useState(() => [props.value ?? []].flat());
   if (props.multiple) {
     const { onChange } = props;
     return (
       <EnvironmentCards
         {...props}
-        value={value as string[]}
+        value={picked}
         onChange={(names: string[]) => {
           onChange?.(names);
-          setValue(names);
+          setPicked(names);
         }}
       />
     );
@@ -27,10 +27,10 @@ function EnvironmentCardsHarness(props: EnvironmentCardsProps) {
   return (
     <EnvironmentCards
       {...props}
-      value={value as string | undefined}
+      value={picked[0]}
       onChange={(name: string) => {
         onChange?.(name);
-        setValue(name);
+        setPicked([name]);
       }}
     />
   );
