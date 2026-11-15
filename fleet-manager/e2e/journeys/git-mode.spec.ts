@@ -33,9 +33,24 @@ function claimField(jsonpath: string): string {
   );
 }
 
+// pauseApplyLoop stops apply-loop.sh, which must run on this host, and
+// returns the function that lets it go on. It throws when no loop runs.
+function pauseApplyLoop(): () => void {
+  const pids = execFileSync("pgrep", ["-f", "harness/apply-loop.sh"], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .map(Number);
+  for (const pid of pids) process.kill(pid, "SIGSTOP");
+  return () => {
+    for (const pid of pids) process.kill(pid, "SIGCONT");
+  };
+}
+
 test.beforeAll(async () => {
   // A second apply would drop the revision of a pushed save from the live
-  // claim, and the next save would then wait on a file that GitOps applied.
+  // claim, and the writer would then refuse the next save with a conflict.
   const found = kubectl(
     "get",
     "camundaclusterclaim",
@@ -117,16 +132,23 @@ test("a release change pushed from the Claim tab reaches the repository and the 
     "serious or critical axe violations in the Git review",
   ).toEqual([]);
   await shot(page, "claim-review-git", { dir: JOURNEYS_DIR });
-  await push.click();
 
-  // The apply loop reads the branch every 5 seconds, so the waiting state
-  // is checked before anything else.
   const waiting = page
     .getByRole("status")
     .filter({ hasText: "Waiting for GitOps to apply" });
-  await expect(waiting.filter({ hasText: /Commit [0-9a-f]{7}/ })).toBeVisible();
-  await expect(waiting.filter({ hasText: CLAIM_FILE })).toBeVisible();
-  await shot(page, "claim-pushed", { dir: JOURNEYS_DIR });
+  // The apply loop can apply the commit right after the push, and the app
+  // then ends the waiting state.
+  const resumeApplyLoop = pauseApplyLoop();
+  try {
+    await push.click();
+    await expect(waiting.filter({ hasText: /Commit [0-9a-f]{7}/ })).toBeVisible(
+      { timeout: 30_000 },
+    );
+    await expect(waiting.filter({ hasText: CLAIM_FILE })).toBeVisible();
+    await shot(page, "claim-pushed", { dir: JOURNEYS_DIR });
+  } finally {
+    resumeApplyLoop();
+  }
 
   let file: string | undefined;
   await expect
