@@ -33,8 +33,9 @@ export type DataTableFilter = {
 /**
  * DataTableRow is one row. cells holds the content of each column by key.
  * search is the text that the search box matches. sort holds the value of
- * each sortable column. filters holds the value of each filter. applicable
- * says whether the row can be selected, true when it is not set.
+ * each sortable column. filters holds the value of each filter. A list
+ * value matches each filter value that it holds. applicable says whether
+ * the row can be selected, true when it is not set.
  */
 export type DataTableRow = {
   id: string;
@@ -43,7 +44,7 @@ export type DataTableRow = {
   href?: string;
   search?: string;
   sort?: Record<string, string | number>;
-  filters?: Record<string, string>;
+  filters?: Record<string, string | readonly string[]>;
   applicable?: boolean;
 };
 
@@ -101,7 +102,7 @@ export function DataTable({
       (row) =>
         (row.search ?? "").toLowerCase().includes(q.trim().toLowerCase()) &&
         Object.entries(values).every(
-          ([key, value]) => !value || row.filters?.[key] === value,
+          ([key, value]) => !value || holds(row.filters?.[key], value),
         ),
     );
   const visible = sorted(matches(query, activeFilters), sort);
@@ -340,4 +341,11 @@ function sorted(rows: DataTableRow[], sort: Sort | undefined): DataTableRow[] {
         : String(x).localeCompare(String(y)))
     );
   });
+}
+
+function holds(
+  rowValue: string | readonly string[] | undefined,
+  value: string,
+): boolean {
+  return Array.isArray(rowValue) ? rowValue.includes(value) : rowValue === value;
 }
