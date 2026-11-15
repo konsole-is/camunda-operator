@@ -96,11 +96,13 @@ export function EnvEditor({
           >
             <div className="flex flex-wrap items-center gap-2">
               {row.source === "other" ? (
-                <LockedField
-                  label={row.entry.name}
-                  value={describeOther(row.entry)}
-                  reason="Edit this variable in the YAML of the claim"
-                />
+                <div className="min-w-0 flex-1">
+                  <LockedField
+                    label={row.entry.name}
+                    value={describeOther(row.entry)}
+                    reason="Edit this variable in the YAML of the claim"
+                  />
+                </div>
               ) : (
                 <>
                   <Input
