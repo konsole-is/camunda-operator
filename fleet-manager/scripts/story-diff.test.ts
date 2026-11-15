@@ -35,6 +35,7 @@ function story(id: string, markup: string): SnapshotStory {
 function snapshot(stories: SnapshotStory[], stylesheet = ".a { }"): Snapshot {
   return {
     sha: "0123456789abcdef0123456789abcdef01234567",
+    complete: true,
     stories,
     stylesheet,
   };
@@ -46,9 +47,10 @@ function snapshotDir(snap: Snapshot): string {
   write(
     dir,
     "stories.json",
-    JSON.stringify(
-      snap.stories.map(({ id, title, name }) => ({ id, title, name })),
-    ),
+    JSON.stringify({
+      complete: snap.complete,
+      stories: snap.stories.map(({ id, title, name }) => ({ id, title, name })),
+    }),
   );
   for (const s of snap.stories) write(dir, `stories/${s.id}.html`, s.markup);
   write(dir, "stylesheet.css", snap.stylesheet);
@@ -260,6 +262,37 @@ describe("renderChanges", () => {
     expect(text).toContain("The full report has all of it.");
   });
 
+  it("counts each new and removed story that did not fit", () => {
+    const removed = Array.from({ length: 100 }, (_, i) =>
+      story(`removed-story-${i}`, ""),
+    );
+
+    const text = renderChanges(comparison({ removed }), links, {
+      ...limits,
+      length: 3_000,
+    });
+    const shown = text.match(/^- /gm)?.length ?? 0;
+
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThan(100);
+    expect(text).toContain(`And ${100 - shown} more stories:`);
+  });
+
+  it("says so when the changed rules of the stylesheet did not fit", () => {
+    const stylesheet = `@@ -1,1 +1,1 @@\n-${"a".repeat(500)}\n+${"b".repeat(500)}`;
+
+    const text = renderChanges(comparison({ stylesheet }), links, {
+      ...limits,
+      length: 300,
+    });
+
+    expect(text).toContain(
+      "The stylesheet changed, so any story may look different.",
+    );
+    expect(text).not.toContain("a".repeat(500));
+    expect(text).toContain("full report");
+  });
+
   it("stays within the length and counts the stories that did not fit", () => {
     const changed = Array.from({ length: 50 }, (_, i) => ({
       story: story(`s-${i}`, ""),
@@ -275,7 +308,7 @@ describe("renderChanges", () => {
     expect(text.length).toBeLessThan(10_000 + 200);
     expect(shown).toBeGreaterThan(0);
     expect(text).toContain(
-      `And ${50 - shown} more: the [full report](https://example.com/run) lists them.`,
+      `And ${50 - shown} more stories: the [full report](https://example.com/run) lists them.`,
     );
   });
 
@@ -312,7 +345,7 @@ describe("missingSnapshot", () => {
   it("says which snapshot is missing", () => {
     expect(missingSnapshot("main")).toMatch(/snapshot of main/);
     expect(missingSnapshot("pull request")).toMatch(
-      /stories check made no snapshot/,
+      /stories check made no complete snapshot/,
     );
   });
 });
@@ -333,11 +366,16 @@ describe("readSnapshot", () => {
 
   it("reads a snapshot without a stylesheet and a commit", () => {
     const dir = tempDir("snapshot-");
-    write(dir, "stories.json", '[{"id":"a","title":"ui/A","name":"Default"}]');
+    write(
+      dir,
+      "stories.json",
+      '{"complete":true,"stories":[{"id":"a","title":"ui/A","name":"Default"}]}',
+    );
     write(dir, "stories/a.html", "<p>a</p>");
 
     expect(readSnapshot(dir)).toEqual({
       sha: "",
+      complete: true,
       stories: [story("a", "<p>a</p>")].map((s) => ({ ...s, title: "ui/A" })),
       stylesheet: "",
     });
@@ -345,24 +383,52 @@ describe("readSnapshot", () => {
 
   it("throws when the markup of a listed story is missing", () => {
     const dir = tempDir("snapshot-");
-    write(dir, "stories.json", '[{"id":"a","title":"ui/A","name":"Default"}]');
+    write(
+      dir,
+      "stories.json",
+      '{"complete":true,"stories":[{"id":"a","title":"ui/A","name":"Default"}]}',
+    );
 
     expect(() => readSnapshot(dir)).toThrow();
   });
 
   it.each(["../a", "A", "a/b", ""])("refuses the story id %j", (id) => {
     const dir = tempDir("snapshot-");
-    write(dir, "stories.json", JSON.stringify([{ id, title: "t", name: "n" }]));
+    write(
+      dir,
+      "stories.json",
+      JSON.stringify({
+        complete: true,
+        stories: [{ id, title: "t", name: "n" }],
+      }),
+    );
 
     expect(() => readSnapshot(dir)).toThrow(/not the id of a story/);
   });
 
-  it("throws when stories.json is not a list of stories", () => {
+  it("says whether the stories check captured each story", () => {
+    const snap = snapshot([story("a", "<p>a</p>")]);
+    const dir = snapshotDir(snap);
+
+    expect(readSnapshot(dir)?.complete).toBe(true);
+
+    write(
+      dir,
+      "stories.json",
+      JSON.stringify({
+        complete: false,
+        stories: [{ id: "a", title: "ui/a", name: "Default" }],
+      }),
+    );
+    expect(readSnapshot(dir)?.complete).toBe(false);
+  });
+
+  it("throws when stories.json does not list stories", () => {
     const dir = tempDir("snapshot-");
-    write(dir, "stories.json", '{"id":"a"}');
+    write(dir, "stories.json", '[{"id":"a"}]');
     expect(() => readSnapshot(dir)).toThrow(/not a list/);
 
-    write(dir, "stories.json", '[{"id":"a"}]');
+    write(dir, "stories.json", '{"complete":true,"stories":[{"id":"a"}]}');
     expect(() => readSnapshot(dir)).toThrow(/without an id, title, or name/);
   });
 });
@@ -414,6 +480,54 @@ describe("the command line", () => {
     const result = run(
       "comment",
       path.join(tempDir("baseline-"), "missing"),
+      snapshotDir(head),
+      links.main,
+      links.preview,
+      "https://example.com/run",
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(missingSnapshot("main"));
+  });
+
+  it("does not compare a snapshot that stopped before the last story", () => {
+    const dir = snapshotDir(head);
+    write(
+      dir,
+      "stories.json",
+      JSON.stringify({
+        complete: false,
+        stories: [{ id: "a", title: "ui/a", name: "Default" }],
+      }),
+    );
+
+    const result = run(
+      "comment",
+      snapshotDir(main),
+      dir,
+      links.main,
+      links.preview,
+      "https://example.com/run",
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(missingSnapshot("pull request"));
+  });
+
+  it("does not compare with a snapshot of main that stopped before the last story", () => {
+    const dir = snapshotDir(main);
+    write(
+      dir,
+      "stories.json",
+      JSON.stringify({
+        complete: false,
+        stories: [{ id: "a", title: "ui/a", name: "Default" }],
+      }),
+    );
+
+    const result = run(
+      "comment",
+      dir,
       snapshotDir(head),
       links.main,
       links.preview,

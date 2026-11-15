@@ -21,10 +21,13 @@ export type SnapshotStory = {
 /**
  * Snapshot is the rendered markup of each story of a Storybook build and the
  * rules of its stylesheet. sha is the commit of the build, or empty when the
- * snapshot does not name it.
+ * snapshot does not name it. complete is false when the stories check
+ * stopped before it captured the last story, so the snapshot lacks stories
+ * that the build has.
  */
 export type Snapshot = {
   sha: string;
+  complete: boolean;
   stories: SnapshotStory[];
   stylesheet: string;
 };
@@ -78,13 +81,17 @@ function readOptional(file: string): string {
 /**
  * readSnapshot reads the snapshot in dir: stories.json, stories/<id>.html for
  * each story, and the optional stylesheet.css and sha. It returns undefined
- * when dir has no stories.json. It throws when stories.json is not a list of
+ * when dir has no stories.json. It throws when stories.json does not list
  * stories, or when the markup of a story in it is missing.
  */
 export function readSnapshot(dir: string): Snapshot | undefined {
   const index = path.join(dir, "stories.json");
   if (!fs.existsSync(index)) return undefined;
-  const entries: unknown = JSON.parse(fs.readFileSync(index, "utf8"));
+  const parsed: unknown = JSON.parse(fs.readFileSync(index, "utf8"));
+  const { complete, stories: entries } = (parsed ?? {}) as Record<
+    string,
+    unknown
+  >;
   if (!Array.isArray(entries)) {
     throw new Error(`${index} is not a list of stories`);
   }
@@ -106,6 +113,7 @@ export function readSnapshot(dir: string): Snapshot | undefined {
   });
   return {
     sha: readOptional(path.join(dir, "sha")).trim(),
+    complete: complete === true,
     stories,
     stylesheet: readOptional(path.join(dir, "stylesheet.css")),
   };
@@ -290,8 +298,10 @@ function details(summary: string, diff: string, limits: Limits): string {
  * stylesheet changed with a diff of its rules, each changed story with a
  * link to it on main and on the preview and a diff of its markup, and the new
  * and the removed stories. When nothing differs, it returns one line that
- * says so. The text, without the line that counts what did not fit, is at
- * most limits.length characters long.
+ * says so. Only the first line, the stylesheet note, the sentences that say
+ * what did not fit, and the line break at the end can make the text longer
+ * than limits.length characters. When a story does not fit, the last
+ * sentence counts the stories that did not fit.
  */
 export function renderChanges(
   comparison: Comparison,
@@ -305,49 +315,54 @@ export function renderChanges(
   if (!changed.length && !added.length && !removed.length && !stylesheet) {
     return `**Story changes:** none. Each story renders the same as on ${at}, and the stylesheet is the same.\n`;
   }
-  const head = `**Story changes:** ${changed.length} of ${total} ${total === 1 ? "story" : "stories"} changed against ${at}.`;
-  const blocks: string[] = [];
+  let text = `**Story changes:** ${changed.length} of ${total} ${total === 1 ? "story" : "stories"} changed against ${at}.`;
+  let full = false;
+  // fits adds piece when it fits in the length, and adds nothing after a
+  // piece that did not fit, so the text keeps the order of the comparison.
+  const fits = (piece: string): boolean => {
+    full ||= text.length + piece.length > limits.length;
+    if (!full) text += piece;
+    return !full;
+  };
   if (stylesheet) {
-    blocks.push(
-      `The stylesheet changed, so any story may look different.\n${details("Changed rules", stylesheet, limits)}`,
-    );
+    text += "\n\nThe stylesheet changed, so any story may look different.";
+    if (!fits(`\n${details("Changed rules", stylesheet, limits)}`)) {
+      text += ` The changed rules do not fit here: ${limits.more}`;
+    }
   }
+  let omitted = 0;
   for (const { story, diff } of changed) {
-    blocks.push(
-      `${label(story)}: [main](${storyLink(links.main, story.id)}), [preview](${storyLink(links.preview, story.id)})\n${details("Markup diff", diff, limits)}`,
-    );
+    const piece = `\n\n${label(story)}: [main](${storyLink(links.main, story.id)}), [preview](${storyLink(links.preview, story.id)})\n${details("Markup diff", diff, limits)}`;
+    if (!fits(piece)) omitted++;
   }
-  if (added.length) {
-    blocks.push(
-      `New stories:\n\n${added.map((s) => `- ${label(s)}: [preview](${storyLink(links.preview, s.id)})`).join("\n")}`,
-    );
-  }
-  if (removed.length) {
-    blocks.push(
-      `Removed stories:\n\n${removed.map((s) => `- ${label(s)}: [main](${storyLink(links.main, s.id)})`).join("\n")}`,
-    );
-  }
-  let text = head;
-  let shown = 0;
-  for (const block of blocks) {
-    if (text.length + block.length + 2 > limits.length) break;
-    text += `\n\n${block}`;
-    shown++;
-  }
-  if (shown < blocks.length) {
-    text += `\n\nAnd ${blocks.length - shown} more: ${limits.more}`;
+  const list = (
+    heading: string,
+    stories: SnapshotStory[],
+    name: "main" | "preview",
+  ) => {
+    stories.forEach((s, i) => {
+      const line = `- ${label(s)}: [${name}](${storyLink(links[name], s.id)})`;
+      if (!fits(i === 0 ? `\n\n${heading}\n\n${line}` : `\n${line}`)) {
+        omitted++;
+      }
+    });
+  };
+  list("New stories:", added, "preview");
+  list("Removed stories:", removed, "main");
+  if (omitted > 0) {
+    text += `\n\nAnd ${omitted} more ${omitted === 1 ? "story" : "stories"}: ${limits.more}`;
   }
   return `${text}\n`;
 }
 
 /**
  * missingSnapshot returns the line that replaces the list of changes when
- * the snapshot of main or of the pull request is missing.
+ * the snapshot of main or of the pull request is missing or not complete.
  */
 export function missingSnapshot(which: "main" | "pull request"): string {
   return which === "main"
-    ? "**Story changes:** unknown. No story snapshot of main was found, so the stories were not compared. A successful run of the workflow on main makes one.\n"
-    : "**Story changes:** unknown. The stories check made no snapshot, so the stories were not compared.\n";
+    ? "**Story changes:** unknown. No complete story snapshot of main was found, so the stories were not compared. A successful run of the workflow on main makes one.\n"
+    : "**Story changes:** unknown. The stories check made no complete snapshot, so the stories were not compared.\n";
 }
 
 // GitHub refuses a comment of more than 65536 characters. The preview part of
@@ -387,8 +402,8 @@ function main(args: string[]): void {
   const head = readSnapshot(headDir ?? "");
   const base = readSnapshot(mainDir ?? "");
   let text: string;
-  if (!head) text = missingSnapshot("pull request");
-  else if (!base) text = missingSnapshot("main");
+  if (!head?.complete) text = missingSnapshot("pull request");
+  else if (!base?.complete) text = missingSnapshot("main");
   else {
     text = renderChanges(
       compareSnapshots(base, head),

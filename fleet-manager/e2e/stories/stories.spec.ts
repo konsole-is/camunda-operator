@@ -231,6 +231,7 @@ for (const { theme, suffix, title } of THEMES)
         });
       }
 
+      await snapshot?.finish();
       expect(outside, "requests outside the Storybook folder").toEqual([]);
     });
   }

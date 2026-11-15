@@ -25,7 +25,7 @@ describe("renderStoryMarkup", () => {
         '  <ul class="list">',
         "    <li>One</li>",
         "    <li>",
-        "      Two",
+        "      Two ",
         "      <b>2</b>",
         "    </li>",
         "  </ul>",
@@ -60,10 +60,10 @@ describe("renderStoryMarkup", () => {
     expect(text).toBe('<div id="storybook-root">\n  <p>Story</p>\n</div>');
   });
 
-  it("leaves out scripts, styles, and text with only white space", () => {
+  it("leaves out scripts and styles", () => {
     const text = renderStoryMarkup(
       body(
-        '<div id="storybook-root">\n  <style>.a{}</style><p>A</p>\n  <script>1</script></div><script>2</script>',
+        '<div id="storybook-root"><style>.a{}</style><p>A</p><script>1</script></div><script>2</script>',
       ),
     );
 
@@ -76,6 +76,32 @@ describe("renderStoryMarkup", () => {
     );
 
     expect(text).toBe('<p title="a &quot;b&quot; &amp; c">x &lt;y&gt; z</p>');
+  });
+
+  it("keeps the space between a text and an inline element", () => {
+    const spaced = renderStoryMarkup(body("<p>Hello <b>world</b></p>"));
+    const joined = renderStoryMarkup(body("<p>Hello<b>world</b></p>"));
+
+    expect(spaced).not.toBe(joined);
+  });
+
+  it("keeps a space between two inline elements", () => {
+    const spaced = renderStoryMarkup(body("<p><b>a</b> <b>b</b></p>"));
+    const joined = renderStoryMarkup(body("<p><b>a</b><b>b</b></p>"));
+
+    expect(spaced).not.toBe(joined);
+  });
+
+  it("keeps each line and its indent in preformatted text", () => {
+    const text = renderStoryMarkup(
+      body('<pre>{\n  "a": 1\n}</pre><pre><code>x\n    y</code></pre>'),
+    );
+
+    expect(text).toContain('<pre>\n  {\n    "a": 1\n  }\n</pre>');
+    expect(text).toContain("<code>\n    x\n        y\n  </code>");
+    expect(renderStoryMarkup(body("<pre>a\n  b</pre>"))).not.toBe(
+      renderStoryMarkup(body("<pre>a\n    b</pre>")),
+    );
   });
 
   it("keeps the case of an SVG tag", () => {

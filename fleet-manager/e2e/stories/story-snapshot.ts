@@ -8,8 +8,10 @@ import type { Page } from "@playwright/test";
  * body is the body of the Storybook preview frame. The result holds the
  * story root and each element that the story added to the body, such as a
  * dialog in a portal, and leaves out the elements that Storybook and its
- * addons put in the frame. It holds no script and no style element, and text
- * with only white space is dropped.
+ * addons put in the frame. It holds no script and no style element. Each run
+ * of white space in a text becomes one space, and a text with only white
+ * space stays as one space. Preformatted text keeps each of its lines and
+ * spaces.
  *
  * Playwright runs it in the browser, so it uses nothing from outside its own
  * body.
@@ -21,13 +23,24 @@ export function renderStoryMarkup(body: Element): string {
     text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const escapeAttribute = (text: string) =>
     text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const textOf = (node: Node) =>
-    (node.textContent ?? "").replace(/\s+/g, " ").trim();
+  const preformatted = (node: Node) => {
+    const parent = node.parentElement;
+    if (!parent) return false;
+    return (
+      parent.closest("pre, textarea") !== null ||
+      /^(pre|break-spaces)/.test(getComputedStyle(parent).whiteSpace)
+    );
+  };
+  const textLines = (node: Node) => {
+    const text = node.textContent ?? "";
+    return preformatted(node)
+      ? text.split("\n").map(escapeText)
+      : [escapeText(text.replace(/\s+/g, " "))];
+  };
   const walk = (node: Node, depth: number) => {
     const pad = "  ".repeat(depth);
     if (node.nodeType === 3) {
-      const text = textOf(node);
-      if (text) lines.push(pad + escapeText(text));
+      for (const line of textLines(node)) lines.push(pad + line);
       return;
     }
     if (node.nodeType !== 1) return;
@@ -40,14 +53,16 @@ export function renderStoryMarkup(body: Element): string {
     const children = Array.from(element.childNodes).filter(
       (child) =>
         (child.nodeType === 1 && !skipped.has((child as Element).localName)) ||
-        (child.nodeType === 3 && textOf(child) !== ""),
+        (child.nodeType === 3 && child.textContent !== ""),
     );
+    const only =
+      children.length === 1 && children[0].nodeType === 3
+        ? textLines(children[0])
+        : [];
     if (children.length === 0) {
       lines.push(`${pad}<${tag}${attributes}></${tag}>`);
-    } else if (children.length === 1 && children[0].nodeType === 3) {
-      lines.push(
-        `${pad}<${tag}${attributes}>${escapeText(textOf(children[0]))}</${tag}>`,
-      );
+    } else if (only.length === 1) {
+      lines.push(`${pad}<${tag}${attributes}>${only[0]}</${tag}>`);
     } else {
       lines.push(`${pad}<${tag}${attributes}>`);
       for (const child of children) walk(child, depth + 1);
@@ -152,16 +167,21 @@ export type SnapshotStory = { id: string; title: string; name: string };
 
 /**
  * storySnapshot writes a story snapshot into dir: stories/<id>.html with the
- * normalized markup of each story, stories.json with each story that it
- * holds, and stylesheet.css with the normalized rules of each stylesheet
- * that a story loaded. add writes the files again after each story, so the
- * snapshot is complete up to the last story that it added, also when a later
- * story fails the test.
+ * normalized markup of each story, stylesheet.css with the normalized rules
+ * of each stylesheet that a story loaded, and stories.json with each story
+ * that it holds. add writes the files again after each story. stories.json
+ * says that the snapshot is complete only after finish, so a test that stops
+ * before the last story leaves a snapshot that is not complete.
  */
 export function storySnapshot(dir: string) {
   const stories: SnapshotStory[] = [];
   let seen: string[] = [];
   let stylesheet = "";
+  const writeIndex = (complete: boolean) =>
+    writeFile(
+      path.join(dir, "stories.json"),
+      `${JSON.stringify({ complete, stories }, null, 2)}\n`,
+    );
   return {
     async add(page: Page, story: SnapshotStory): Promise<void> {
       const markup = normalizeMarkup(
@@ -177,10 +197,11 @@ export function storySnapshot(dir: string) {
         `${markup}\n`,
       );
       await writeFile(path.join(dir, "stylesheet.css"), stylesheet);
-      await writeFile(
-        path.join(dir, "stories.json"),
-        `${JSON.stringify(stories, null, 2)}\n`,
-      );
+      await writeIndex(false);
+    },
+    async finish(): Promise<void> {
+      await mkdir(dir, { recursive: true });
+      await writeIndex(true);
     },
   };
 }
