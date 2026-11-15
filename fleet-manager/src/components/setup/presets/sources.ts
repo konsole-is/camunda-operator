@@ -3,6 +3,7 @@
 import type { ReadError } from "@/components/planes/planes-table";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { PRESET_SOURCE_KINDS } from "./source-kinds";
 
 /** PresetSources holds every list that the preset pages read, in all namespaces. */
@@ -10,6 +11,12 @@ export type PresetSources = {
   [K in keyof typeof PRESET_SOURCE_KINDS]: Resource<
     (typeof PRESET_SOURCE_KINDS)[K]
   >[];
+};
+
+/** PresetActions are the writes of the preset pages: the server actions on the page, fakes in tests and stories. */
+export type PresetActions = {
+  previewChange: (change: Change) => Promise<Preview>;
+  applyChange: (change: Change) => Promise<WriteResult>;
 };
 
 /**
