@@ -134,12 +134,21 @@ export function WizardStepper({
           </h2>
           <div className="min-w-0">{children}</div>
         </div>
-        {(blocking.length > 0 || back || next) && (
-          <div className="flex flex-col gap-2 border-t border-divider px-4 py-3 md:px-6 md:py-4">
+        <div
+          className={cn(
+            (blocking.length > 0 || back || next) &&
+              "border-t border-divider px-4 py-3 md:px-6 md:py-4",
+          )}
+        >
+          {/* A screen reader announces only a change inside a live region
+              that is already on the page. */}
+          <div role="status" id={errorsId}>
             {blocking.length > 0 && (
               <ul
-                id={errorsId}
-                className="flex flex-col gap-0.5 text-sm text-bad"
+                className={cn(
+                  "flex flex-col gap-0.5 text-sm text-bad",
+                  (back || next) && "mb-2",
+                )}
               >
                 {blocking.map((e, i) => (
                   <li key={i}>
@@ -148,6 +157,8 @@ export function WizardStepper({
                 ))}
               </ul>
             )}
+          </div>
+          {(back || next) && (
             <div className="flex gap-2">
               {back && (
                 <Button variant="ghost" onClick={onBack}>
@@ -164,8 +175,8 @@ export function WizardStepper({
                 </Button>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

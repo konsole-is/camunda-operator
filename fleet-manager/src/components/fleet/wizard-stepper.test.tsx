@@ -222,6 +222,33 @@ describe("WizardStepper", () => {
     expect(onNext).not.toHaveBeenCalled();
   });
 
+  it("announces an earlier step's error on the last step in a status region", () => {
+    const earlier = (errors?: string[]) => [
+      { id: "namespace", label: "Namespace", errors },
+      { id: "storage", label: "Storage and access" },
+      { id: "review", label: "Review" },
+    ];
+    const { rerender } = render(
+      <WizardStepper steps={earlier()} current="review">
+        step
+      </WizardStepper>,
+    );
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("");
+    rerender(
+      <WizardStepper
+        steps={earlier(["The namespace team-a is gone"])}
+        current="review"
+      >
+        step
+      </WizardStepper>,
+    );
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status.textContent).toContain(
+      "Namespace: The namespace team-a is gone",
+    );
+  });
+
   it("ignores the errors of a later step", () => {
     render(
       <WizardStepper
