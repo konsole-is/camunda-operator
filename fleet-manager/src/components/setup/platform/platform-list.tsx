@@ -1,0 +1,74 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { DataTable } from "@/components/fleet/data-table";
+import { describeReady } from "@/components/fleet/status";
+import { StatusChip } from "@/components/fleet/status-chip";
+import type { ReadError } from "@/components/planes/planes-table";
+import { type PlatformRow, platformRows } from "./model";
+import { type PlatformSources, usePlatformSources } from "./sources";
+
+const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
+
+/**
+ * PlatformList is the list page of the platform configs. Each of errors
+ * shows above the table, and the rows stay.
+ */
+export function PlatformList({
+  rows,
+  errors,
+}: {
+  rows: PlatformRow[];
+  errors: ReadError[];
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
+        Platform
+      </h1>
+      {errors.map((e) => (
+        <p key={e.kind} role="alert" className="text-sm text-bad">
+          Could not read {e.kind}: {e.message}
+        </p>
+      ))}
+      <DataTable
+        label="Platform configs"
+        emptyText={
+          rows.length === 0
+            ? "No platform config yet. A cluster needs one. The guide shows how to apply one."
+            : undefined
+        }
+        columns={[
+          { key: "name", label: "Name", sortable: true },
+          { key: "method", label: "Authentication", sortable: true },
+          { key: "users", label: "Users", sortable: true },
+          { key: "status", label: "Status", sortable: true },
+        ]}
+        rows={rows.map((row) => ({
+          id: row.name,
+          label: row.name,
+          href: `/setup/platform/${encodeURIComponent(row.name)}`,
+          search: row.name,
+          sort: {
+            name: row.name,
+            method: METHOD_LABEL[row.method],
+            users: row.users,
+            status: describeReady(row.ready).label,
+          },
+          cells: {
+            name: <span className="font-mono">{row.name}</span>,
+            method: METHOD_LABEL[row.method],
+            users: row.users,
+            status: <StatusChip condition={row.ready} />,
+          },
+        }))}
+      />
+    </div>
+  );
+}
+
+/** PlatformListLive is PlatformList on the live sources, starting from initial. */
+export function PlatformListLive({ initial }: { initial: PlatformSources }) {
+  const sources = usePlatformSources(initial);
+  return <PlatformList rows={platformRows(sources)} errors={sources.errors} />;
+}
