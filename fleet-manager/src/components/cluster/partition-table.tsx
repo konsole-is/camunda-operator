@@ -13,6 +13,7 @@ import type {
   Unavailable,
 } from "@/lib/observe/types";
 import { cn } from "@/lib/utils";
+import { DetailSection } from "./detail-section";
 
 const HEALTH: Record<PartitionHealthState, { text: string; tone: StatusTone }> =
   {
@@ -24,8 +25,8 @@ const HEALTH: Record<PartitionHealthState, { text: string; tone: StatusTone }> =
 
 /**
  * PartitionTable lists the partitions of the brokers with their leader,
- * followers, processor phase, and health. undefined means that the first
- * answer is not in yet.
+ * followers, processor phase, and health, in its own titled section.
+ * undefined means that the first answer is not in yet.
  */
 export function PartitionTable({
   partitions,
@@ -33,10 +34,14 @@ export function PartitionTable({
   partitions: PartitionHealth[] | Unavailable | undefined;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <h3 className="font-heading text-sm font-semibold text-text">
-        Partitions
-      </h3>
+    <DetailSection
+      title="Partitions"
+      note={
+        Array.isArray(partitions)
+          ? `${partitions.filter((p) => p.leader).length} of ${partitions.length} with a leader`
+          : undefined
+      }
+    >
       {partitions === undefined ? (
         <p className="text-sm text-muted">Loading</p>
       ) : partitions === "unavailable" ? (
@@ -93,6 +98,6 @@ export function PartitionTable({
           )}
         </>
       )}
-    </div>
+    </DetailSection>
   );
 }

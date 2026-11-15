@@ -8,9 +8,11 @@ import {
 } from "@playwright/test";
 import { blockingViolations } from "../axe";
 import type { Shot } from "./stories-index";
+import { storySnapshot } from "./story-snapshot";
 import { MIN_TARGET, smallTargets } from "./targets";
 
 const OUT = path.resolve("ui-stories");
+const SNAPSHOT = path.resolve("story-snapshot");
 const WIDTHS = [1440, 390];
 
 // The events of the Storybook channel that mean that a story failed: its
@@ -167,6 +169,12 @@ for (const { theme, suffix, title } of THEMES)
       await page.setViewportSize({ width, height: 900 });
 
       const shots: Shot[] = [];
+      // The markup of a story at 390 px or in the light theme differs only
+      // in measured sizes and in the pressed button of the theme switch.
+      const snapshot =
+        width === WIDTHS[0] && theme === "dark"
+          ? storySnapshot(SNAPSHOT)
+          : undefined;
       const manifest = path.join(OUT, `manifest-${width}${suffix}.json`);
       await mkdir(OUT, { recursive: true });
       for (const story of stories) {
@@ -202,6 +210,12 @@ for (const { theme, suffix, title } of THEMES)
             )
             .toEqual([]);
 
+          await snapshot?.add(page, {
+            id: story.id,
+            title: story.title,
+            name: story.name,
+          });
+
           const file = `${story.id}-${width}${suffix}.png`;
           await page.screenshot({ path: path.join(OUT, file), fullPage: true });
           // smallTargets scrolls, so it runs after the screenshot, in one theme.
@@ -226,6 +240,7 @@ for (const { theme, suffix, title } of THEMES)
         });
       }
 
+      await snapshot?.finish();
       expect(outside, "requests outside the Storybook folder").toEqual([]);
     });
   }

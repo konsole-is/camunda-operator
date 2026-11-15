@@ -17,7 +17,7 @@
     "app-test": "rm -rf test-results/app && playwright test",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build -o storybook-static",
-    "stories": "rm -rf ui-stories test-results/stories && playwright test -c playwright.stories.config.ts",
+    "stories": "rm -rf ui-stories story-snapshot test-results/stories && playwright test -c playwright.stories.config.ts",
     "scenarios": "rm -rf ui-pages test-results/scenarios && playwright test -c playwright.scenarios.config.ts",
     "generate": "node scripts/generate-crd-types.mts ../config/crd/bases src/generated/crds"
   },
@@ -33,15 +33,15 @@
     "cn": "0.4.0",
     "isomorphic-git": "1.43.0",
     "lucide-react": "1.55.0",
-    "next": "16.4.1",
+    "next": "16.4.5",
     "radix-ui": "1.8.1",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "react-is": "19.3.1",
     "recharts": "3.10.1",
     "server-only": "0.0.1",
     "yaml": "2.9.1",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -58,7 +58,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.5",
     "eslint-config-prettier": "10.1.8",
     "jsdom": "31.0.0",
     "json-schema-to-typescript": "16.0.0",

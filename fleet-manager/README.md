@@ -111,8 +111,16 @@ light screenshot of a story has the name of its dark screenshot with `-light` be
 `ui-button--variants-390-light.png`. Open `fleet-manager/ui-stories/index.html` to see all of them on one
 page.
 
-In CI, the `Fleet manager` workflow (`.github/workflows/fleet-manager.yml`) runs the same check. The run uploads two artifacts: `storybook` holds the
-static build for 7 days, and `ui-stories` holds the screenshots and `index.html`.
+The check also writes a story snapshot into `fleet-manager/story-snapshot`. `stories/<id>.html` holds the markup of a
+story at 1440 px in the dark theme, with one tag or text on each line. Preformatted text keeps its lines and spaces.
+`stylesheet.css` holds the rules of the stylesheet, with one rule on each line. The snapshot replaces the ids that
+React and Recharts generate, and the hash in the file name of each asset, so two runs of the same commit write the
+same snapshot. At 390 px and in the light
+theme, the markup differs only in measured sizes and in the theme switch, so the check does not write it.
+
+In CI, the `Fleet manager` workflow (`.github/workflows/fleet-manager.yml`) runs the same check. The run uploads three
+artifacts: `storybook` holds the static build for 7 days, `ui-stories` holds the screenshots and `index.html`, and
+`story-snapshot` holds the story snapshot.
 
 To build Storybook without the check, run `make fleet-build-stories`.
 
@@ -125,10 +133,19 @@ link and the commit of the build.
 - Each push replaces the preview and edits the same comment. After a push, GitHub Pages can take a minute to show
   the new build.
 - CI publishes the preview when Storybook builds, also when another check fails.
+- Under the link, the comment lists the stories whose markup differs from main. It compares the story snapshot of
+  the pull request with the snapshot of the newest successful run of the workflow on main, and names the commit of
+  that run. Each changed story has a link to it on the Storybook of main and on the preview, and a diff of its
+  markup. New and removed stories have a list each. When the stylesheet differs, the comment says so and shows the
+  changed rules, because a change of a rule can change any story.
+- The comment cuts a long diff and a long list. The summary of the workflow run has the full report.
+- When the comment says that the story changes are unknown, a complete snapshot was missing: for example, the
+  artifact of main expired, or the stories check stopped before the last story. A run on main makes a new snapshot of
+  main. The comparison never fails a check.
 - A pull request from a fork gets no preview. To see its stories, download the `storybook` artifact of its run.
-- When the pull request closes, merged or not, CI removes the preview and edits the comment. A weekly run removes a
-  preview that a closed pull request left. The same run then replaces the history of the `gh-pages` branch with one
-  commit, so that old previews do not make the repository larger. A local copy of `gh-pages` from before that run
+- When the pull request closes, merged or not, CI removes the preview and edits the comment, which then has no
+  list of story changes. A weekly run removes a preview that a closed pull request left. The same run then replaces
+  the history of the `gh-pages` branch with one commit, so that old previews do not make the repository larger. A local copy of `gh-pages` from before that run
   cannot push to the branch. Clone the branch again, or fetch it and reset your local branch to `origin/gh-pages`.
   A reset removes your commits that are not pushed, so save them first.
 - The Storybook of `main` is at <https://konsole-is.github.io/camunda-operator/storybook/>.

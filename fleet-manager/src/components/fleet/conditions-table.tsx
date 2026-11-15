@@ -18,7 +18,7 @@ export type ConditionRow = ConditionLike & {
 
 /**
  * ConditionsTable lists conditions with their type, status, reason, message,
- * and age. The conditions without a group come first, then each group under
+ * and the time since their last change. The conditions without a group come first, then each group under
  * its label, in the order given. now is the time that the ages count to.
  */
 export function ConditionsTable({
@@ -42,11 +42,11 @@ export function ConditionsTable({
     <Table label={label}>
       <TableHeader>
         <TableRow>
-          <TableHead>Type</TableHead>
+          <TableHead>Condition</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Reason</TableHead>
           <TableHead>Message</TableHead>
-          <TableHead>Age</TableHead>
+          <TableHead>Since last change</TableHead>
         </TableRow>
       </TableHeader>
       {conditions.length > 0 && (

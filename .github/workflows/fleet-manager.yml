@@ -54,6 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       storybook: ${{ steps.upload-storybook.outcome }}
+      snapshot: ${{ steps.upload-snapshot.outcome }}
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -107,6 +108,26 @@ jobs:
       # above built and uploaded, and does not build it again.
       - name: Build the fleet manager, check the app and the stories, and run the page scenarios
         run: make -k -o fleet-build-stories fleet-app-test fleet-stories-test fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
+      # The stories check writes the markup of each story and the rules of
+      # the stylesheet into fleet-manager/story-snapshot. The snapshot of the
+      # newest successful run on main is the one that the preview comment of
+      # a pull request compares with.
+      - name: Record the commit of the story snapshot
+        id: snapshot
+        if: ${{ !cancelled() && hashFiles('fleet-manager/story-snapshot/stories.json') != '' }}
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "${SHA}" > fleet-manager/story-snapshot/sha
+      - name: Upload the story snapshot
+        id: upload-snapshot
+        if: ${{ !cancelled() && steps.snapshot.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: story-snapshot
+          path: fleet-manager/story-snapshot/
+          if-no-files-found: error
+          # An empty value keeps the retention of the repository for main.
+          retention-days: ${{ github.event_name == 'pull_request' && '7' || '' }}
       - name: Upload the stories screenshots
         id: stories
         if: ${{ !cancelled() }}
@@ -153,6 +174,7 @@ jobs:
         || (github.event_name != 'pull_request' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read          # download the story snapshot of main
       contents: write        # push to gh-pages
       pull-requests: write   # write the preview comment
     # Every workflow that pushes to gh-pages runs in this group. With the
@@ -236,6 +258,42 @@ jobs:
             git commit -q -m "Publish the Storybook of main at ${SHA}"
           fi
           ../src/hack/ci-retry.sh git push origin gh-pages
+      # The comparison with main gives information only. A missing snapshot
+      # or a failed comparison changes the comment, never the result of the
+      # job.
+      - name: Download the story snapshot
+        if: ${{ steps.target.outputs.publish == 'true' && github.event_name == 'pull_request' && needs.fleet-manager.outputs.snapshot == 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: story-snapshot
+          path: story-snapshot
+      - name: Download the story snapshot of main
+        if: ${{ steps.target.outputs.publish == 'true' && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow fleet-manager.yml --branch main --event push \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty') || run=""
+          if [ -z "${run}" ] || ! gh run download "${run}" --repo "${GITHUB_REPOSITORY}" --name story-snapshot --dir story-snapshot-main; then
+            echo "No story snapshot of main was found."
+            rm -rf story-snapshot-main
+          fi
+      - name: Compare the stories with main
+        if: ${{ steps.target.outputs.publish == 'true' && github.event_name == 'pull_request' }}
+        env:
+          URL: ${{ steps.place.outputs.url }}
+        run: |
+          main_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/storybook/"
+          report_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if ! node src/fleet-manager/scripts/story-diff.mts comment story-snapshot-main story-snapshot \
+            "${main_url}" "${URL}" "${report_url}" > story-changes.md; then
+            echo "**Story changes:** unknown. The comparison with main failed, and the log of the workflow run shows why." > story-changes.md
+          fi
+          if ! node src/fleet-manager/scripts/story-diff.mts report story-snapshot-main story-snapshot \
+            "${main_url}" "${URL}" >> "${GITHUB_STEP_SUMMARY}"; then
+            echo "The comparison of the stories with main failed." >> "${GITHUB_STEP_SUMMARY}"
+          fi
       - name: Write the preview comment
         if: ${{ steps.target.outputs.publish == 'true' && github.event_name == 'pull_request' }}
         env:
@@ -243,6 +301,9 @@ jobs:
           URL: ${{ steps.place.outputs.url }}
         run: |
           body=$(node src/fleet-manager/scripts/storybook-preview.mts comment published "${URL}" "${SHA}")
+          if [ -s story-changes.md ]; then
+            body="${body}"$'\n\n'"$(cat story-changes.md)"
+          fi
           ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
             --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- storybook-preview -->"))) | .id')
           if [ -n "${ids}" ]; then

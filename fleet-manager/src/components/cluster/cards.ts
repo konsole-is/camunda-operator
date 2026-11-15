@@ -17,7 +17,13 @@ import type {
   PodUsage,
   Unavailable,
 } from "@/lib/observe/types";
-import { PROCESS_LABEL, type Process, podDot, topologyOf } from "./topology";
+import {
+  PROCESS_LABEL,
+  type PodStateLike,
+  type Process,
+  podDot,
+  topologyOf,
+} from "./topology";
 
 /** CardId names one component card. */
 export type CardId = Process | "optimize";
@@ -89,11 +95,14 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
         id: box.process,
         label: box.label,
         used: true,
-        condition: conditionsAt(
-          CAMUNDA_CLUSTER_PLACEMENT,
-          input.conditions,
+        condition: componentReady(
           box.process,
-        )[0],
+          conditionsAt(
+            CAMUNDA_CLUSTER_PLACEMENT,
+            input.conditions,
+            box.process,
+          ),
+        ),
         embedded: box.embedded,
         pods: names(pods),
         numbers: numbersOf(box.process, pods),
@@ -117,11 +126,14 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
       id: "optimize",
       label: OPTIMIZE_LABEL,
       used: true,
-      condition: conditionsAt(
-        CAMUNDA_OPTIMIZE_PLACEMENT,
-        input.optimize.status?.conditions as Condition[] | undefined,
+      condition: componentReady(
         "optimize",
-      ).find((c) => c.type === OPTIMIZE_READY),
+        conditionsAt(
+          CAMUNDA_OPTIMIZE_PLACEMENT,
+          input.optimize.status?.conditions as Condition[] | undefined,
+          "optimize",
+        ),
+      ),
       embedded: [],
       pods: names(pods),
       numbers: numbersOf("optimize", pods),
@@ -130,8 +142,23 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
   return cards;
 }
 
+/**
+ * componentReady returns the condition that decides the state of component
+ * id, from the conditions that the maps place at it: Ready for Optimize, and
+ * the first one for every other component, which has one. It returns
+ * undefined when there is none.
+ */
+export function componentReady<C extends { type: string }>(
+  id: CardId,
+  conditions: readonly C[],
+): C | undefined {
+  return id === "optimize"
+    ? conditions.find((c) => c.type === OPTIMIZE_READY)
+    : conditions[0];
+}
+
 /** podsReady counts the pods whose podDot is ok, as "<ready>/<total>". */
-export function podsReady(pods: readonly Resource<"Pod">[]): CardNumber {
+export function podsReady(pods: readonly PodStateLike[]): CardNumber {
   const ready = pods.filter((p) => podDot(p).tone === "ok").length;
   return { label: "Pods ready", value: `${ready}/${pods.length}` };
 }
@@ -146,28 +173,52 @@ export function highestUse(
   usage: PodUsage[] | Unavailable | undefined,
   pods: readonly string[],
 ): CardNumber {
-  const label = "Highest use";
-  if (usage === undefined) return { label, value: "Loading" };
-  if (usage === "unavailable") return { label, value: "Not available" };
+  const highest = highestUseOf(usage, pods);
+  return {
+    label: "Highest use",
+    value:
+      typeof highest === "string"
+        ? highest
+        : `${Math.round(highest.share * 100)} % ${highest.resource}`,
+  };
+}
+
+/** HighestUse is the use of one resource by one pod, as a share of its limit. */
+export type HighestUse = {
+  pod: string;
+  resource: "cpu" | "memory";
+  share: number;
+};
+
+/**
+ * highestUseOf returns the highest use of one of resources by one of pods
+ * against its limit. In place of a use it returns the words of highestUse:
+ * "Loading" for an undefined usage, "Not available", or "No limit".
+ */
+export function highestUseOf(
+  usage: PodUsage[] | Unavailable | undefined,
+  pods: readonly string[],
+  resources: readonly ("cpu" | "memory")[] = ["cpu", "memory"],
+): HighestUse | "Loading" | "Not available" | "No limit" {
+  if (usage === undefined) return "Loading";
+  if (usage === "unavailable") return "Not available";
 
   const sampled = usage.filter((u) => pods.includes(u.pod));
-  if (sampled.length === 0) return { label, value: "Not available" };
-  let highest: { share: number; resource: "cpu" | "memory" } | undefined;
+  if (sampled.length === 0) return "Not available";
+  let highest: HighestUse | undefined;
   for (const u of sampled) {
     for (const [resource, used, limit] of [
       ["cpu", u.cpu.usedCores, u.cpu.limitCores],
       ["memory", u.memory.usedBytes, u.memory.limitBytes],
     ] as const) {
-      if (!limit) continue;
+      if (!limit || !resources.includes(resource)) continue;
       const share = used / limit;
-      if (!highest || share > highest.share) highest = { share, resource };
+      if (!highest || share > highest.share) {
+        highest = { pod: u.pod, resource, share };
+      }
     }
   }
-  if (!highest) return { label, value: "No limit" };
-  return {
-    label,
-    value: `${Math.round(highest.share * 100)} % ${highest.resource}`,
-  };
+  return highest ?? "No limit";
 }
 
 /**

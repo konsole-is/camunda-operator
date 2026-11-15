@@ -39,6 +39,7 @@ export default defineConfig([
     ".next-envtest/**",
     "storybook-static/**",
     "ui-stories/**",
+    "story-snapshot/**",
     "ui-pages/**",
     "ui-journeys/**",
     "test-results/**",

@@ -12,83 +12,127 @@ import { formatBytes, formatCores } from "./units";
 export function UsageBars({ usage }: { usage: PodUsage }) {
   return (
     <div className="flex min-w-40 flex-col gap-1.5">
-      <Bar
-        label="CPU"
-        used={usage.cpu.usedCores}
-        max={usage.cpu.limitCores ?? usage.cpu.requestCores}
-        limit={usage.cpu.limitCores}
-        request={usage.cpu.requestCores}
-        format={formatCores}
-        suffix=" cores"
-      />
-      <Bar
-        label="Memory"
-        used={usage.memory.usedBytes}
-        max={usage.memory.limitBytes ?? usage.memory.requestBytes}
-        limit={usage.memory.limitBytes}
-        request={usage.memory.requestBytes}
-        format={formatBytes}
-      />
+      {(["cpu", "memory"] as const).map((resource) => {
+        const r = reading(usage, resource);
+        return (
+          <div key={resource} className="flex items-center gap-2 text-xs">
+            <span className="w-14 shrink-0 text-muted">{r.label}</span>
+            <Meter reading={r} className="flex-1" />
+            <span className="flex w-28 shrink-0 flex-col text-right text-text-2">
+              <span>{r.text}</span>
+              {r.requested && <span className="text-muted">{r.requested}</span>}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function Bar({
-  label,
-  used,
-  max,
-  limit,
-  request,
-  format,
-  suffix = "",
+/**
+ * UsageMeter shows the CPU or the memory of one pod as its text over one
+ * meter, by the rules of UsageBars.
+ */
+export function UsageMeter({
+  usage,
+  resource,
 }: {
+  usage: PodUsage;
+  resource: "cpu" | "memory";
+}) {
+  const r = reading(usage, resource);
+  return (
+    <div className="flex min-w-28 flex-col gap-1 text-xs">
+      <span className="whitespace-nowrap text-text-2">{r.text}</span>
+      <Meter reading={r} />
+      {r.requested && (
+        <span className="whitespace-nowrap text-muted">{r.requested}</span>
+      )}
+    </div>
+  );
+}
+
+type Reading = {
   label: string;
   used: number;
   max?: number;
   limit?: number;
   request?: number;
-  format: (n: number) => string;
-  suffix?: string;
+  text: string;
+  requested?: string;
+};
+
+function reading(usage: PodUsage, resource: "cpu" | "memory"): Reading {
+  const [label, used, limit, request, format, suffix] =
+    resource === "cpu"
+      ? ([
+          "CPU",
+          usage.cpu.usedCores,
+          usage.cpu.limitCores,
+          usage.cpu.requestCores,
+          formatCores,
+          " cores",
+        ] as const)
+      : ([
+          "Memory",
+          usage.memory.usedBytes,
+          usage.memory.limitBytes,
+          usage.memory.requestBytes,
+          formatBytes,
+          "",
+        ] as const);
+  const max = limit ?? request;
+  return {
+    label,
+    used,
+    max,
+    limit,
+    request,
+    text: max
+      ? `${format(used)} of ${format(max)}${suffix}`
+      : `${format(used)}${suffix}`,
+    requested:
+      limit !== undefined && request !== undefined
+        ? `request ${format(request)}${suffix}`
+        : undefined,
+  };
+}
+
+function Meter({
+  reading: r,
+  className,
+}: {
+  reading: Reading;
+  className?: string;
 }) {
-  const share = max ? Math.min(1, used / max) : undefined;
-  const warn = limit ? used / limit >= 0.9 : false;
-  const text = max
-    ? `${format(used)} of ${format(max)}${suffix}`
-    : `${format(used)}${suffix}`;
-  const requested =
-    limit !== undefined && request !== undefined
-      ? `request ${format(request)}${suffix}`
-      : undefined;
+  const share = r.max ? Math.min(1, r.used / r.max) : undefined;
+  const warn = r.limit ? r.used / r.limit >= 0.9 : false;
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-14 shrink-0 text-muted">{label}</span>
-      <div
-        role="meter"
-        aria-label={label}
-        aria-valuemin={0}
-        aria-valuemax={max || used || 1}
-        aria-valuenow={max ? Math.min(used, max) : used}
-        aria-valuetext={requested ? `${text}, ${requested}` : text}
-        className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-panel-2"
-      >
-        {share !== undefined && (
-          <div
-            className={cn("h-full rounded-full", warn ? "bg-warn" : "bg-info")}
-            style={{ width: `${share * 100}%` }}
-          />
-        )}
-        {requested && limit && request! < limit && (
-          <div
-            data-slot="request-mark"
-            className="absolute inset-y-0 w-0.5 bg-text"
-            style={{ left: `${(request! / limit) * 100}%` }}
-          />
-        )}
-      </div>
-      <span className="flex w-28 shrink-0 flex-col text-right text-text-2">
-        <span>{text}</span>
-        {requested && <span className="text-muted">{requested}</span>}
-      </span>
+    <div
+      role="meter"
+      aria-label={r.label}
+      aria-valuemin={0}
+      aria-valuemax={r.max || r.used || 1}
+      aria-valuenow={r.max ? Math.min(r.used, r.max) : r.used}
+      aria-valuetext={r.requested ? `${r.text}, ${r.requested}` : r.text}
+      className={cn(
+        "relative h-1.5 overflow-hidden rounded-full bg-panel-2",
+        className,
+      )}
+    >
+      {share !== undefined && (
+        <div
+          className={cn("h-full rounded-full", warn ? "bg-warn" : "bg-info")}
+          style={{ width: `${share * 100}%` }}
+        />
+      )}
+      {r.requested && r.limit && r.request! < r.limit && (
+        <div
+          data-slot="request-mark"
+          className="absolute inset-y-0 w-0.5 bg-text"
+          style={{ left: `${(r.request! / r.limit) * 100}%` }}
+        />
+      )}
     </div>
   );
 }
