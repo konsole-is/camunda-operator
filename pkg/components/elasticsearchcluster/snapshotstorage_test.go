@@ -476,6 +476,99 @@ func TestAzureCredentialsProjectNoFederatedToken(t *testing.T) {
 	assert.Empty(t, template.Spec.Volumes)
 }
 
+// Elasticsearch reads an AWS web identity token only at one fixed path under
+// its config directory, so every S3 bucket under workload identity gets the
+// token there, also when the role is set on the ServiceAccount alone. The
+// container names no AWS variable: the EKS webhook adds neither AWS_ROLE_ARN
+// nor AWS_WEB_IDENTITY_TOKEN_FILE to a container that names one of them, and
+// Elasticsearch needs both.
+func TestS3WorkloadIdentityProjectsTheWebIdentityToken(t *testing.T) {
+	t.Parallel()
+
+	for name, identity := range map[string]*v1.S3WorkloadIdentity{
+		"a role":         {RoleARN: "arn:aws:iam::123456789012:role/camunda"},
+		"an empty block": {},
+		"no block":       nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			template := elasticsearchOf(t, &SnapshotStorage{
+				Config: s3Bucket(v1.S3StorageAuth{
+					Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
+					WorkloadIdentity: identity,
+				}),
+			}).Spec.NodeSets[0].PodTemplate
+
+			require.Len(t, template.Spec.Volumes, 1)
+			volume := template.Spec.Volumes[0]
+			assert.Equal(t, "aws-web-identity-token", volume.Name)
+			require.NotNil(t, volume.Projected)
+			require.Len(t, volume.Projected.Sources, 1)
+			token := volume.Projected.Sources[0].ServiceAccountToken
+			require.NotNil(t, token)
+			assert.Equal(t, "sts.amazonaws.com", token.Audience)
+			assert.Equal(t, "aws-web-identity-token-file", token.Path)
+			require.NotNil(t, token.ExpirationSeconds)
+			assert.Equal(t, int64(86400), *token.ExpirationSeconds)
+
+			require.Len(t, template.Spec.Containers, 1)
+			container := template.Spec.Containers[0]
+			assert.Equal(t, "elasticsearch", container.Name)
+			assert.Equal(
+				t,
+				[]corev1.VolumeMount{{
+					Name:      "aws-web-identity-token",
+					MountPath: "/usr/share/elasticsearch/config/repository-s3",
+					ReadOnly:  true,
+				}},
+				container.VolumeMounts,
+			)
+			for _, env := range container.Env {
+				assert.NotContains(t, []string{"AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE"}, env.Name)
+			}
+		})
+	}
+}
+
+// Static S3 keys, GCS, and Azure read no AWS web identity token, so their pod
+// templates stay as they are.
+func TestOnlyS3WorkloadIdentityProjectsTheWebIdentityToken(t *testing.T) {
+	t.Parallel()
+
+	for name, storage := range map[string]*SnapshotStorage{
+		"s3 credentials": {
+			Config:      s3Bucket(v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeCredentials}),
+			Credentials: &objectstore.Credentials{AccessKeyID: "id", SecretAccessKey: "secret"},
+		},
+		"gcs workload identity": {
+			Config: gcsBucket(v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity}),
+		},
+		"gcs credentials": {
+			Config:      gcsBucket(v1.GCSStorageAuth{Type: v1.ObjectStorageAuthTypeCredentials}),
+			Credentials: &objectstore.Credentials{ServiceAccountJSON: []byte(`{}`)},
+		},
+		"azure workload identity": {
+			Config: azureBucket(v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity}, ""),
+		},
+		"azure credentials": {
+			Config:      azureBucket(v1.AzureBlobStorageAuth{Type: v1.ObjectStorageAuthTypeCredentials}, ""),
+			Credentials: &objectstore.Credentials{AccountKey: "account-key"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pod := elasticsearchOf(t, storage).Spec.NodeSets[0].PodTemplate.Spec
+
+			for _, volume := range pod.Volumes {
+				assert.NotEqual(t, "aws-web-identity-token", volume.Name)
+			}
+			for _, container := range pod.Containers {
+				for _, mount := range container.VolumeMounts {
+					assert.NotEqual(t, "/usr/share/elasticsearch/config/repository-s3", mount.MountPath)
+				}
+			}
+		})
+	}
+}
+
 // The endpoint suffix of an azure client is node configuration: the keystore
 // does not take it, and neither do the repository settings.
 func TestAzureSovereignEndpointConfiguresTheNodes(t *testing.T) {
