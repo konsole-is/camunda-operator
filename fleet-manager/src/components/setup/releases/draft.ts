@@ -61,7 +61,7 @@ export function specOf(draft: ReleaseDraft): CamundaReleaseSpec {
     const kept = BLOCKS.has(key) && isObject(value) ? compact(value) : value;
     if (!isEmpty(kept)) spec[key] = kept;
   }
-  return spec as CamundaReleaseSpec;
+  return spec as unknown as CamundaReleaseSpec;
 }
 
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -126,8 +126,8 @@ export function changeCount(
   draft: ReleaseDraft,
   isNew: boolean,
 ): number {
-  const before = specOf(draftOf(base)) as Record<string, unknown>;
-  const after = specOf(draft) as Record<string, unknown>;
+  const before: Record<string, unknown> = { ...specOf(draftOf(base)) };
+  const after: Record<string, unknown> = { ...specOf(draft) };
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   const changed = [...keys].filter((k) => !equalJSON(before[k], after[k]));
   return changed.length + (isNew && draft.name !== "" ? 1 : 0);
