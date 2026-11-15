@@ -14,7 +14,9 @@ import { ping } from "@/app/dev/watch-probe/actions";
 import {
   applyBackupChange,
   applyClaimChange,
+  applyClaimDelete,
   previewClaimChange,
+  previewClaimDelete,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
   createPlane,
@@ -298,6 +300,11 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...claimChange(),
       preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete": () =>
+    previewClaimDelete(claimDelete()),
+  // The claim does not exist, so the delete has nothing to remove.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": () =>
+    applyClaimDelete(claimDelete()),
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
     previewPlaneCreate(planeCreate()),
   // The claim has no spec that the API server accepts, so the write
@@ -370,6 +377,20 @@ function claimChange() {
         kind: "CamundaClusterClaim",
         metadata: { name: "leak", namespace },
         spec: { presetRef: "medium" },
+      },
+    ],
+  };
+}
+function claimDelete() {
+  return {
+    intent: "Delete the claim leak",
+    apply: [],
+    delete: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        namespace,
+        name: "leak",
       },
     ],
   };
