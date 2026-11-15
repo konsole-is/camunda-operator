@@ -499,22 +499,6 @@ func expectAnsweredRecovery(server *v1.DatabaseServer, requestID string) *v1.Dat
 	return recovery
 }
 
-// cutoverAt is when the recorded recovery moved the server to the cluster it
-// built.
-func cutoverAt(server *v1.DatabaseServer) time.Time {
-	GinkgoHelper()
-
-	var at time.Time
-	Eventually(func(g Gomega) {
-		recovery := reconciledServer(server).Status.Recovery
-		g.Expect(recovery).NotTo(BeNil())
-		g.Expect(recovery.CutoverAt).NotTo(BeNil())
-		at = recovery.CutoverAt.Time
-	}, timeout, interval).Should(Succeed())
-
-	return at
-}
-
 // recoveryCluster is the CloudNativePG cluster that the recorded recovery
 // builds.
 func recoveryCluster(server *v1.DatabaseServer) string {
@@ -1663,12 +1647,10 @@ var _ = Describe("DatabaseServer recovery", func() {
 		probeContract(server)
 		expectLastRecovery(server, v1.RecoveryResultCompleted)
 
-		// It closes at the cutover, when the server moved off that cluster.
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(1))
 			g.Expect(history[0].To).NotTo(BeNil())
-			g.Expect(history[0].To.Time).To(BeTemporally("==", cutoverAt(server)))
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -1705,12 +1687,12 @@ var _ = Describe("DatabaseServer recovery", func() {
 			},
 		)
 
-		// The record closes at the cutover that the record of the recovery
-		// keeps.
+		// The record closes at the moment the outcome carries, which is when
+		// the contract moved off that cluster.
 		history := archiveHistory(server)
 		Expect(history).To(HaveLen(1))
 		Expect(history[0].ServerName).To(Equal("camunda"))
-		Expect(history[0].To.Time).To(BeTemporally("==", cutoverAt(server)))
+		Expect(history[0].To).To(Equal(&published))
 	})
 
 	It("keeps the archive of the cluster it built open when the base backup lands first", func() {
@@ -1726,15 +1708,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 		// before the contract has reached it, so the archive of that cluster
 		// opens before the cutover finishes.
 		//
-		// The record of the cluster it replaces closes there, at the cutover,
-		// and not at the start of the record that opens.
-		backupAt := metav1.NewTime(time.Now().Add(time.Second).Truncate(time.Second))
+		// The record of the cluster it replaces closes there, at the start of
+		// the record that opens, and not at the cutover further down.
+		backupAt := metav1.NewTime(time.Now().Truncate(time.Second))
 		completeBaseBackup(reconciledServer(server), "base-2", backupAt)
 		Eventually(func(g Gomega) {
 			history := archiveHistory(server)
 			g.Expect(history).To(HaveLen(2))
 			g.Expect(history[0].ServerName).To(Equal("camunda"))
-			g.Expect(history[0].To.Time).To(BeTemporally("==", cutoverAt(server)))
+			g.Expect(history[0].To).To(Equal(&backupAt))
 			g.Expect(history[1].ServerName).To(Equal("camunda-r1"))
 			g.Expect(history[1].From).To(Equal(backupAt))
 			g.Expect(history[1].To).To(BeNil())

@@ -100,9 +100,43 @@ func (r *DatabaseServerReconciler) awaitArchivedTarget(
 		return false
 	}
 
-	return r.awaitClosedSegment(
-		logf.IntoContext(ctx, log), server, components.ClusterName(server), &recovery.ClosedSegment,
-	)
+	ctx, cancel := context.WithTimeout(ctx, walTimeout)
+	defer cancel()
+
+	// The Secret and the primary of a cluster that another owner took hold
+	// the database of that owner.
+	owned, err := r.ownsRunningCluster(ctx, server)
+	if err != nil {
+		return unanswered(log, err)
+	}
+	if !owned {
+		return false
+	}
+
+	conn, err := r.primaryConnection(ctx, server)
+	if err != nil {
+		return unanswered(log, err)
+	}
+
+	// Record then act: the segment goes into status before anything reads
+	// the archive for it. A status write that is lost only closes one more
+	// segment on the next look.
+	if recovery.ClosedSegment == "" {
+		segment, err := r.wal().CloseSegment(ctx, conn)
+		if err != nil {
+			return unanswered(log, err)
+		}
+		recovery.ClosedSegment = segment
+
+		return true
+	}
+
+	last, err := r.wal().LastArchived(ctx, conn)
+	if err != nil {
+		return unanswered(log, err)
+	}
+
+	return !archivedThrough(last, recovery.ClosedSegment)
 }
 
 // readsLiveArchive reports whether source is the archive that the server
@@ -130,87 +164,14 @@ func (r *DatabaseServerReconciler) archiveWait() time.Duration {
 	return defaultArchiveWait
 }
 
-// awaitReplacedArchive reports whether the archive of the cluster that the
-// completed recovery replaced still lacks the segment that the server closed
-// on it. It sets previousClosedSegment of status.recovery when it is missing.
-//
-// The wait ends at once when the server does not own that cluster or it is
-// gone, and at the latest when the wait passes, counted from the cutover.
-func (r *DatabaseServerReconciler) awaitReplacedArchive(ctx context.Context, server *v1.DatabaseServer) bool {
-	recovery := server.Status.Recovery
-
-	// A cutover that an older operator recorded has no time.
-	if recovery.Result != v1.RecoveryResultCompleted || recovery.CutoverAt == nil ||
-		!time.Now().Before(recovery.CutoverAt.Add(r.archiveWait())) {
-		return false
-	}
-	ctx = logf.IntoContext(ctx, logf.FromContext(ctx).WithValues("cluster", recovery.PreviousCluster))
-
-	return r.awaitClosedSegment(ctx, server, recovery.PreviousCluster, &recovery.PreviousClosedSegment)
-}
-
-// awaitClosedSegment reports whether the archive of cluster still lacks the
-// segment that *closed names. When *closed is empty, it closes a segment on
-// the primary of cluster and sets *closed. It returns false when the server
-// does not own cluster or it is gone.
-func (r *DatabaseServerReconciler) awaitClosedSegment(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	cluster string,
-	closed *string,
-) bool {
-	log := logf.FromContext(ctx)
-	ctx, cancel := context.WithTimeout(ctx, walTimeout)
-	defer cancel()
-
-	// The Secret and the primary of a cluster that another owner took hold
-	// the database of that owner.
-	owned, err := r.ownsCluster(ctx, server, cluster)
-	if err != nil {
-		return unanswered(log, err)
-	}
-	if !owned {
-		return false
-	}
-
-	conn, err := r.primaryConnection(ctx, server, cluster)
-	if err != nil {
-		return unanswered(log, err)
-	}
-
-	// Record then act: the segment goes into status before anything reads
-	// the archive for it. A status write that is lost only closes one more
-	// segment on the next look.
-	if *closed == "" {
-		segment, err := r.wal().CloseSegment(ctx, conn)
-		if err != nil {
-			return unanswered(log, err)
-		}
-		*closed = segment
-
-		return true
-	}
-
-	last, err := r.wal().LastArchived(ctx, conn)
-	if err != nil {
-		return unanswered(log, err)
-	}
-
-	return !archivedThrough(last, *closed)
-}
-
-// ownsCluster reports whether the server owns the CloudNativePG cluster of
-// that name. A cluster that is gone is not owned.
-func (r *DatabaseServerReconciler) ownsCluster(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	cluster string,
-) (bool, error) {
-	key := types.NamespacedName{Namespace: server.Namespace, Name: cluster}
+// ownsRunningCluster reports whether the server owns the CloudNativePG
+// cluster that it runs from. A cluster that is gone is not owned.
+func (r *DatabaseServerReconciler) ownsRunningCluster(ctx context.Context, server *v1.DatabaseServer) (bool, error) {
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.ClusterName(server)}
 
 	// Live: another owner can take the name at any moment.
-	var read cnpgv1.Cluster
-	if err := r.APIReader.Get(ctx, key, &read); err != nil {
+	var cluster cnpgv1.Cluster
+	if err := r.APIReader.Get(ctx, key, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -218,17 +179,17 @@ func (r *DatabaseServerReconciler) ownsCluster(
 		return false, fmt.Errorf("reading the cluster %s: %w", key, err)
 	}
 
-	return ownedByServer(server, &read), nil
+	return ownedByServer(server, &cluster), nil
 }
 
-// primaryConnection returns the connection to the primary instance of
-// cluster, as the superuser that CloudNativePG writes.
+// primaryConnection returns the connection to the primary instance of the
+// cluster that the server runs now, as the superuser that CloudNativePG
+// writes.
 func (r *DatabaseServerReconciler) primaryConnection(
 	ctx context.Context,
 	server *v1.DatabaseServer,
-	cluster string,
 ) (pgbootstrap.Connection, error) {
-	key := types.NamespacedName{Namespace: server.Namespace, Name: components.SuperuserSecretNameOf(cluster)}
+	key := types.NamespacedName{Namespace: server.Namespace, Name: components.SuperuserSecretName(server)}
 
 	// Live: the cache keeps the metadata of a Secret only.
 	var secret corev1.Secret
@@ -237,7 +198,7 @@ func (r *DatabaseServerReconciler) primaryConnection(
 	}
 
 	return pgbootstrap.Connection{
-		Host:     components.ReadWriteHostOf(server, cluster),
+		Host:     components.ReadWriteHost(server),
 		Port:     components.PostgresPort,
 		User:     string(secret.Data[components.SuperuserUsernameKey]),
 		Password: string(secret.Data[components.SuperuserPasswordKey]),

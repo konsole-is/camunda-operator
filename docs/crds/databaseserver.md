@@ -156,7 +156,7 @@ The server closes the open record and opens a new one in these cases:
 - You remove `spec.archive`, then add it again.
 - The archive moves to another location. A change of `spec.archive.objectStorageRef` to another bucket does this. So does an edit of the `ObjectStorageConfig` to another bucket, path, endpoint, or region.
 
-A new record starts at the first base backup of the new archive. No restore can reach a point between two records. After a rollback, the `to` of the record of the old cluster is the time when the server moved to the new cluster. `status.recovery.cutoverAt` shows that time. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
+A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
 
 The contract publishes the archive history as [recovery windows](databaseserverconfig.md#recovery-windows) in `pitr.windows`:
 
@@ -219,13 +219,13 @@ The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseSe
 
 ### What a rollback does
 
-First, the server waits until the bucket holds the requested point. For a point in the archive that the server writes now, the server closes the current file of its write-ahead log. Then it waits up to 5 minutes until the bucket holds that file. `status.recovery.closedSegment` names the file. Usually the wait takes some seconds. The server does not wait for a point in an earlier archive, because that archive takes no more write-ahead log. It also does not wait while `ArchiveReady` reports `ArchiveFailing`, because no file reaches the bucket then. It does not wait either when another owner controls the cluster that the server runs from. If the primary instance does not answer, the server tries again for up to 5 minutes.
+First, the server waits until the bucket holds the requested point. For a point in the archive that the server writes now, the server closes the current file of its write-ahead log. Then it waits up to 5 minutes until the bucket holds that file. `status.recovery.closedSegment` names the file. Usually the wait takes some seconds. The server does not wait for a point in an earlier archive, because that archive is complete. It also does not wait while `ArchiveReady` reports `ArchiveFailing`, because no file reaches the bucket then. It does not wait either when another owner controls the cluster that the server runs from. If the primary instance does not answer, the server tries again for up to 5 minutes.
 
 After the wait, the operator builds a new CloudNativePG cluster from the archive. It does this also when the bucket did not get the file in time, or when the primary instance did not answer. The bucket can still hold an older point. If the bucket does not hold the point, CloudNativePG tries the recovery again for some minutes. If the point is still missing, the rollback ends with `result: Failed`, and the server keeps running from the old cluster. Repair the bucket or its credentials, then ask again.
 
 The name of the new cluster is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
 
-When the new cluster is healthy, the contract points at it, and the server answers the request. Then the server closes the current file of the write-ahead log of the old cluster. It waits up to 5 minutes until the bucket holds that file. A later restore can then reach the last points of the old archive. `status.recovery.previousClosedSegment` names the file. Then the operator removes the old cluster and its volumes. It also does this when the bucket did not get the file in time. The contract carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
+When the new cluster is healthy, the contract points at it, and the operator removes the old cluster and its volumes. The contract then carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
 
 The new cluster writes an archive of its own in the same bucket. The old archive stays, so a later restore can reach a point before the rollback. The new cluster runs under the same ServiceAccount, `my-db-postgres`, so the bucket keeps its trust in the pods. See [Authentication to the bucket](#authentication-to-the-bucket).
 
@@ -400,10 +400,8 @@ status:
     cluster: my-db-r1
     startedAt: "2026-08-20T14:55:03Z"
     closedSegment: 000000010000000A00000042
-    cutoverAt: "2026-08-20T15:02:11Z"
-    previousClosedSegment: 000000010000000A00000057
     result: Completed
-    completedAt: "2026-08-20T15:02:34Z"
+    completedAt: "2026-08-20T15:02:11Z"
   volumes:
     - name: my-db-r1-1
       capacity: 256Gi
@@ -466,8 +464,6 @@ status:
 `status.version` is the PostgreSQL major that the server runs. `status.cluster` is the CloudNativePG cluster that the contract points at, and it changes after a rollback.
 
 `status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs. `startedAt` is when the server took the request. `closedSegment` is the write-ahead log file that the rollback waits for. The server closes no file for a point in an earlier archive. It closes none while `ArchiveReady` reports `ArchiveFailing`, while the primary instance does not answer, or while another owner controls the cluster it runs from. See [What a rollback does](#what-a-rollback-does).
-
-`cutoverAt` is when the server moved to the new cluster. The archive of the old cluster ends at that time. `previousClosedSegment` is the write-ahead log file that the server waits for before it removes the old cluster.
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 

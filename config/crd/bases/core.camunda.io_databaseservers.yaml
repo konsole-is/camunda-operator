@@ -1229,24 +1229,9 @@ spec:
                       server answers on that contract. Until it answers, it does not change
                       the contract that it publishes.
                     type: string
-                  cutoverAt:
-                    description: |-
-                      CutoverAt is when the recovery moved the server to the cluster that it
-                      built. The archive of PreviousCluster ends at this time.
-                    format: date-time
-                    type: string
                   message:
                     description: Message is the message that the server published
                       with Result.
-                    type: string
-                  previousClosedSegment:
-                    description: |-
-                      PreviousClosedSegment is the write-ahead log file that the server
-                      closed on PreviousCluster after the recovery completed. The server
-                      removes PreviousCluster when its archive holds this file, or five
-                      minutes after CutoverAt. The server closes no file while the primary
-                      instance of PreviousCluster does not answer, or while another owner
-                      controls that cluster.
                     type: string
                   previousCluster:
                     description: |-

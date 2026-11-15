@@ -385,9 +385,8 @@ func reconcileArchiveHistory(
 			return
 		}
 		// The server writes one archive at a time, so an archive of another
-		// cluster that is still open ended where this one starts, or at the
-		// cutover of the recovery that replaced that cluster.
-		open.To = new(replacedArchiveEnd(server.Status.Recovery, open.ServerName, *archiveStart))
+		// cluster that is still open ended where this one starts.
+		open.To = archiveStart
 	}
 
 	if server.Status.Archive == nil {
@@ -518,21 +517,6 @@ func pendingArchiveOutageWait(
 	// Confirmed, and this call. The look is then due at once, and a zero here
 	// would mean no look at all.
 	return max(outage.Since.Add(components.ArchiveOutageGracePeriod).Sub(now), time.Millisecond)
-}
-
-// replacedArchiveEnd returns when the archive of serverName ended: the cutover
-// of recovery when serverName is the cluster that it replaced, and fallback
-// otherwise or for a cutover recorded without its time.
-func replacedArchiveEnd(
-	recovery *v1.DatabaseServerRecoveryStatus,
-	serverName string,
-	fallback metav1.Time,
-) metav1.Time {
-	if recovery == nil || recovery.CutoverAt == nil || recovery.PreviousCluster != serverName {
-		return fallback
-	}
-
-	return *recovery.CutoverAt
 }
 
 // closeArchiveRecord ends the interval of the archive that serverName has

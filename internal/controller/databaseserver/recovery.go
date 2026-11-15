@@ -60,18 +60,17 @@ type recoveryRefusal struct {
 }
 
 // reconcileRecovery answers the recovery request that the published contract
-// carries, and reports whether a recovery, or its removal of what it replaced,
-// is still running. Each step is keyed on what exists, so a reconcile that
-// re-enters in the middle continues where the last one stopped.
+// carries, and reports whether a recovery is still running. Each step is
+// keyed on what exists, so a reconcile that re-enters in the middle continues
+// where the last one stopped.
 //
 // The steps are: record the request, wait, for a bounded time, for the
 // archive to hold the requested point, build the cluster that recovers to it,
 // wait for CloudNativePG to declare it healthy, point the contract at it,
-// publish the outcome, wait, for a bounded time, for the archive of the
-// replaced cluster to hold a segment that the server closes on it, and remove
-// what it replaced. The contract points at the new cluster before the old one goes,
-// so a failure at any point up to that leaves the old server whole and the
-// restore reads a refusal rather than an empty server.
+// publish the outcome, and remove what it replaced. The contract points at
+// the new cluster before the old one goes, so a failure at any point up to
+// that leaves the old server whole and the restore reads a refusal rather
+// than an empty server.
 //
 // status.recovery is the record of the answer, and the contract is where the
 // answer is published. Every step reads the record, so an answer whose status
@@ -109,14 +108,14 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			return false, err
 		}
 
-		return r.cleanUpAnsweredRecovery(ctx, server)
+		return false, r.cleanUpAnsweredRecovery(ctx, server)
 
 	case request.AnsweredBy(published):
 		if err := r.recordPublishedOutcome(ctx, server, contract, published); err != nil {
 			return false, err
 		}
 
-		return r.cleanUpAnsweredRecovery(ctx, server)
+		return false, r.cleanUpAnsweredRecovery(ctx, server)
 	}
 
 	// Past the cutover the contract already points at the cluster the recovery
@@ -320,10 +319,7 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 			answered.Cluster = current
 		}
 
-		closeArchiveRecord(
-			server, answered.PreviousCluster,
-			replacedArchiveEnd(answered, answered.PreviousCluster, published.CompletedAt),
-		)
+		closeArchiveRecord(server, answered.PreviousCluster, published.CompletedAt)
 	}
 
 	// A Failed answer past the cutover is a rollback that abandonRecovery
@@ -439,8 +435,7 @@ func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
 
 // cleanUpAnsweredRecovery removes what the answered recovery left behind: the
 // cluster it built and did not become, and the cluster and the base backup
-// schedule it replaced. It reports whether the replaced cluster still waits
-// for its archive, and removes neither of the last two while it does.
+// schedule it replaced.
 //
 // It runs on every look that reads the answer back, not once beside the
 // answer. The answer is written before anything is removed, so a delete that
@@ -449,16 +444,12 @@ func publishedOutcome(contract *v1.DatabaseServerConfig) *v1.RecoveryOutcome {
 func (r *DatabaseServerReconciler) cleanUpAnsweredRecovery(
 	ctx context.Context,
 	server *v1.DatabaseServer,
-) (bool, error) {
+) error {
 	if err := r.removeAbandonedRecoveryCluster(ctx, server); err != nil {
-		return false, err
+		return err
 	}
 
-	if r.awaitReplacedArchive(ctx, server) {
-		return true, nil
-	}
-
-	return false, r.removeSupersededCluster(ctx, server)
+	return r.removeSupersededCluster(ctx, server)
 }
 
 // removeAbandonedRecoveryCluster removes the cluster that an answered recovery
@@ -734,7 +725,6 @@ func (r *DatabaseServerReconciler) advanceRecovery(
 	}
 
 	server.Status.Recovery.PreviousCluster = server.Status.Cluster
-	server.Status.Recovery.CutoverAt = new(metav1.Now())
 	server.Status.Cluster = recovered.Name
 
 	return true, nil
@@ -807,16 +797,17 @@ func (r *DatabaseServerReconciler) completeRecovery(
 		return true, nil
 	}
 
-	// The archive of the cluster that goes ends at the cutover. It closes only
-	// now: a rollback abandoned before the move became visible runs from that
-	// cluster again, and its archive goes on.
+	// The archive of the cluster that goes ends where the contract left it.
+	// Closing it at the moment the pointer moved strands every point after
+	// that if the move never becomes visible, and the archive of the
+	// recovered cluster reaches no point before its first base backup, so the
+	// window between the two lies in no interval.
 	//
 	// That one record only. The cluster this recovery built takes its first
 	// base backup whenever CloudNativePG gets to it, so its own record can
 	// already be open here, and closing it leaves the server with an archive
 	// that no restore can reach.
-	previous := server.Status.Recovery.PreviousCluster
-	closeArchiveRecord(server, previous, replacedArchiveEnd(server.Status.Recovery, previous, metav1.Now()))
+	closeArchiveRecord(server, server.Status.Recovery.PreviousCluster, metav1.Now())
 
 	if err := r.answerRecovery(
 		ctx, server, contract, request, v1.RecoveryResultCompleted, "",
@@ -824,7 +815,7 @@ func (r *DatabaseServerReconciler) completeRecovery(
 		return false, err
 	}
 
-	return r.cleanUpAnsweredRecovery(ctx, server)
+	return false, r.removeSupersededCluster(ctx, server)
 }
 
 // abandonRecovery refuses a request whose cluster the contract already moved
@@ -1059,9 +1050,10 @@ func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.Recov
 }
 
 // answeredRecovery builds the record of an answered recovery. The request and
-// the outcome carry every part but the clusters, the archive, the times, and
-// the segments that live only in the record of the running recovery. carry is
-// that record when it belongs to this request, and nil when it belongs to
+// the outcome carry every part but five. Those five live only in the record of
+// the running recovery. They are the cluster it built, the cluster it came
+// from, the archive it read, when it started, and the segment it closed. carry
+// is that record when it belongs to this request, and nil when it belongs to
 // another one.
 //
 // Both writers of status.recovery build the record here, so neither of them
@@ -1090,8 +1082,6 @@ func answeredRecovery(
 		answered.Archive = carry.Archive
 		answered.StartedAt = carry.StartedAt
 		answered.ClosedSegment = carry.ClosedSegment
-		answered.CutoverAt = carry.CutoverAt
-		answered.PreviousClosedSegment = carry.PreviousClosedSegment
 	}
 
 	return answered
