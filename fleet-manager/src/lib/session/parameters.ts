@@ -24,7 +24,7 @@ export type ClaimWithPlugins = { spec?: { plugins?: unknown } };
 // breaks a rule already does not block every later change. added gives the
 // parameters that the claim controller adds to a request after the change,
 // and addedBefore those before it. An error at a parameter that the
-// controller adds and the change moves shows above the fields.
+// controller adds and the change moves has no path.
 export function changedParameterErrors(input: {
   claim: ClaimWithPlugins;
   after: ClaimWithPlugins;
