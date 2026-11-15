@@ -185,12 +185,11 @@ function realmMoves(session: Session<PlaneClaim>): boolean {
 function realmKey(url: string): string {
   if (!URL.canParse(url)) return url;
   const parsed = new URL(url);
-  let path = parsed.pathname;
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // A malformed escape stays as it is.
-  }
+  // An escape of a reserved character, such as %2F, names another path.
+  const path = parsed.pathname.replace(/%([0-9a-f]{2})/gi, (escape, hex) => {
+    const char = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9._~-]/.test(char) ? char : escape.toUpperCase();
+  });
   const host = parsed.hostname.replace(/\.$/, "");
   const port = parsed.port ? `:${parsed.port}` : "";
   return `${parsed.protocol}//${host}${port}${path.replace(/\/+$/, "")}`;

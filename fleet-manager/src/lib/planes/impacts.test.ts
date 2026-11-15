@@ -538,6 +538,44 @@ describe("planeImpacts", () => {
     expect(planeImpacts(input(s))).toEqual([]);
   });
 
+  it("shows the callback move when an escaped slash of the External Keycloak URL becomes a path segment", () => {
+    const live = externalClaim({
+      management: {
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com/auth%2Fblue",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+      },
+    });
+    const s = changed(live, [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc.example.com/auth/blue",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([CALLBACKS_MOVE, MOVE_AT_ONCE]);
+  });
+
+  it("names no callback move for an escape of an unreserved character", () => {
+    const live = externalClaim({
+      management: {
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com/auth",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+      },
+    });
+    const s = changed(live, [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc.example.com/%61uth",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
   it("warns on two minors when the change turns on an app with a version from before", () => {
     const live = planeClaim({
       versions: { identity: "8.10.1", keycloak: "26.6.4", console: "8.9.133" },
