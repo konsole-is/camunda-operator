@@ -50,7 +50,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // openPaths are the values that the chart passes to a Kubernetes field as a

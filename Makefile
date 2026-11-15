@@ -465,7 +465,7 @@ GOLANGCI_LINT_VERSION ?= v2.8.0
 # RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
 # against renovate.json5.
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION ?= 44.222.4
+RENOVATE_VERSION ?= 44.239.1
 # renovate: datasource=go depName=golang.org/x/vuln
 GOVULNCHECK_VERSION ?= v1.9.0
 .PHONY: kustomize
@@ -565,7 +565,7 @@ HELM_CHART_DIR ?= dist/chart
 HELM_EXTRA_ARGS ?=
 ## Helm version installed by install-helm. Renovate moves it with .tool-versions.
 # renovate: datasource=github-releases depName=helm/helm
-HELM_VERSION ?= v4.3.1
+HELM_VERSION ?= v4.3.2
 
 .PHONY: install-helm
 install-helm: ## Install the pinned version of Helm if it is missing.

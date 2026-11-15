@@ -35,7 +35,6 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -45,7 +44,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // subschemaKeywords are the keywords whose value is a schema, or a list of
@@ -136,17 +135,14 @@ func stripTemplate(template string) (string, int, error) {
 		return "", 0, err
 	}
 
-	var out bytes.Buffer
-	enc := yaml.NewEncoder(&out)
-	enc.SetIndent(2)
-	if err := enc.Encode(&doc); err != nil {
-		return "", 0, fmt.Errorf("writing the spec: %w", err)
-	}
-	if err := enc.Close(); err != nil {
+	// The default line width of 80 would wrap each long CEL rule and message of the
+	// templates.
+	out, err := yaml.Dump(&doc, yaml.WithV3Defaults(), yaml.WithIndent(2), yaml.WithLineWidth(-1))
+	if err != nil {
 		return "", 0, fmt.Errorf("writing the spec: %w", err)
 	}
 
-	stripped := literals.Replace(strings.TrimSuffix(out.String(), "\n"))
+	stripped := literals.Replace(strings.TrimSuffix(string(out), "\n"))
 	result := slices.Concat(lines[:start], []string{stripped}, lines[end:])
 
 	return strings.Join(result, "\n"), removed, nil

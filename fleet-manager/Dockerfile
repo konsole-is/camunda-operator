@@ -4,7 +4,7 @@
 
 # The release of fleet-manager/.node-version. engines in package.json pins the
 # same release, and pnpm refuses to install with another.
-FROM node:26.11.1-trixie-slim AS build
+FROM node:26.13.0-trixie-slim AS build
 ENV NEXT_TELEMETRY_DISABLED=1
 # The layout of the repository, so the app finds ../pkg/images/table.json as
 # it does in a checkout.
