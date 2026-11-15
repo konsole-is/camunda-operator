@@ -73,7 +73,8 @@ describe("loadPlanePage", () => {
   });
 
   it("ignores a claim whose name the plane does not carry in its claim label", async () => {
-    for (const labels of [{}, { [CLAIM_LABEL]: "other" }]) {
+    const unnamed: Record<string, string>[] = [{}, { [CLAIM_LABEL]: "other" }];
+    for (const labels of unnamed) {
       k8s.objects = [plane("plane-a", labels), claim("plane-a")];
       const data = await loadPlanePage("platform", "plane-a");
       expect(data?.plane).toBeDefined();
