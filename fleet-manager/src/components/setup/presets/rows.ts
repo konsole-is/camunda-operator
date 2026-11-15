@@ -1,4 +1,5 @@
 import type { ReadError } from "@/components/planes/planes-table";
+import type { Environment } from "@/generated/crds/environment";
 import type { KindName } from "@/lib/k8s/kinds";
 import { presetDescription } from "@/lib/labels";
 import { lastChanged } from "@/lib/merge";
@@ -118,13 +119,16 @@ export function presetRows(
     ElasticsearchClusterPreset: sources.elasticsearchPresets,
     DatabaseServerPreset: sources.databasePresets,
   };
+  // A Resource is plain JSON, so it differs from its model type only in its
+  // timestamps, which allowedIn does not read.
+  const environments = sources.environments as unknown as Environment[];
   return PRESET_KINDS.flatMap(({ kind, slug }) =>
     [...lists[kind]]
       .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
       .map((preset) => {
         const name = preset.metadata.name ?? "";
         const users = presetUsers(kind, name, sources);
-        const allowed = allowedIn(sources.environments, kind, name);
+        const allowed = allowedIn(environments, kind, name);
         const blockedBy = blockedByOf(kind, users, allowed, errors);
         const description = presetDescription(preset);
         const changed = lastChanged(preset);

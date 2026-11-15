@@ -8,7 +8,7 @@ import { PRESET_SOURCE_KINDS } from "./source-kinds";
 
 /** PresetSources holds every list that the preset pages read, in all namespaces. */
 export type PresetSources = {
-  [K in keyof typeof PRESET_SOURCE_KINDS]: Resource<
+  -readonly [K in keyof typeof PRESET_SOURCE_KINDS]: Resource<
     (typeof PRESET_SOURCE_KINDS)[K]
   >[];
 };

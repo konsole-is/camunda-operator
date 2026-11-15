@@ -32,8 +32,7 @@ describe("presetUsage", () => {
   });
 });
 
-type Spec = Record<string, unknown>;
-const named = (namespace: string, name: string, spec: Spec) => ({
+const named = <S>(namespace: string, name: string, spec: S) => ({
   metadata: { namespace, name },
   spec,
 });
