@@ -69,7 +69,7 @@ export function TemplateEditor({
           <button
             key={chip}
             type="button"
-            className="rounded-full border border-border bg-panel-2 px-2 py-0.5 font-mono text-xs text-text-2 hover:border-accent hover:text-text"
+            className="relative rounded-full border border-border bg-panel-2 px-2 py-0.5 font-mono text-xs text-text-2 hit-area hover:border-accent hover:text-text"
             onClick={() => {
               const el = field.current;
               const start = el?.selectionStart ?? text.length;

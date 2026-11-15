@@ -102,6 +102,8 @@ theme. It also opens the Docs page of `ui/Button` in both themes. The check fail
 - The `play` function of the story fails.
 - The page scrolls sideways.
 - axe finds a violation of serious or critical impact, in one of the two themes, on a story or on the Docs page.
+- A control has a pointer target under 24 px wide or high. A link in running text does not count. The `hit-area`
+  utility of `src/app/globals.css` gives a small control a larger target and does not change how it looks.
 - The story requests a file outside the Storybook folder, for example from `/api/watch` or from another host.
 
 The check writes a screenshot of each story at each width and in each theme into `fleet-manager/ui-stories`. The

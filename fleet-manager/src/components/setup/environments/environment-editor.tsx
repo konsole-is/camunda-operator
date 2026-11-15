@@ -50,6 +50,7 @@ import {
 } from "./settings";
 import { UnknownNames } from "./unknown-names";
 import { type EnvironmentSources, useEnvironmentSources } from "./sources";
+import { Radio } from "@/components/ui/radio";
 
 const READY: FleetEnvironmentConditionType = "Ready";
 
@@ -459,10 +460,8 @@ function DeletionPolicyField({
       </legend>
       {POLICIES.map(([policy, text]) => (
         <label key={policy} className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
+          <Radio
             name="deletion-policy"
-            className="size-4 accent-accent"
             checked={value === policy}
             onChange={() => onChange(policy)}
           />

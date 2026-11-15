@@ -9,6 +9,7 @@ import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
 import type { EnvironmentDraft } from "./draft";
 import { ErrorText } from "@/components/setup/form-parts";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Creation = NonNullable<EnvironmentDraft["spec"]["namespaceCreation"]>;
 
@@ -60,13 +61,11 @@ export function NamespaceCreationSection({
     <div className="flex flex-col gap-4 border-t border-divider pt-4">
       <h3 className="font-heading text-sm font-semibold">Namespace creation</h3>
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-accent"
+        <Checkbox
           checked={value.allowed ?? false}
-          onChange={(event) =>
+          onCheckedChange={(checked) =>
             onChange(
-              { ...value, allowed: event.target.checked },
+              { ...value, allowed: checked === true },
               labelRowErrors.current,
             )
           }

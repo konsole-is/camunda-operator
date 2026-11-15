@@ -7,6 +7,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { byCodeUnit } from "@/lib/policy";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** EditorSection is one open part of the editor with its heading. */
 export function EditorSection({
@@ -170,11 +171,9 @@ export function NameChecklist({
           return (
             <li key={name}>
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-accent"
+                <Checkbox
                   checked={selected.includes(name)}
-                  onChange={(event) => toggle(name, event.target.checked)}
+                  onCheckedChange={(checked) => toggle(name, checked === true)}
                 />
                 <span className="font-mono">{name}</span>
                 {missing && (

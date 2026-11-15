@@ -4,6 +4,7 @@ import { useId } from "react";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import { presetDescription } from "@/lib/labels";
 import { cn } from "@/lib/utils";
+import { Radio } from "@/components/ui/radio";
 
 /**
  * presetFacts returns the main facts of preset that it sets: Brokers,
@@ -59,13 +60,12 @@ export function PresetCards({
                 checked ? "border-accent" : "border-border",
               )}
             >
-              <input
-                type="radio"
+              <Radio
                 name={`${id}-preset`}
                 value={name}
                 checked={checked}
                 onChange={() => onChange?.(name)}
-                className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                className="mt-1"
               />
               <span className="flex min-w-0 flex-1 flex-col gap-2">
                 <span className="text-sm font-medium text-text">{name}</span>

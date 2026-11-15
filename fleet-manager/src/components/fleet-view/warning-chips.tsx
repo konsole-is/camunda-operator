@@ -46,7 +46,7 @@ export function WarningChips({
                 <button
                   type="button"
                   className={cn(
-                    "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    "relative inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium outline-none hit-area focus-visible:ring-3 focus-visible:ring-ring/50",
                     CHIP_TONE[warning.severity === "Error" ? "bad" : "warn"],
                   )}
                 >

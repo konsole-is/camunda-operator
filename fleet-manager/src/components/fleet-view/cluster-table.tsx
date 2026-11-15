@@ -170,7 +170,10 @@ function Name({
   return (
     <span className={cn("flex flex-col", WRAP)}>
       {href ? (
-        <Link href={href} className="font-medium text-text hover:text-info">
+        <Link
+          href={href}
+          className="relative font-medium text-text hit-area hover:text-info"
+        >
           {name}
         </Link>
       ) : (

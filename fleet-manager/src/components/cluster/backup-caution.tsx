@@ -41,7 +41,7 @@ export function BackupCaution({
       ))}
       <a
         href={backupsHref}
-        className="self-start font-medium text-text underline underline-offset-4 hover:text-accent"
+        className="relative self-start font-medium text-text underline underline-offset-4 hit-area hover:text-accent"
         onClick={
           onOpenBackups
             ? (event) => {

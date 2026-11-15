@@ -8,6 +8,7 @@ import {
 } from "@playwright/test";
 import { blockingViolations } from "../axe";
 import type { Shot } from "./stories-index";
+import { MIN_TARGET, smallTargets } from "./targets";
 
 const OUT = path.resolve("ui-stories");
 const WIDTHS = [1440, 390];
@@ -200,6 +201,15 @@ for (const { theme, suffix, title } of THEMES)
               `axe violations in story ${story.id} at ${width} px`,
             )
             .toEqual([]);
+
+          // The size of a target does not change with the theme.
+          if (theme === "dark")
+            expect
+              .soft(
+                await smallTargets(page),
+                `targets under ${MIN_TARGET} px in story ${story.id} at ${width} px`,
+              )
+              .toEqual([]);
 
           const file = `${story.id}-${width}${suffix}.png`;
           await page.screenshot({ path: path.join(OUT, file), fullPage: true });

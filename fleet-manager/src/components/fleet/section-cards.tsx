@@ -20,6 +20,8 @@ import { valueProblem } from "@/lib/drafts";
 import { type ValidationError, schemaRules } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { ParameterField, RuleHints } from "./parameter-field";
+import { Radio } from "@/components/ui/radio";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** Values holds the parameter values that the form edits, by registration and parameter. */
 type Values = Record<string, Record<string, unknown>>;
@@ -241,14 +243,23 @@ function OptionCard({
           disabledReason ? "cursor-not-allowed" : "cursor-pointer",
         )}
       >
-        <input
-          type={type}
-          name={name}
-          checked={checked}
-          disabled={!!disabledReason}
-          onChange={(event) => onPick(event.target.checked)}
-          className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
-        />
+        {type === "radio" ? (
+          <Radio
+            name={name}
+            checked={checked}
+            disabled={!!disabledReason}
+            onChange={(event) => onPick(event.target.checked)}
+            className="mt-1"
+          />
+        ) : (
+          <Checkbox
+            name={name}
+            checked={checked}
+            disabled={!!disabledReason}
+            onCheckedChange={(on) => onPick(on === true)}
+            className="mt-1"
+          />
+        )}
         <span className="flex min-w-0 flex-col gap-0.5">
           <span
             className={cn(
@@ -335,12 +346,11 @@ function OptionParameters({
                     current === item.name ? "border-accent" : "border-border",
                   )}
                 >
-                  <input
-                    type="radio"
+                  <Radio
                     name={`${idPrefix}-choice`}
                     checked={current === item.name}
                     onChange={() => onValue(choices.parameter, item.name)}
-                    className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
+                    className="mt-0.5"
                   />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className="font-medium text-text">{item.name}</span>

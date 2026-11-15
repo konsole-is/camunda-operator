@@ -25,6 +25,7 @@ import {
 import type { EnvironmentSources } from "./sources";
 import { isStructured, TemplateEditor } from "./template-editor";
 import { TemplatePreview } from "./template-preview";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Spec = Environment["spec"];
 
@@ -306,16 +307,15 @@ function ParameterSettingRow({
         />
       )}
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-accent"
+        <Checkbox
           checked={setting.claimEditable}
-          onChange={(e) => {
-            if (!e.target.checked) {
+          onCheckedChange={(value) => {
+            const checked = value === true;
+            if (!checked) {
               allowedErrors.current = [];
               report();
             }
-            set({ claimEditable: e.target.checked });
+            set({ claimEditable: checked });
           }}
         />
         A claim can change it

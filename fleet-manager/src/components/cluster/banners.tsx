@@ -48,7 +48,7 @@ export function ActivityBanner({
       )}
       <a
         href={backupsHref}
-        className="font-medium text-text underline underline-offset-4 hover:text-accent"
+        className="relative font-medium text-text underline underline-offset-4 hit-area hover:text-accent"
         onClick={
           onOpenBackups
             ? (event) => {

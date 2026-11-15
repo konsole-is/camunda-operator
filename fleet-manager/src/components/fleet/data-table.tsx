@@ -231,7 +231,7 @@ export function DataTable({
                 {column.sortable ? (
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 hover:text-text"
+                    className="relative inline-flex items-center gap-1 hit-area hover:text-text"
                     onClick={() =>
                       setSort(
                         sort?.key === column.key &&
@@ -292,7 +292,7 @@ export function DataTable({
                     {index === 0 && row.href ? (
                       <Link
                         href={row.href}
-                        className="font-medium text-text hover:text-info"
+                        className="relative font-medium text-text hit-area hover:text-info"
                       >
                         {row.cells[column.key]}
                       </Link>

@@ -4,6 +4,7 @@ import { useId } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { DeletionChoice, DeletionPolicy } from "@/lib/policy";
 import { cn } from "@/lib/utils";
+import { Radio } from "@/components/ui/radio";
 
 /** DELETION_LABELS are the words of each deletion policy. */
 export const DELETION_LABELS: Readonly<Record<DeletionPolicy, string>> = {
@@ -118,13 +119,12 @@ function PolicyCard({
         disabledReason ? "cursor-not-allowed" : "cursor-pointer",
       )}
     >
-      <input
-        type="radio"
+      <Radio
         name={name}
         checked={checked}
         disabled={!!disabledReason}
         onChange={onPick}
-        className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+        className="mt-1"
       />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span

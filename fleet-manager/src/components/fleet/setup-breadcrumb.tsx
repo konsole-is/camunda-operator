@@ -13,13 +13,19 @@ export function SetupBreadcrumb({ pathname }: { pathname?: string }) {
     <nav aria-label="Breadcrumb" className="mb-4 text-sm">
       <ol className="flex flex-wrap items-center gap-x-2 text-muted">
         <li>
-          <Link href="/setup" className="text-muted hover:text-text">
+          <Link
+            href="/setup"
+            className="relative text-muted hit-area hover:text-text"
+          >
             Setup
           </Link>
         </li>
         <li aria-hidden>{" / "}</li>
         <li>
-          <Link href={crumb.item.href} className="text-muted hover:text-text">
+          <Link
+            href={crumb.item.href}
+            className="relative text-muted hit-area hover:text-text"
+          >
             {crumb.item.label}
           </Link>
         </li>

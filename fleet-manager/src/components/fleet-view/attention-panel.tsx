@@ -44,7 +44,7 @@ export function AttentionPanel({
                 {item.href ? (
                   <Link
                     href={item.href}
-                    className="font-medium text-text hover:text-info"
+                    className="relative font-medium text-text hit-area hover:text-info"
                   >
                     {title}
                   </Link>

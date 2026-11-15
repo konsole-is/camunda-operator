@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/native-select";
 import { ENVIRONMENT_LABEL, isLabelValue } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
+import { Radio } from "@/components/ui/radio";
 
 export type NamespaceChoice =
   | { kind: "existing"; name: string }
@@ -143,11 +144,9 @@ export function NamespacePicker({
         Namespace
       </legend>
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="radio"
+        <Radio
           name={`${id}-mode`}
           checked={activeMode === "existing"}
-          className="accent-[var(--accent)]"
           onChange={() => {
             setMode("existing");
           }}
@@ -181,11 +180,9 @@ export function NamespacePicker({
       )}
       {canCreate && (
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
+          <Radio
             name={`${id}-mode`}
             checked={activeMode === "new"}
-            className="accent-[var(--accent)]"
             onChange={() => {
               setMode("new");
             }}

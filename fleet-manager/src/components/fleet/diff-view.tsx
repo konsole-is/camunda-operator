@@ -30,7 +30,7 @@ export function DiffView({
         {chunks(lines).map((chunk, index) =>
           chunk.folded ? (
             <details key={index} className="text-muted">
-              <summary className="cursor-pointer px-3 hover:text-text">
+              <summary className="relative cursor-pointer px-3 hit-area hover:text-text">
                 {`${chunk.lines.length} unchanged lines`}
               </summary>
               {chunk.lines.map((line, i) => (
