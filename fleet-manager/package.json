@@ -17,7 +17,7 @@
     "app-test": "rm -rf test-results/app && playwright test",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build -o storybook-static",
-    "stories": "rm -rf ui-stories test-results/stories && playwright test -c playwright.stories.config.ts",
+    "stories": "rm -rf ui-stories story-snapshot test-results/stories && playwright test -c playwright.stories.config.ts",
     "scenarios": "rm -rf ui-pages test-results/scenarios && playwright test -c playwright.scenarios.config.ts",
     "generate": "node scripts/generate-crd-types.mts ../config/crd/bases src/generated/crds"
   },
