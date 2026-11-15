@@ -30,7 +30,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.uber.org/zap v1.28.0
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	gocloud.dev v0.46.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
