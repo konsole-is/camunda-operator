@@ -2904,6 +2904,10 @@ export const fieldDocs: FieldDocs = {
         "description": "ServerName is the archive directory, equal to the name of the\nCloudNativePG cluster that wrote it.",
         "anchor": "#recoveryarchiveref"
       },
+      "status.recovery.closedSegment": {
+        "description": "ClosedSegment is the write-ahead log file that the server closed after\nit took the request. This file and the files before it hold the\nrequested point. The server starts the recovery when the archive holds\nthis file, or after five minutes. The server closes no file for a\nrecovery from an earlier archive. It closes none while ArchiveReady\nreports ArchiveFailing, while the primary instance does not answer, or\nwhile another owner controls the cluster it runs from.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
       "status.recovery.cluster": {
         "description": "Cluster is the CloudNativePG cluster that the recovery builds. It is\nempty for a request that the server refused, also when the server had\nbuilt a cluster before.",
         "anchor": "#databaseserverrecoverystatus"
@@ -2934,6 +2938,10 @@ export const fieldDocs: FieldDocs = {
       },
       "status.recovery.result": {
         "description": "Result is the result that the server published for the request. It is\nunset while the recovery runs.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
+      "status.recovery.startedAt": {
+        "description": "StartedAt is when the server took the request. The server waits up to\nfive minutes from this time for the archive to hold the requested\npoint.",
         "anchor": "#databaseserverrecoverystatus"
       },
       "status.recovery.targetTime": {

@@ -1836,6 +1836,10 @@ func (in *DatabaseServerRecoveryStatus) DeepCopyInto(out *DatabaseServerRecovery
 		*out = new(RecoveryArchiveRef)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.StartedAt != nil {
+		in, out := &in.StartedAt, &out.StartedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.CompletedAt != nil {
 		in, out := &in.CompletedAt, &out.CompletedAt
 		*out = (*in).DeepCopy()

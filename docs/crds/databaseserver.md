@@ -188,7 +188,11 @@ The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseSe
 
 ### What a rollback does
 
-The operator builds a new CloudNativePG cluster from the archive. Its name is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
+First, the server waits until the bucket holds the requested point. For a point in the archive that the server writes now, the server closes the current file of its write-ahead log. Then it waits up to 5 minutes until the bucket holds that file. `status.recovery.closedSegment` names the file. Usually the wait takes some seconds. The server does not wait for a point in an earlier archive, because that archive is complete. It also does not wait while `ArchiveReady` reports `ArchiveFailing`, because no file reaches the bucket then. It does not wait either when another owner controls the cluster that the server runs from. If the primary instance does not answer, the server tries again for up to 5 minutes.
+
+After the wait, the operator builds a new CloudNativePG cluster from the archive. It does this also when the bucket did not get the file in time, or when the primary instance did not answer. The bucket can still hold an older point. If the bucket does not hold the point, CloudNativePG tries the recovery again for some minutes. If the point is still missing, the rollback ends with `result: Failed`, and the server keeps running from the old cluster. Repair the bucket or its credentials, then ask again.
+
+The name of the new cluster is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
 
 When the new cluster is healthy, the contract points at it, and the operator removes the old cluster and its volumes. The contract then carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
 
@@ -363,6 +367,8 @@ status:
     requestedBy: my-cluster-ns/my-restore
     targetTime: "2026-08-20T14:30:00Z"
     cluster: my-db-r1
+    startedAt: "2026-08-20T14:55:03Z"
+    closedSegment: 000000010000000A00000042
     result: Completed
     completedAt: "2026-08-20T15:02:11Z"
   volumes:
@@ -426,7 +432,7 @@ status:
 
 `status.version` is the PostgreSQL major that the server runs. `status.cluster` is the CloudNativePG cluster that the contract points at, and it changes after a rollback.
 
-`status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs.
+`status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs. `startedAt` is when the server took the request. `closedSegment` is the write-ahead log file that the rollback waits for. The server closes no file for a point in an earlier archive. It closes none while `ArchiveReady` reports `ArchiveFailing`, while the primary instance does not answer, or while another owner controls the cluster it runs from. See [What a rollback does](#what-a-rollback-does).
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 
