@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
 import { componentCards } from "./cards";
@@ -35,7 +36,11 @@ const cards = componentCards({
   pods: [],
 });
 
-function detailOf(id: Parameters<typeof ClusterComponentDetail>[0]["id"]) {
+function detailOf(
+  id: Parameters<typeof ClusterComponentDetail>[0]["id"],
+  conditions: ConditionRow[] = [],
+  ofOptimize = optimize,
+) {
   render(
     <ClusterComponentDetail
       id={id}
@@ -43,8 +48,8 @@ function detailOf(id: Parameters<typeof ClusterComponentDetail>[0]["id"]) {
       cluster={cluster}
       namespace="team-a"
       podSelector="camunda.io/cluster=orders"
-      conditions={[]}
-      optimize={optimize}
+      conditions={conditions}
+      optimize={ofOptimize}
       partitions={undefined}
       settings={null}
       now="2026-11-10T12:00:00Z"
@@ -111,4 +116,33 @@ describe("ClusterComponentDetail", () => {
     expect(detailOf("optimize").podSelector).toBe(
       "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer),camunda.io/optimize-uid=u-1",
     ));
+
+  it("sums up the brokers by their own condition, not by the Ready of the cluster", () =>
+    expect(
+      detailOf("zeebe", [
+        { type: "Ready", status: "False", reason: "Degraded" },
+        { type: "ZeebeReady", status: "False", reason: "Degraded" },
+      ]).ready,
+    ).toMatchObject({ type: "ZeebeReady" }));
+
+  it("sums up an embedded app by its own condition", () =>
+    expect(
+      detailOf("operate", [
+        { type: "GatewayReady", status: "True", reason: "Healthy" },
+        { type: "OperateReady", status: "True", reason: "Disabled" },
+      ]).ready,
+    ).toMatchObject({ type: "OperateReady" }));
+
+  it("sums up Optimize by its Ready, not by the condition of an app", () =>
+    expect(
+      detailOf("optimize", [], {
+        ...optimize,
+        status: {
+          conditions: [
+            { type: "WebappReady", status: "False", reason: "Degraded" },
+            { type: "Ready", status: "False", reason: "Degraded" },
+          ],
+        },
+      } as unknown as Resource<"CamundaOptimize">).ready,
+    ).toMatchObject({ type: "Ready" }));
 });

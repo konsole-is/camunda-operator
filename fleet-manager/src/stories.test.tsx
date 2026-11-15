@@ -74,6 +74,7 @@ describe("the Storybook stories", () => {
       "Toast",
       "FieldHelp",
       "ConditionsTable",
+      "ConditionList",
       "PodTable",
       "UsageBars",
       "MetricChart",

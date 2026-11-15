@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { LogViewer } from "@/components/fleet/log-viewer";
-import type { PodLike } from "@/components/fleet/pod-table";
+import type { PodLike } from "./pod-table";
 import {
   NativeSelect,
   NativeSelectOption,

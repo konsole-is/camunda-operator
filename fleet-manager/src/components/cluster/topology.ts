@@ -108,13 +108,27 @@ const BAD_REASONS = new Set([
   "CreateContainerError",
 ]);
 
+/** ContainerStateLike is the part of a container status that podDot reads. */
+export type ContainerStateLike = { state?: { waiting?: { reason?: string } } };
+
+/** PodStateLike is the part of a Pod that podDot reads. Resource<"Pod"> fits it. */
+export type PodStateLike = {
+  metadata?: { name?: string; deletionTimestamp?: string };
+  status?: {
+    phase?: string;
+    conditions?: { type: string; status: string }[];
+    initContainerStatuses?: ContainerStateLike[];
+    containerStatuses?: ContainerStateLike[];
+  };
+};
+
 /**
  * podDot returns the state of a pod, by the first rule that holds: a
  * terminating pod is off, a waiting container shows its reason (bad for a
  * reason that does not clear by itself, else warn), a Failed pod is bad, a
  * Ready pod is ok, and any other pod is warn with its phase, or Unknown.
  */
-export function podDot(pod: Resource<"Pod">): PodDot {
+export function podDot(pod: PodStateLike): PodDot {
   const name = pod.metadata?.name ?? "";
   if (pod.metadata?.deletionTimestamp) {
     return { name, tone: "off", state: "Terminating" };

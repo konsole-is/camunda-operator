@@ -78,6 +78,13 @@ function pod(name: string, spec: { nodeName?: string } = {}) {
   };
 }
 
+const keycloakReady = {
+  type: "KeycloakReady",
+  status: "False" as const,
+  reason: "Degraded",
+  message: "1 of 2 pods ready",
+};
+
 const keycloak = (
   props: Partial<Parameters<typeof ComponentDetail>[0]> = {},
 ) => (
@@ -85,14 +92,8 @@ const keycloak = (
     title="Keycloak"
     namespace="mgmt"
     podSelector={SELECTOR}
-    conditions={[
-      {
-        type: "KeycloakReady",
-        status: "False",
-        reason: "Degraded",
-        message: "1 of 2 pods ready",
-      },
-    ]}
+    conditions={[keycloakReady]}
+    ready={keycloakReady}
     settings={<p>Plane settings</p>}
     now={NOW}
     {...props}
@@ -110,11 +111,13 @@ describe("ComponentDetail", () => {
     expect(live.usageCalls).toContainEqual(["mgmt", SELECTOR]);
     const region = screen.getByRole("region", { name: "Keycloak" });
     expect(
-      within(region).getByRole("rowheader", { name: "plane-a-keycloak-0" }),
-    ).toBeTruthy();
-    expect(within(region).getByRole("cell", { name: "node-2" })).toBeTruthy();
+      within(region).getByRole("rowheader", { name: /^plane-a-keycloak-0/ })
+        .textContent,
+    ).toBe("plane-a-keycloak-0node-2");
     expect(
-      within(region).getByRole("rowheader", { name: "KeycloakReady" }),
+      within(
+        within(region).getByRole("list", { name: "Keycloak conditions" }),
+      ).getByText("KeycloakReady"),
     ).toBeTruthy();
   });
 
@@ -275,6 +278,7 @@ describe("ComponentDetailView", () => {
     <ComponentDetailView
       title="Operate"
       conditions={[]}
+      ready={undefined}
       pods={[pod("orders-gateway-0")]}
       usage={undefined}
       now={NOW}
@@ -282,7 +286,7 @@ describe("ComponentDetailView", () => {
     />
   );
 
-  it("names the conditions table after the title and shows the subtitle", () => {
+  it("names the conditions list after the title and shows the subtitle", () => {
     render(
       view({
         subtitle: "Embedded in Gateway",
@@ -294,14 +298,62 @@ describe("ComponentDetailView", () => {
     expect(screen.getByRole("heading", { name: "Operate" })).toBeTruthy();
     expect(screen.getByText("Embedded in Gateway")).toBeTruthy();
     expect(
-      screen.getByRole("region", { name: "Operate conditions" }),
+      screen.getByRole("list", { name: "Operate conditions" }),
     ).toBeTruthy();
+  });
+
+  it("shows the state of the component beside the title on every tab", async () => {
+    render(
+      view({
+        ready: {
+          type: "OperateReady",
+          status: "False",
+          reason: "Degraded",
+          message: "2 of 3 pods ready",
+          lastTransitionTime: "2026-10-30T11:52:00Z",
+        },
+      }),
+    );
+    const header = screen.getByRole("heading", {
+      name: "Operate",
+    }).parentElement!;
+    expect(within(header).getByText("Not ready · Degraded")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(within(header).getByText("Not ready · Degraded")).toBeTruthy();
+  });
+
+  it("says No status beside the title when no condition decides the state", () => {
+    render(view({ ready: undefined }));
+    const header = screen.getByRole("heading", {
+      name: "Operate",
+    }).parentElement!;
+    expect(within(header).getByText("No status")).toBeTruthy();
+  });
+
+  it("starts the Overview with the numbers of the pods", () => {
+    render(view({}));
+    const overview = screen.getByRole("tabpanel", { name: "Overview" });
+    expect(
+      within(overview)
+        .getAllByRole("term")
+        .map((t) => t.textContent),
+    ).toEqual(["Pods ready", "Highest CPU", "Highest memory", "Restarts"]);
+  });
+
+  it("names the sections Pods and Conditions, then shows the children", () => {
+    render(view({ children: <h3>Partitions</h3> }));
+    const overview = screen.getByRole("tabpanel", { name: "Overview" });
+    expect(
+      within(overview)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(["Pods", "Conditions", "Partitions"]);
   });
 
   it("lists the pods with no usage column while the usage is loading", () => {
     render(view({}));
     expect(
-      screen.getByRole("rowheader", { name: "orders-gateway-0" }),
+      screen.getByRole("rowheader", { name: /^orders-gateway-0/ }),
     ).toBeTruthy();
     expect(screen.queryByText(/Usage is not available/)).toBeNull();
   });
