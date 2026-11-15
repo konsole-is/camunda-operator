@@ -122,7 +122,8 @@ type resolvedSpec struct {
 	contractWithdrawn string
 	// archiveOutage is the stop in the write-ahead log uploads that the server
 	// reports on, or nil when it reports on none. It blocks the archive
-	// component, and it reports ArchiveFailing: see reportedArchiveOutage.
+	// component, it reports ArchiveFailing, and it marks the open archive
+	// record: see reportedArchiveOutage.
 	archiveOutage *components.ArchiveOutage
 	// requested is what the merged spec asked for before keepAppliedStorageSize
 	// raised it to the volumes that are there.
@@ -408,9 +409,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.recordArchiveMove(ctx, read, &server); err != nil {
 			return ctrl.Result{}, err
 		}
-		// From the first report, not after the grace of ArchiveReady: the
-		// published windows end before the segment that failed.
-		markArchiveOutage(&server, liveArchiveOutage(derived.outage, resolved.merged))
+		markArchiveOutage(&server, resolved.archiveOutage)
 	}
 
 	server.Status.Volumes = volumes.all()
