@@ -262,6 +262,21 @@ describe("renderChanges", () => {
     expect(text).toContain("The full report has all of it.");
   });
 
+  it("counts the length in UTF-8 bytes, so text that is not ASCII stays within it", () => {
+    const changed = Array.from({ length: 20 }, (_, i) => ({
+      story: story(`s-${i}`, ""),
+      diff: `@@ -1,1 +1,1 @@\n-${"é".repeat(400)}\n+${"ü".repeat(400)}`,
+    }));
+
+    const text = renderChanges(comparison({ total: 20, changed }), links, {
+      ...REPORT_LIMITS,
+      length: 10_000,
+    });
+
+    expect(Buffer.byteLength(text)).toBeLessThan(10_000 + 200);
+    expect(text).toMatch(/And \d+ more stories/);
+  });
+
   it("counts each new and removed story that did not fit", () => {
     const removed = Array.from({ length: 100 }, (_, i) =>
       story(`removed-story-${i}`, ""),

@@ -54,7 +54,7 @@ export type Links = { main: string; preview: string };
 
 /**
  * Limits caps renderChanges. diffLines and diffLength cap each diff. length
- * caps the whole text. more ends the line that counts what did not fit.
+ * is counted in UTF-8 bytes. more ends the line that counts what did not fit.
  */
 export type Limits = {
   diffLines: number;
@@ -300,7 +300,7 @@ function details(summary: string, diff: string, limits: Limits): string {
  * and the removed stories. When nothing differs, it returns one line that
  * says so. Only the first line, the stylesheet note, the sentences that say
  * what did not fit, and the line break at the end can make the text longer
- * than limits.length characters. When a story does not fit, the last
+ * than limits.length bytes. When a story does not fit, the last
  * sentence counts the stories that did not fit.
  */
 export function renderChanges(
@@ -317,15 +317,22 @@ export function renderChanges(
   }
   let text = `**Story changes:** ${changed.length} of ${total} ${total === 1 ? "story" : "stories"} changed against ${at}.`;
   let full = false;
+  let bytes = Buffer.byteLength(text);
   // fits adds piece when it fits in the length, and adds nothing after a
   // piece that did not fit, so the text keeps the order of the comparison.
   const fits = (piece: string): boolean => {
-    full ||= text.length + piece.length > limits.length;
-    if (!full) text += piece;
+    const size = Buffer.byteLength(piece);
+    full ||= bytes + size > limits.length;
+    if (!full) {
+      text += piece;
+      bytes += size;
+    }
     return !full;
   };
   if (stylesheet) {
-    text += "\n\nThe stylesheet changed, so any story may look different.";
+    const note = "\n\nThe stylesheet changed, so any story may look different.";
+    text += note;
+    bytes += Buffer.byteLength(note);
     if (!fits(`\n${details("Changed rules", stylesheet, limits)}`)) {
       text += ` The changed rules do not fit here: ${limits.more}`;
     }
