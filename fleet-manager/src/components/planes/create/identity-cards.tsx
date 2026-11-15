@@ -13,6 +13,7 @@ import {
   oidcDisabledReason,
 } from "@/lib/planes/identity";
 import { cn } from "@/lib/utils";
+import { Radio } from "@/components/ui/radio";
 
 const MODES: { id: IdentityModeId; title: string; summary: string }[] = [
   {
@@ -70,14 +71,13 @@ export function IdentityCards({
                 disabled ? "cursor-not-allowed" : "cursor-pointer",
               )}
             >
-              <input
-                type="radio"
+              <Radio
                 name={`${id}-mode`}
                 value={mode.id}
                 checked={checked}
                 disabled={disabled}
                 onChange={() => onChange(mode.id)}
-                className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                className="mt-1"
               />
               <span className="flex min-w-0 flex-col gap-1">
                 <span

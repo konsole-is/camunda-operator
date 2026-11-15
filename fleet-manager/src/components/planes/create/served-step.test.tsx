@@ -134,8 +134,9 @@ function Harness({
   );
 }
 
-const box = (name: RegExp) =>
-  screen.getByRole("checkbox", { name }) as HTMLInputElement;
+const box = (name: RegExp) => screen.getByRole("checkbox", { name });
+const checked = (name: RegExp) =>
+  box(name).getAttribute("aria-checked") === "true";
 const previewRows = () =>
   within(screen.getByRole("region", { name: "Expected clusters" }))
     .getAllByRole("row")
@@ -150,8 +151,8 @@ describe("ServedStep", () => {
 
   it("preselects the environment of step 1", () => {
     render(<Harness />);
-    expect(box(/production/).checked).toBe(true);
-    expect(box(/staging/).checked).toBe(false);
+    expect(checked(/production/)).toBe(true);
+    expect(checked(/staging/)).toBe(false);
   });
 
   it("lists the clusters of the picked environments with one result each", () => {

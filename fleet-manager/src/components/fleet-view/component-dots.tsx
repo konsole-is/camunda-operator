@@ -66,7 +66,7 @@ export function ComponentDots({
               event.preventDefault();
               setOpen(true);
             }}
-            className="flex max-w-56 flex-wrap items-center gap-2 rounded-md p-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="relative flex max-w-56 flex-wrap items-center gap-2 rounded-md p-1 outline-none hit-area focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             {dots.map((dot) => (
               <StatusDot

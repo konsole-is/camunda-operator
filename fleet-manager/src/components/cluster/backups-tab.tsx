@@ -250,7 +250,7 @@ function BackupsSection({
                         aria-controls={id}
                         aria-label={`Details of ${row.name}`}
                         onClick={() => setOpen(expanded ? undefined : id)}
-                        className="flex items-center gap-1.5 rounded font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                        className="relative flex items-center gap-1.5 rounded font-medium outline-none hit-area hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
                         <ChevronRight
                           aria-hidden

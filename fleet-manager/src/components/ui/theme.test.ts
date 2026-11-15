@@ -22,8 +22,8 @@ const FOREIGN = [
 ];
 
 // The rest edge is under 3:1, so the fill must also mark a control at rest,
-// and each other state must give an edge of 3:1 or more. A checkbox is too
-// small for the rest edge, so it keeps the strong edge at rest.
+// and each other state must give an edge of 3:1 or more. A checkbox and a
+// radio are too small for the rest edge, so they keep the strong edge at rest.
 const STATES = [
   "bg-input/30",
   "focus-visible:border-ring",
@@ -37,6 +37,7 @@ const FIELD = [
 ];
 const CONTROLS: Record<string, string[]> = {
   "checkbox.tsx": ["border-control-edge-strong", ...STATES],
+  "radio.tsx": ["border-control-edge-strong", ...STATES],
   "input.tsx": FIELD,
   "native-select.tsx": FIELD,
   "select.tsx": FIELD,
@@ -44,7 +45,7 @@ const CONTROLS: Record<string, string[]> = {
 };
 
 describe("shadcn primitives", () => {
-  it("has the twelve primitives the pages need", () => {
+  it("has the thirteen primitives the pages need", () => {
     expect(primitives.sort()).toEqual(
       [
         "badge.tsx",
@@ -54,6 +55,7 @@ describe("shadcn primitives", () => {
         "input.tsx",
         "native-select.tsx",
         "popover.tsx",
+        "radio.tsx",
         "select.tsx",
         "table.tsx",
         "tabs.tsx",

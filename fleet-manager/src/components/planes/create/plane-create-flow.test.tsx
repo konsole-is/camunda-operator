@@ -227,28 +227,30 @@ describe("PlaneCreateFlow", () => {
     show();
     await fillBasics();
     await userEvent.click(next());
-    const box = (name: RegExp) =>
-      screen.getByRole("checkbox", { name }) as HTMLInputElement;
-    expect(box(/production/).checked).toBe(true);
+    const box = (name: RegExp) => screen.getByRole("checkbox", { name });
+    const checked = (name: RegExp) =>
+      box(name).getAttribute("aria-checked") === "true";
+    expect(checked(/production/)).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: /Basics/ }));
     await fillBasics(/staging/, "ops");
     await userEvent.click(next());
-    expect(box(/staging/).checked).toBe(true);
-    expect(box(/production/).checked).toBe(false);
+    expect(checked(/staging/)).toBe(true);
+    expect(checked(/production/)).toBe(false);
   });
 
   it("keeps the served list that the admin picked when the environment changes", async () => {
     show();
     await fillBasics();
     await userEvent.click(next());
-    const box = (name: RegExp) =>
-      screen.getByRole("checkbox", { name }) as HTMLInputElement;
+    const box = (name: RegExp) => screen.getByRole("checkbox", { name });
+    const checked = (name: RegExp) =>
+      box(name).getAttribute("aria-checked") === "true";
     await userEvent.click(box(/staging/));
     await userEvent.click(screen.getByRole("button", { name: /Basics/ }));
     await fillBasics(/staging/, "ops");
     await userEvent.click(next());
-    expect(box(/staging/).checked).toBe(true);
-    expect(box(/production/).checked).toBe(true);
+    expect(checked(/staging/)).toBe(true);
+    expect(checked(/production/)).toBe(true);
   });
 
   it("blocks the step when OIDC was picked and the platform config switches to basic", async () => {

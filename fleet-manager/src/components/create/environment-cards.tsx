@@ -7,6 +7,8 @@ import { environmentReady } from "@/lib/environments";
 import type { EnvironmentCount } from "@/lib/usage";
 import { byCodeUnit } from "@/lib/policy";
 import { cn } from "@/lib/utils";
+import { Radio } from "@/components/ui/radio";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -81,16 +83,26 @@ export function EnvironmentCards(props: EnvironmentCardsProps) {
                 pickable ? "cursor-pointer" : "cursor-not-allowed",
               )}
             >
-              <input
-                type={props.multiple ? "checkbox" : "radio"}
-                name={`${id}-environment`}
-                value={name}
-                checked={checked}
-                disabled={!pickable}
-                aria-disabled={!pickable || undefined}
-                onChange={() => pick(name)}
-                className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
-              />
+              {props.multiple ? (
+                <Checkbox
+                  name={`${id}-environment`}
+                  value={name}
+                  checked={checked}
+                  disabled={!pickable}
+                  onCheckedChange={() => pick(name)}
+                  className="mt-1"
+                />
+              ) : (
+                <Radio
+                  name={`${id}-environment`}
+                  value={name}
+                  checked={checked}
+                  disabled={!pickable}
+                  aria-disabled={!pickable || undefined}
+                  onChange={() => pick(name)}
+                  className="mt-1"
+                />
+              )}
               <span className="flex min-w-0 flex-col gap-1">
                 <span
                   className={cn(

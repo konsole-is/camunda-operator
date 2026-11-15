@@ -58,7 +58,7 @@ export function FieldState({
       {claimHref && (
         <Link
           href={claimHref}
-          className="text-xs text-info underline-offset-4 hover:underline"
+          className="relative text-xs text-info underline-offset-4 hit-area hover:underline"
         >
           Open in the Claim tab
         </Link>

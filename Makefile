@@ -764,7 +764,7 @@ fleet-build-stories: fleet-install ## Build the Storybook of the fleet manager i
 	$(FLEET_PNPM) run build-storybook
 
 .PHONY: fleet-stories-test
-fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px, in the dark and the light theme, into fleet-manager/ui-stories, served under a sub-path, and open one Docs page in both themes. Fails when a story does not load, throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation in either theme, or it requests a file outside the Storybook.
+fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px, in the dark and the light theme, into fleet-manager/ui-stories, served under a sub-path, and open one Docs page in both themes. Fails when a story does not load, throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation in either theme, a control has a pointer target under 24 px, or it requests a file outside the Storybook.
 	$(FLEET_PNPM) run stories
 
 # The kind cluster of the fleet manager journeys. The harness targets run in

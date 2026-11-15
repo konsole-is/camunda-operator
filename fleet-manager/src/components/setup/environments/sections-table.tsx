@@ -4,6 +4,7 @@ import { useId } from "react";
 import { ErrorText, SelectField } from "@/components/setup/form-parts";
 import type { ValidationError } from "@/lib/schema";
 import type { SectionGroup, SectionPolicyForm, SectionRow } from "./sections";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * SectionsTable edits the policy of each section, in one group for each
@@ -109,12 +110,10 @@ function SectionPolicyRow({
           )}
         </div>
         <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="size-4 accent-accent"
+          <Checkbox
             checked={policy.required}
-            onChange={(e) =>
-              onPolicy({ ...policy, required: e.target.checked })
+            onCheckedChange={(checked) =>
+              onPolicy({ ...policy, required: checked === true })
             }
           />
           Required
@@ -143,12 +142,10 @@ function SectionPolicyRow({
           {row.options.map((option) => (
             <li key={option.registration} className="flex flex-col gap-0.5">
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-accent"
+                <Checkbox
                   checked={policy.allowed.includes(option.registration)}
-                  onChange={(e) =>
-                    toggle(option.registration, e.target.checked)
+                  onCheckedChange={(checked) =>
+                    toggle(option.registration, checked === true)
                   }
                 />
                 {option.label}
@@ -165,12 +162,7 @@ function SectionPolicyRow({
           {row.missing.map((name) => (
             <li key={name} className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-accent"
-                  checked
-                  onChange={() => toggle(name, false)}
-                />
+                <Checkbox checked onCheckedChange={() => toggle(name, false)} />
                 <span className="font-mono">{name}</span>
               </label>
               <span className="rounded-full bg-bad/15 px-2 py-0.5 text-xs text-bad">

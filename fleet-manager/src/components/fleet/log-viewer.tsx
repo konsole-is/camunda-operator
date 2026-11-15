@@ -167,7 +167,7 @@ export function LogViewer({
           );
           return Object.keys(line.fields).length > 0 ? (
             <details key={keyOf(line)} className="px-3">
-              <summary className="flex cursor-pointer flex-wrap gap-x-3 sm:flex-nowrap">
+              <summary className="flex min-h-6 cursor-pointer flex-wrap items-center gap-x-3 sm:flex-nowrap">
                 {row}
               </summary>
               <pre className="ml-6 text-muted">

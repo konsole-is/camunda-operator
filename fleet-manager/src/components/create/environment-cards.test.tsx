@@ -176,10 +176,11 @@ describe("EnvironmentCards in multiple mode", () => {
         onChange={vi.fn()}
       />,
     );
-    const box = (name: RegExp) =>
-      screen.getByRole("checkbox", { name }) as HTMLInputElement;
-    expect(box(/prod/).checked).toBe(true);
-    expect(box(/dev/).checked).toBe(false);
+    const box = (name: RegExp) => screen.getByRole("checkbox", { name });
+    const checked = (name: RegExp) =>
+      box(name).getAttribute("aria-checked") === "true";
+    expect(checked(/prod/)).toBe(true);
+    expect(checked(/dev/)).toBe(false);
   });
 
   it("adds and removes an environment on a click, in the order of the cards", async () => {

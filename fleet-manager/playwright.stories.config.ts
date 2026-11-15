@@ -22,7 +22,11 @@ export default defineConfig({
     timeout: 30_000,
   },
   projects: [
-    { name: "stories", testMatch: "stories.spec.ts", teardown: "index" },
+    {
+      name: "stories",
+      testMatch: /(stories|targets)\.spec\.ts/,
+      teardown: "index",
+    },
     { name: "index", testMatch: "index.teardown.ts" },
   ],
 });

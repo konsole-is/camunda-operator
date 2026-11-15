@@ -86,7 +86,7 @@ describe("ReferencesSection", () => {
     };
     const { applyChange } = renderEditor("production", sources);
     const missing = checkbox("8.9.9");
-    expect(missing).toHaveProperty("checked", true);
+    expect(missing.getAttribute("aria-checked")).toBe("true");
     expect(missing.closest("label")?.textContent).toContain("Not found");
     fireEvent.click(missing);
     fireEvent.click(screen.getByRole("button", { name: "Review" }));

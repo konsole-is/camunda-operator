@@ -9,6 +9,7 @@ import {
 import { blockingViolations } from "../axe";
 import type { Shot } from "./stories-index";
 import { storySnapshot } from "./story-snapshot";
+import { MIN_TARGET, smallTargets } from "./targets";
 
 const OUT = path.resolve("ui-stories");
 const SNAPSHOT = path.resolve("story-snapshot");
@@ -217,6 +218,14 @@ for (const { theme, suffix, title } of THEMES)
 
           const file = `${story.id}-${width}${suffix}.png`;
           await page.screenshot({ path: path.join(OUT, file), fullPage: true });
+          // smallTargets scrolls, so it runs after the screenshot, in one theme.
+          if (theme === "dark")
+            expect
+              .soft(
+                await smallTargets(page),
+                `targets under ${MIN_TARGET} px in story ${story.id} at ${width} px`,
+              )
+              .toEqual([]);
           shots.push({
             id: story.id,
             component: story.title,

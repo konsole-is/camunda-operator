@@ -76,7 +76,10 @@ export const Ready: Story = {
       },
     ],
     done: (
-      <Link href="/fleet/clusters/team-a/orders" className="text-sm text-info">
+      <Link
+        href="/fleet/clusters/team-a/orders"
+        className="relative text-sm text-info hit-area"
+      >
         Open the cluster orders
       </Link>
     ),
