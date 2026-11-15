@@ -127,9 +127,13 @@ export function ConnectionList({
         value={tab}
         onValueChange={(value) => onTab(connectionTabOf(value))}
       >
-        <TabsList className="max-w-full overflow-x-auto">
+        <TabsList className="max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto">
           {CONNECTION_TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
+            <TabsTrigger
+              key={t.value}
+              value={t.value}
+              className="max-w-full min-w-0 flex-none px-2.5"
+            >
               {t.label}
             </TabsTrigger>
           ))}

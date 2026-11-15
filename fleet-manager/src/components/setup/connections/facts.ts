@@ -168,7 +168,10 @@ export function readyOf(contract: ContractObject): ConditionLike | undefined {
 }
 
 function objectStorageFacts(spec: ObjectStorageConfig["spec"]): Fact[] {
-  const type = value("Type", STORAGE_TYPE[spec.type] ?? spec.type);
+  const type: Fact = {
+    label: "Type",
+    value: STORAGE_TYPE[spec.type] ?? spec.type,
+  };
   switch (spec.type) {
     case "S3": {
       const s3 = spec.s3;
@@ -229,7 +232,10 @@ function objectStorageFacts(spec: ObjectStorageConfig["spec"]): Fact[] {
 }
 
 function secondaryStorageFacts(spec: SecondaryStorageConfig["spec"]): Fact[] {
-  const type = value("Type", SECONDARY_TYPE[spec.type] ?? spec.type);
+  const type: Fact = {
+    label: "Type",
+    value: SECONDARY_TYPE[spec.type] ?? spec.type,
+  };
   if (spec.type === "rdbms") {
     return compact([
       type,
