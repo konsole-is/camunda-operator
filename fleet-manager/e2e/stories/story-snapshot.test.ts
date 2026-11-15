@@ -4,6 +4,7 @@ import {
   normalizeMarkup,
   normalizeStylesheet,
   renderStoryMarkup,
+  renderStylesheetRules,
 } from "./story-snapshot";
 
 function body(html: string): Element {
@@ -110,6 +111,31 @@ describe("renderStoryMarkup", () => {
     );
 
     expect(text).toContain("<linearGradient></linearGradient>");
+  });
+});
+
+describe("renderStylesheetRules", () => {
+  // jsdom gives a style element no URL, so the test gives it one, as a
+  // stylesheet that the page loads from a file has.
+  function loadedStylesheet(css: string): string {
+    document.head.innerHTML = `<style>${css}</style>`;
+    const href = "http://127.0.0.1/assets/iframe.css";
+    Object.defineProperty(document.styleSheets[0], "href", { value: href });
+    return href;
+  }
+
+  it("keeps the spaces inside a quoted value", () => {
+    loadedStylesheet('.a::before {  content: "A  B"; }');
+
+    expect(renderStylesheetRules([]).rules).toBe(
+      '.a::before { content: "A  B"; }',
+    );
+  });
+
+  it("skips a stylesheet that it read before", () => {
+    const href = loadedStylesheet(".a { color: red; }");
+
+    expect(renderStylesheetRules([href])).toEqual({ rules: "", seen: [href] });
   });
 });
 

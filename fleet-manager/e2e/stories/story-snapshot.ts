@@ -97,7 +97,13 @@ export function renderStylesheetRules(seen: string[]): {
   seen: string[];
 } {
   const lines: string[] = [];
-  const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+  // A space inside a quoted value, such as the value of content, shows.
+  const oneLine = (text: string) =>
+    text
+      .replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\s+/g, (_run, quoted) =>
+        quoted === undefined ? " " : quoted,
+      )
+      .trim();
   const walk = (rules: CSSRuleList, prefix: string) => {
     for (const rule of Array.from(rules)) {
       if (rule instanceof CSSStyleRule) {
