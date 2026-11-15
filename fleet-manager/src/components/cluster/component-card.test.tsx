@@ -204,4 +204,42 @@ describe("ComponentCards", () => {
       tone,
     );
   });
+
+  it.each(["Error", "Warning"] as const)(
+    "names the %s severity of a headline in text, not only in color",
+    (severity) => {
+      const key: ComponentCardModel = {
+        id: "section:encryption-key",
+        label: "Encryption key",
+        used: true,
+        embedded: [],
+        pods: [],
+        numbers: [{ label: "Key", value: "Pending deletion", severity }],
+      };
+      render(<ComponentCards cards={[key]} />);
+      const card = screen.getByRole("article", { name: "Encryption key" });
+      expect(within(card).getByText("Pending deletion").textContent).toBe(
+        `${severity}: Pending deletion`,
+      );
+    },
+  );
+
+  it("shows two numbers with the same label", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const card: ComponentCardModel = {
+      id: "section:backup-storage",
+      label: "Backup storage",
+      used: true,
+      embedded: [],
+      pods: [],
+      numbers: [
+        { label: "Resources", value: "orders-backups" },
+        { label: "Resources", value: "2" },
+      ],
+    };
+    render(<ComponentCards cards={[card]} />);
+    expect(screen.getAllByText("Resources")).toHaveLength(2);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
 });

@@ -1,3 +1,4 @@
+import { CircleAlert, TriangleAlert } from "lucide-react";
 import type { MouseEvent } from "react";
 import { StatusDot } from "@/components/fleet/status-dot";
 import { cn } from "@/lib/utils";
@@ -106,13 +107,13 @@ function ComponentCard<Id extends string>({
       )}
       {card.used ? (
         <dl className="mt-auto grid grid-cols-2 gap-3">
-          {card.numbers.map((n) => (
-            <div
-              key={n.label}
-              className="flex min-w-0 flex-col-reverse gap-0.5"
-            >
+          {card.numbers.map((n, i) => (
+            <div key={i} className="flex min-w-0 flex-col-reverse gap-0.5">
               <dt className="text-xs text-muted">{n.label}</dt>
-              <dd className={numberClass(n)}>{n.value}</dd>
+              <dd className={numberClass(n)}>
+                {n.severity && <SeverityMark severity={n.severity} />}
+                {n.value}
+              </dd>
             </div>
           ))}
         </dl>
@@ -120,6 +121,16 @@ function ComponentCard<Id extends string>({
         <p className="mt-auto text-sm text-muted">Not used</p>
       )}
     </article>
+  );
+}
+
+function SeverityMark({ severity }: { severity: "Warning" | "Error" }) {
+  const Icon = severity === "Error" ? CircleAlert : TriangleAlert;
+  return (
+    <>
+      <Icon aria-hidden className="mr-1 inline size-3.5 align-[-0.125em]" />
+      <span className="sr-only">{severity}: </span>
+    </>
   );
 }
 
