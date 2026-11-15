@@ -242,7 +242,7 @@ function OptionCard({
     >
       <label
         className={cn(
-          "flex gap-3",
+          "flex min-h-6 gap-3",
           disabledReason ? "cursor-not-allowed" : "cursor-pointer",
         )}
       >
