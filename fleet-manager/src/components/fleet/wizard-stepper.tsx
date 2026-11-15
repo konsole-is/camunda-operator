@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, CircleAlert } from "lucide-react";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -18,8 +18,11 @@ type StepState = "Done" | "Current" | "Not started" | "Has errors";
  * screen the steps are a list left of the card. In AppShell the list moves
  * into the empty space beside the page as far as it fits, and the card
  * grows into the room it leaves. On a narrow screen the steps sit above the
- * card, with the label of the current step only. "Next" stays blocked while
- * the current step has errors, and the errors show under it. The last
+ * card, with the position of the current step. The card opens with the
+ * label of the current step as a heading. When the current step changes,
+ * focus moves to that heading, but not on the first render. "Next" stays
+ * blocked while the current step or a step before it has errors. The
+ * footer lists those errors, each with the label of its step. The last
  * step has no "Next": its review holds the confirm. The first step has no
  * "Back". With onStep, a step before the current one is a button that goes
  * back to it.
@@ -46,9 +49,21 @@ export function WizardStepper({
     0,
     steps.findIndex((s) => s.id === current),
   );
-  const errors = steps[index]?.errors ?? [];
+  const blocking = steps
+    .slice(0, index + 1)
+    .flatMap((s) => (s.errors ?? []).map((error) => ({ step: s.label, error })));
   const back = index > 0 && onBack !== undefined;
   const next = index < steps.length - 1;
+  const heading = useRef<HTMLHeadingElement>(null);
+  const id = steps[index]?.id;
+  // Strict Mode runs an effect twice on mount, so a "mounted" flag would
+  // move focus on the first render.
+  const shown = useRef(id);
+  useEffect(() => {
+    if (shown.current === id) return;
+    shown.current = id;
+    heading.current?.focus();
+  }, [id]);
   return (
     // The list and its gap are 220 px wide, so the card lines up with the
     // page once the list has moved all the way into the gutter.
@@ -57,10 +72,6 @@ export function WizardStepper({
         <div className="flex flex-col gap-0.5 lg:hidden">
           <p className="text-sm text-muted">
             Step {index + 1} of {steps.length}
-          </p>
-          {/* The list names the current step to a screen reader already. */}
-          <p aria-hidden className="font-heading text-base font-semibold">
-            {steps[index]?.label}
           </p>
         </div>
         <nav aria-label="Steps">
@@ -111,16 +122,27 @@ export function WizardStepper({
         </nav>
       </div>
       <div className="flex min-w-0 flex-col rounded-lg border border-border bg-panel @container">
-        <div className="p-4 md:p-6">{children}</div>
-        {(errors.length > 0 || back || next) && (
+        <div className="flex flex-col gap-4 p-4 md:p-6">
+          <h2
+            ref={heading}
+            tabIndex={-1}
+            className="font-heading text-lg font-semibold outline-none"
+          >
+            {steps[index]?.label}
+          </h2>
+          <div className="min-w-0">{children}</div>
+        </div>
+        {(blocking.length > 0 || back || next) && (
           <div className="flex flex-col gap-2 border-t border-divider px-4 py-3 md:px-6 md:py-4">
-            {errors.length > 0 && (
+            {blocking.length > 0 && (
               <ul
                 id={errorsId}
                 className="flex flex-col gap-0.5 text-sm text-bad"
               >
-                {errors.map((e, i) => (
-                  <li key={i}>{e}</li>
+                {blocking.map((e, i) => (
+                  <li key={i}>
+                    <span className="font-medium">{e.step}:</span> {e.error}
+                  </li>
                 ))}
               </ul>
             )}
@@ -132,8 +154,8 @@ export function WizardStepper({
               )}
               {next && (
                 <Button
-                  disabled={errors.length > 0}
-                  aria-describedby={errors.length ? errorsId : undefined}
+                  disabled={blocking.length > 0}
+                  aria-describedby={blocking.length ? errorsId : undefined}
                   onClick={() => onNext?.()}
                 >
                   {nextLabel}

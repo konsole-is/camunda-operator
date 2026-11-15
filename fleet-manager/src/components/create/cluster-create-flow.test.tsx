@@ -293,6 +293,21 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
+  it("blocks Next on step 2 while step 1 has errors, and names step 1", async () => {
+    const { rerender } = render(
+      <ClusterCreateFlow initial={data({ sections: [] })} />,
+    );
+    await fillBasics("orders");
+    await userEvent.click(next());
+    live.objects.Namespace = [];
+    rerender(<ClusterCreateFlow initial={data({ sections: [] })} />);
+    expect(next().disabled).toBe(true);
+    expect(
+      document.getElementById(next().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toContain("Environment and name: Choose a namespace");
+  });
+
   it("keeps the step 1 choices after Next and Back", async () => {
     render(
       <ClusterCreateFlow

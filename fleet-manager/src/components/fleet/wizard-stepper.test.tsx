@@ -1,17 +1,39 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WizardStepper } from "./wizard-stepper";
 
 afterEach(cleanup);
 
+const steps = (errors: string[] = []) => [
+  { id: "namespace", label: "Namespace" },
+  { id: "storage", label: "Storage and access", errors },
+  { id: "review", label: "Review" },
+];
+
+function Flow({ start = "namespace" }: { start?: string }) {
+  const [current, setCurrent] = useState(start);
+  const ids = steps().map((s) => s.id);
+  const i = ids.indexOf(current);
+  return (
+    <WizardStepper
+      steps={steps()}
+      current={current}
+      onNext={() => setCurrent(ids[i + 1])}
+      onBack={() => setCurrent(ids[i - 1])}
+      onStep={setCurrent}
+    >
+      <input aria-label="Field" />
+    </WizardStepper>
+  );
+}
+
+const stepHeading = (name: string) =>
+  screen.getByRole("heading", { level: 2, name });
+
 describe("WizardStepper", () => {
-  const steps = (errors: string[] = []) => [
-    { id: "namespace", label: "Namespace" },
-    { id: "storage", label: "Storage and access", errors },
-    { id: "review", label: "Review" },
-  ];
 
   it("blocks Next while the step reports an error", async () => {
     const onNext = vi.fn();
@@ -120,5 +142,125 @@ describe("WizardStepper", () => {
     );
     const nav = screen.getByRole("navigation", { name: "Steps" });
     expect(within(nav).queryAllByRole("button")).toEqual([]);
+  });
+
+  it("moves focus to the step heading on Next", async () => {
+    render(<Flow />);
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(document.activeElement).toBe(stepHeading("Storage and access"));
+  });
+
+  it("moves focus to the step heading on Next to the last step", async () => {
+    render(<Flow start="storage" />);
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(document.activeElement).toBe(stepHeading("Review"));
+  });
+
+  it("moves focus to the step heading on Back to the first step", async () => {
+    render(<Flow start="storage" />);
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(document.activeElement).toBe(stepHeading("Namespace"));
+  });
+
+  it("moves focus to the step heading on a click on an earlier step", async () => {
+    render(<Flow start="review" />);
+    await userEvent.click(screen.getByRole("button", { name: /Namespace/ }));
+    expect(document.activeElement).toBe(stepHeading("Namespace"));
+  });
+
+  it("leaves focus alone on the first render", () => {
+    render(<Flow />);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("keeps focus where it is while the step stays", async () => {
+    const { rerender } = render(
+      <WizardStepper steps={steps()} current="storage">
+        <input aria-label="Field" />
+      </WizardStepper>,
+    );
+    await userEvent.click(screen.getByLabelText("Field"));
+    rerender(
+      <WizardStepper
+        steps={steps(["Choose a secondary storage option"])}
+        current="storage"
+      >
+        <input aria-label="Field" />
+      </WizardStepper>,
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText("Field"));
+  });
+
+  it("blocks Next while an earlier step has errors and names that step", async () => {
+    const onNext = vi.fn();
+    render(
+      <WizardStepper
+        steps={[
+          {
+            id: "namespace",
+            label: "Namespace",
+            errors: ["The namespace team-a is gone"],
+          },
+          { id: "storage", label: "Storage and access" },
+          { id: "review", label: "Review" },
+        ]}
+        current="storage"
+        onNext={onNext}
+      >
+        step
+      </WizardStepper>,
+    );
+    const next = screen.getByRole("button", {
+      name: "Next",
+    }) as HTMLButtonElement;
+    expect(next.disabled).toBe(true);
+    expect(
+      document.getElementById(next.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toContain("Namespace: The namespace team-a is gone");
+    await userEvent.click(next);
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it("ignores the errors of a later step", () => {
+    render(
+      <WizardStepper
+        steps={[
+          { id: "namespace", label: "Namespace" },
+          { id: "storage", label: "Storage and access", errors: ["Not reached"] },
+          { id: "review", label: "Review" },
+        ]}
+        current="namespace"
+      >
+        step
+      </WizardStepper>,
+    );
+    expect(
+      (screen.getByRole("button", { name: "Next" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("lists the errors of an earlier step on the last step", () => {
+    render(
+      <WizardStepper
+        steps={[
+          {
+            id: "namespace",
+            label: "Namespace",
+            errors: ["The namespace team-a is gone"],
+          },
+          { id: "storage", label: "Storage and access" },
+          { id: "review", label: "Review" },
+        ]}
+        current="review"
+      >
+        step
+      </WizardStepper>,
+    );
+    expect(
+      screen.getByText("The namespace team-a is gone").closest("li")
+        ?.textContent,
+    ).toBe("Namespace: The namespace team-a is gone");
   });
 });
