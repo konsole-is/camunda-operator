@@ -12,3 +12,4 @@ playwright-report/
 ui-pages/
 storybook-static/
 ui-stories/
+story-snapshot/
