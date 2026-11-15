@@ -1,0 +1,257 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
+import { type ReactNode, useState } from "react";
+import { DataTable } from "@/components/fleet/data-table";
+import { type ConditionLike, describeReady } from "@/components/fleet/status";
+import { StatusChip } from "@/components/fleet/status-chip";
+import type { ReadError } from "@/components/planes/planes-table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { byCodeUnit } from "@/lib/policy";
+import {
+  type ContractKind,
+  type ContractRef,
+  type ContractWriter,
+  contractKey,
+  contractUsage,
+  contractWriter,
+  writerLabel,
+} from "@/lib/usage";
+import { KEY_FACT_LABELS, type KeyFacts, keyFacts, readyOf } from "./facts";
+import { type ConnectionSources, useConnectionSources } from "./sources";
+import {
+  CONNECTION_TABS,
+  type ConnectionTab,
+  connectionTabOf,
+  contractHref,
+  contractsOf,
+} from "./tabs";
+
+/** ContractRow is one contract of the Connections list. users counts the distinct objects that name it. */
+export type ContractRow = {
+  ref: ContractRef;
+  facts: KeyFacts;
+  writer: ContractWriter;
+  users: number;
+  ready?: ConditionLike;
+};
+
+/**
+ * contractRows returns a row for each contract of kind in sources, sorted
+ * by namespace and name. While errors holds an error of PluginRequest, the
+ * request list is not known, so a contract with the plugin labels stays
+ * with its registration.
+ */
+export function contractRows(
+  sources: ConnectionSources & { errors?: readonly ReadError[] },
+  kind: ContractKind,
+): ContractRow[] {
+  const usage = contractUsage(sources);
+  const requests = requestsOf(sources);
+  return contractsOf(sources, kind)
+    .map((contract) => {
+      const ref: ContractRef = {
+        kind,
+        ...(kind !== "ManagementAuthConfig" && {
+          namespace: contract.metadata.namespace ?? "",
+        }),
+        name: contract.metadata.name ?? "",
+      };
+      const ready = readyOf(contract);
+      return {
+        ref,
+        facts: keyFacts(contract),
+        writer: contractWriter(contract, requests),
+        users: usage.get(contractKey(ref))?.length ?? 0,
+        ...(ready && { ready }),
+      };
+    })
+    .sort(
+      (a, b) =>
+        byCodeUnit(a.ref.namespace ?? "", b.ref.namespace ?? "") ||
+        byCodeUnit(a.ref.name, b.ref.name),
+    );
+}
+
+/** requestsOf returns the requests of sources, or undefined while errors holds an error of PluginRequest. */
+export function requestsOf(
+  sources: ConnectionSources & { errors?: readonly ReadError[] },
+): ConnectionSources["requests"] | undefined {
+  return sources.errors?.some((e) => e.kind === "PluginRequest")
+    ? undefined
+    : sources.requests;
+}
+
+const WRITER_FILTER = {
+  key: "writer",
+  label: "Writer",
+  options: [
+    { value: "hand", label: "Created by hand" },
+    { value: "kept", label: "Kept from a registration" },
+    { value: "registration", label: "Registration" },
+    { value: "plane", label: "Management plane" },
+    { value: "owner", label: "Another resource" },
+  ],
+} satisfies { options: { value: ContractWriter["by"]; label: string }[] } & {
+  key: string;
+  label: string;
+};
+
+/**
+ * ConnectionList is the list page of the connection contracts, with one
+ * tab for each contract kind. Each of errors shows above the tabs, and the
+ * rows stay. onTab gets the tab that the user opens.
+ */
+export function ConnectionList({
+  tab,
+  rows,
+  errors,
+  onTab,
+}: {
+  tab: ConnectionTab;
+  rows: Record<ConnectionTab, ContractRow[]>;
+  errors: ReadError[];
+  onTab: (tab: ConnectionTab) => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
+        Connections
+      </h1>
+      {errors.map((e) => (
+        <p key={e.kind} role="alert" className="text-sm text-bad">
+          Could not read {e.kind}: {e.message}
+        </p>
+      ))}
+      <Tabs
+        value={tab}
+        onValueChange={(value) => onTab(connectionTabOf(value))}
+      >
+        <TabsList className="max-w-full overflow-x-auto">
+          {CONNECTION_TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {CONNECTION_TABS.map((t) => (
+          <TabsContent key={t.value} value={t.value}>
+            <ContractTable label={t.label} kind={t.kind} rows={rows[t.value]} />
+          </TabsContent>
+        ))}
+      </Tabs>
+    </div>
+  );
+}
+
+function ContractTable({
+  label,
+  kind,
+  rows,
+}: {
+  label: string;
+  kind: ContractKind;
+  rows: ContractRow[];
+}) {
+  const namespaced = kind !== "ManagementAuthConfig";
+  const factLabels = KEY_FACT_LABELS[kind];
+  const empty =
+    kind === "ManagementAuthConfig"
+      ? "No Management Identity contract yet."
+      : `No ${label.toLowerCase()} contract yet.`;
+  return (
+    <DataTable
+      label={`${label} contracts`}
+      filters={[WRITER_FILTER]}
+      emptyText={rows.length === 0 ? empty : undefined}
+      columns={[
+        { key: "name", label: "Name", sortable: true },
+        ...(namespaced
+          ? [{ key: "namespace", label: "Namespace", sortable: true }]
+          : []),
+        ...factLabels.map((factLabel, i) => ({
+          key: `fact${i}`,
+          label: factLabel,
+          sortable: true,
+        })),
+        { key: "writer", label: "Writer", sortable: true },
+        { key: "users", label: "Users", sortable: true },
+        { key: "status", label: "Status", sortable: true },
+      ]}
+      rows={rows.map((row) => {
+        const writer = writerLabel(row.writer);
+        const facts = Object.fromEntries(
+          row.facts.map((fact, i) => [`fact${i}`, fact.value]),
+        );
+        return {
+          id: contractKey(row.ref),
+          label: row.ref.name,
+          href: contractHref(row.ref),
+          search: [
+            row.ref.namespace,
+            row.ref.name,
+            writer,
+            ...row.facts.map((f) => f.value),
+          ]
+            .filter(Boolean)
+            .join(" "),
+          filters: { writer: row.writer.by },
+          sort: {
+            name: row.ref.name,
+            namespace: row.ref.namespace ?? "",
+            ...facts,
+            writer,
+            users: row.users,
+            status: describeReady(row.ready).label,
+          },
+          cells: {
+            name: row.ref.name,
+            namespace: row.ref.namespace,
+            ...Object.fromEntries(
+              row.facts.map((fact, i) => [
+                `fact${i}`,
+                <span key={i} className="[overflow-wrap:anywhere]">
+                  {fact.value}
+                </span>,
+              ]),
+            ),
+            writer,
+            users: row.users,
+            status: <StatusChip condition={row.ready} />,
+          },
+        };
+      })}
+    />
+  );
+}
+
+/** ConnectionListLive is ConnectionList on the live sources, starting from initial. The ?tab= value picks the first tab. */
+export function ConnectionListLive({
+  initial,
+}: {
+  initial: ConnectionSources;
+}): ReactNode {
+  const sources = useConnectionSources(initial);
+  const params = useSearchParams();
+  const urlTab = connectionTabOf(params.get("tab") ?? undefined);
+  const [tab, setTab] = useState<ConnectionTab>(urlTab);
+  const [seenUrlTab, setSeenUrlTab] = useState(urlTab);
+  if (urlTab !== seenUrlTab) {
+    setSeenUrlTab(urlTab);
+    setTab(urlTab);
+  }
+  const rows = Object.fromEntries(
+    CONNECTION_TABS.map((t) => [t.value, contractRows(sources, t.kind)]),
+  ) as Record<ConnectionTab, ContractRow[]>;
+  return (
+    <ConnectionList
+      tab={tab}
+      rows={rows}
+      errors={sources.errors}
+      onTab={(next) => {
+        setTab(next);
+        window.history.replaceState(null, "", `?tab=${next}`);
+      }}
+    />
+  );
+}
