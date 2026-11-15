@@ -26,9 +26,11 @@ function OptionSettingsHarness({
   const [spec, setSpec] = useState(environment.spec);
   return (
     <OptionSettingsSection
-      settings={optionSettings(sources.registrations, spec).filter(
-        (s) => s.registration === registration,
-      )}
+      settings={optionSettings(
+        sources.registrations,
+        spec,
+        sources.sections,
+      ).filter((s) => s.registration === registration)}
       sources={sources}
       environment={{ ...environment, spec }}
       errors={[]}

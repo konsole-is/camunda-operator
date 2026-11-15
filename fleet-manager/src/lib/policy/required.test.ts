@@ -4,8 +4,44 @@ import type {
   PluginRegistration,
   PluginRegistrationSpec,
 } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
-import { declaresRelease, unsetRequired } from "./required";
+import { declaresRelease, optionPicks, unsetRequired } from "./required";
+
+function section(
+  name: string,
+  appliesTo: PluginSection["spec"]["appliesTo"],
+  slot?: PluginSection["spec"]["slot"],
+): PluginSection {
+  return {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginSection",
+    metadata: { name },
+    spec: {
+      label: name,
+      appliesTo,
+      selection: "One",
+      ...(slot && { slot }),
+    },
+  };
+}
+
+const sections = [
+  section("backup-storage", ["CamundaClusterClaim"], "backupStorage"),
+  section("plane-storage", ["CamundaManagementClusterClaim"]),
+  section(
+    "databases",
+    ["CamundaManagementClusterClaim"],
+    "managementDatabases",
+  ),
+  section("access", ["CamundaClusterClaim", "CamundaManagementClusterClaim"]),
+];
+
+const clusterPick = { section: "backup-storage", kind: "CamundaClusterClaim" };
+const planePick = {
+  section: "plane-storage",
+  kind: "CamundaManagementClusterClaim",
+};
 
 function registration(
   name: string,
@@ -26,14 +62,22 @@ function registration(
   };
 }
 
+// environmentWith allows store in the sections allowing, backup-storage by
+// default, with parameters as its policy.
 function environmentWith(
   parameters: NonNullable<Environment["spec"]["parameters"]>[string],
+  allowing: string[] = ["backup-storage"],
 ): Environment {
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "Environment",
     metadata: { name: "production" },
-    spec: { parameters: { store: parameters } },
+    spec: {
+      sections: Object.fromEntries(
+        allowing.map((name) => [name, { allowed: ["store"] }]),
+      ),
+      parameters: { store: parameters },
+    },
   };
 }
 
@@ -95,44 +139,48 @@ function pluginWithRelease(type: string): PluginRegistration {
   });
 }
 
+function unsetNames(
+  r: PluginRegistration,
+  environment: Environment | undefined,
+): string[] {
+  return unsetRequired(r, environment, sections).map((u) => u.name);
+}
+
 describe("unsetRequired", () => {
   it("gives each required parameter without a value in the order of the required list", () => {
-    expect(unsetRequired(store, environmentWith({}))).toEqual([
-      "bucket",
-      "region",
+    expect(unsetRequired(store, environmentWith({}), sections)).toEqual([
+      { name: "bucket", picks: [clusterPick] },
+      { name: "region", picks: [clusterPick] },
     ]);
   });
 
   it("gives nothing for a parameter that the Environment gives a value", () => {
     expect(
-      unsetRequired(store, environmentWith({ bucket: { value: "b" } })),
+      unsetNames(store, environmentWith({ bucket: { value: "b" } })),
     ).toEqual(["region"]);
   });
 
   it("gives nothing for a parameter that the registration gives a value", () => {
     expect(
-      unsetRequired(withValues(store, { bucket: "b" }), environmentWith({})),
+      unsetNames(withValues(store, { bucket: "b" }), environmentWith({})),
     ).toEqual(["region"]);
   });
 
   it("gives nothing for a parameter that a claim can change", () => {
     expect(
-      unsetRequired(
-        store,
-        environmentWith({ bucket: { claimEditable: true } }),
-      ),
+      unsetNames(store, environmentWith({ bucket: { claimEditable: true } })),
     ).toEqual(["region"]);
   });
 
   it("counts an empty string as a value", () => {
     expect(
-      unsetRequired(store, environmentWith({ bucket: { value: "" } })),
+      unsetNames(store, environmentWith({ bucket: { value: "" } })),
     ).toEqual(["region"]);
   });
 
   it("counts null as no value", () => {
     expect(
-      unsetRequired(
+      unsetNames(
         withValues(store, { bucket: null }),
         environmentWith({ region: { value: null } }),
       ),
@@ -141,19 +189,19 @@ describe("unsetRequired", () => {
 
   it("ignores the claimEditable list of the registration under an Environment", () => {
     expect(
-      unsetRequired(withClaimEditable(store, ["bucket"]), environmentWith({})),
+      unsetNames(withClaimEditable(store, ["bucket"]), environmentWith({})),
     ).toEqual(["bucket", "region"]);
   });
 
-  it("reads the claimEditable list of the registration without an Environment", () => {
+  it("reads the claimEditable list and the sections of the registration without an Environment", () => {
     expect(
-      unsetRequired(withClaimEditable(store, ["bucket"]), undefined),
-    ).toEqual(["region"]);
+      unsetRequired(withClaimEditable(store, ["bucket"]), undefined, sections),
+    ).toEqual([{ name: "region", picks: [clusterPick] }]);
   });
 
   it("counts parameterValues that is not an object as no values", () => {
     expect(
-      unsetRequired(
+      unsetNames(
         withValues(store, "b"),
         environmentWith({ region: { value: "eu" } }),
       ),
@@ -162,7 +210,7 @@ describe("unsetRequired", () => {
 
   it("gives nothing for a schema without a required list", () => {
     expect(
-      unsetRequired(
+      unsetNames(
         registration("plain", { parameters: { type: "object" } }),
         environmentWith({}),
       ),
@@ -170,15 +218,67 @@ describe("unsetRequired", () => {
   });
 
   it("gives nothing for a registration without a parameter schema", () => {
-    expect(unsetRequired(registration("plain", {}), undefined)).toEqual([]);
+    expect(unsetNames(registration("plain", {}), undefined)).toEqual([]);
   });
 
-  it("skips the hidden parameters of a built-in registration", () => {
-    expect(unsetRequired(builtinElasticsearch, environmentWith({}))).toEqual([
-      "preset",
+  it("gives nothing for an option that no section allows", () => {
+    expect(unsetNames(store, environmentWith({}, []))).toEqual([]);
+  });
+
+  it("gives a section that does not exist a pick without a claim kind", () => {
+    expect(
+      unsetRequired(store, environmentWith({}, ["gone"]), sections),
+    ).toEqual([
+      { name: "bucket", picks: [{ section: "gone" }] },
+      { name: "region", picks: [{ section: "gone" }] },
     ]);
-    const managementServer = registration("management-database-server", {
-      controller: { name: BUILTIN_CONTROLLER },
+  });
+
+  it("skips releaseRef for a cluster claim when the schema declares it as a string", () => {
+    expect(
+      unsetNames(pluginWithRelease("string"), environmentWith({})),
+    ).toEqual([]);
+    expect(
+      unsetNames(pluginWithRelease("object"), environmentWith({})),
+    ).toEqual(["releaseRef"]);
+    expect(unsetNames(builtinElasticsearch, undefined)).toEqual(["preset"]);
+  });
+
+  it("gives releaseRef for a management plane claim", () => {
+    expect(
+      unsetRequired(
+        pluginWithRelease("string"),
+        environmentWith({}, ["plane-storage"]),
+        sections,
+      ),
+    ).toEqual([{ name: "releaseRef", picks: [planePick] }]);
+  });
+
+  it("gives only the picks without a value when the option serves both claim kinds", () => {
+    expect(
+      unsetRequired(
+        pluginWithRelease("string"),
+        environmentWith({}, ["backup-storage", "plane-storage"]),
+        sections,
+      ),
+    ).toEqual([{ name: "releaseRef", picks: [planePick] }]);
+    expect(
+      unsetRequired(
+        pluginWithRelease("string"),
+        environmentWith({}, ["access"]),
+        sections,
+      ),
+    ).toEqual([
+      {
+        name: "releaseRef",
+        picks: [{ section: "access", kind: "CamundaManagementClusterClaim" }],
+      },
+    ]);
+  });
+
+  it("skips databases for a plane claim in a section with the slot managementDatabases", () => {
+    const server = registration("store", {
+      controller: { name: "db-plugin" },
       parameters: {
         type: "object",
         required: ["preset", "databases"],
@@ -188,16 +288,32 @@ describe("unsetRequired", () => {
         },
       },
     });
-    expect(unsetRequired(managementServer, undefined)).toEqual(["preset"]);
+    expect(unsetNames(server, environmentWith({}, ["databases"]))).toEqual([
+      "preset",
+    ]);
+    expect(
+      unsetRequired(
+        server,
+        environmentWith({ preset: { value: "small" } }, ["plane-storage"]),
+        sections,
+      ),
+    ).toEqual([{ name: "databases", picks: [planePick] }]);
   });
+});
 
-  it("skips releaseRef when the schema declares it as a string", () => {
+describe("optionPicks", () => {
+  it("gives each claim kind of each section that allows the option", () => {
     expect(
-      unsetRequired(pluginWithRelease("string"), environmentWith({})),
-    ).toEqual([]);
-    expect(
-      unsetRequired(pluginWithRelease("object"), environmentWith({})),
-    ).toEqual(["releaseRef"]);
+      optionPicks(
+        store,
+        environmentWith({}, ["access", "backup-storage"]),
+        sections,
+      ),
+    ).toEqual([
+      { section: "access", kind: "CamundaClusterClaim" },
+      { section: "access", kind: "CamundaManagementClusterClaim" },
+      clusterPick,
+    ]);
   });
 });
 

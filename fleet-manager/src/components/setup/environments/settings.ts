@@ -1,5 +1,6 @@
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { HOST_PATTERN_PARAMETERS } from "@/lib/claims/hosts";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
@@ -8,6 +9,8 @@ import {
   decodeObject,
   isObject,
   lockedSummary,
+  type OptionPick,
+  optionPicks,
   own,
   PRESET_LISTS,
   setOwn,
@@ -44,8 +47,10 @@ export type ParameterSetting = {
   hostPattern: boolean;
   /** presetKind is set for the parameter that lists presets of that kind. */
   presetKind?: keyof typeof PRESET_LISTS;
-  /** needsValue tells whether the schema requires the parameter and no claim can get a value for it (unsetRequired). */
+  /** needsValue tells whether the schema requires the parameter and a claim that picks the option gets no value for it (unsetRequired). */
   needsValue: boolean;
+  /** needsValueFor are the picks that get no value, set only when other picks of the option get one. */
+  needsValueFor?: OptionPick[];
 };
 
 /** OptionSettings is one registration with the settings of its parameters and its limits. */
@@ -64,11 +69,13 @@ export type OptionSettings = {
  * registration has gives no entry. parameters are the properties of the
  * schema in schema order, then the other keys of the policy, of the
  * registration values, and of the required list of the schema in code-unit
- * order, without the hidden parameters.
+ * order, without the hidden parameters. sections are the PluginSections
+ * that needsValue reads.
  */
 export function optionSettings(
   registrations: readonly PluginRegistration[],
   spec: Spec,
+  sections: readonly PluginSection[],
 ): OptionSettings[] {
   const allowed = new Set(
     Object.values(spec.sections ?? {}).flatMap((s) => s.allowed ?? []),
@@ -81,7 +88,7 @@ export function optionSettings(
     })
     .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
     .map((r) => ({
-      ...settingsOf(r, spec),
+      ...settingsOf(r, spec, sections),
       allowedBySection: allowed.has(r.metadata.name ?? ""),
     }));
 }
@@ -89,6 +96,7 @@ export function optionSettings(
 function settingsOf(
   registration: PluginRegistration,
   spec: Spec,
+  sections: readonly PluginSection[],
 ): Omit<OptionSettings, "allowedBySection"> {
   const name = registration.metadata.name ?? "";
   const schema = isObject(registration.spec.parameters)
@@ -107,13 +115,18 @@ function settingsOf(
   const required = Array.isArray(schema.required)
     ? schema.required.filter((n): n is string => typeof n === "string")
     : [];
-  const unset = new Set(
-    unsetRequired(registration, {
-      apiVersion: "fleet.camunda.io/v1alpha1",
-      kind: "Environment",
-      metadata: {},
-      spec,
-    }),
+  const environment: Environment = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: {},
+    spec,
+  };
+  const pickCount = optionPicks(registration, environment, sections).length;
+  const unset = new Map(
+    unsetRequired(registration, environment, sections).map((u) => [
+      u.name,
+      u.picks,
+    ]),
   );
   const names = [
     ...Object.keys(properties),
@@ -140,6 +153,7 @@ function settingsOf(
       const policy: Policy = own(policies, parameter) ?? {};
       const presetKind = entry && own(entry.lists, parameter);
       const registrationValue = own(values, parameter);
+      const missing = unset.get(parameter);
       return {
         name: parameter,
         label:
@@ -160,7 +174,9 @@ function settingsOf(
           (HOST_PATTERN_PARAMETERS as readonly string[]).includes(parameter),
         ...((presetKind === "ElasticsearchClusterPreset" ||
           presetKind === "DatabaseServerPreset") && { presetKind }),
-        needsValue: unset.has(parameter),
+        needsValue: missing !== undefined,
+        ...(missing &&
+          missing.length < pickCount && { needsValueFor: missing }),
       };
     }),
   };

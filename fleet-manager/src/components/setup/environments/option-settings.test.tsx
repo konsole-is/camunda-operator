@@ -273,6 +273,25 @@ describe("OptionSettings", () => {
       );
     });
 
+    it("names the claim kind and the section when only some claims get no value", () => {
+      const sources = sectionFixtures();
+      const rustfs = sources.registrations.find(
+        (r) => r.metadata.name === "rustfs",
+      )!;
+      rustfs.spec.parameters = {
+        type: "object",
+        required: ["releaseRef"],
+        properties: { releaseRef: { type: "string", title: "Release" } },
+      };
+      sources.environments[0].spec.sections!.access = { allowed: ["rustfs"] };
+      renderEditor("production", sources);
+      expect(
+        within(group("RustFS", "Release")).getByText(
+          "This parameter needs a value for a management plane claim in Access. Such a claim is refused until you give it a value or let a claim change it.",
+        ),
+      ).toBeTruthy();
+    });
+
     it("does not warn for an option that no section allows", () => {
       const sources = withRequiredBucket();
       const spec = sources.environments[0].spec;
