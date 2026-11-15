@@ -985,9 +985,23 @@ export interface DatabaseServerStatus {
      */
     contract: string;
     /**
+     * CutoverAt is when the recovery moved the server to the cluster that it
+     * built. The archive of PreviousCluster ends at this time.
+     */
+    cutoverAt?: string;
+    /**
      * Message is the message that the server published with Result.
      */
     message?: string;
+    /**
+     * PreviousClosedSegment is the write-ahead log file that the server
+     * closed on PreviousCluster after the recovery completed. The server
+     * removes PreviousCluster when its archive holds this file, or five
+     * minutes after CutoverAt. The server closes no file while the primary
+     * instance of PreviousCluster does not answer, or while another owner
+     * controls that cluster.
+     */
+    previousClosedSegment?: string;
     /**
      * PreviousCluster is the cluster that the contract pointed at before the
      * recovery moved it. If a recovery fails after the move, the contract

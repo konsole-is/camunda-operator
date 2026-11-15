@@ -476,6 +476,10 @@ type DatabaseServerRecoveryStatus struct {
 	// points at this cluster again, because it still holds the data.
 	// +optional
 	PreviousCluster string `json:"previousCluster,omitempty"`
+	// CutoverAt is when the recovery moved the server to the cluster that it
+	// built. The archive of PreviousCluster ends at this time.
+	// +optional
+	CutoverAt *metav1.Time `json:"cutoverAt,omitempty"`
 	// Archive is the archive that the recovery reads. The server records it
 	// before the recovery builds anything. A spec change to another bucket
 	// does not move a recovery that is already running.
@@ -495,6 +499,14 @@ type DatabaseServerRecoveryStatus struct {
 	// while another owner controls the cluster it runs from.
 	// +optional
 	ClosedSegment string `json:"closedSegment,omitempty"`
+	// PreviousClosedSegment is the write-ahead log file that the server
+	// closed on PreviousCluster after the recovery completed. The server
+	// removes PreviousCluster when its archive holds this file, or five
+	// minutes after CutoverAt. The server closes no file while the primary
+	// instance of PreviousCluster does not answer, or while another owner
+	// controls that cluster.
+	// +optional
+	PreviousClosedSegment string `json:"previousClosedSegment,omitempty"`
 	// Result is the result that the server published for the request. It is
 	// unset while the recovery runs.
 	// +optional

@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
@@ -73,47 +73,51 @@ var (
 // spec that waits it out still ends inside its timeout.
 const suiteArchiveWait = 6 * time.Second
 
-// fakeWAL is the write-ahead log of the primary instance of every server in
-// the suite. The servers are told apart by the namespace in the host of the
-// connection, and every spec runs in a namespace of its own. By default the
-// archive of a namespace holds each segment as soon as it is closed.
+// fakeWAL is the write-ahead log of the primary instance of every cluster in
+// the suite. The primaries are told apart by the host of the connection,
+// which names the cluster and its namespace: see primaryOf. By default the
+// archive of a primary holds each segment as soon as it is closed.
 type fakeWAL struct {
 	mu sync.Mutex
-	// closed counts the segments that a namespace closed.
+	// closed counts the segments that a primary closed.
 	closed map[string]int
-	// holding are the namespaces whose archive lacks the last closed segment.
+	// holding are the primaries whose archive lacks the last closed segment.
 	holding map[string]bool
-	// silent are the namespaces whose primary does not answer.
+	// silent are the primaries that do not answer.
 	silent map[string]bool
 }
 
-// CloseSegment ends the next segment of the namespace of conn.
+// primaryOf returns the host of the primary instance of cluster, a cluster
+// of server, as the fake keys it.
+func primaryOf(server *v1.DatabaseServer, cluster string) string {
+	return components.ReadWriteHostOf(server, cluster)
+}
+
+// CloseSegment ends the next segment of the primary that conn reaches.
 func (f *fakeWAL) CloseSegment(_ context.Context, conn pgbootstrap.Connection) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	namespace := hostNamespace(conn.Host)
-	if f.silent[namespace] {
+	if f.silent[conn.Host] {
 		return "", errors.New("the spec silences this primary")
 	}
-	f.closed[namespace]++
+	f.closed[conn.Host]++
 
-	return walSegment(f.closed[namespace]), nil
+	return walSegment(f.closed[conn.Host]), nil
 }
 
-// LastArchived returns the last segment that the archive of the namespace of
-// conn holds.
+// LastArchived returns the last segment that the archive of the primary that
+// conn reaches holds.
 func (f *fakeWAL) LastArchived(_ context.Context, conn pgbootstrap.Connection) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	namespace := hostNamespace(conn.Host)
-	if f.silent[namespace] {
+	if f.silent[conn.Host] {
 		return "", errors.New("the spec silences this primary")
 	}
 
-	archived := f.closed[namespace]
-	if f.holding[namespace] {
+	archived := f.closed[conn.Host]
+	if f.holding[conn.Host] {
 		archived--
 	}
 	if archived <= 0 {
@@ -123,56 +127,45 @@ func (f *fakeWAL) LastArchived(_ context.Context, conn pgbootstrap.Connection) (
 	return walSegment(archived), nil
 }
 
-// holdArchive keeps the last segment that namespace closed out of its
-// archive, until releaseArchive.
-func (f *fakeWAL) holdArchive(namespace string) {
+// holdArchive keeps the last segment that primary closed out of its archive,
+// until releaseArchive.
+func (f *fakeWAL) holdArchive(primary string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.holding[namespace] = true
+	f.holding[primary] = true
 }
 
-// releaseArchive lets the archive of namespace receive every closed segment.
-func (f *fakeWAL) releaseArchive(namespace string) {
+// releaseArchive lets the archive of primary receive every closed segment.
+func (f *fakeWAL) releaseArchive(primary string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	delete(f.holding, namespace)
+	delete(f.holding, primary)
 }
 
-// silence makes the primary of namespace answer no query.
-func (f *fakeWAL) silence(namespace string) {
+// silence makes primary answer no query.
+func (f *fakeWAL) silence(primary string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.silent[namespace] = true
+	f.silent[primary] = true
 }
 
-// wake makes the primary of namespace answer again.
-func (f *fakeWAL) wake(namespace string) {
+// wake makes primary answer again.
+func (f *fakeWAL) wake(primary string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	delete(f.silent, namespace)
+	delete(f.silent, primary)
 }
 
-// closedIn returns how many segments the primary of namespace closed.
-func (f *fakeWAL) closedIn(namespace string) int {
+// closedIn returns how many segments primary closed.
+func (f *fakeWAL) closedIn(primary string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.closed[namespace]
-}
-
-// hostNamespace returns the namespace of a read-write host of the form
-// <cluster>-rw.<namespace>.svc.
-func hostNamespace(host string) string {
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	return parts[1]
+	return f.closed[primary]
 }
 
 // walSegment names the nth segment of timeline 1.

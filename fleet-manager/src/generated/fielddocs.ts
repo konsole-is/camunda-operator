@@ -2920,8 +2920,16 @@ export const fieldDocs: FieldDocs = {
         "description": "Contract is the DatabaseServerConfig that carried the request. The\nserver answers on that contract. Until it answers, it does not change\nthe contract that it publishes.",
         "anchor": "#databaseserverrecoverystatus"
       },
+      "status.recovery.cutoverAt": {
+        "description": "CutoverAt is when the recovery moved the server to the cluster that it\nbuilt. The archive of PreviousCluster ends at this time.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
       "status.recovery.message": {
         "description": "Message is the message that the server published with Result.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
+      "status.recovery.previousClosedSegment": {
+        "description": "PreviousClosedSegment is the write-ahead log file that the server\nclosed on PreviousCluster after the recovery completed. The server\nremoves PreviousCluster when its archive holds this file, or five\nminutes after CutoverAt. The server closes no file while the primary\ninstance of PreviousCluster does not answer, or while another owner\ncontrols that cluster.",
         "anchor": "#databaseserverrecoverystatus"
       },
       "status.recovery.previousCluster": {

@@ -459,7 +459,13 @@ func takenGuard[T any](reason string) func(T) (concepts.GuardStatusWithReason, e
 // ReadWriteHost returns the in-cluster address of the primary instance, the
 // host that the published contract carries.
 func ReadWriteHost(server *v1.DatabaseServer) string {
-	return ClusterName(server) + readWriteServiceSuffix + "." + server.Namespace + ".svc"
+	return ReadWriteHostOf(server, ClusterName(server))
+}
+
+// ReadWriteHostOf returns the in-cluster address of the primary instance of
+// cluster, a CloudNativePG cluster of server.
+func ReadWriteHostOf(server *v1.DatabaseServer, cluster string) string {
+	return cluster + readWriteServiceSuffix + "." + server.Namespace + ".svc"
 }
 
 // ClusterFromReadWriteHost returns the CloudNativePG cluster that host names,
@@ -535,5 +541,11 @@ func superuserSecretRef(server *v1.DatabaseServer) *corev1.Secret {
 // superuser credentials to. The published contract points at it, so no
 // password passes through the operator.
 func SuperuserSecretName(server *v1.DatabaseServer) string {
-	return ClusterName(server) + superuserSecretSuffix
+	return SuperuserSecretNameOf(ClusterName(server))
+}
+
+// SuperuserSecretNameOf returns the Secret that CloudNativePG writes the
+// superuser credentials of cluster to.
+func SuperuserSecretNameOf(cluster string) string {
+	return cluster + superuserSecretSuffix
 }

@@ -35,7 +35,7 @@ import (
 var _ = Describe("DatabaseServer recovery from the archive it writes now", func() {
 	It("builds the recovered cluster only once the archive holds the point", func() {
 		server, from := archivingServer()
-		primaries.holdArchive(server.Namespace)
+		primaries.holdArchive(primaryOf(server, server.Name))
 		askForRecovery(server, from.Add(time.Hour))
 
 		By("closing the segment of the point")
@@ -57,14 +57,14 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 		}, "1s", interval).Should(Succeed())
 
 		By("building the cluster once the archive holds it")
-		primaries.releaseArchive(server.Namespace)
+		primaries.releaseArchive(primaryOf(server, server.Name))
 		expectRecoveryCluster(server)
 		Expect(reconciledServer(server).Status.Recovery.ClosedSegment).To(Equal(segment))
 	})
 
 	It("builds the recovered cluster when the archive does not get the segment in time", func() {
 		server, from := archivingServer()
-		primaries.holdArchive(server.Namespace)
+		primaries.holdArchive(primaryOf(server, server.Name))
 		askForRecovery(server, from.Add(time.Hour))
 
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
@@ -103,12 +103,12 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 
 		recovery := reconciledServer(server).Status.Recovery
 		Expect(recovery.ClosedSegment).To(BeEmpty())
-		Expect(primaries.closedIn(server.Namespace)).To(BeZero())
+		Expect(primaries.closedIn(primaryOf(server, server.Name))).To(BeZero())
 	})
 
 	It("builds the recovered cluster without the check when the primary does not answer", func() {
 		server, from := archivingServer()
-		primaries.silence(server.Namespace)
+		primaries.silence(primaryOf(server, server.Name))
 		askForRecovery(server, from.Add(time.Hour))
 
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
@@ -128,7 +128,7 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 
 	It("closes no segment on a cluster that another owner took", func() {
 		server, from := archivingServer()
-		primaries.silence(server.Namespace)
+		primaries.silence(primaryOf(server, server.Name))
 		askForRecovery(server, from.Add(time.Hour))
 
 		Eventually(func(g Gomega) {
@@ -148,7 +148,7 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 			cluster.OwnerReferences = nil
 			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		primaries.wake(server.Namespace)
+		primaries.wake(primaryOf(server, server.Name))
 
 		key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
 		var recovered cnpgv1.Cluster
@@ -158,7 +158,7 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 
 		recovery := reconciledServer(server).Status.Recovery
 		Expect(recovery.ClosedSegment).To(BeEmpty())
-		Expect(primaries.closedIn(server.Namespace)).To(BeZero())
+		Expect(primaries.closedIn(primaryOf(server, server.Name))).To(BeZero())
 		// Built when the owner changed, not when the wait ran out. Both times
 		// are whole seconds.
 		Expect(recovered.CreationTimestamp.Sub(recovery.StartedAt.Time)).
@@ -187,7 +187,7 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 			return archiveHistory(server)
 		}, timeout, interval).Should(HaveLen(2))
 
-		closed := primaries.closedIn(server.Namespace)
+		closed := primaries.closedIn(primaryOf(server, server.Name+"-r1"))
 		request := askForRecovery(server, from.Add(30*time.Minute))
 
 		key := client.ObjectKey{Namespace: server.Namespace, Name: server.Name + "-r2"}
@@ -198,7 +198,83 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 		recovery := reconciledServer(server).Status.Recovery
 		Expect(recovery.RequestID).To(Equal(request.RequestID))
 		Expect(recovery.ClosedSegment).To(BeEmpty())
-		Expect(primaries.closedIn(server.Namespace)).To(Equal(closed))
+		Expect(primaries.closedIn(primaryOf(server, server.Name+"-r1"))).To(Equal(closed))
+	})
+})
+
+var _ = Describe("DatabaseServer removal of the cluster a recovery replaced", func() {
+	// completeRecoveryOf runs a recovery of server to its end and returns the
+	// key of the cluster it replaced. hold runs once the recovered cluster is
+	// built and before the cutover.
+	completeRecoveryOf := func(server *v1.DatabaseServer, from metav1.Time, hold func()) client.ObjectKey {
+		askForRecovery(server, from.Add(time.Hour))
+		expectRecoveryCluster(server)
+		hold()
+
+		bringRecoveryClusterUp(server, recoveryCluster(server))
+		Eventually(func() string {
+			return reconciledServer(server).Status.Cluster
+		}, timeout, interval).Should(Equal(server.Name + "-r1"))
+
+		return client.ObjectKey{Namespace: server.Namespace, Name: server.Name}
+	}
+
+	It("removes the replaced cluster only once its archive holds the last write-ahead log", func() {
+		server, from := archivingServer()
+		previous := primaryOf(server, server.Name)
+		replaced := completeRecoveryOf(server, from, func() { primaries.holdArchive(previous) })
+		probeContract(server)
+
+		// The answer does not wait for the old archive.
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Recovery.PreviousClosedSegment).NotTo(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+		Consistently(func() error {
+			return k8sClient.Get(ctx, replaced, &cnpgv1.Cluster{})
+		}, "1s", interval).Should(Succeed())
+
+		primaries.releaseArchive(previous)
+		expectGone(replaced, &cnpgv1.Cluster{})
+		// One segment for the live wait, one for the replaced cluster, both
+		// on its own primary.
+		Expect(primaries.closedIn(previous)).To(Equal(2))
+	})
+
+	It("removes the replaced cluster when its archive does not get the segment in time", func() {
+		server, from := archivingServer()
+		previous := primaryOf(server, server.Name)
+		replaced := completeRecoveryOf(server, from, func() { primaries.holdArchive(previous) })
+		probeContract(server)
+		expectLastRecovery(server, v1.RecoveryResultCompleted)
+
+		Eventually(func() error {
+			return k8sClient.Get(ctx, replaced, &cnpgv1.Cluster{})
+		}, timeout+suiteArchiveWait, interval).Should(MatchError(apierrors.IsNotFound, "not found"))
+		Expect(reconciledServer(server).Status.Recovery.PreviousClosedSegment).NotTo(BeEmpty())
+	})
+
+	It("closes no segment on a replaced cluster that another owner took", func() {
+		server, from := archivingServer()
+		previous := primaryOf(server, server.Name)
+		replaced := completeRecoveryOf(server, from, func() {})
+		closed := primaries.closedIn(previous)
+
+		// Nothing applies over the cluster that a rollback replaced, so it
+		// keeps the owner it is given here.
+		Eventually(func(g Gomega) {
+			var cluster cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, replaced, &cluster)).To(Succeed())
+			cluster.OwnerReferences = nil
+			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		probeContract(server)
+
+		expectAnsweredRecovery(server, expectLastRecovery(server, v1.RecoveryResultCompleted).RequestID)
+		Consistently(func(g Gomega) {
+			g.Expect(primaries.closedIn(previous)).To(Equal(closed))
+			g.Expect(reconciledServer(server).Status.Recovery.PreviousClosedSegment).To(BeEmpty())
+		}, "2s", interval).Should(Succeed())
 	})
 })
 
