@@ -69,7 +69,7 @@ export function PodTable({
               <TableRow key={name}>
                 <th
                   scope="row"
-                  className="px-2 py-2 text-left font-medium text-text"
+                  className="px-2 py-2 text-left font-medium whitespace-nowrap text-text"
                 >
                   {name}
                 </th>

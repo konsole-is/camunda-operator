@@ -168,7 +168,7 @@ function Name({
   children?: ReactNode;
 }) {
   return (
-    <span className={cn("flex flex-col", WRAP)}>
+    <span className={cn("flex flex-col", WRAP, "min-w-40 md:min-w-0")}>
       {href ? (
         <Link href={href} className="font-medium text-text hover:text-info">
           {name}

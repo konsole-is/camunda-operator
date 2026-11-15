@@ -40,7 +40,7 @@ export function EndpointsTab({ rows }: { rows: EndpointRow[] }) {
                 >
                   {row.name}
                 </th>
-                <TableCell className="break-all whitespace-normal">
+                <TableCell className="min-w-48 break-all whitespace-normal">
                   <PublicUrl row={row} />
                 </TableCell>
                 <TableCell>

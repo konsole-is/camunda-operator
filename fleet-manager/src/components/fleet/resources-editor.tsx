@@ -133,7 +133,7 @@ export function ResourcesEditor({
               </label>
               <NativeSelect
                 id={`${id}-${path}-unit`}
-                className="w-32"
+                className="w-32 shrink-0"
                 value={value.unit}
                 aria-describedby={described}
                 onChange={(event) =>

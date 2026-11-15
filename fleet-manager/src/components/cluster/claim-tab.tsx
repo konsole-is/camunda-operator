@@ -6,7 +6,11 @@ import {
   DELETION_LABELS,
   deletionQuestion,
 } from "@/components/fleet/deletion-choice";
-import { FieldState, FieldValue } from "@/components/fleet/field-state";
+import {
+  FIELD_TABLE,
+  FieldState,
+  FieldValue,
+} from "@/components/fleet/field-state";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -288,25 +292,38 @@ function SectionPanel({
           aria-label={`${name} parameters`}
         >
           <TableHeader>
-            <TableRow>
+            <TableRow className={FIELD_TABLE.row}>
               <TableHead>Parameter</TableHead>
               <TableHead>Value</TableHead>
-              <TableHead>State</TableHead>
+              <TableHead className={FIELD_TABLE.stateHead}>State</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {section.parameters.map((field) => (
-              <TableRow key={field.key}>
+              <TableRow key={field.key} className={FIELD_TABLE.row}>
                 <th
                   scope="row"
-                  className="px-2 py-2 text-left align-top font-normal"
+                  className={cn(
+                    "px-2 py-2 text-left align-top font-normal",
+                    FIELD_TABLE.field,
+                  )}
                 >
                   <code className="text-text">{field.label}</code>
                 </th>
-                <TableCell className="max-w-80 align-top break-words whitespace-normal">
+                <TableCell
+                  className={cn(
+                    "max-w-80 align-top break-words whitespace-normal",
+                    FIELD_TABLE.value,
+                  )}
+                >
                   <FieldValue value={field.value} />
                 </TableCell>
-                <TableCell className="align-top whitespace-normal">
+                <TableCell
+                  className={cn(
+                    "align-top whitespace-normal",
+                    FIELD_TABLE.state,
+                  )}
+                >
                   <FieldState field={field} />
                 </TableCell>
               </TableRow>
