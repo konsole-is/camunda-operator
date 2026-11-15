@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import { StatusDot } from "@/components/fleet/status-dot";
 import type { CardId, ComponentCardModel } from "./cards";
+import { statValueClass } from "./stat-tile";
 
 type Open = (id: CardId) => void;
 
@@ -109,15 +110,7 @@ function ComponentCard({
           {card.numbers.map((n) => (
             <div key={n.label} className="flex flex-col-reverse gap-0.5">
               <dt className="text-xs text-muted">{n.label}</dt>
-              <dd
-                className={
-                  /^\d/.test(n.value)
-                    ? "font-heading text-lg font-semibold text-text tabular-nums"
-                    : "text-sm text-muted"
-                }
-              >
-                {n.value}
-              </dd>
+              <dd className={statValueClass(n.value)}>{n.value}</dd>
             </div>
           ))}
         </dl>

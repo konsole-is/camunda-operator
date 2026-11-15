@@ -4,10 +4,19 @@ import { PodTable } from "./pod-table";
 const GiB = 2 ** 30;
 const pods = ["orders-zeebe-0", "orders-zeebe-1", "orders-zeebe-2"].map(
   (name, i) => ({
-    metadata: { name, creationTimestamp: "2026-10-15T09:00:00Z" },
+    metadata: { name },
+    spec: { nodeName: `pool-a-${i + 1}` },
     status: {
       phase: "Running",
-      containerStatuses: [{ ready: i !== 2, restartCount: i }],
+      conditions: [{ type: "Ready", status: i === 2 ? "False" : "True" }],
+      containerStatuses: [
+        {
+          ready: i !== 2,
+          restartCount: i * 3,
+          state:
+            i === 2 ? { waiting: { reason: "CrashLoopBackOff" } } : undefined,
+        },
+      ],
     },
   }),
 );
@@ -18,9 +27,9 @@ const usage = pods.map((p, i) => ({
 }));
 
 const meta = {
-  title: "fleet/PodTable",
+  title: "cluster/PodTable",
   component: PodTable,
-  args: { pods, usage, now: "2026-10-15T12:00:00Z" },
+  args: { pods, usage },
 } satisfies Meta<typeof PodTable>;
 export default meta;
 type Story = StoryObj<typeof meta>;

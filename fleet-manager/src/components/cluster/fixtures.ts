@@ -3,13 +3,14 @@ import type { PartitionHealth } from "@/lib/observe/types";
 /** now is the time of the stories of the component detail and its tabs. */
 export const now = "2026-10-30T12:00:00Z";
 
-/** pod gives a running pod with one container on node. */
+/** pod gives a running pod with one container on node. The pod is Ready unless ready is false. */
 export function pod(name: string, node: string, ready = true, restarts = 0) {
   return {
     metadata: { name, creationTimestamp: "2026-10-29T08:00:00Z" },
     spec: { containers: [{}], nodeName: node },
     status: {
       phase: "Running",
+      conditions: [{ type: "Ready", status: ready ? "True" : "False" }],
       containerStatuses: [{ ready, restartCount: restarts }],
     },
   };

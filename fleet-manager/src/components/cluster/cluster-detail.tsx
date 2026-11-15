@@ -15,7 +15,7 @@ import type {
   PartitionHealth,
   Unavailable,
 } from "@/lib/observe/types";
-import type { CardId, ComponentCardModel } from "./cards";
+import { type CardId, type ComponentCardModel, componentReady } from "./cards";
 import { ComponentDetail } from "./component-detail";
 import { PartitionTable } from "./partition-table";
 
@@ -92,6 +92,7 @@ export function ClusterComponentDetail({
       metrics={{ cluster: cluster.metadata?.name ?? "", component }}
       eventRefs={eventRefs}
       conditions={rows}
+      ready={componentReady(id, rows)}
       settings={settings}
       now={now}
     >

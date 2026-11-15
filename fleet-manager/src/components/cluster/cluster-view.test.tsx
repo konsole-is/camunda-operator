@@ -1532,11 +1532,15 @@ describe("Component detail", () => {
 
     const brokers = detail("Brokers");
     expect(
-      within(brokers).getByRole("rowheader", { name: "ZeebeReady" }),
+      within(
+        within(brokers).getByRole("list", { name: "Brokers conditions" }),
+      ).getByText("ZeebeReady"),
     ).toBeTruthy();
     for (const i of [0, 1, 2]) {
       expect(
-        within(brokers).getByRole("rowheader", { name: `orders-zeebe-${i}` }),
+        within(brokers).getByRole("rowheader", {
+          name: new RegExp(`^orders-zeebe-${i}`),
+        }),
       ).toBeTruthy();
     }
     const partition2 = within(
@@ -1591,9 +1595,7 @@ describe("Component detail", () => {
     );
     for (const name of ["Gateway", "Optimize"]) {
       await open(name);
-      expect(
-        within(detail(name)).queryByRole("rowheader", { name: "ZeebeReady" }),
-      ).toBeNull();
+      expect(within(detail(name)).queryByText("ZeebeReady")).toBeNull();
       await userEvent.click(
         screen.getByRole("link", { name: "All components" }),
       );
@@ -1625,11 +1627,7 @@ describe("Component detail", () => {
         within(components()).getByRole("link", { name: link }),
       );
       const name = link.replace("Embedded: ", "");
-      expect(
-        within(detail(name)).queryByRole("rowheader", {
-          name: "AdminSecretReady",
-        }),
-      ).toBeNull();
+      expect(within(detail(name)).queryByText("AdminSecretReady")).toBeNull();
       await userEvent.click(
         screen.getByRole("link", { name: "All components" }),
       );
@@ -1653,7 +1651,9 @@ describe("Component detail", () => {
     const operate = detail("Operate");
     expect(within(operate).getByText("Embedded in Gateway")).toBeTruthy();
     expect(
-      within(operate).getByRole("rowheader", { name: "OperateReady" }),
+      within(
+        within(operate).getByRole("list", { name: "Operate conditions" }),
+      ).getByText("OperateReady"),
     ).toBeTruthy();
     expect(podWatches()).toContain(
       "camunda.io/cluster=orders,camunda.io/component=gateway",
@@ -1674,9 +1674,11 @@ describe("Component detail", () => {
       "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer),camunda.io/optimize-uid=uid-optimize",
     );
     expect(
-      within(detail("Optimize")).getByRole("rowheader", {
-        name: "WebappReady",
-      }),
+      within(
+        within(detail("Optimize")).getByRole("list", {
+          name: "Optimize conditions",
+        }),
+      ).getByText("WebappReady"),
     ).toBeTruthy();
   });
 

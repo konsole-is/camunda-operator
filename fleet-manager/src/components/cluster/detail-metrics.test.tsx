@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricChartData, MetricsAnswer } from "@/lib/observe/types";
-import { USAGE_UNAVAILABLE } from "@/components/fleet/pod-table";
+import { USAGE_UNAVAILABLE } from "./pod-table";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 
 const live = vi.hoisted(() => ({
