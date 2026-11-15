@@ -3,7 +3,9 @@ import { fakeWriter } from "../../../../../../test/fakes/writer";
 import {
   applyBackupChange,
   applyClaimChange,
+  applyClaimDelete,
   previewClaimChange,
+  previewClaimDelete,
 } from "./actions";
 
 vi.mock(
@@ -56,6 +58,51 @@ describe("previewClaimChange", () => {
 
   it("previewClaimChange refuses a change of another kind and previews nothing", async () => {
     const result = await previewClaimChange(change("Environment"));
+    expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+const remove = (kind = "CamundaClusterClaim") => ({
+  intent: "Delete the cluster orders",
+  apply: [],
+  delete: [
+    {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind,
+      namespace: "team-a",
+      name: "orders",
+    },
+  ],
+});
+
+describe("applyClaimDelete", () => {
+  it("applyClaimDelete deletes the claim through the writer", async () => {
+    expect(await applyClaimDelete(remove())).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([remove()]);
+  });
+
+  it("applyClaimDelete refuses a delete of another kind and writes nothing", async () => {
+    const result = await applyClaimDelete(remove("Environment"));
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("previewClaimDelete", () => {
+  it("previewClaimDelete previews the delete through the writer", async () => {
+    expect(await previewClaimDelete(remove())).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fakeWriter.previewed).toEqual([remove()]);
+  });
+
+  it("previewClaimDelete refuses a delete of another kind and previews nothing", async () => {
+    const result = await previewClaimDelete(remove("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
     expect(fakeWriter.previewed).toEqual([]);
   });

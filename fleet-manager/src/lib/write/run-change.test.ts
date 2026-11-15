@@ -13,6 +13,7 @@ const {
   backupChangeSchema,
   changeSchema,
   claimChangeSchema,
+  claimDeleteSchema,
   createChangeSchema,
   createClaim,
   namespaceLabelChangeSchema,
@@ -211,6 +212,88 @@ describe("claimChangeSchema", () => {
     ],
   ])("refuses %s", (_, input) => {
     expect(claimChangeSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("claimDeleteSchema", () => {
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+  };
+  const remove = {
+    intent: "Delete the cluster orders",
+    apply: [],
+    delete: [ref],
+    uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+  };
+
+  it("accepts one delete of a claim of either kind, with or without its UID", () => {
+    expect(claimDeleteSchema.safeParse(remove).success).toBe(true);
+    expect(
+      claimDeleteSchema.safeParse({ ...remove, uids: undefined }).success,
+    ).toBe(true);
+    expect(
+      claimDeleteSchema.safeParse({
+        ...remove,
+        delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
+        uids: undefined,
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      "another kind",
+      { ...remove, delete: [{ ...ref, kind: "Environment" }], uids: undefined },
+    ],
+    [
+      "another apiVersion",
+      { ...remove, delete: [{ ...ref, apiVersion: "core.camunda.io/v1" }] },
+    ],
+    [
+      "no namespace",
+      {
+        ...remove,
+        delete: [{ ...ref, namespace: undefined }],
+        uids: undefined,
+      },
+    ],
+    ["two deletes", { ...remove, delete: [ref, { ...ref, name: "payments" }] }],
+    [
+      "an apply",
+      {
+        ...remove,
+        apply: [
+          {
+            apiVersion: ref.apiVersion,
+            kind: ref.kind,
+            metadata: { name: "orders", namespace: "team-a" },
+          },
+        ],
+      },
+    ],
+    [
+      "a precondition",
+      {
+        ...remove,
+        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+      },
+    ],
+    ["create", { ...remove, create: ["CamundaClusterClaim/team-a/orders"] }],
+    ["force", { ...remove, force: true }],
+    ["directOnly", { ...remove, directOnly: true }],
+    [
+      "a UID of another object",
+      { ...remove, uids: { "CamundaClusterClaim/team-a/payments": "uid-2" } },
+    ],
+  ])("refuses %s", (_, change) => {
+    expect(claimDeleteSchema.safeParse(change).success).toBe(false);
+  });
+
+  it("claimChangeSchema still refuses the delete", () => {
+    expect(claimChangeSchema.safeParse(remove).success).toBe(false);
   });
 });
 
