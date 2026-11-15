@@ -11,6 +11,7 @@ import {
   own,
   PRESET_LISTS,
   setOwn,
+  unsetRequired,
 } from "@/lib/policy";
 import {
   type OpenAPISchema,
@@ -32,7 +33,7 @@ export type ParameterSetting = {
   schema?: OpenAPISchema;
   /** registrationSummary is lockedSummary of the value that the registration gives the parameter. */
   registrationSummary: string;
-  /** registrationSet tells whether the registration gives the parameter a value. */
+  /** registrationSet tells whether the registration gives the parameter a value other than null. */
   registrationSet: boolean;
   value?: unknown;
   claimEditable: boolean;
@@ -43,6 +44,8 @@ export type ParameterSetting = {
   hostPattern: boolean;
   /** presetKind is set for the parameter that lists presets of that kind. */
   presetKind?: keyof typeof PRESET_LISTS;
+  /** needsValue tells whether the schema requires the parameter and no claim can get a value for it (unsetRequired). */
+  needsValue: boolean;
 };
 
 /** OptionSettings is one registration with the settings of its parameters and its limits. */
@@ -59,8 +62,9 @@ export type OptionSettings = {
  * optionSettings returns one entry for each registration that a section of
  * spec allows or that spec.parameters names, by name. A name that no
  * registration has gives no entry. parameters are the properties of the
- * schema in schema order, then the other keys of the policy and of the
- * registration values in code-unit order, without the hidden parameters.
+ * schema in schema order, then the other keys of the policy, of the
+ * registration values, and of the required list of the schema in code-unit
+ * order, without the hidden parameters.
  */
 export function optionSettings(
   registrations: readonly PluginRegistration[],
@@ -100,9 +104,26 @@ function settingsOf(
   const values = decodeObject(registration.spec.parameterValues) ?? {};
   const entry = builtinEntry(registration);
   const access = registration.spec.sections.includes(ACCESS_SECTION);
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((n): n is string => typeof n === "string")
+    : [];
+  const unset = new Set(
+    unsetRequired(registration, {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: {},
+      spec,
+    }),
+  );
   const names = [
     ...Object.keys(properties),
-    ...[...new Set([...Object.keys(policies), ...Object.keys(values)])]
+    ...[
+      ...new Set([
+        ...Object.keys(policies),
+        ...Object.keys(values),
+        ...required,
+      ]),
+    ]
       .filter((k) => !Object.hasOwn(properties, k))
       .sort(byCodeUnit),
   ].filter((p) => !entry?.hidden.includes(p));
@@ -118,6 +139,7 @@ function settingsOf(
       const parameterSchema = propertySchema ?? others;
       const policy: Policy = own(policies, parameter) ?? {};
       const presetKind = entry && own(entry.lists, parameter);
+      const registrationValue = own(values, parameter);
       return {
         name: parameter,
         label:
@@ -126,8 +148,9 @@ function settingsOf(
             ? propertySchema.title
             : parameter,
         ...(parameterSchema && { schema: parameterSchema }),
-        registrationSummary: lockedSummary(own(values, parameter)),
-        registrationSet: own(values, parameter) !== undefined,
+        registrationSummary: lockedSummary(registrationValue),
+        registrationSet:
+          registrationValue !== undefined && registrationValue !== null,
         ...(policy.value !== undefined && { value: policy.value }),
         claimEditable: policy.claimEditable ?? false,
         allowed: policy.allowed ?? [],
@@ -137,6 +160,7 @@ function settingsOf(
           (HOST_PATTERN_PARAMETERS as readonly string[]).includes(parameter),
         ...((presetKind === "ElasticsearchClusterPreset" ||
           presetKind === "DatabaseServerPreset") && { presetKind }),
+        needsValue: unset.has(parameter),
       };
     }),
   };

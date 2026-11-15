@@ -200,6 +200,80 @@ describe("optionSettings", () => {
       ["other", false, false],
     ]);
   });
+
+  const store = registration("store", ["backup-storage"], {
+    parameters: {
+      type: "object",
+      required: ["bucket", "endpoint"],
+      properties: {
+        bucket: { type: "string", title: "Bucket" },
+        region: { type: "string" },
+      },
+      additionalProperties: { type: "string" },
+    },
+    parameterValues: { region: null },
+  });
+
+  it("marks a required parameter that no claim can get a value for", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+    );
+    expect(
+      settings.parameters.find((p) => p.name === "bucket")?.needsValue,
+    ).toBe(true);
+    expect(
+      settings.parameters.find((p) => p.name === "region")?.needsValue,
+    ).toBe(false);
+  });
+
+  it("does not mark a required parameter that the environment gives a value or a claim can change", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing(
+        { "backup-storage": ["store"] },
+        {
+          store: {
+            bucket: { value: "b" },
+            endpoint: { claimEditable: true },
+          },
+        },
+      ),
+    );
+    expect(settings.parameters.map((p) => [p.name, p.needsValue])).toEqual([
+      ["bucket", false],
+      ["region", false],
+      ["endpoint", false],
+    ]);
+  });
+
+  it("lists a required parameter that is not a property and needs a value", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+    );
+    expect(settings.parameters.map((p) => p.name)).toEqual([
+      "bucket",
+      "region",
+      "endpoint",
+    ]);
+    expect(settings.parameters[2]).toMatchObject({
+      label: "endpoint",
+      schema: { type: "string" },
+      needsValue: true,
+    });
+  });
+
+  it("counts a null value of the registration as not set", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+    );
+    expect(settings.parameters[1]).toMatchObject({
+      registrationSet: false,
+      registrationSummary: "Not set",
+    });
+  });
 });
 
 describe("withParameterPolicy", () => {
