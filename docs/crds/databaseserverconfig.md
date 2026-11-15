@@ -102,11 +102,9 @@ spec:
   # ... the rest of your contract
 ```
 
-### Recovery windows
+### Recoverable from
 
-`pitr.windows` lists the intervals of time that the server can restore, oldest first. When the list is set, a `PointInTimeRestore` accepts a point only when a window holds it. The point must also be inside the retention period. Without windows, a restore can ask for every point of the retention period up to the present.
-
-A window is one continuous interval of time that the archive covers. Uploads extend the open window, and they do not start a new one. A new window starts only where the archive breaks. For a `DatabaseServer`, that is a rollback, a move to another location, or an archive that is turned off and on again. The limit of 256 windows counts these breaks, not time.
+`pitr.recoverableFrom` is the oldest point that the server can restore. A `PointInTimeRestore` refuses a point before it, also when the point is inside the retention period. From `recoverableFrom`, a restore can ask for every point up to the present. Without `recoverableFrom`, a restore can ask for every point of the retention period.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -118,21 +116,13 @@ spec:
   pitr:
     enabled: true
     retentionPeriodDays: 7
-    windows:
-      - from: "2026-08-14T02:00:00Z"
-        to: "2026-08-18T09:30:00Z"
-      - from: "2026-08-18T10:00:00Z"
+    recoverableFrom: "2026-08-14T02:00:00Z"
   # ... the rest of your contract
 ```
 
-- `from` is the earliest point of the window.
-- `to` is the end of the window. A restore can reach each point before `to`, but not `to` itself. A window without `to` is open: it continues to the present.
-- `unverifiedFrom` is a point after which the window can miss parts of the write-ahead log. A restore can reach `unverifiedFrom` itself, but no point after it.
-- `location` says where the archive of the window is. A restore does not read it.
+For a managed database with a rolling retention, leave `recoverableFrom` unset. The retention period then sets the oldest point. When the database is younger than its retention period, set `recoverableFrom` to the earliest point that the provider can restore. If the provider cannot restore a point, for example a very recent one, it refuses the point when you roll the database back.
 
-For a managed database with a rolling retention, one open window is sufficient. Set `from` to the time when the database started to keep backups. The open window reaches the present. If the provider cannot restore a recent point yet, it refuses the point when you roll the database back. The retention period limits the start of the window.
-
-A restore gets `PitrUnavailable` for a point before the first window, between two windows, or after `unverifiedFrom`. The message names the windows that the server can restore. A `DatabaseServer` publishes the windows of its archive that a rollback can read. See [the archive history](databaseserver.md#the-archive-history). While it has no such window and runs no rollback, it publishes `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
+A restore gets `PitrUnavailable` for a point before `recoverableFrom`, and the message names `recoverableFrom`. A `DatabaseServer` publishes the start of the oldest archive that a rollback can read. See [the archive history](databaseserver.md#the-archive-history). While it has no such archive and runs no rollback, it publishes `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
 
 ## Recovery request
 
@@ -219,7 +209,7 @@ The [API reference](api-reference.md#databaseserverconfig) lists every field of 
 - `spec.port` must be from 1 to 65535.
 - If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
-- If `spec.pitr.windows` is set, `spec.pitr.enabled` must be `true`. The list holds 256 windows at most.
+- If `spec.pitr.recoverableFrom` is set, `spec.pitr.enabled` must be `true`.
 - `spec.recovery.targetTime` and `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
 - `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.

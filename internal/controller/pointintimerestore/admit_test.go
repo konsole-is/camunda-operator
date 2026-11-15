@@ -17,7 +17,6 @@ limitations under the License.
 package pointintimerestore
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -36,63 +35,42 @@ func ago(d time.Duration) time.Time {
 	return admitNow.Add(-d)
 }
 
-// contractWith returns a contract with a retention of seven days and the
-// given windows.
-func contractWith(windows ...v1.RecoveryWindow) *v1.DatabaseServerConfig {
+// contractFrom returns a contract with a retention of seven days and the
+// given recoverableFrom.
+func contractFrom(from *metav1.Time) *v1.DatabaseServerConfig {
 	return &v1.DatabaseServerConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "dbsc", Namespace: "my-cluster-ns"},
 		Spec: v1.DatabaseServerConfigSpec{
 			PITR: &v1.PITRCapability{
 				Enabled:             true,
 				RetentionPeriodDays: new(int32(7)),
-				Windows:             windows,
+				RecoverableFrom:     from,
 			},
 		},
 	}
 }
 
-// closed is a window from from ago to to ago.
-func closed(from, to time.Duration) v1.RecoveryWindow {
-	return v1.RecoveryWindow{From: metav1.NewTime(ago(from)), To: new(metav1.NewTime(ago(to)))}
-}
-
-// open is a window from from ago that the server still writes.
-func open(from time.Duration) v1.RecoveryWindow {
-	return v1.RecoveryWindow{From: metav1.NewTime(ago(from))}
-}
-
-func TestPitrAvailableChecksTheWindows(t *testing.T) {
+func TestPitrAvailableChecksRecoverableFrom(t *testing.T) {
 	t.Parallel()
 
-	// Two archives with a gap between them: the server wrote the first from
-	// five days ago to three days ago, and writes the second since two days
-	// ago.
-	twoArchives := []v1.RecoveryWindow{closed(5*day, 3*day), open(2 * day)}
-	failing := closed(5*day, 3*day)
-	failing.UnverifiedFrom = new(metav1.NewTime(ago(4 * day)))
+	from := new(metav1.NewTime(ago(3 * day)))
 
 	tests := []struct {
 		name     string
-		windows  []v1.RecoveryWindow
 		want     time.Time
 		accepted bool
 	}{
-		{name: "a point inside a closed window", windows: twoArchives, want: ago(4 * day), accepted: true},
-		{name: "the start of a window", windows: twoArchives, want: ago(5 * day), accepted: true},
-		{name: "a point inside an open window", windows: twoArchives, want: ago(time.Hour), accepted: true},
-		{name: "an open window reaches the present", windows: twoArchives, want: admitNow, accepted: true},
-		{name: "a point before the first window", windows: twoArchives, want: ago(6 * day)},
-		{name: "a point in the gap between two windows", windows: twoArchives, want: ago(60 * time.Hour)},
-		{name: "the end of a closed window", windows: twoArchives, want: ago(3 * day)},
-		{name: "a point after unverifiedFrom", windows: []v1.RecoveryWindow{failing}, want: ago(3*day + time.Hour)},
-		{name: "unverifiedFrom itself", windows: []v1.RecoveryWindow{failing}, want: ago(4 * day), accepted: true},
+		{name: "a point before recoverableFrom", want: ago(3*day + time.Second)},
+		{name: "recoverableFrom itself", want: ago(3 * day), accepted: true},
+		{name: "a point after recoverableFrom", want: ago(time.Hour), accepted: true},
+		{name: "the present", want: admitNow, accepted: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			failure := pitrAvailable(contractWith(tt.windows...), tt.want, admitNow)
+			failure := pitrAvailable(contractFrom(from), tt.want, admitNow)
 			if tt.accepted {
 				assert.Nil(t, failure)
 				return
@@ -101,55 +79,15 @@ func TestPitrAvailableChecksTheWindows(t *testing.T) {
 			require.NotNil(t, failure)
 			assert.Equal(t, v1.ReasonPitrUnavailable, failure.Reason)
 			assert.Contains(t, failure.Message, tt.want.UTC().Format(time.RFC3339))
+			assert.Contains(t, failure.Message, "recoverableFrom "+from.UTC().Format(time.RFC3339))
 			assert.Contains(t, failure.Message, "my-cluster-ns/dbsc")
 		})
 	}
 }
 
-// The refusal names the windows the server can restore, so the reader picks a
-// point inside one of them.
-func TestPitrAvailableNamesTheReachableWindows(t *testing.T) {
-	t.Parallel()
-
-	located := closed(5*day, 3*day)
-	located.Location = "s3://camunda-backups/clusters/my-cluster-db"
-	failure := pitrAvailable(contractWith(located, open(2*day)), ago(60*time.Hour), admitNow)
-
-	require.NotNil(t, failure)
-	assert.Contains(t, failure.Message, fmt.Sprintf(
-		"from %s to %s at s3://camunda-backups/clusters/my-cluster-db",
-		ago(5*day).Format(time.RFC3339), ago(3*day).Format(time.RFC3339),
-	))
-	assert.Contains(t, failure.Message, fmt.Sprintf(
-		"from %s to now", ago(2*day).Format(time.RFC3339),
-	))
-}
-
-// A contract can hold 256 windows, and the refusal goes into a condition
-// message of bounded size. It names the newest windows and counts the rest.
-func TestPitrAvailableBoundsTheRefusal(t *testing.T) {
-	t.Parallel()
-
-	windows := make([]v1.RecoveryWindow, 0, 256)
-	for i := 256; i > 0; i-- {
-		start := time.Duration(i) * 20 * time.Minute
-		window := closed(start, start-10*time.Minute)
-		window.Location = "s3://camunda-backups/clusters/a-server-name-of-some-length-r" + fmt.Sprint(i)
-		windows = append(windows, window)
-	}
-
-	failure := pitrAvailable(contractWith(windows...), ago(25*time.Minute), admitNow)
-
-	require.NotNil(t, failure)
-	assert.Contains(t, failure.Message, "248 older windows")
-	assert.Contains(t, failure.Message, "-r1")
-	assert.NotContains(t, failure.Message, "-r256")
-	assert.Less(t, len(failure.Message), 4096)
-}
-
-// A contract without windows keeps the rules of the retention period and the
-// present.
-func TestPitrAvailableWithoutWindows(t *testing.T) {
+// A contract without recoverableFrom keeps the rules of the retention period
+// and the present. A managed database publishes that shape.
+func TestPitrAvailableWithoutRecoverableFrom(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -157,7 +95,7 @@ func TestPitrAvailableWithoutWindows(t *testing.T) {
 		want     time.Time
 		contains string
 	}{
-		{name: "a point inside the retention period", want: ago(time.Second)},
+		{name: "a point inside the retention period", want: ago(6 * day)},
 		{name: "the present", want: admitNow},
 		{name: "a point in the future", want: admitNow.Add(time.Second), contains: "future"},
 		{name: "a point older than the retention period", want: ago(8 * day), contains: "7 days"},
@@ -167,7 +105,7 @@ func TestPitrAvailableWithoutWindows(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			failure := pitrAvailable(contractWith(), tt.want, admitNow)
+			failure := pitrAvailable(contractFrom(nil), tt.want, admitNow)
 			if tt.contains == "" {
 				assert.Nil(t, failure)
 				return
@@ -180,13 +118,19 @@ func TestPitrAvailableWithoutWindows(t *testing.T) {
 	}
 }
 
-// Windows narrow the retention period, never widen it: a point inside a window
-// and older than the retention period is still refused.
-func TestPitrAvailableKeepsTheRetentionPeriodWithWindows(t *testing.T) {
+// recoverableFrom narrows the retention period, never widens it: a point
+// after recoverableFrom and older than the retention period is still refused,
+// and so is a point in the future.
+func TestPitrAvailableKeepsTheRetentionPeriodAndThePresent(t *testing.T) {
 	t.Parallel()
 
-	failure := pitrAvailable(contractWith(closed(10*day, 2*day)), ago(8*day), admitNow)
+	contract := contractFrom(new(metav1.NewTime(ago(10 * day))))
 
-	require.NotNil(t, failure)
-	assert.Contains(t, failure.Message, "7 days")
+	old := pitrAvailable(contract, ago(8*day), admitNow)
+	require.NotNil(t, old)
+	assert.Contains(t, old.Message, "7 days")
+
+	future := pitrAvailable(contract, admitNow.Add(time.Second), admitNow)
+	require.NotNil(t, future)
+	assert.Contains(t, future.Message, "future")
 }

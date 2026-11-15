@@ -253,7 +253,7 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 
 // archiveStatus is the archive history of every archive golden case, at
 // location: one archive that the server left, and the one it writes now. The
-// contract publishes both as windows.
+// contract publishes the start of the first as recoverableFrom.
 func archiveStatus(location string) *v1.DatabaseServerArchiveStatus {
 	return &v1.DatabaseServerArchiveStatus{
 		History: []v1.ArchiveRecord{

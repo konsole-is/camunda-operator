@@ -863,7 +863,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(pitr).NotTo(BeNil())
 			g.Expect(pitr.Enabled).To(BeFalse())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
-			g.Expect(pitr.Windows).To(BeEmpty())
+			g.Expect(pitr.RecoverableFrom).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
@@ -875,16 +875,14 @@ var _ = Describe("DatabaseServer controller", func() {
 		// on its own condition and never on Ready.
 		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
-		// The contract publishes the archive the server writes as one open
-		// window from the first base backup.
+		// A restore can reach every point from the first base backup.
 		Eventually(func(g Gomega) {
 			pitr := publishedContract(g, server).Spec.PITR
 			g.Expect(pitr.Enabled).To(BeTrue())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
 			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(Equal(int32(30))))
-			g.Expect(pitr.Windows).To(HaveLen(1))
-			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", completedAt.Time))
-			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.RecoverableFrom).NotTo(BeNil())
+			g.Expect(pitr.RecoverableFrom.Time).To(BeTemporally("==", completedAt.Time))
 		}, timeout, interval).Should(Succeed())
 
 		// The archive interval opens at the first base backup: nothing before
@@ -1903,14 +1901,6 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
 		}, timeout, interval).Should(Succeed())
 
-		// The contract stops advertising them too, so a restore refuses them.
-		Eventually(func(g Gomega) {
-			windows := publishedContract(g, server).Spec.PITR.Windows
-			g.Expect(windows).To(HaveLen(1))
-			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
-			g.Expect(windows[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
-		}, timeout, interval).Should(Succeed())
-
 		By("running the uploads again")
 		reportArchiving(server, metav1.ConditionTrue, metav1.Now())
 
@@ -1921,7 +1911,6 @@ var _ = Describe("DatabaseServer controller", func() {
 		// can be reached again.
 		Eventually(func(g Gomega) {
 			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
-			g.Expect(publishedContract(g, server).Spec.PITR.Windows[0].UnverifiedFrom).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 
@@ -2009,14 +1998,13 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(archiveHistory(server)).To(HaveLen(1))
 		}, 2*time.Second, interval).Should(Succeed())
 
-		// A rollback reads only the bucket the server writes to now, so the
-		// window of the bucket it left leaves the contract, and no window is
-		// left.
+		// A rollback reads only the bucket the server writes to now, and that
+		// bucket holds no base backup yet, so no restore can reach a point.
 		Eventually(func(g Gomega) {
 			pitr := publishedContract(g, server).Spec.PITR
 			g.Expect(pitr.Enabled).To(BeFalse())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
-			g.Expect(pitr.Windows).To(BeEmpty())
+			g.Expect(pitr.RecoverableFrom).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
@@ -2032,16 +2020,14 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[1].To).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		// The contract publishes the open window of the bucket the server
-		// writes now, and nothing of the bucket it left.
+		// A restore can reach the archive of the bucket the server writes now,
+		// and nothing of the bucket it left.
 		Eventually(func(g Gomega) {
 			pitr := publishedContract(g, server).Spec.PITR
 			g.Expect(pitr.Enabled).To(BeTrue())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
-			g.Expect(pitr.Windows).To(HaveLen(1))
-			g.Expect(pitr.Windows[0].Location).To(Equal(archiveHistory(server)[1].Location))
-			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", openedAt.Time))
-			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.RecoverableFrom).NotTo(BeNil())
+			g.Expect(pitr.RecoverableFrom.Time).To(BeTemporally("==", openedAt.Time))
 		}, timeout, interval).Should(Succeed())
 	})
 

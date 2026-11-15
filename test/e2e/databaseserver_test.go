@@ -184,7 +184,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 
 		// The contract publishes the archive history one reconcile after the
 		// server records it.
-		By("waiting for the contract to publish the archive as an open window")
+		By("waiting for the contract to publish the start of the archive")
 		Eventually(func(g Gomega) {
 			var published v1.DatabaseServerConfig
 			g.Expect(utils.Get(dbServerResource, dsServer, dsNamespace, &published)).To(Succeed())
@@ -193,9 +193,7 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 			g.Expect(pitr.Enabled).To(BeTrue())
 			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
 			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(BeEquivalentTo(dsRetentionDays)))
-			g.Expect(pitr.Windows).To(HaveLen(1))
-			g.Expect(pitr.Windows[0].From).To(Equal(current.Status.Archive.History[0].From))
-			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.RecoverableFrom).To(Equal(&current.Status.Archive.History[0].From))
 		}, time.Minute, 5*time.Second).Should(Succeed())
 
 		By("waiting for the contract to report the identity of the instance behind it")

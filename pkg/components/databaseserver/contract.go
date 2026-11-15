@@ -29,19 +29,15 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserverconfig"
 )
 
-// maxRecoveryWindows is the maximum of spec.pitr.windows on a
-// DatabaseServerConfig.
-const maxRecoveryWindows = 256
-
 // ContractComponent builds the contract component: the DatabaseServerConfig
 // that the spec names, published in the namespace of the CR. It carries the
 // address of the primary instance, a reference to the superuser Secret that
 // CloudNativePG writes, and the point-in-time-recovery capability that the
-// archive of the server gives it. The windows of that capability come from
-// status.archive.history of server as it stands when the component is built.
-// Only a record that a rollback can read at location, where the server
-// archives to now, gives a window. now is the time from which the retention
-// period counts back.
+// archive of the server gives it. The recoverableFrom of that capability comes
+// from status.archive.history of server as it stands when the component is
+// built. Only a record that a rollback can read at location, where the server
+// archives to now, counts. now is the time from which the retention period
+// counts back.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -126,9 +122,10 @@ func ContractComponent(
 // publishes at now. A server without an archive declares that no restore can
 // reach it, and that nobody rolls it back.
 //
-// A server with no window to publish declares the same as a server without an
-// archive, unless it runs a recovery. A restore that asked for that recovery
-// reads a contract that does not declare operator as one that nobody answers.
+// A server with no archive record to publish declares the same as a server
+// without an archive, unless it runs a recovery. A restore that asked for that
+// recovery reads a contract that does not declare operator as one that nobody
+// answers.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
@@ -146,11 +143,15 @@ func pitrCapability(
 		return disabled
 	}
 
-	placed := placedArchives(server.Status.Archive.History, location, merged.Archive.ObjectStorageRef)
-	windows := recoveryWindows(placed, prunedFloor(server, merged.Archive.RetentionPeriodDays, now))
+	from := recoverableFrom(
+		server.Status.Archive.History,
+		location,
+		merged.Archive.ObjectStorageRef,
+		prunedFloor(server, merged.Archive.RetentionPeriodDays, now),
+	)
 
 	running := server.Status.Recovery != nil && server.Status.Recovery.CompletedAt == nil
-	if len(windows) == 0 && !running {
+	if from == nil && !running {
 		return disabled
 	}
 
@@ -158,21 +159,8 @@ func pitrCapability(
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
 		Recovery:            v1.RecoveryModeOperator,
-		Windows:             windows,
+		RecoverableFrom:     from,
 	}
-}
-
-// placedArchives returns the records of history that a rollback can read at
-// location through bucket, with their location filled in.
-func placedArchives(history []v1.ArchiveRecord, location, bucket string) []v1.ArchiveRecord {
-	placed := make([]v1.ArchiveRecord, 0, len(history))
-	for _, record := range history {
-		if record, err := placeArchive(record, location, bucket); err == nil {
-			placed = append(placed, record)
-		}
-	}
-
-	return placed
 }
 
 // prunedFloor returns status.archive.reachableFrom while it is later than the
@@ -193,34 +181,29 @@ func prunedFloor(server *v1.DatabaseServer, retentionDays int32, now time.Time) 
 	return floor
 }
 
-// recoveryWindows returns the windows that history gives a restore, oldest
-// first. A window starts no earlier than floor, and a record that ends at or
-// before floor gives none. It keeps the newest maxRecoveryWindows windows, the
-// most that a contract holds.
-func recoveryWindows(history []v1.ArchiveRecord, floor *metav1.Time) []v1.RecoveryWindow {
-	windows := make([]v1.RecoveryWindow, 0, len(history))
+// recoverableFrom returns the oldest point that a rollback can reach in the
+// records of history that it can read at location through bucket, and nil
+// when no record is left. It is no earlier than floor, and a record that ends
+// at or before floor does not count.
+func recoverableFrom(history []v1.ArchiveRecord, location, bucket string, floor *metav1.Time) *metav1.Time {
+	var oldest *metav1.Time
 	for _, record := range history {
+		if _, err := placeArchive(record, location, bucket); err != nil {
+			continue
+		}
 		if floor != nil && record.To != nil && !record.To.After(floor.Time) {
 			continue
 		}
-
-		window := v1.RecoveryWindow{
-			Location:       record.Location,
-			From:           record.From,
-			To:             record.To.DeepCopy(),
-			UnverifiedFrom: record.UnverifiedFrom.DeepCopy(),
+		if oldest == nil || record.From.Before(oldest) {
+			oldest = record.From.DeepCopy()
 		}
-		if floor != nil && window.From.Before(floor) {
-			window.From = *floor
-		}
-		windows = append(windows, window)
 	}
 
-	if older := len(windows) - maxRecoveryWindows; older > 0 {
-		windows = windows[older:]
+	if oldest != nil && floor != nil && oldest.Before(floor) {
+		return floor.DeepCopy()
 	}
 
-	return windows
+	return oldest
 }
 
 // ContractTakenMessage says that a DatabaseServerConfig of the name the merged

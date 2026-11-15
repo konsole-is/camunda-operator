@@ -62,12 +62,6 @@ func pitrWithOutcome(mutate func(*v1.RecoveryOutcome)) *v1.PITRCapability {
 	}
 }
 
-// windowAt is a fixed point plus the given number of hours, for the windows
-// of the schema cases.
-func windowAt(hours int) metav1.Time {
-	return metav1.NewTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(hours) * time.Hour))
-}
-
 var _ = Describe("DatabaseServerConfig schema", func() {
 	DescribeTable(
 		"admission",
@@ -137,32 +131,20 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			}, "recovery: operator requires enabled: true",
 		),
 		Entry(
-			"accepts a closed window and an open window", func(o *v1.DatabaseServerConfig) {
+			"accepts recoverableFrom on a server that archives", func(o *v1.DatabaseServerConfig) {
 				o.Spec.PITR = &v1.PITRCapability{
 					Enabled:             true,
 					RetentionPeriodDays: new(int32(7)),
-					Windows: []v1.RecoveryWindow{
-						{From: windowAt(0), To: new(windowAt(2))},
-						{From: windowAt(3)},
-					},
+					RecoverableFrom:     new(metav1.NewTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))),
 				}
 			}, "",
 		),
 		Entry(
-			"rejects windows on a server that archives nothing", func(o *v1.DatabaseServerConfig) {
-				o.Spec.PITR = &v1.PITRCapability{Windows: []v1.RecoveryWindow{{From: windowAt(0)}}}
-			}, "windows require enabled: true",
-		),
-		Entry(
-			"rejects more than 256 windows", func(o *v1.DatabaseServerConfig) {
-				windows := make([]v1.RecoveryWindow, 257)
-				for i := range windows {
-					windows[i] = v1.RecoveryWindow{From: windowAt(2 * i), To: new(windowAt(2*i + 1))}
-				}
+			"rejects recoverableFrom on a server that archives nothing", func(o *v1.DatabaseServerConfig) {
 				o.Spec.PITR = &v1.PITRCapability{
-					Enabled: true, RetentionPeriodDays: new(int32(7)), Windows: windows,
+					RecoverableFrom: new(metav1.NewTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))),
 				}
-			}, "spec.pitr.windows",
+			}, "recoverableFrom requires enabled: true",
 		),
 		Entry(
 			"rejects an unknown recovery mode", func(o *v1.DatabaseServerConfig) {

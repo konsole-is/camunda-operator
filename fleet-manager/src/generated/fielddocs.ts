@@ -3034,33 +3034,17 @@ export const fieldDocs: FieldDocs = {
         "description": "TargetTime is the targetTime of the request that this outcome answers,\nin the same form as in the request. Thus a consumer can compare the\ntwo as text.",
         "anchor": "#recoveryoutcome"
       },
+      "spec.pitr.recoverableFrom": {
+        "description": "RecoverableFrom is the oldest point that a restore can reach. The\nwindow of a restore starts here and continues to the present. A restore\nrefuses a point before it, also when the point is inside the retention\nperiod. When it is unset, the window is the whole retention period. It\nrequires enabled: true.\n\nA DatabaseServer publishes here the start of the oldest archive that a\nrestore can still read at the location that it archives to now. Its\narchive can have a gap after this point, for example after a rollback.\nA restore to a point in a gap fails, and the server keeps the data that\nit had.",
+        "anchor": "#pitrcapability"
+      },
       "spec.pitr.recovery": {
         "description": "Recovery says who rolls the server back to a point in time. Defaults to\nexternal. The value operator means that the publisher of this contract\nanswers spec.recovery. It requires enabled: true. The value external\nmeans that nobody answers, and you roll the server back manually.",
         "anchor": "#pitrcapability"
       },
       "spec.pitr.retentionPeriodDays": {
-        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. It is the declared policy of the server. Windows can\nlimit a restore more. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
+        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. It is the declared policy of the server.\nRecoverableFrom can limit a restore more. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
         "anchor": "#pitrcapability"
-      },
-      "spec.pitr.windows": {
-        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. When Windows holds a window, a restore accepts a point only when\na window reaches it, also when the point is inside the retention period.\nWhen Windows is unset, a restore can reach every point of the retention\nperiod up to the present. Windows require enabled: true.\n\nA DatabaseServer publishes here the intervals of its archive that a\nrestore can still read at the location that it archives to now. It\npublishes the newest 256 of them. The unverifiedFrom of a window is when\nthe uploads of its write-ahead log started to fail.",
-        "anchor": "#pitrcapability"
-      },
-      "spec.pitr.windows.from": {
-        "description": "From is the earliest point that a restore can reach in this window.",
-        "anchor": "#recoverywindow"
-      },
-      "spec.pitr.windows.location": {
-        "description": "Location is where the archive of this window is, in the form of\nArchiveRecord.Location of a DatabaseServer. It is information for the\nreader. A restore does not read it.",
-        "anchor": "#recoverywindow"
-      },
-      "spec.pitr.windows.to": {
-        "description": "To is the end of this window. A restore can reach every point before\nTo, but not To itself. A point at To is in the next window, if a\nwindow starts there. When To is unset, the window is open: the server\nstill writes to it, and it continues to the present.",
-        "anchor": "#recoverywindow"
-      },
-      "spec.pitr.windows.unverifiedFrom": {
-        "description": "UnverifiedFrom is the point after which this window can miss parts of\nthe write-ahead log. A restore cannot reach a point after it.",
-        "anchor": "#recoverywindow"
       },
       "spec.port": {
         "description": "Port is the port of the server.",

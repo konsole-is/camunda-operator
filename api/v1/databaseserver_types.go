@@ -70,8 +70,9 @@ type DatabaseServerMonitoringSpec struct {
 // archive. The archive holds the write-ahead log of every instance, and the
 // base backups that a recovery starts from. A server with an archive publishes
 // pitr.enabled true on its contract once the first base backup of the archive
-// completes, with the windows of status.archive.history. A server without one
-// publishes false, and no point-in-time restore can reach it.
+// completes. Its pitr.recoverableFrom is the oldest point that a restore can
+// read in the archive. A server without one publishes false, and no
+// point-in-time restore can reach it.
 //
 // The archive is not the backup model of the operator. BackupSchedule and
 // LogicalBackupRDBMS take logical dumps and never use these base backups.

@@ -908,25 +908,19 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("future"))
 	})
 
-	// The retention period of the world holds the point. The windows of the
-	// contract do not, so the server cannot reach it, and the restore must
-	// leave the cluster that runs alone.
-	It("holds a timestamp between two windows of the contract, and never suspends the cluster", func() {
+	// The retention period of the world holds the point. recoverableFrom of
+	// the contract does not, so the server cannot reach it, and the restore
+	// must leave the cluster that runs alone.
+	It("holds a timestamp before recoverableFrom of the contract, and never suspends the cluster", func() {
 		w := createWorld(func(w *world) {
 			w.cluster.Spec.Suspend = false
-			w.server.Spec.PITR.Windows = []v1.RecoveryWindow{
-				{
-					From: metav1.NewTime(suiteStart.Add(-5 * 24 * time.Hour)),
-					To:   new(metav1.NewTime(suiteStart.Add(-3 * 24 * time.Hour))),
-				},
-				{From: metav1.NewTime(suiteStart.Add(-2 * 24 * time.Hour))},
-			}
+			w.server.Spec.PITR.RecoverableFrom = new(metav1.NewTime(suiteStart.Add(-2 * 24 * time.Hour)))
 		})
 		pitr := createRestore(w, func(p *v1.PointInTimeRestore) {
 			p.Spec.Timestamp = metav1.NewTime(suiteStart.Add(-60 * time.Hour))
 		})
 
-		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("no window"))
+		Expect(expectHeld(pitr, v1.ReasonPitrUnavailable)).To(ContainSubstring("recoverableFrom"))
 		Consistently(func(g Gomega) {
 			var cluster v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
@@ -939,11 +933,9 @@ var _ = Describe("PointInTimeRestore admission", func() {
 		expectClaimsUntouched(w)
 	})
 
-	It("admits a timestamp inside a window of the contract", func() {
+	It("admits a timestamp after recoverableFrom of the contract", func() {
 		w := createWorld(func(w *world) {
-			w.server.Spec.PITR.Windows = []v1.RecoveryWindow{
-				{From: metav1.NewTime(suiteStart.Add(-2 * 24 * time.Hour))},
-			}
+			w.server.Spec.PITR.RecoverableFrom = new(metav1.NewTime(suiteStart.Add(-2 * 24 * time.Hour)))
 		})
 		pitr := createRestore(w)
 

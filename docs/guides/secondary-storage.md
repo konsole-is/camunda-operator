@@ -167,7 +167,7 @@ Prerequisites: the CloudNativePG operator is installed in the Kubernetes cluster
           reason: Healthy
     ```
 
-    The server publishes the `DatabaseServerConfig` `my-db-server` in the same namespace, with the host `my-db-rw.my-cluster-ns.svc`, port 5432, and the Secret `my-db-superuser` as its admin credentials. With an archive it also carries `pitr.enabled: true`, `pitr.recovery: operator`, and the windows of time that a restore can reach, from the first base backup on.
+    The server publishes the `DatabaseServerConfig` `my-db-server` in the same namespace, with the host `my-db-rw.my-cluster-ns.svc`, port 5432, and the Secret `my-db-superuser` as its admin credentials. After the first base backup of its archive, it also carries `pitr.enabled: true`, `pitr.recovery: operator`, and `pitr.recoverableFrom`, the oldest point that a restore can reach.
 
     [DatabaseServer](../crds/databaseserver.md) covers sizing, the archive, monitoring, presets, and the rollback in full.
 

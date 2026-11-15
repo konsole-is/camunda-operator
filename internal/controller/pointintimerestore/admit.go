@@ -541,70 +541,19 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want, now time.Time) *condit
 		}
 	}
 
-	reached := slices.ContainsFunc(pitr.Windows, func(window v1.RecoveryWindow) bool {
-		return windowReaches(window, want, now)
-	})
-	if len(pitr.Windows) == 0 || reached {
-		return nil
-	}
-
-	return &conditions.PreCheckFailure{
-		Reason: v1.ReasonPitrUnavailable,
-		Message: fmt.Sprintf(
-			"spec.timestamp %s is in no window that DatabaseServerConfig %s can restore. It can "+
-				"restore %s",
-			want.UTC().Format(time.RFC3339), client.ObjectKeyFromObject(server),
-			describeWindows(pitr.Windows),
-		),
-	}
-}
-
-// windowReaches reports whether a restore at now can reach want in window.
-func windowReaches(window v1.RecoveryWindow, want, now time.Time) bool {
-	if want.Before(window.From.Time) {
-		return false
-	}
-	if window.UnverifiedFrom != nil && want.After(window.UnverifiedFrom.Time) {
-		return false
-	}
-	if window.To != nil {
-		return want.Before(window.To.Time)
-	}
-
-	return !want.After(now)
-}
-
-// describedWindows is how many windows a refusal names at most. The message
-// goes into a condition, whose message the API server limits to 32768
-// characters, and a contract can hold 256 windows.
-const describedWindows = 8
-
-// describeWindows names the newest windows for a refusal message, oldest
-// first.
-func describeWindows(windows []v1.RecoveryWindow) string {
-	var parts []string
-	if older := len(windows) - describedWindows; older > 0 {
-		parts = append(parts, fmt.Sprintf("%d older windows", older))
-		windows = windows[older:]
-	}
-
-	for _, window := range windows {
-		end := "now"
-		if window.To != nil {
-			end = window.To.UTC().Format(time.RFC3339)
+	if from := pitr.RecoverableFrom; from != nil && want.Before(from.Time) {
+		return &conditions.PreCheckFailure{
+			Reason: v1.ReasonPitrUnavailable,
+			Message: fmt.Sprintf(
+				"spec.timestamp %s is before spec.pitr.recoverableFrom %s of DatabaseServerConfig %s. "+
+					"No restore can reach a point before it",
+				want.UTC().Format(time.RFC3339), from.UTC().Format(time.RFC3339),
+				client.ObjectKeyFromObject(server),
+			),
 		}
-
-		part := fmt.Sprintf("from %s to %s", window.From.UTC().Format(time.RFC3339), end)
-		if window.UnverifiedFrom != nil {
-			part += fmt.Sprintf(" (nothing after %s)", window.UnverifiedFrom.UTC().Format(time.RFC3339))
-		}
-		if window.Location != "" {
-			part += " at " + window.Location
-		}
-		parts = append(parts, part)
 	}
 
-	return strings.Join(parts, ", ")
+	return nil
 }
 
 // dedicatedServer reports that the server holds any logical database other

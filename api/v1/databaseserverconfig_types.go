@@ -126,44 +126,20 @@ func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
 		outcome.TargetTime == r.TargetTime
 }
 
-// RecoveryWindow is one continuous interval of time that a point-in-time
-// restore of the server can reach. The open window extends to the present.
-// A new window starts only where the archive breaks. On a DatabaseServer,
-// each window comes from one record of status.archive.history.
-type RecoveryWindow struct {
-	// Location is where the archive of this window is, in the form of
-	// ArchiveRecord.Location of a DatabaseServer. It is information for the
-	// reader. A restore does not read it.
-	// +optional
-	Location string `json:"location,omitempty"`
-	// From is the earliest point that a restore can reach in this window.
-	From metav1.Time `json:"from"`
-	// To is the end of this window. A restore can reach every point before
-	// To, but not To itself. A point at To is in the next window, if a
-	// window starts there. When To is unset, the window is open: the server
-	// still writes to it, and it continues to the present.
-	// +optional
-	To *metav1.Time `json:"to,omitempty"`
-	// UnverifiedFrom is the point after which this window can miss parts of
-	// the write-ahead log. A restore cannot reach a point after it.
-	// +optional
-	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
-}
-
 // PITRCapability declares the point-in-time recovery capability of a server:
 // continuous WAL archiving with the given retention. It can also declare the
-// windows of time that a restore can reach.
+// oldest point that a restore can reach.
 // +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays >= 1)",message="retentionPeriodDays of at least 1 is required when enabled is true"
 // +kubebuilder:validation:XValidation:rule="self.recovery != 'operator' || self.enabled",message="recovery: operator requires enabled: true"
-// +kubebuilder:validation:XValidation:rule="self.enabled || !has(self.windows) || size(self.windows) == 0",message="windows require enabled: true"
+// +kubebuilder:validation:XValidation:rule="self.enabled || !has(self.recoverableFrom)",message="recoverableFrom requires enabled: true"
 type PITRCapability struct {
 	// Enabled reports whether the server performs continuous WAL archiving.
 	// +kubebuilder:default=false
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// RetentionPeriodDays is how many days into the past a point-in-time
-	// restore can go. It is the declared policy of the server. Windows can
-	// limit a restore more. Required when enabled is true.
+	// restore can go. It is the declared policy of the server.
+	// RecoverableFrom can limit a restore more. Required when enabled is true.
 	//
 	// The maximum is 36500 days, which is a hundred years. A reader counts
 	// the reachable window in nanoseconds, and that count overflows at about
@@ -178,22 +154,19 @@ type PITRCapability struct {
 	// +kubebuilder:default=external
 	// +optional
 	Recovery RecoveryMode `json:"recovery,omitempty"`
-	// Windows are the continuous intervals of time that a restore can reach,
-	// oldest first. A new window starts only where the archive breaks. So
-	// the maximum of 256 limits the breaks, not the time that the windows
-	// cover. When Windows holds a window, a restore accepts a point only when
-	// a window reaches it, also when the point is inside the retention period.
-	// When Windows is unset, a restore can reach every point of the retention
-	// period up to the present. Windows require enabled: true.
+	// RecoverableFrom is the oldest point that a restore can reach. The
+	// window of a restore starts here and continues to the present. A restore
+	// refuses a point before it, also when the point is inside the retention
+	// period. When it is unset, the window is the whole retention period. It
+	// requires enabled: true.
 	//
-	// A DatabaseServer publishes here the intervals of its archive that a
-	// restore can still read at the location that it archives to now. It
-	// publishes the newest 256 of them. The unverifiedFrom of a window is when
-	// the uploads of its write-ahead log started to fail.
-	// +listType=atomic
-	// +kubebuilder:validation:MaxItems=256
+	// A DatabaseServer publishes here the start of the oldest archive that a
+	// restore can still read at the location that it archives to now. Its
+	// archive can have a gap after this point, for example after a rollback.
+	// A restore to a point in a gap fails, and the server keeps the data that
+	// it had.
 	// +optional
-	Windows []RecoveryWindow `json:"windows,omitempty"`
+	RecoverableFrom *metav1.Time `json:"recoverableFrom,omitempty"`
 	// LastRecovery is how the last recovery request ended. It is unset until
 	// the first answer. The answer to each later request replaces it.
 	// +optional

@@ -1182,8 +1182,9 @@ DatabaseServerArchiveSpec points a server at the bucket of its continuous
 archive. The archive holds the write-ahead log of every instance, and the
 base backups that a recovery starts from. A server with an archive publishes
 pitr.enabled true on its contract once the first base backup of the archive
-completes, with the windows of status.archive.history. A server without one
-publishes false, and no point-in-time restore can reach it.
+completes. Its pitr.recoverableFrom is the oldest point that a restore can
+read in the archive. A server without one publishes false, and no
+point-in-time restore can reach it.
 
 The archive is not the backup model of the operator. BackupSchedule and
 LogicalBackupRDBMS take logical dumps and never use these base backups.
@@ -2943,7 +2944,7 @@ _Appears in:_
 
 PITRCapability declares the point-in-time recovery capability of a server:
 continuous WAL archiving with the given retention. It can also declare the
-windows of time that a restore can reach.
+oldest point that a restore can reach.
 
 
 
@@ -2953,9 +2954,9 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled reports whether the server performs continuous WAL archiving. | false | Optional: \{\} <br /> |
-| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. It is the declared policy of the server. Windows can<br />limit a restore more. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
+| `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. It is the declared policy of the server.<br />RecoverableFrom can limit a restore more. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
 | `recovery` _[RecoveryMode](#recoverymode)_ | Recovery says who rolls the server back to a point in time. Defaults to<br />external. The value operator means that the publisher of this contract<br />answers spec.recovery. It requires enabled: true. The value external<br />means that nobody answers, and you roll the server back manually. | external | Enum: [operator external] <br />Optional: \{\} <br /> |
-| `windows` _[RecoveryWindow](#recoverywindow) array_ | Windows are the continuous intervals of time that a restore can reach,<br />oldest first. A new window starts only where the archive breaks. So<br />the maximum of 256 limits the breaks, not the time that the windows<br />cover. When Windows holds a window, a restore accepts a point only when<br />a window reaches it, also when the point is inside the retention period.<br />When Windows is unset, a restore can reach every point of the retention<br />period up to the present. Windows require enabled: true.<br />A DatabaseServer publishes here the intervals of its archive that a<br />restore can still read at the location that it archives to now. It<br />publishes the newest 256 of them. The unverifiedFrom of a window is when<br />the uploads of its write-ahead log started to fail. |  | MaxItems: 256 <br />Optional: \{\} <br /> |
+| `recoverableFrom` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | RecoverableFrom is the oldest point that a restore can reach. The<br />window of a restore starts here and continues to the present. A restore<br />refuses a point before it, also when the point is inside the retention<br />period. When it is unset, the window is the whole retention period. It<br />requires enabled: true.<br />A DatabaseServer publishes here the start of the oldest archive that a<br />restore can still read at the location that it archives to now. Its<br />archive can have a gap after this point, for example after a rollback.<br />A restore to a point in a gap fails, and the server keeps the data that<br />it had. |  | Optional: \{\} <br /> |
 | `lastRecovery` _[RecoveryOutcome](#recoveryoutcome)_ | LastRecovery is how the last recovery request ended. It is unset until<br />the first answer. The answer to each later request replaces it. |  | Optional: \{\} <br /> |
 
 
@@ -3425,28 +3426,6 @@ _Appears in:_
 | `Completed` | RecoveryResultCompleted means that the server now holds the state of<br />the requested point.<br /> |
 | `Failed` | RecoveryResultFailed means that the recovery started and did not<br />finish.<br /> |
 | `Unavailable` | RecoveryResultUnavailable means that the server holds no copy of the<br />requested point, so it attempted no recovery.<br /> |
-
-
-#### RecoveryWindow
-
-
-
-RecoveryWindow is one continuous interval of time that a point-in-time
-restore of the server can reach. The open window extends to the present.
-A new window starts only where the archive breaks. On a DatabaseServer,
-each window comes from one record of status.archive.history.
-
-
-
-_Appears in:_
-- [PITRCapability](#pitrcapability)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `location` _string_ | Location is where the archive of this window is, in the form of<br />ArchiveRecord.Location of a DatabaseServer. It is information for the<br />reader. A restore does not read it. |  | Optional: \{\} <br /> |
-| `from` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | From is the earliest point that a restore can reach in this window. |  |  |
-| `to` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | To is the end of this window. A restore can reach every point before<br />To, but not To itself. A point at To is in the next window, if a<br />window starts there. When To is unset, the window is open: the server<br />still writes to it, and it continues to the present. |  | Optional: \{\} <br /> |
-| `unverifiedFrom` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | UnverifiedFrom is the point after which this window can miss parts of<br />the write-ahead log. A restore cannot reach a point after it. |  | Optional: \{\} <br /> |
 
 
 #### ReleaseConnectorsSpec

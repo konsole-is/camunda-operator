@@ -99,7 +99,7 @@ spec:
   # ... the rest of your server
 ```
 
-The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, `pitr.retentionPeriodDays`, and `pitr.windows`. A [PointInTimeRestore](pointintimerestore.md) reads these values. Until the first base backup completes, the contract declares `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet. The same is true after the archive moves to another location, until the first base backup there completes.
+The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, `pitr.retentionPeriodDays`, and `pitr.recoverableFrom`. A [PointInTimeRestore](pointintimerestore.md) reads these values. Until the first base backup completes, the contract declares `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet. The same is true after the archive moves to another location, until the first base backup there completes.
 
 ### Retention
 
@@ -156,14 +156,9 @@ The server closes the open record and opens a new one in these cases:
 - You remove `spec.archive`, then add it again.
 - The archive moves to another location. A change of `spec.archive.objectStorageRef` to another bucket does this. So does an edit of the `ObjectStorageConfig` to another bucket, path, endpoint, or region.
 
-A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
+A new record starts at the first base backup of the new archive. No rollback can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
 
-The contract publishes the archive history as [recovery windows](databaseserverconfig.md#recovery-windows) in `pitr.windows`:
-
-- Each record at the location that the server archives to now gives one window, with the same `from`, `to`, and `location`. A record of an earlier location gives no window, because a rollback cannot read it.
-- The `unverifiedFrom` of a window is the one of its record.
-- The open window reaches the present. CloudNativePG uploads the write-ahead log in segments, so the newest minutes can still be missing from the bucket. Before a rollback starts, the server waits until the bucket holds the point. See [What a rollback does](#what-a-rollback-does).
-- A history of more than 256 records publishes the newest 256.
+The contract publishes the start of the history as [`pitr.recoverableFrom`](databaseserverconfig.md#recoverable-from). It is the oldest `from` of the records at the location that the server archives to now. A record of an earlier location does not count, because a rollback cannot read it.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -176,18 +171,20 @@ spec:
     enabled: true
     recovery: operator
     retentionPeriodDays: 30
-    windows:
-      - location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
-        from: "2026-08-01T10:00:00Z"
-        to: "2026-08-20T15:02:11Z"
-      - location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
-        from: "2026-08-20T15:20:40Z"
+    recoverableFrom: "2026-08-01T10:00:00Z"
   # ... the rest of the published contract
 ```
 
-After a raised retention period, `status.archive.reachableFrom` can be later than the start of the retention period. Then no window starts before `reachableFrom`, and a record that ends before it gives no window.
+Before a restore suspends the cluster, it compares the point only with `recoverableFrom`, the retention period, and the present. So a restore accepts a point between two records, and a point after `unverifiedFrom`. The rollback then decides:
 
-While a rollback runs, the contract keeps `pitr.recovery: operator`, also when no window is left.
+- For a point between two records, the server answers `Unavailable`, and builds nothing.
+- For a point that the bucket does not hold, for example a point after `unverifiedFrom`, the rollback ends with `result: Failed`. See [What a rollback does](#what-a-rollback-does).
+
+In both cases, the server keeps running from the cluster that it had.
+
+After a raised retention period, `status.archive.reachableFrom` can be later than the start of the retention period. Then `recoverableFrom` is not earlier than `reachableFrom`, and a record that ends before `reachableFrom` does not count.
+
+While a rollback runs, the contract keeps `pitr.recovery: operator`, also when no record is left to publish.
 
 ### Base backups are not the backup model
 
@@ -507,6 +504,6 @@ spec:
 - [DatabaseServerConfig](databaseserverconfig.md): the contract this kind publishes.
 - [Database](database.md): creates the logical database and its users on the published contract.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that `spec.archive.objectStorageRef` names.
-- [PointInTimeRestore](pointintimerestore.md): reads `pitr.enabled`, the retention period, and the recovery windows from the published contract.
+- [PointInTimeRestore](pointintimerestore.md): reads `pitr.enabled`, the retention period, and `pitr.recoverableFrom` from the published contract.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.
 - [Installation](../installation.md): CloudNativePG, cert-manager, and the Barman Cloud plugin.

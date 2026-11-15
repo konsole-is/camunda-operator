@@ -93,6 +93,20 @@ export interface DatabaseServerConfigSpec {
       targetTime: string;
     };
     /**
+     * RecoverableFrom is the oldest point that a restore can reach. The
+     * window of a restore starts here and continues to the present. A restore
+     * refuses a point before it, also when the point is inside the retention
+     * period. When it is unset, the window is the whole retention period. It
+     * requires enabled: true.
+     *
+     * A DatabaseServer publishes here the start of the oldest archive that a
+     * restore can still read at the location that it archives to now. Its
+     * archive can have a gap after this point, for example after a rollback.
+     * A restore to a point in a gap fails, and the server keeps the data that
+     * it had.
+     */
+    recoverableFrom?: string;
+    /**
      * Recovery says who rolls the server back to a point in time. Defaults to
      * external. The value operator means that the publisher of this contract
      * answers spec.recovery. It requires enabled: true. The value external
@@ -101,59 +115,14 @@ export interface DatabaseServerConfigSpec {
     recovery?: "operator" | "external";
     /**
      * RetentionPeriodDays is how many days into the past a point-in-time
-     * restore can go. It is the declared policy of the server. Windows can
-     * limit a restore more. Required when enabled is true.
+     * restore can go. It is the declared policy of the server.
+     * RecoverableFrom can limit a restore more. Required when enabled is true.
      *
      * The maximum is 36500 days, which is a hundred years. A reader counts
      * the reachable window in nanoseconds, and that count overflows at about
      * 292 years. The maximum stays well below that limit.
      */
     retentionPeriodDays?: number;
-    /**
-     * Windows are the continuous intervals of time that a restore can reach,
-     * oldest first. A new window starts only where the archive breaks. So
-     * the maximum of 256 limits the breaks, not the time that the windows
-     * cover. When Windows holds a window, a restore accepts a point only when
-     * a window reaches it, also when the point is inside the retention period.
-     * When Windows is unset, a restore can reach every point of the retention
-     * period up to the present. Windows require enabled: true.
-     *
-     * A DatabaseServer publishes here the intervals of its archive that a
-     * restore can still read at the location that it archives to now. It
-     * publishes the newest 256 of them. The unverifiedFrom of a window is when
-     * the uploads of its write-ahead log started to fail.
-     *
-     * @maxItems 256
-     *
-     * Items: RecoveryWindow is one continuous interval of time that a point-in-time
-     * restore of the server can reach. The open window extends to the present.
-     * A new window starts only where the archive breaks. On a DatabaseServer,
-     * each window comes from one record of status.archive.history.
-     */
-    windows?: {
-      /**
-       * From is the earliest point that a restore can reach in this window.
-       */
-      from: string;
-      /**
-       * Location is where the archive of this window is, in the form of
-       * ArchiveRecord.Location of a DatabaseServer. It is information for the
-       * reader. A restore does not read it.
-       */
-      location?: string;
-      /**
-       * To is the end of this window. A restore can reach every point before
-       * To, but not To itself. A point at To is in the next window, if a
-       * window starts there. When To is unset, the window is open: the server
-       * still writes to it, and it continues to the present.
-       */
-      to?: string;
-      /**
-       * UnverifiedFrom is the point after which this window can miss parts of
-       * the write-ahead log. A restore cannot reach a point after it.
-       */
-      unverifiedFrom?: string;
-    }[];
   };
   /**
    * Port is the port of the server.
