@@ -35,18 +35,22 @@ type Row =
  * entries and the errors after each edit. An error path is
  * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
  * the hint and error elements of the field for each control of a row.
+ * missingIn gives the namespaces that lack a picked Secret key, and the row
+ * names them.
  */
 export function EnvEditor({
   label,
   secrets,
   defaultValue = [],
   describedBy,
+  missingIn,
   onChange,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue?: EnvVar[];
   describedBy?: string;
+  missingIn?: (name: string, key: string) => readonly string[];
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -80,8 +84,17 @@ export function EnvEditor({
           (e) => e.path === `${index}.secret`,
         )?.message;
         const errorId = `${id}-${row.id}-error`;
+        const missing =
+          row.source === "secret" && row.ref && missingIn
+            ? missingIn(row.ref.name, row.ref.key)
+            : [];
+        const missingId = `${id}-${row.id}-missing`;
         const described =
-          [(nameError || secretError) && errorId, describedBy]
+          [
+            (nameError || secretError) && errorId,
+            missing.length > 0 && missingId,
+            describedBy,
+          ]
             .filter(Boolean)
             .join(" ") || undefined;
         return (
@@ -177,6 +190,11 @@ export function EnvEditor({
             {(nameError || secretError) && (
               <p id={errorId} className="text-xs text-bad">
                 {[nameError, secretError].filter(Boolean).join(". ")}
+              </p>
+            )}
+            {missing.length > 0 && (
+              <p id={missingId} className="text-xs text-warn">
+                Missing in {missing.join(", ")}
               </p>
             )}
           </div>
