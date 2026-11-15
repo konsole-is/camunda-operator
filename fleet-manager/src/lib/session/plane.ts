@@ -14,6 +14,8 @@ import {
   type IdentityModeId,
   type PlaneManagement,
 } from "@/lib/planes/identity";
+import { planeControllerParameters } from "@/lib/planes/storage";
+import { planeUrlFields, urlErrors } from "@/lib/planes/urls";
 import {
   runningFields,
   versionError,
@@ -75,7 +77,9 @@ const EXTERNAL_PATHS: Record<string, string> = {
  * uses basic authentication; a provider that names no mode or two; the
  * admin fields that the mode after the change needs or refuses, and the
  * admin email that Web Modeler needs in a Keycloak mode; the External
- * Keycloak fields; the version of each running app that the change sets or
+ * Keycloak fields; without an access selection, the URL of each running
+ * app that the change sets or that the change makes needed; the version of
+ * each running app that the change sets or
  * that an app needs once the change turns it on; the Web Modeler mail that
  * the change sets; the first value that the resolved policy does not allow;
  * each section parameter that the change touches and that the schema of
@@ -102,6 +106,7 @@ export function validatePlaneClaim(
     ...modeErrors(live, spec, ctx),
     ...adminErrors(mode, spec.management),
     ...(mode === "externalKeycloak" ? externalErrors(spec.management) : []),
+    ...urlErrorsOf(s.claim, after, ctx),
     ...versionErrorsOf(live, spec),
     ...mailErrorsOf(live, spec),
   ];
@@ -128,8 +133,10 @@ export function validatePlaneClaim(
       environment: ctx.environment,
       registrations: ctx.registrations,
       policy,
-      // The plane claim controller adds no parameter to a request.
-      added: () => ({}),
+      added: planeControllerParameters(
+        generated<PluginSection[]>(ctx.sections),
+        runningOfClaim(spec.management),
+      ),
     }),
   );
 
@@ -254,6 +261,50 @@ function externalErrors(management: PlaneManagement | undefined): FieldError[] {
     path: EXTERNAL_PATHS[e.path] ?? EXTERNAL,
     message: e.message,
   }));
+}
+
+// The claim controller refuses a claim without an access selection that
+// leaves a URL of the plane empty (checkPlaneInputs).
+function urlErrorsOf(
+  claim: PlaneClaim,
+  after: PlaneClaim,
+  ctx: PlaneClaimContext,
+): FieldError[] {
+  if (hasAccess(after, ctx)) return [];
+  const management = after.spec?.management;
+  const before = hasAccess(claim, ctx)
+    ? []
+    : planeUrlFields(runningOfClaim(claim.spec?.management));
+  return planeUrlFields(runningOfClaim(management)).flatMap((field) => {
+    const value = stringAt(management, field.names);
+    const needed = before.some((f) => f.id === field.id);
+    if (needed && value === stringAt(claim.spec?.management, field.names))
+      return [];
+    const path = ["spec", "management", ...field.names].join(".");
+    return urlErrors({ [field.id]: value }, [field]).map((message) => ({
+      path,
+      message,
+    }));
+  });
+}
+
+function hasAccess(claim: PlaneClaim, ctx: PlaneClaimContext): boolean {
+  return selectionsOf(claim).some(
+    (p) =>
+      ctx.sections.find((s) => s.metadata?.name === p.section)?.spec.slot ===
+      "externalAccess",
+  );
+}
+
+function stringAt(value: unknown, names: readonly string[]): string {
+  const found = names.reduce<unknown>(
+    (at, name) =>
+      typeof at === "object" && at !== null
+        ? (at as Record<string, unknown>)[name]
+        : undefined,
+    value,
+  );
+  return typeof found === "string" ? found : "";
 }
 
 // A version that the change leaves as it is stays unchecked: the floor of

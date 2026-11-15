@@ -11,6 +11,8 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/planes/components",
   "@/lib/planes/draft",
   "@/lib/planes/identity",
+  "@/lib/planes/storage",
+  "@/lib/planes/urls",
   "@/lib/planes/versions",
   "@/lib/policy",
   "@/lib/schema",

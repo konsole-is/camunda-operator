@@ -93,6 +93,39 @@ const ctx = (over: Partial<PlaneClaimContext> = {}): PlaneClaimContext =>
     ...over,
   }) as PlaneClaimContext;
 
+const accessSection = {
+  metadata: { name: "access" },
+  spec: { slot: "externalAccess" },
+} as unknown as PlaneClaimContext["sections"][number];
+const databaseSection = {
+  metadata: { name: "databases" },
+  spec: { slot: "managementDatabases" },
+};
+
+const withAccess = (claim: PlaneClaim): PlaneClaim => ({
+  ...claim,
+  spec: {
+    ...claim.spec,
+    plugins: [{ section: "access", registration: "gateway" }],
+  },
+});
+
+// urlClaim is a claim without an access option that sets the URL of each
+// app that it runs.
+const urlClaim = (spec: Partial<PlaneClaim["spec"]> = {}) =>
+  planeClaim({
+    management: {
+      identityProvider: {
+        keycloak: { externalUrl: "https://mgmt.example.com/auth" },
+      },
+      identity: {
+        admin: { username: "admin" },
+        externalUrl: "https://mgmt.example.com",
+      },
+    },
+    ...spec,
+  });
+
 describe("validatePlaneClaim", () => {
   it("accepts a change that breaks no rule", () => {
     const s = changed(planeClaim(), [
@@ -250,12 +283,12 @@ describe("validatePlaneClaim", () => {
   });
 
   it("asks for the username after a move from OIDC to a Keycloak mode", () => {
-    const live = oidcClaim();
+    const live = withAccess(oidcClaim());
     const s = changed(
       live,
       ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
     );
-    expect(validatePlaneClaim(s, ctx())).toEqual([
+    expect(validatePlaneClaim(s, ctx({ sections: [accessSection] }))).toEqual([
       {
         path: "spec.management.identity.admin.username",
         message: "Enter the username.",
@@ -293,6 +326,7 @@ describe("validatePlaneClaim", () => {
 
   it("asks for the version and the mail of an app that the change turns on", () => {
     const live = planeClaim({
+      plugins: [{ section: "access", registration: "gateway" }],
       management: {
         identityProvider: { keycloak: {} },
         identity: { admin: { username: "admin", email: "a@example.com" } },
@@ -303,7 +337,7 @@ describe("validatePlaneClaim", () => {
       ...componentEdits(live.spec, "webModeler", true).map(asEdit),
     );
     const mail = "spec.management.webModeler.mail";
-    expect(validatePlaneClaim(s, ctx())).toEqual([
+    expect(validatePlaneClaim(s, ctx({ sections: [accessSection] }))).toEqual([
       {
         path: "spec.versions.webModeler",
         message: "Enter the Web Modeler version.",
@@ -439,5 +473,124 @@ describe("validatePlaneClaim", () => {
     });
     const s = changed(live, [at("spec", "deletionPolicy"), "Delete"]);
     expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
+  it("asks for the URL of an app that the change turns on while no access option sets the URLs", () => {
+    const live = urlClaim();
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", true).map(asEdit),
+      [at("spec", "versions", "console"), "8.9.133"],
+    );
+    expect(validatePlaneClaim(s, ctx())).toEqual([
+      {
+        path: "spec.management.console.externalUrl",
+        message: "Enter the Console URL.",
+      },
+    ]);
+  });
+
+  it("leaves the URLs to the access option of the claim", () => {
+    const live = planeClaim({
+      plugins: [{ section: "access", registration: "gateway" }],
+    });
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", true).map(asEdit),
+      [at("spec", "versions", "console"), "8.9.133"],
+    );
+    expect(validatePlaneClaim(s, ctx({ sections: [accessSection] }))).toEqual(
+      [],
+    );
+  });
+
+  it("asks for the Keycloak URL after a move to the keycloak mode while no access option sets the URLs", () => {
+    const live = urlClaim({
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          admin: { claimName: "sub", claimValue: "42" },
+          externalUrl: "https://mgmt.example.com",
+        },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+      [[...at(...ADMIN), { field: "username" }], "admin"],
+      [at("spec", "versions", "keycloak"), "26.6.4"],
+    );
+    expect(validatePlaneClaim(s, ctx())).toEqual([
+      {
+        path: "spec.management.identityProvider.keycloak.externalUrl",
+        message: "Enter the Keycloak URL.",
+      },
+    ]);
+  });
+
+  it("checks a changed URL against the rules of the CRD", () => {
+    const s = changed(urlClaim(), [
+      at("spec", "management", "identity", "externalUrl"),
+      "ftp://mgmt.example.com",
+    ]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([
+      {
+        path: "spec.management.identity.externalUrl",
+        message: "The Management Identity URL must be an http or https URL.",
+      },
+    ]);
+  });
+
+  it("a deletion policy change passes while the live claim leaves a URL empty", () => {
+    const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Delete"]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
+  it("checks the database parameters with the databases that the claim controller sets", () => {
+    const live = planeClaim({
+      plugins: [
+        {
+          section: "databases",
+          registration: "postgres",
+          parameters: { databases: ["identity"] },
+        },
+      ],
+    });
+    const registrations = [
+      {
+        metadata: { name: "postgres" },
+        spec: {
+          deletionPolicies: ["Delete"],
+          parameters: {
+            type: "object",
+            properties: {
+              databases: {
+                type: "array",
+                items: { enum: ["keycloak", "identity", "webModeler"] },
+              },
+            },
+            required: ["databases"],
+          },
+        },
+      },
+    ];
+    const s = changed(live, [
+      [
+        ...at("spec", "plugins"),
+        { item: { section: "databases", registration: "postgres" } },
+        ...at("parameters", "databases"),
+      ],
+      undefined,
+    ]);
+    expect(
+      validatePlaneClaim(
+        s,
+        ctx({
+          sections: [databaseSection],
+          registrations,
+        } as unknown as Partial<PlaneClaimContext>),
+      ),
+    ).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import {
   takenHosts,
 } from "@/lib/claims/hosts";
 import {
+  type ControllerParameters,
   type StorageDraft,
   draftErrors,
   picksOf,
@@ -412,11 +413,22 @@ export function storageErrors(
     storage,
     shown,
     planeSelections(draft).map((p) => runningSelection(p, running)),
-    // The claim controller sets databases on the request of the database
-    // section (WithDatabases of camundamanagementclusterclaim).
-    (request) =>
-      request.section === databases?.metadata.name
-        ? { databases: DATABASE_APPS.filter((app) => runs(app, running)) }
-        : {},
+    planeControllerParameters(ctx.sections, running),
   );
+}
+
+/**
+ * planeControllerParameters returns the ControllerParameters of a plane
+ * claim that runs running: databases on the request of the database
+ * section, as WithDatabases of camundamanagementclusterclaim sets it.
+ */
+export function planeControllerParameters(
+  sections: readonly PluginSection[],
+  running: Running,
+): ControllerParameters {
+  const databases = databaseSection(sections)?.metadata.name;
+  return (request) =>
+    request.section === databases
+      ? { databases: DATABASE_APPS.filter((app) => runs(app, running)) }
+      : {};
 }
