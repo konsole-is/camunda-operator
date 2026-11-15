@@ -183,14 +183,19 @@ func FormatCustomResources(resources []CustomResource) string {
 	return b.String()
 }
 
-// RemoveFinalizers removes every finalizer of resource, so that its deletion
-// ends without the controller that set them.
-func RemoveFinalizers(ctx context.Context, resource CustomResource) error {
-	args := append(
-		[]string{"patch", resource.Resource, resource.Name, "--type=merge", "-p", `{"metadata":{"finalizers":null}}`},
-		namespaceArgs(resource.Namespace)...,
-	)
-	_, err := RunContext(ctx, "kubectl", append(args, requestTimeout)...)
+// ForceDelete deletes resource and removes its finalizers, so that it goes
+// without the controller that set them.
+func ForceDelete(ctx context.Context, resource CustomResource) error {
+	target := append([]string{resource.Resource, resource.Name}, namespaceArgs(resource.Namespace)...)
+	deleteArgs := append([]string{"delete"}, target...)
+	deleteArgs = append(deleteArgs, "--ignore-not-found", "--wait=false", requestTimeout)
+	if _, err := RunContext(ctx, "kubectl", deleteArgs...); err != nil {
+		return err
+	}
+
+	patchArgs := append([]string{"patch"}, target...)
+	patchArgs = append(patchArgs, "--type=merge", "-p", `{"metadata":{"finalizers":null}}`, requestTimeout)
+	_, err := RunContext(ctx, "kubectl", patchArgs...)
 
 	return err
 }

@@ -275,8 +275,8 @@ func removeOperatorResources(ctx context.Context) ([]utils.CustomResource, error
 	reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
 	defer cancelReport()
 	for _, r := range remaining {
-		if err := utils.RemoveFinalizers(reportCtx, r); err != nil {
-			_, _ = fmt.Fprintf(GinkgoWriter, "warning: removing the finalizers of %s %s: %v\n", r.Kind, r.Name, err)
+		if err := utils.ForceDelete(reportCtx, r); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "warning: force deleting %s %s: %v\n", r.Kind, r.Name, err)
 		}
 	}
 
