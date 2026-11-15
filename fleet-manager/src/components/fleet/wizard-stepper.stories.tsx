@@ -2,8 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { fn } from "storybook/test";
 import { WizardStepper } from "./wizard-stepper";
 
-const steps = (errors?: string[]) => [
-  { id: "namespace", label: "Namespace" },
+const steps = (errors?: string[], namespaceErrors?: string[]) => [
+  { id: "namespace", label: "Namespace", errors: namespaceErrors },
   { id: "storage", label: "Storage and access", errors },
   { id: "settings", label: "Settings" },
   { id: "review", label: "Review" },
@@ -21,6 +21,8 @@ const meta = {
       </p>
     ),
     onNext: fn(),
+    onBack: fn(),
+    onStep: fn(),
   },
 } satisfies Meta<typeof WizardStepper>;
 export default meta;
@@ -31,6 +33,19 @@ export const StepWithoutErrors: Story = { name: "Step without errors" };
 export const StepWithErrors: Story = {
   name: "Step with errors",
   args: { steps: steps(["Choose a secondary storage option"]) },
+};
+
+export const FirstStep: Story = {
+  name: "First step",
+  args: { current: "namespace" },
+};
+
+export const DoneStepWithErrors: Story = {
+  name: "Done step with errors",
+  args: {
+    current: "settings",
+    steps: steps(undefined, ["The namespace team-a is gone"]),
+  },
 };
 
 export const LastStep: Story = {
