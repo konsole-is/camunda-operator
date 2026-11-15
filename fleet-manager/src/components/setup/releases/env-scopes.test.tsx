@@ -127,13 +127,52 @@ describe("EnvScopes", () => {
     await userEvent.click(
       operate.getByRole("button", { name: "Add a variable" }),
     );
+    fireEvent.change(
+      operate.getByRole("textbox", { name: "extraEnvFrom of Operate" }),
+      { target: { value: "- configMapRef:\n    name: tuning\n" } },
+    );
     await userEvent.click(
       scope("Operate").getByRole("button", { expanded: true }),
     );
     expect(scope("Operate").queryByRole("textbox")).toBeNull();
+    const reopened = await open("Operate");
+    expect(reopened.getAllByRole("textbox", { name: "Name" })).toHaveLength(1);
+    expect(
+      (
+        reopened.getByRole("textbox", {
+          name: "extraEnvFrom of Operate",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("- configMapRef:\n    name: tuning\n");
     const [, errors] = onChange.mock.calls.at(-1) ?? [];
     expect(errors).toEqual([
       { path: "operate.extraEnv.0.name", message: "Enter a name" },
     ]);
+  });
+
+  it("keeps the last extraEnvFrom and its error while the YAML does not parse", async () => {
+    const onChange = setup({
+      version: "8.9.0",
+      zeebe: { extraEnvFrom: [{ configMapRef: { name: "zeebe-tuning" } }] },
+    });
+    const box = () =>
+      scope("Brokers").getByRole("textbox", {
+        name: "extraEnvFrom of Brokers",
+      }) as HTMLTextAreaElement;
+    fireEvent.change(box(), { target: { value: "- [unclosed" } });
+    const [update, errors] = onChange.mock.calls.at(-1) ?? [];
+    expect(
+      update?.({
+        version: "8.9.0",
+        zeebe: { extraEnvFrom: [{ configMapRef: { name: "zeebe-tuning" } }] },
+      }).zeebe,
+    ).toEqual({ extraEnvFrom: [{ configMapRef: { name: "zeebe-tuning" } }] });
+    expect(errors).toHaveLength(1);
+    await userEvent.click(
+      scope("Brokers").getByRole("button", { expanded: true }),
+    );
+    await open("Brokers");
+    expect(box().value).toBe("- [unclosed");
+    expect(box().getAttribute("aria-invalid")).toBe("true");
   });
 });

@@ -23,12 +23,12 @@ const EXTRA_ENV_FROM = fullSchemaOf("extraEnvFrom");
 /**
  * EnvScopes edits the env lists of each scope of a release: extraEnv as
  * rows of a name with a value or a Secret key, and extraEnvFrom as YAML.
- * A scope with entries starts open. The editors of a scope read spec each
- * time the scope opens, so a caller passes the spec with each edit, and
- * gives the component a new key when it replaces the spec. After each edit
- * onChange gets a function that applies the edit to a spec, and the errors
- * of every editor. An error path starts with the scope and the list, such
- * as "zeebe.extraEnv.0.name".
+ * A scope with entries starts open. The editors read spec once, so a
+ * caller gives the component a new key when it replaces the spec. After
+ * each edit onChange gets a function that applies the edit to a spec, and
+ * the errors of every editor. While the YAML of a scope has an error, the
+ * function keeps its extraEnvFrom. An error path starts with the scope and
+ * the list, such as "zeebe.extraEnv.0.name".
  */
 export function EnvScopes({
   spec,
@@ -114,40 +114,41 @@ export function EnvScopes({
                 {count}
               </span>
             </button>
-            {isOpen && (
-              <div
-                id={`${id}-${scope}`}
-                className="flex flex-col gap-4 border-t border-divider px-4 py-4"
-              >
-                <EnvEditor
-                  label={`Variables of ${label}`}
-                  secrets={secrets}
-                  missingIn={missingIn}
-                  defaultValue={env.extraEnv}
-                  onChange={(extraEnv, listErrors) =>
-                    report(scope, "extraEnv", { extraEnv }, listErrors)
-                  }
-                />
-                <YamlEditor
-                  label={`extraEnvFrom of ${label}`}
-                  rows={4}
-                  schema={EXTRA_ENV_FROM}
-                  defaultValue={env.extraEnvFrom}
-                  onChange={(value, listErrors) =>
-                    report(
-                      scope,
-                      "extraEnvFrom",
-                      {
-                        extraEnvFrom: Array.isArray(value)
-                          ? (value as EnvFromSource[])
-                          : undefined,
-                      },
-                      listErrors,
-                    )
-                  }
-                />
-              </div>
-            )}
+            <div
+              id={`${id}-${scope}`}
+              hidden={!isOpen}
+              className="flex flex-col gap-4 border-t border-divider px-4 py-4"
+            >
+              <EnvEditor
+                label={`Variables of ${label}`}
+                secrets={secrets}
+                missingIn={missingIn}
+                defaultValue={env.extraEnv}
+                onChange={(extraEnv, listErrors) =>
+                  report(scope, "extraEnv", { extraEnv }, listErrors)
+                }
+              />
+              <YamlEditor
+                label={`extraEnvFrom of ${label}`}
+                rows={4}
+                schema={EXTRA_ENV_FROM}
+                defaultValue={env.extraEnvFrom}
+                onChange={(value, listErrors) =>
+                  report(
+                    scope,
+                    "extraEnvFrom",
+                    listErrors.length > 0
+                      ? {}
+                      : {
+                          extraEnvFrom: Array.isArray(value)
+                            ? (value as EnvFromSource[])
+                            : undefined,
+                        },
+                    listErrors,
+                  )
+                }
+              />
+            </div>
           </div>
         );
       })}
