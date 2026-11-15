@@ -171,6 +171,9 @@ function data(over: Partial<ClusterCreateData> = {}): ClusterCreateData {
     databaseServerPresets: [],
     secondaryStorageConfigs: [],
     objectStorageConfigs: [],
+    releases: [],
+    platformConfigs: [],
+    managementAuthConfigs: [],
     ...over,
   };
 }

@@ -22,6 +22,9 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     databaseServerPresets,
     secondaryStorageConfigs,
     objectStorageConfigs,
+    releases,
+    platformConfigs,
+    managementAuthConfigs,
   ] = await Promise.all([
     listOrEmpty("Environment", {}),
     listOrEmpty("Namespace", {}),
@@ -37,6 +40,9 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     listOrEmpty("DatabaseServerPreset", {}),
     listOrEmpty("SecondaryStorageConfig", {}),
     listOrEmpty("ObjectStorageConfig", {}),
+    listOrEmpty("CamundaRelease", {}),
+    listOrEmpty("CamundaPlatformConfig", {}),
+    listOrEmpty("ManagementAuthConfig", {}),
   ]);
   return {
     environments,
@@ -51,6 +57,9 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     databaseServerPresets,
     secondaryStorageConfigs,
     objectStorageConfigs,
+    releases,
+    platformConfigs,
+    managementAuthConfigs,
   };
 }
 

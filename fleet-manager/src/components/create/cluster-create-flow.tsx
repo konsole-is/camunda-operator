@@ -43,6 +43,8 @@ import { type CreateStep, useCreateFlow } from "./use-create-flow";
 /**
  * ClusterCreateData is the first snapshot of the create cluster page, from
  * every namespace. accessRequests are the requests of the access section.
+ * Step 3 lists releases and platformConfigs, and step 4 lists
+ * managementAuthConfigs.
  */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
@@ -57,6 +59,9 @@ export type ClusterCreateData = {
   databaseServerPresets: Resource<"DatabaseServerPreset">[];
   secondaryStorageConfigs: Resource<"SecondaryStorageConfig">[];
   objectStorageConfigs: Resource<"ObjectStorageConfig">[];
+  releases: Resource<"CamundaRelease">[];
+  platformConfigs: Resource<"CamundaPlatformConfig">[];
+  managementAuthConfigs: Resource<"ManagementAuthConfig">[];
 };
 
 const EVERYWHERE = {};

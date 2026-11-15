@@ -42,6 +42,9 @@ describe("loadCreateCluster", () => {
       "DatabaseServerPreset",
       "SecondaryStorageConfig",
       "ObjectStorageConfig",
+      "CamundaRelease",
+      "CamundaPlatformConfig",
+      "ManagementAuthConfig",
     ]) {
       expect(listOf(kind)).toEqual({});
     }
@@ -68,6 +71,19 @@ describe("loadCreateCluster", () => {
         "SecondaryStorageConfig",
         "ObjectStorageConfig",
       ].map((kind) => [{ kind, metadata: { name: "x" } }]),
+    );
+  });
+
+  it("gives the releases, platform configs, and ManagementAuthConfigs that steps 3 and 4 list", async () => {
+    const data = await loadCreateCluster();
+    expect([
+      data.releases,
+      data.platformConfigs,
+      data.managementAuthConfigs,
+    ]).toEqual(
+      ["CamundaRelease", "CamundaPlatformConfig", "ManagementAuthConfig"].map(
+        (kind) => [{ kind, metadata: { name: "x" } }],
+      ),
     );
   });
 });
