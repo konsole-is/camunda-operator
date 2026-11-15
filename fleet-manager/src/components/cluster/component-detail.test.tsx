@@ -296,6 +296,25 @@ describe("ComponentDetail", () => {
     expect(live.usageCalls).toContainEqual(["mgmt", "app=echo"]);
   });
 
+  it("keeps the open tab when a pod selector arrives", async () => {
+    const { rerender } = render(keycloak({ podSelector: "" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    rerender(keycloak({ podSelector: "app=echo" }));
+    expect(
+      screen.getByRole("tab", { name: "Logs" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("says on the Metrics tab that a component without a pod selector runs no pods", async () => {
+    render(keycloak({ podSelector: "" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    const panel = screen.getByRole("tabpanel", { name: "Metrics" });
+    expect(
+      within(panel).getByText("This component runs no pods."),
+    ).toBeTruthy();
+    expect(within(panel).queryByRole("table")).toBeNull();
+  });
+
   it("lists only the events of its refs without a pod selector", async () => {
     live.events = [
       {
