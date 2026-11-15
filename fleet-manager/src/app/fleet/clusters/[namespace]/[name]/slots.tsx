@@ -1,4 +1,5 @@
 import { backupSlots } from "@/components/cluster/backup-slots";
+import { DeleteAction } from "@/components/cluster/delete-action";
 import { ClaimEditor } from "@/components/cluster/edit/claim-editor";
 import { ComponentSettingsEditor } from "@/components/cluster/edit/settings-slot";
 import type { ClusterSlots } from "@/components/cluster/slots";
@@ -13,6 +14,7 @@ import { applyBackupChange } from "./actions";
  */
 export const clusterSlots: ClusterSlots = {
   ...backupSlots(applyBackupChange),
+  "cluster.header.actions": (context) => <DeleteAction context={context} />,
   "cluster.topology.actions": (context) => <TopologyEditor context={context} />,
   "component.settings.editor": (ctx) => <ComponentSettingsEditor ctx={ctx} />,
   "cluster.claim.editor": (context) => <ClaimEditor context={context} />,
