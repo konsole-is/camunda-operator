@@ -36,8 +36,10 @@ describe("applyPresetChange", () => {
   });
 
   it("applyPresetChange refuses a delete without a precondition", async () => {
-    const { preconditions: _, ...change } = presetDeleteChange([spare]);
-    const result = await applyPresetChange(change);
+    const result = await applyPresetChange({
+      ...presetDeleteChange([spare]),
+      preconditions: {},
+    });
     expect(!result.ok && result.errors[0].code).toBe("Invalid");
     expect(fakeWriter.applied).toEqual([]);
   });
