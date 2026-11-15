@@ -954,6 +954,16 @@ export interface DatabaseServerStatus {
       serverName: string;
     };
     /**
+     * ClosedSegment is the write-ahead log file that the server closed after
+     * it took the request. This file and the files before it hold the
+     * requested point. The server starts the recovery when the archive holds
+     * this file, or after five minutes. The server closes no file for a
+     * recovery from an earlier archive. It closes none while ArchiveReady
+     * reports ArchiveFailing, while the primary instance does not answer, or
+     * while another owner controls the cluster it runs from.
+     */
+    closedSegment?: string;
+    /**
      * Cluster is the CloudNativePG cluster that the recovery builds. It is
      * empty for a request that the server refused, also when the server had
      * built a cluster before.
@@ -994,6 +1004,12 @@ export interface DatabaseServerStatus {
      * unset while the recovery runs.
      */
     result?: "Completed" | "Failed" | "Unavailable";
+    /**
+     * StartedAt is when the server took the request. The server waits up to
+     * five minutes from this time for the archive to hold the requested
+     * point.
+     */
+    startedAt?: string;
     /**
      * TargetTime is the targetTime of the request, as the contract carries it.
      */

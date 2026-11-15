@@ -19,6 +19,8 @@ package databaseserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +36,7 @@ import (
 
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
+	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
@@ -60,7 +63,122 @@ var (
 	// reconciler is the reconciler that the manager runs. A spec calls it
 	// directly to read the result of one reconcile.
 	reconciler *DatabaseServerReconciler
+
+	// primaries is the write-ahead log of every server of the suite.
+	primaries *fakeWAL
 )
+
+// suiteArchiveWait is how long a recovery of the suite waits for its archive.
+// A spec that holds the archive back for a moment stays well inside it, and a
+// spec that waits it out still ends inside its timeout.
+const suiteArchiveWait = 6 * time.Second
+
+// fakeWAL is the write-ahead log of the primary instance of every server in
+// the suite. The servers are told apart by the namespace in the host of the
+// connection, and every spec runs in a namespace of its own. By default the
+// archive of a namespace holds each segment as soon as it is closed.
+type fakeWAL struct {
+	mu sync.Mutex
+	// closed counts the segments that a namespace closed.
+	closed map[string]int
+	// holding are the namespaces whose archive lacks the last closed segment.
+	holding map[string]bool
+	// silent are the namespaces whose primary does not answer.
+	silent map[string]bool
+}
+
+// CloseSegment ends the next segment of the namespace of conn.
+func (f *fakeWAL) CloseSegment(_ context.Context, conn pgbootstrap.Connection) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	namespace := hostNamespace(conn.Host)
+	if f.silent[namespace] {
+		return "", errors.New("the spec silences this primary")
+	}
+	f.closed[namespace]++
+
+	return walSegment(f.closed[namespace]), nil
+}
+
+// LastArchived returns the last segment that the archive of the namespace of
+// conn holds.
+func (f *fakeWAL) LastArchived(_ context.Context, conn pgbootstrap.Connection) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	namespace := hostNamespace(conn.Host)
+	if f.silent[namespace] {
+		return "", errors.New("the spec silences this primary")
+	}
+
+	archived := f.closed[namespace]
+	if f.holding[namespace] {
+		archived--
+	}
+	if archived <= 0 {
+		return "", nil
+	}
+
+	return walSegment(archived), nil
+}
+
+// holdArchive keeps the last segment that namespace closed out of its
+// archive, until releaseArchive.
+func (f *fakeWAL) holdArchive(namespace string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.holding[namespace] = true
+}
+
+// releaseArchive lets the archive of namespace receive every closed segment.
+func (f *fakeWAL) releaseArchive(namespace string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.holding, namespace)
+}
+
+// silence makes the primary of namespace answer no query.
+func (f *fakeWAL) silence(namespace string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.silent[namespace] = true
+}
+
+// wake makes the primary of namespace answer again.
+func (f *fakeWAL) wake(namespace string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	delete(f.silent, namespace)
+}
+
+// closedIn returns how many segments the primary of namespace closed.
+func (f *fakeWAL) closedIn(namespace string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.closed[namespace]
+}
+
+// hostNamespace returns the namespace of a read-write host of the form
+// <cluster>-rw.<namespace>.svc.
+func hostNamespace(host string) string {
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	return parts[1]
+}
+
+// walSegment names the nth segment of timeline 1.
+func walSegment(n int) string {
+	return fmt.Sprintf("00000001%08X%08X", 0, n)
+}
 
 // suiteGracePeriods are longer than any spec, so no condition of the suite
 // reaches Degraded or Down.
@@ -258,6 +376,7 @@ var _ = BeforeSuite(func() {
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		backupLists = &backupListCounter{Client: mgr.GetClient(), counts: map[string]int{}}
+		primaries = &fakeWAL{closed: map[string]int{}, holding: map[string]bool{}, silent: map[string]bool{}}
 
 		// Uncached, as SetupWithManager builds it: see the componentClient
 		// field. The spec keeps a handle on it to refuse one apply.
@@ -278,6 +397,8 @@ var _ = BeforeSuite(func() {
 			// Short, so the specs exercise the requeue that waits on the
 			// superuser Secret inside their timeout.
 			RetryInterval: 500 * time.Millisecond,
+			ArchiveWait:   suiteArchiveWait,
+			WAL:           primaries,
 			GracePeriods:  suiteGracePeriods,
 		}
 		return reconciler.SetupWithManager(mgr)

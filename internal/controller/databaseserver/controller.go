@@ -177,6 +177,14 @@ type DatabaseServerReconciler struct {
 	// RetryInterval overrides how long the controller waits on the superuser
 	// Secret. Zero means defaultRetryInterval; tests shorten it.
 	RetryInterval time.Duration
+	// ArchiveWait overrides how long a recovery waits for the archive to hold
+	// the write-ahead log of the requested point. Zero means
+	// defaultArchiveWait; tests shorten it.
+	ArchiveWait time.Duration
+	// WAL closes and reads the write-ahead log of the primary instance. Nil
+	// means the production implementation over pgx. The tests point it at a
+	// fake, because envtest runs no PostgreSQL.
+	WAL WriteAheadLog
 	// GracePeriods are the grace periods of the cluster component, which uses
 	// the datastore period. The zero value keeps ClusterReady on its progress
 	// reason.
