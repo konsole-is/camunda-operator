@@ -308,6 +308,17 @@ describe("ClusterCreateFlow", () => {
     ).toContain("Environment and name: Choose a namespace");
   });
 
+  it("offers Back on the review step", async () => {
+    render(<ClusterCreateFlow initial={data({ sections: [] })} />);
+    await fillBasics("orders");
+    for (let i = 0; i < 4; i++) await userEvent.click(next());
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 2, name: "Attachments" }),
+    );
+  });
+
   it("keeps the step 1 choices after Next and Back", async () => {
     render(
       <ClusterCreateFlow

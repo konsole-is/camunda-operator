@@ -34,7 +34,6 @@ const stepHeading = (name: string) =>
   screen.getByRole("heading", { level: 2, name });
 
 describe("WizardStepper", () => {
-
   it("blocks Next while the step reports an error", async () => {
     const onNext = vi.fn();
     render(
@@ -227,7 +226,11 @@ describe("WizardStepper", () => {
       <WizardStepper
         steps={[
           { id: "namespace", label: "Namespace" },
-          { id: "storage", label: "Storage and access", errors: ["Not reached"] },
+          {
+            id: "storage",
+            label: "Storage and access",
+            errors: ["Not reached"],
+          },
           { id: "review", label: "Review" },
         ]}
         current="namespace"
@@ -262,5 +265,14 @@ describe("WizardStepper", () => {
       screen.getByText("The namespace team-a is gone").closest("li")
         ?.textContent,
     ).toBe("Namespace: The namespace team-a is gone");
+  });
+
+  it("has no Back on the last step", () => {
+    render(
+      <WizardStepper steps={steps()} current="review" onBack={vi.fn()}>
+        step
+      </WizardStepper>,
+    );
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
 });

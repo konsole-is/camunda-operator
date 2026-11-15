@@ -23,9 +23,9 @@ type StepState = "Done" | "Current" | "Not started" | "Has errors";
  * focus moves to that heading, but not on the first render. "Next" stays
  * blocked while the current step or a step before it has errors. The
  * footer lists those errors, each with the label of its step. The last
- * step has no "Next": its review holds the confirm. The first step has no
- * "Back". With onStep, a step before the current one is a button that goes
- * back to it.
+ * step has neither "Next" nor "Back": its review holds the confirm and its
+ * own Back. The first step has no "Back". With onStep, a step before the
+ * current one is a button that goes back to it.
  */
 export function WizardStepper({
   steps,
@@ -51,8 +51,10 @@ export function WizardStepper({
   );
   const blocking = steps
     .slice(0, index + 1)
-    .flatMap((s) => (s.errors ?? []).map((error) => ({ step: s.label, error })));
-  const back = index > 0 && onBack !== undefined;
+    .flatMap((s) =>
+      (s.errors ?? []).map((error) => ({ step: s.label, error })),
+    );
+  const back = index > 0 && index < steps.length - 1 && onBack !== undefined;
   const next = index < steps.length - 1;
   const heading = useRef<HTMLHeadingElement>(null);
   const id = steps[index]?.id;

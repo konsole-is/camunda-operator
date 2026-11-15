@@ -105,7 +105,8 @@ export const PLANE_STEPS: readonly { id: string; label: string }[] = [
 /**
  * PlaneReview is what the review step needs to write: the write mode, the
  * dry run and the create of the server actions, and onWritten for the
- * result. blocked keeps Create disabled.
+ * result. blocked keeps Create disabled. onBack goes one step back, from
+ * beside Create.
  */
 export type PlaneReview = {
   mode: WriteMode;
@@ -113,6 +114,7 @@ export type PlaneReview = {
   create: (change: Change) => Promise<WriteResult>;
   onWritten: (result: WriteResult) => void;
   blocked?: boolean;
+  onBack?: () => void;
 };
 
 /** PlaneModels are the lists that the steps of the plane create flow read. */
@@ -535,6 +537,7 @@ export function PlaneCreateFlow({
             create: createOnce,
             onWritten,
             blocked: earlier || writing,
+            onBack: flow.back,
           }}
         />
       </WizardStepper>
