@@ -80,7 +80,7 @@ export function StorageAccessStep({
     .map((a) => `${draft.name}-${DATABASE_SUFFIX[a]}`);
 
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-8">
       {gone.map((name) => (
         <div
           key={name}

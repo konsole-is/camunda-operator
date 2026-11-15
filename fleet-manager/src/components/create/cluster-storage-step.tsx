@@ -57,7 +57,7 @@ export function ClusterStorageStep({
 }) {
   const selections = draftSelections(draft);
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-8">
       {views.map((view) => {
         const shown = draft.storage && Object.hasOwn(draft.storage, view.name);
         const picked = shown ? draft.storage![view.name] : [];

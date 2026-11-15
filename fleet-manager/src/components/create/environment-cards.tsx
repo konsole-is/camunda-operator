@@ -60,7 +60,7 @@ export function EnvironmentCards(props: EnvironmentCardsProps) {
       <div
         role={props.multiple ? "group" : "radiogroup"}
         aria-labelledby={`${id}-label`}
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-2 @3xl:grid-cols-3"
       >
         {sorted.map((environment) => {
           const name = environment.metadata.name ?? "";

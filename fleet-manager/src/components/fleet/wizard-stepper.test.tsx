@@ -63,6 +63,15 @@ describe("WizardStepper", () => {
     ]);
   });
 
+  it("tells the position of the current step", () => {
+    render(
+      <WizardStepper steps={steps()} current="storage">
+        step
+      </WizardStepper>,
+    );
+    expect(screen.getByText("Step 2 of 3")).toBeTruthy();
+  });
+
   it("has no Next on the last step and no Back on the first", () => {
     const { rerender } = render(
       <WizardStepper steps={steps()} current="review">

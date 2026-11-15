@@ -155,7 +155,7 @@ export function NamespacePicker({
         Use an existing namespace
       </label>
       {activeMode === "existing" && (
-        <div className="flex flex-col gap-1 pl-6">
+        <div className="flex max-w-md flex-col gap-1 pl-6">
           <label htmlFor={`${id}-existing`} className="sr-only">
             Namespace
           </label>

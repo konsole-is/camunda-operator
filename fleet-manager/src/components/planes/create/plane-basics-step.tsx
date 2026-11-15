@@ -82,7 +82,7 @@ export function PlaneBasicsStep({
   };
 
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-8">
       <EnvironmentCards
         environments={ctx.environments}
         counts={environmentCounts(ctx.environments, namespaces, clusters)}

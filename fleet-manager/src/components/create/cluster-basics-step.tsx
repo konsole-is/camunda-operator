@@ -77,7 +77,7 @@ export function ClusterBasicsStep({
   };
 
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-8">
       {environments.length > 0 && (
         <EnvironmentCards
           environments={environments}
