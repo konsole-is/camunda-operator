@@ -121,15 +121,17 @@ export function PresetList({
               changed: row.lastChanged ?? "",
             },
             cells: {
-              name: (
-                <span className="flex flex-col gap-0.5">
+              // The cell is the content of an inline link, so a block in
+              // it would leave the link without a 24 px pointer target.
+              name: row.description ? (
+                <span className="inline-flex flex-col gap-0.5">
                   <span>{row.name}</span>
-                  {row.description && (
-                    <span className="max-w-xs text-sm font-normal text-muted">
-                      {row.description}
-                    </span>
-                  )}
+                  <span className="max-w-xs text-sm font-normal text-muted">
+                    {row.description}
+                  </span>
                 </span>
+              ) : (
+                row.name
               ),
               kind,
               facts: <FactsList facts={row.facts} />,
