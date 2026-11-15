@@ -1,0 +1,393 @@
+import { describe, expect, it } from "vitest";
+import type { Step } from "@/lib/fields";
+import type { Resource } from "@/lib/k8s/kinds";
+import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
+import {
+  openSession,
+  resetValue,
+  setValue,
+  type PlaneClaim,
+  type Session,
+} from "@/lib/session";
+import { EMPTY_MAIL } from "./components";
+import { mailOf } from "./draft";
+import { componentEdits, identityMoveEdits, type PlaneEdit } from "./edits";
+import {
+  CALLBACKS_MOVE,
+  CONSOLE_OFF,
+  FIRST_ADMIN_STAYS,
+  KEYCLOAK_DELETED,
+  MOVE_AT_ONCE,
+  MOVE_WAITS,
+  OIDC_CALLBACKS,
+  PREVIEW_NEEDS_ISSUER,
+  WEB_MODELER_OFF,
+  planeImpacts,
+  planeModeMove,
+  servedChanges,
+  type PlaneChangeInput,
+} from "./impacts";
+import { KEYCLOAK_REALM_WARNING, KEYCLOAK_RESTART_WARNING } from "./versions";
+
+const at = (...names: string[]): Step[] => names.map((field) => ({ field }));
+const asEdit = (e: PlaneEdit): [Step[], unknown] => [
+  e.steps,
+  "reset" in e ? undefined : e.value,
+];
+
+function planeClaim(spec: Partial<PlaneClaim["spec"]> = {}): PlaneClaim {
+  return {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name: "mgmt", namespace: "mgmt-ns", resourceVersion: "1" },
+    spec: {
+      environments: ["production"],
+      clusterSelector: {},
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin" } },
+      },
+      versions: { identity: "8.9.14", keycloak: "26.6.4" },
+      ...spec,
+    },
+  } as PlaneClaim;
+}
+
+const externalClaim = (spec: Partial<PlaneClaim["spec"]> = {}) =>
+  planeClaim({
+    management: {
+      identityProvider: {
+        externalKeycloak: {
+          url: "https://kc.example.com",
+          adminCredentialsSecretRef: { name: "kc" },
+        },
+      },
+      identity: { admin: { username: "admin" } },
+    },
+    versions: { identity: "8.9.14" },
+    ...spec,
+  });
+
+function changed(
+  claim: PlaneClaim,
+  ...edits: [Step[], unknown][]
+): Session<PlaneClaim> {
+  let s = openSession({
+    claim,
+    resource: { metadata: { labels: { [CLAIM_LABEL]: "mgmt" } } },
+    locks: () => undefined,
+  })!;
+  for (const [steps, value] of edits) {
+    const result =
+      value === undefined ? resetValue(s, steps) : setValue(s, steps, value);
+    expect("session" in result).toBe(true);
+    if ("session" in result) s = result.session;
+  }
+  return s;
+}
+
+const namespace = (name: string, environment: string) =>
+  ({
+    metadata: { name, labels: { [ENVIRONMENT_LABEL]: environment } },
+  }) as Resource<"Namespace">;
+const cluster = (namespace: string, name: string) =>
+  ({
+    metadata: { namespace, name },
+    spec: { platformConfigRef: "basic" },
+    status: { gateway: { grpc: "orders:26500" } },
+  }) as unknown as Resource<"CamundaCluster">;
+const platformConfigs = [
+  { metadata: { name: "basic" }, spec: { auth: { method: "basic" } } },
+  {
+    metadata: { name: "sso" },
+    spec: {
+      auth: { method: "oidc", oidc: { issuerUrl: "https://sso.example.com" } },
+    },
+  },
+] as Resource<"CamundaPlatformConfig">[];
+
+function input(
+  session: Session<PlaneClaim>,
+  over: Partial<PlaneChangeInput> | Record<string, unknown> = {},
+): PlaneChangeInput {
+  return {
+    session,
+    plane: { metadata: { name: "mgmt", namespace: "mgmt-ns" } },
+    environment: {
+      metadata: { name: "production" },
+      spec: { platformConfigRef: "basic" },
+    },
+    platformConfigs,
+    clusters: [cluster("team-orders", "orders"), cluster("team-qa", "qa")],
+    namespaces: [
+      namespace("team-orders", "production"),
+      namespace("team-qa", "staging"),
+    ],
+    ...over,
+  } as PlaneChangeInput;
+}
+
+describe("planeImpacts", () => {
+  it("lists nothing for a change that moves nothing", () => {
+    const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("lists a cluster that attaches when an environment is added", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    expect(planeImpacts(input(s))).toEqual([
+      "team-qa/qa attaches and restarts its pods once, because it gets the Console settings.",
+    ]);
+  });
+
+  it("lists a cluster that detaches when an environment is removed", () => {
+    const live = planeClaim({ environments: ["production", "staging"] });
+    const s = changed(live, [at("spec", "environments"), ["production"]]);
+    expect(planeImpacts(input(s))).toEqual([
+      "team-qa/qa detaches. It loses its Console settings and restarts once.",
+    ]);
+  });
+
+  it("lists a cluster that detaches when the selector stops matching", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "clusterSelector"),
+      { matchLabels: { tier: "gold" } },
+    ]);
+    expect(planeImpacts(input(s))).toEqual([
+      "team-orders/orders detaches. It loses its Console settings and restarts once.",
+    ]);
+  });
+
+  it("shows the callback move of a move from External Keycloak to OIDC", () => {
+    const live = externalClaim({ platformConfigRef: "sso" });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+    );
+    expect(planeImpacts(input(s))).toEqual([
+      "Sign-in moves from External Keycloak to OIDC.",
+      FIRST_ADMIN_STAYS,
+      CALLBACKS_MOVE,
+      MOVE_AT_ONCE,
+      OIDC_CALLBACKS,
+    ]);
+  });
+
+  it("waits while the plane serves an Optimize on a move to another Keycloak", () => {
+    const live = externalClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    const plane = {
+      metadata: { name: "mgmt", namespace: "mgmt-ns" },
+      status: { optimize: [{ namespace: "team-orders", name: "optimize" }] },
+    };
+    const lines = planeImpacts(input(s, { plane }));
+    expect(lines).toContain(MOVE_WAITS);
+    expect(lines).not.toContain(MOVE_AT_ONCE);
+  });
+
+  it("moves at once on a move to another Keycloak while the plane serves no Optimize", () => {
+    const live = externalClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    expect(planeImpacts(input(s))).toContain(MOVE_AT_ONCE);
+  });
+
+  it("a claim-only plane moves at once", () => {
+    const live = externalClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    const lines = planeImpacts(input(s, { plane: undefined }));
+    expect(lines).toContain(MOVE_AT_ONCE);
+    expect(lines).not.toContain(MOVE_WAITS);
+  });
+
+  it("says that a move away from the keycloak mode deletes the Keycloak", () => {
+    const live = planeClaim({ platformConfigRef: "sso" });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+    );
+    const lines = planeImpacts(input(s));
+    expect(lines.slice(0, 4)).toEqual([
+      "Sign-in moves from Keycloak to OIDC.",
+      FIRST_ADMIN_STAYS,
+      KEYCLOAK_DELETED,
+      OIDC_CALLBACKS,
+    ]);
+    expect(lines).not.toContain(CALLBACKS_MOVE);
+  });
+
+  it("names the move inside the Keycloak family without the OIDC line", () => {
+    const live = planeClaim();
+    const external = {
+      url: "https://kc.example.com",
+      realm: "",
+      adminSecret: "kc",
+    };
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "externalKeycloak", external).map(asEdit),
+    );
+    expect(planeImpacts(input(s))).toEqual([
+      "Sign-in moves from Keycloak to External Keycloak.",
+      FIRST_ADMIN_STAYS,
+      KEYCLOAK_DELETED,
+    ]);
+  });
+
+  it("planeImpacts names no mode move while the live mode is unknown", () => {
+    const live = planeClaim({
+      management: {
+        identityProvider: {},
+        identity: { admin: { username: "admin" } },
+      },
+    });
+    const s = changed(live, [
+      at("spec", "management", "identityProvider"),
+      { keycloak: {} },
+    ]);
+    expect(planeModeMove(s)).toBeUndefined();
+    expect(
+      planeImpacts(input(s)).some((l) => l.startsWith("Sign-in moves")),
+    ).toBe(false);
+  });
+
+  it("an unknown issuer lists no attach or detach and says the preview needs the issuer", () => {
+    const live = planeClaim({ platformConfigRef: "sso-without-issuer" });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+    );
+    const lines = planeImpacts(
+      input(s, {
+        platformConfigs: [
+          {
+            metadata: { name: "sso-without-issuer" },
+            spec: { auth: { method: "oidc", oidc: {} } },
+          },
+        ],
+      }),
+    );
+    expect(lines).toContain(PREVIEW_NEEDS_ISSUER);
+    expect(
+      lines.some((l) => l.includes("attaches") || l.includes("detaches")),
+    ).toBe(false);
+  });
+
+  it("says that the preview needs the issuer only when the served clusters can move", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso-without-issuer",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const configs = {
+      platformConfigs: [
+        {
+          metadata: { name: "sso-without-issuer" },
+          spec: { auth: { method: "oidc", oidc: {} } },
+        },
+      ],
+    };
+    const policy = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    const served = changed(live, [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    expect(planeImpacts(input(policy, configs))).toEqual([]);
+    expect(planeImpacts(input(served, configs))).toEqual([
+      PREVIEW_NEEDS_ISSUER,
+    ]);
+  });
+
+  it("says what Console off and Web Modeler off do", () => {
+    const live = planeClaim({
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        console: {},
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+      versions: {
+        identity: "8.9.14",
+        keycloak: "26.6.4",
+        console: "8.9.133",
+        webModeler: "8.9.15",
+      },
+    });
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", false).map(asEdit),
+      ...componentEdits(live.spec, "webModeler", false).map(asEdit),
+    );
+    expect(planeImpacts(input(s))).toEqual([CONSOLE_OFF, WEB_MODELER_OFF]);
+  });
+
+  it("lists a version move with its warnings", () => {
+    const s = changed(
+      planeClaim(),
+      [at("spec", "versions", "identity"), "8.9.10"],
+      [at("spec", "versions", "keycloak"), "26.6.5"],
+    );
+    expect(planeImpacts(input(s))).toEqual([
+      "Management Identity moves from 8.9.14 to 8.9.10.",
+      "Keycloak moves from 26.6.4 to 26.6.5.",
+      "Management Identity moves down from 8.9.14 to 8.9.10. Camunda documents no downgrade.",
+      KEYCLOAK_RESTART_WARNING,
+    ]);
+  });
+
+  it("adds the minor warning and the realm warning after a version move", () => {
+    const live = planeClaim({
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin" } },
+        console: {},
+      },
+      versions: { identity: "8.9.14", keycloak: "26.6.4", console: "8.9.133" },
+    });
+    const s = changed(
+      live,
+      [at("spec", "versions", "console"), "8.10.1"],
+      [at("spec", "versions", "keycloak"), "26.7.0"],
+    );
+    expect(planeImpacts(input(s))).toEqual([
+      "Console moves from 8.9.133 to 8.10.1.",
+      "Keycloak moves from 26.6.4 to 26.7.0.",
+      KEYCLOAK_RESTART_WARNING,
+      "Management Identity and Console run on different minors: 8.9, 8.10. Camunda supports them together on one minor only.",
+      KEYCLOAK_REALM_WARNING,
+    ]);
+  });
+});
+
+describe("servedChanges", () => {
+  it("gives the rows after the change beside the attach and detach rows", () => {
+    const s = changed(planeClaim(), [at("spec", "environments"), ["staging"]]);
+    const result = servedChanges(input(s));
+    expect(result?.attach.map((r) => r.name)).toEqual(["qa"]);
+    expect(result?.detach.map((r) => r.name)).toEqual(["orders"]);
+    expect(result?.after.map((r) => r.name)).toEqual(["qa"]);
+  });
+
+  it("is undefined while the issuer after the change is unknown", () => {
+    const live = planeClaim({ platformConfigRef: "missing" });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+    );
+    expect(servedChanges(input(s))).toBeUndefined();
+  });
+});
