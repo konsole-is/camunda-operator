@@ -12,7 +12,7 @@ import {
   CLUSTER_LABEL,
   SECTION_LABEL,
 } from "@/lib/labels";
-import { ownerName } from "@/lib/labels/server";
+import { ownerName } from "@/lib/labels/owner-name";
 import { mergeCluster } from "@/lib/merge";
 
 /**
