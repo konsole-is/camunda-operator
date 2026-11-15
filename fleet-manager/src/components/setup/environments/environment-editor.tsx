@@ -459,7 +459,7 @@ function DeletionPolicyField({
         This is the default for new claims.
       </legend>
       {POLICIES.map(([policy, text]) => (
-        <label key={policy} className="flex items-center gap-2 text-sm">
+        <label key={policy} className="flex min-h-6 items-center gap-2 text-sm">
           <Radio
             name="deletion-policy"
             checked={value === policy}

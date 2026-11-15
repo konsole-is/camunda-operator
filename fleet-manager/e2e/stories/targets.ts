@@ -56,8 +56,7 @@ export async function smallTargets(page: Page): Promise<string[]> {
     };
     const size = (el: Element) => {
       el.scrollIntoView({ block: "center", inline: "center" });
-      // A link that wraps has a box for each line, and the space between them
-      // is not the link.
+      // A wrapped link has a box for each line: measure the largest.
       const r = [...el.getClientRects()].reduce((a, b) =>
         b.width * b.height > a.width * a.height ? b : a,
       );

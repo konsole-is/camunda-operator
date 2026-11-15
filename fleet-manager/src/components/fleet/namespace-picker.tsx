@@ -143,7 +143,7 @@ export function NamespacePicker({
       <legend className="mb-1 font-heading text-base font-semibold">
         Namespace
       </legend>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex min-h-6 items-center gap-2 text-sm">
         <Radio
           name={`${id}-mode`}
           checked={activeMode === "existing"}
@@ -179,7 +179,7 @@ export function NamespacePicker({
         </div>
       )}
       {canCreate && (
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-6 items-center gap-2 text-sm">
           <Radio
             name={`${id}-mode`}
             checked={activeMode === "new"}
