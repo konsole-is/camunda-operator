@@ -15,7 +15,7 @@ import type { WriteMode } from "@/lib/write/types";
 import { claim, releaseFixtures } from "./fixtures";
 import { ReleaseList } from "./release-list";
 import type { ReleaseActions } from "./release-detail";
-import { releaseRows } from "./rows";
+import { releaseRows, type SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
 
 vi.mock("@/lib/k8s/hooks", () => ({
@@ -25,7 +25,9 @@ vi.mock("@/lib/k8s/hooks", () => ({
 
 afterEach(cleanup);
 
-function setup(opts: { sources?: ReleasesData; mode?: WriteMode } = {}) {
+function setup(
+  opts: { sources?: ReleasesData & SourceReads; mode?: WriteMode } = {},
+) {
   const { sources = releaseFixtures() } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
@@ -38,20 +40,24 @@ function setup(opts: { sources?: ReleasesData; mode?: WriteMode } = {}) {
       mode: "direct" as const,
     })),
   };
-  const view = (s: ReleasesData) => (
+  const view = (s: ReleasesData & SourceReads) => (
     <GitPushesProvider>
       <ReleaseList
         rows={releaseRows(s)}
         releases={s.releases}
         environments={s.environments}
-        errors={[]}
+        errors={[...(s.errors ?? [])]}
+        stale={s.stale}
         mode={mode}
         actions={actions}
       />
     </GitPushesProvider>
   );
   const { rerender } = render(view(sources));
-  return { actions, rerender: (s: ReleasesData) => rerender(view(s)) };
+  return {
+    actions,
+    rerender: (s: ReleasesData & SourceReads) => rerender(view(s)),
+  };
 }
 
 const rowOf = (name: string) =>
@@ -168,6 +174,45 @@ describe("ReleaseList", () => {
     expect(
       screen.queryByRole("region", { name: "Review the delete" }),
     ).toBeNull();
+  });
+
+  it("offers no delete while a list cannot be read and closes an open delete review", async () => {
+    const { rerender } = setup();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select camunda-8-9-1" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete 1 release" }),
+    );
+    rerender({
+      ...releaseFixtures(),
+      errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .filter((box) => !box.hasAttribute("disabled")),
+    ).toEqual([]);
+  });
+
+  it("offers no delete while a list has no snapshot on the connection", () => {
+    setup({ sources: { ...releaseFixtures(), stale: ["Environment"] } });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read Environment.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("checkbox", { name: "Select camunda-8-9-1" }),
+    ).toHaveProperty("disabled", true);
   });
 
   it("offers no delete while changes are off", async () => {

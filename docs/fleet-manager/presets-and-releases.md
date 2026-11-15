@@ -31,6 +31,12 @@ You can delete a release only when it is unused and no environment allows it. Th
 
 If a claim or an environment names a selected release while the review is open, the review closes. Start the delete again.
 
+The fleet manager must read every list of the page to know that a release is unused. When it cannot read one, no release can be deleted and an open delete review closes. The page then names the kinds that it cannot read:
+
+> Delete is possible when the fleet manager can read CamundaClusterClaim.
+
+The page also shows this line for a short time after it opens or connects again.
+
 On the page of a release, the section **Delete the release** offers the same delete. Type the name of the release to confirm it.
 
 In Git mode, the delete is a commit that removes the files of the releases. GitOps must prune the `CamundaRelease` objects to delete them from the cluster.

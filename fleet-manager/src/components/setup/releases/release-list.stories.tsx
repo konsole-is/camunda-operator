@@ -58,3 +58,19 @@ export const ChangesOff: Story = {
   name: "Changes off",
   args: { mode: undefined },
 };
+
+const CLAIMS_FORBIDDEN = [
+  {
+    kind: "CamundaClusterClaim",
+    message:
+      'camundaclusterclaims.fleet.camunda.io is forbidden: User "fleet-manager" cannot list resource "camundaclusterclaims"',
+  },
+];
+
+export const ListThatCannotBeRead: Story = {
+  name: "A list that cannot be read",
+  args: {
+    rows: releaseRows({ ...releaseFixtures(), errors: CLAIMS_FORBIDDEN }),
+    errors: CLAIMS_FORBIDDEN,
+  },
+};

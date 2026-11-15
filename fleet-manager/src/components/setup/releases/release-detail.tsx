@@ -16,6 +16,7 @@ import type { ImagesTable } from "@/startup/bundled-data";
 import { ReleaseEnvironments } from "./release-environments";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
+import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
 /** ReleaseActions are the writes of the release pages: the server actions on the page, fakes in tests and stories. */
@@ -76,7 +77,7 @@ export function ReleaseDetailView({
   mode,
   actions,
 }: {
-  sources: ReleasesData & { errors: ReadError[] };
+  sources: ReleasesData & { errors: ReadError[] } & SourceReads;
   name: string;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;

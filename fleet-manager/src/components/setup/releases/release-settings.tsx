@@ -42,7 +42,12 @@ import { EnvScopes } from "./env-scopes";
 import { minorOf, releaseImages } from "./images";
 import { ImagesPanel } from "./images-panel";
 import type { ReleaseActions } from "./release-detail";
-import { releaseRows } from "./rows";
+import {
+  releaseRows,
+  type SourceReads,
+  unreadDeleteText,
+  unreadKinds,
+} from "./rows";
 import type { ReleasesData } from "./sources";
 
 const LIST_HREF = "/setup/releases";
@@ -68,7 +73,7 @@ export function ReleaseSettings({
   mode,
   actions,
 }: {
-  sources: ReleasesData & { errors: ReadError[] };
+  sources: ReleasesData & { errors: ReadError[] } & SourceReads;
   name?: string;
   copyFrom?: string;
   imagesTable: ImagesTable;
@@ -105,6 +110,7 @@ export function ReleaseSettings({
   const deletable =
     !isNew &&
     (releaseRows(sources).find((r) => r.name === name)?.deletable ?? false);
+  const unread = unreadKinds(sources);
   const union = secretRefsUnion(secrets);
   const refs = withSecretRefs(union.refs, namedSecretRefs(draft.spec));
   const errorAt = (path: string) =>
@@ -125,8 +131,9 @@ export function ReleaseSettings({
   }
 
   const deleting = reviewing?.kind === "delete";
-  // A claim or an environment can name the release after the delete review
-  // opened. A delete that already runs cannot stop.
+  // A claim or an environment can name the release, or a list can turn
+  // unreadable, after the delete review opened. A delete that already runs
+  // cannot stop.
   if (deleting && !writing && !deletable) editor.cancel();
   const savedName = isNew ? draft.name : name;
 
@@ -249,6 +256,8 @@ export function ReleaseSettings({
               >
                 No resource uses this release, and no environment offers it.
               </TypedConfirm>
+            ) : unread.length > 0 ? (
+              <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
             ) : (
               <p className="text-sm text-muted">
                 Delete is possible when no cluster, Elasticsearch cluster,

@@ -1,3 +1,4 @@
+import type { ReadError } from "@/components/planes/planes-table";
 import { byCodeUnit } from "@/lib/policy";
 import {
   allowedIn,
@@ -13,10 +14,20 @@ import type { ReleasesData } from "./sources";
 export type EnvironmentName = { name: string; label: string };
 
 /**
+ * SourceReads says which lists of ReleasesData are not read: errors holds
+ * the error of each failed watch, and stale the kind of each list whose
+ * watch has no snapshot on its current connection.
+ */
+export type SourceReads = {
+  errors?: readonly ReadError[];
+  stale?: readonly string[];
+};
+
+/**
  * ReleaseRow is one release of the Releases list. The optional versions are
  * unset when the release does not set them. deletable is true only for a
  * release that nothing uses, claims included, and that no environment
- * allows or has as its default.
+ * allows or has as its default, while every list of the sources is read.
  */
 export type ReleaseRow = {
   name: string;
@@ -31,7 +42,8 @@ export type ReleaseRow = {
 };
 
 /** releaseRows returns one row for each release of sources, sorted by name. */
-export function releaseRows(sources: ReleasesData): ReleaseRow[] {
+export function releaseRows(sources: ReleasesData & SourceReads): ReleaseRow[] {
+  const unread = unreadKinds(sources).length > 0;
   const names = (environments: string[]) =>
     environments.map((name) => {
       const environment = sources.environments.find(
@@ -69,10 +81,27 @@ export function releaseRows(sources: ReleasesData): ReleaseRow[] {
         allowedIn: allowed,
         usage,
         deletable:
-          releaseUnused(usage) && allowed.length === 0 && defaults.length === 0,
+          !unread &&
+          releaseUnused(usage) &&
+          allowed.length === 0 &&
+          defaults.length === 0,
       };
     })
     .sort((a, b) => byCodeUnit(a.name, b.name));
+}
+
+/** unreadKinds returns each kind of reads that failed or is stale, once. */
+export function unreadKinds(reads: SourceReads): string[] {
+  const kinds = [
+    ...(reads.errors ?? []).map((e) => e.kind),
+    ...(reads.stale ?? []),
+  ];
+  return [...new Set(kinds)];
+}
+
+/** unreadDeleteText says why no release can be deleted while the lists of kinds are not read. */
+export function unreadDeleteText(kinds: readonly string[]): string {
+  return `Delete is possible when the fleet manager can read ${kinds.join(", ")}.`;
 }
 
 /**

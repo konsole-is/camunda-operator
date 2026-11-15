@@ -12,10 +12,11 @@ import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { WriteMode, WriteResult } from "@/lib/write/types";
-import { imagesFixture, releaseFixtures } from "./fixtures";
+import { claim, imagesFixture, releaseFixtures } from "./fixtures";
 import type { ReleaseActions } from "./release-detail";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_CHANGE_NOTICE } from "./draft";
+import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
@@ -34,7 +35,7 @@ function setup(
     name?: string;
     copyFrom?: string;
     mode?: WriteMode;
-    sources?: ReleasesData;
+    sources?: ReleasesData & SourceReads;
     secrets?: Record<string, SecretRefs>;
     result?: WriteResult;
   } = {},
@@ -54,10 +55,10 @@ function setup(
     })),
     applyChange: vi.fn<ReleaseActions["applyChange"]>(async () => result),
   };
-  const view = (s: ReleasesData) => (
+  const view = (s: ReleasesData & SourceReads) => (
     <GitPushesProvider>
       <ReleaseSettings
-        sources={{ ...s, errors: [] }}
+        sources={{ ...s, errors: [...(s.errors ?? [])] }}
         name={name}
         copyFrom={copyFrom}
         imagesTable={imagesFixture}
@@ -68,7 +69,10 @@ function setup(
     </GitPushesProvider>
   );
   const { rerender } = render(view(sources));
-  return { actions, rerender: (s: ReleasesData) => rerender(view(s)) };
+  return {
+    actions,
+    rerender: (s: ReleasesData & SourceReads) => rerender(view(s)),
+  };
 }
 
 const field = (label: string) =>
@@ -78,6 +82,16 @@ async function confirm(label: string) {
   const button = screen.getByRole("button", { name: label });
   await waitFor(() => expect(button).toHaveProperty("disabled", false));
   fireEvent.click(button);
+}
+
+function openDeleteReview(name: string) {
+  fireEvent.change(screen.getByLabelText(/to confirm/), {
+    target: { value: name },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+  expect(
+    screen.getByRole("region", { name: "Review the delete" }),
+  ).toBeTruthy();
 }
 
 beforeEach(() => router.push.mockClear());
@@ -203,6 +217,52 @@ describe("ReleaseSettings", () => {
       preconditions: { "CamundaRelease//camunda-8-9-1": "41" },
       uids: { "CamundaRelease//camunda-8-9-1": "uid-camunda-8-9-1" },
     });
+  });
+
+  it("closes the delete review when a claim names the release", () => {
+    const { rerender } = setup({ name: "camunda-8-9-1" });
+    openDeleteReview("camunda-8-9-1");
+    const sources = releaseFixtures();
+    sources.claims.push(claim("team-new", "late", "camunda-8-9-1"));
+    rerender(sources);
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
+  });
+
+  it("offers no delete while a list cannot be read and closes an open delete review", () => {
+    const { rerender } = setup({ name: "camunda-8-9-1" });
+    openDeleteReview("camunda-8-9-1");
+    rerender({
+      ...releaseFixtures(),
+      errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers no delete while a list has no snapshot on the connection", () => {
+    setup({
+      name: "camunda-8-9-1",
+      sources: { ...releaseFixtures(), stale: ["CamundaCluster"] },
+    });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
   });
 
   it("copies the release of copyFrom for a new release and creates it by name", async () => {

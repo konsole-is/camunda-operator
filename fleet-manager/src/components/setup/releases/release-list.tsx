@@ -19,6 +19,8 @@ import {
   defaultInText,
   type ReleaseRow,
   releaseRows,
+  unreadDeleteText,
+  unreadKinds,
   usedByText,
 } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
@@ -28,15 +30,18 @@ const EMPTY = <span className="text-muted">-</span>;
 /**
  * ReleaseList is the list page of the releases. releases are the live
  * objects, so a delete names the resourceVersion and the UID that the page
- * showed. Only a row that can be deleted can be selected. A delete review
- * closes, unless its write already runs, when a release of it can no
- * longer be deleted. Without mode the page offers no delete.
+ * showed. stale holds the kinds whose watch has no snapshot on its current
+ * connection, as useReleaseSources gives them. Only a row that can be
+ * deleted can be selected. A delete review closes, unless its write already
+ * runs, when a release of it can no longer be deleted. Without mode the
+ * page offers no delete.
  */
 export function ReleaseList({
   rows,
   releases,
   environments,
   errors,
+  stale = [],
   mode,
   actions,
 }: {
@@ -44,6 +49,7 @@ export function ReleaseList({
   releases: readonly CamundaRelease[];
   environments: readonly Environment[];
   errors: ReadError[];
+  stale?: readonly string[];
   mode?: WriteMode;
   actions: ReleaseActions;
 }): ReactNode {
@@ -56,6 +62,7 @@ export function ReleaseList({
   if (reviewing && !writing && reviewed.some((name) => !deletable.has(name)))
     setReviewing(undefined);
   const plural = selected.length === 1 ? "release" : "releases";
+  const unread = unreadKinds({ errors, stale });
 
   return (
     <div className="flex flex-col gap-6">
@@ -77,6 +84,9 @@ export function ReleaseList({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {mode && unread.length > 0 && (
+        <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
+      )}
       <DataTable
         label="Releases"
         emptyText={
@@ -240,6 +250,7 @@ export function ReleaseListLive({
       releases={sources.releases}
       environments={sources.environments}
       errors={sources.errors}
+      stale={sources.stale}
       mode={mode}
       actions={actions}
     />
