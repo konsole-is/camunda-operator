@@ -54,8 +54,7 @@ import { TopologyView } from "./topology-view";
 
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
- * lists hold the objects of the namespace of the cluster. accessRequests are
- * the PluginRequests of the access section. requests holds the
+ * lists hold the objects of the namespace of the cluster. requests holds the
  * PluginRequests of the namespace whose claim label names the claim of the
  * cluster. podSelector selects the pods of the cluster by its owner label,
  * and pods holds them. backupStorage holds
@@ -74,7 +73,6 @@ export type ClusterPageData = {
   presets: Resource<"CamundaClusterPreset">[];
   releases: Resource<"CamundaRelease">[];
   storage: Resource<"SecondaryStorageConfig">[];
-  accessRequests: Resource<"PluginRequest">[];
   requests: Resource<"PluginRequest">[];
   pods: Resource<"Pod">[];
   podSelector: string;
@@ -176,11 +174,6 @@ export function ClusterView({
     "SecondaryStorageConfig",
     { namespace: ns },
     initial.storage,
-  );
-  const accessRequests = useResources(
-    "PluginRequest",
-    { namespace: ns, labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` },
-    initial.accessRequests,
   );
   const claimName = cluster.item?.metadata?.labels?.[CLAIM_LABEL];
   const requests = useResources(
@@ -300,7 +293,6 @@ export function ClusterView({
       ["CamundaRelease", releases],
       ["CamundaClusterClaim", claims],
       ["SecondaryStorageConfig", storage],
-      ["PluginRequest", accessRequests],
       ["PluginRequest", requests],
       ["Pod", pods],
       ["LogicalBackupElasticsearch", backupsES],
@@ -326,10 +318,13 @@ export function ClusterView({
 
   const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
-  const access = accessRequests.items.find(
+  const claimRequests = requests.items.filter(
     (r) =>
       r.spec.claimRef.kind === "CamundaClusterClaim" &&
       r.spec.claimRef.name === claimName,
+  );
+  const access = claimRequests.find(
+    (r) => r.metadata?.labels?.[SECTION_LABEL] === ACCESS_SECTION,
   );
   const preset = presets.items.find(
     (p) => p.metadata?.name === live.spec.presetRef,
@@ -430,11 +425,7 @@ export function ClusterView({
     managementAuthConfigs: managementAuthConfigs.items,
     sections: sections.items,
     registrations: registrations.items,
-    requests: requests.items.filter(
-      (r) =>
-        r.spec.claimRef.kind === "CamundaClusterClaim" &&
-        r.spec.claimRef.name === claimName,
-    ),
+    requests: claimRequests,
     storage: storageObject,
     backups,
     restores,

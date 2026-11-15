@@ -10,6 +10,8 @@ import {
   ENVIRONMENT_LABEL,
   OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
+  SECTION_LABEL,
+  ACCESS_SECTION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
 import {
@@ -156,7 +158,6 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     ],
     releases: [],
     storage: [],
-    accessRequests: [],
     requests: [],
     pods: [brokerPod(0), brokerPod(1), brokerPod(2)],
     podSelector: "camunda.io/cluster=orders",
@@ -362,7 +363,7 @@ describe("ClusterView", () => {
         metadata: {
           namespace: "team-a",
           name: `${kind}-${claimName}-access`,
-          labels: { [CLAIM_LABEL]: claimName },
+          labels: { [CLAIM_LABEL]: claimName, [SECTION_LABEL]: ACCESS_SECTION },
         },
         spec: { claimRef: { kind, name: claimName } },
         status: { links: [{ name, url }] },
@@ -371,7 +372,7 @@ describe("ClusterView", () => {
       view({
         initial: data({
           cluster: cluster({ spec: { externalUrl: undefined } }),
-          accessRequests: [
+          requests: [
             request(
               "CamundaManagementClusterClaim",
               "orders",
@@ -399,6 +400,31 @@ describe("ClusterView", () => {
         .getAllByRole("link", { name: /Operate|Tasklist|Admin/ })
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([["Operate", "https://o.example.com"]]);
+  });
+
+  it("reads no access link from a request of another section", () => {
+    const backup = nsObject(
+      "PluginRequest",
+      "orders-backup-storage",
+      { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
+      { links: [{ name: "operate", url: "https://o.example.com" }] },
+      {
+        labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "backup-storage" },
+      },
+    );
+    render(
+      view({
+        initial: data({
+          cluster: cluster({ spec: { externalUrl: undefined } }),
+          requests: [backup],
+        }),
+      }),
+    );
+    expect(
+      within(screen.getByRole("banner")).queryAllByRole("link", {
+        name: /Operate/,
+      }),
+    ).toEqual([]);
   });
 
   it("follows a navigation to another tab without a remount", () => {
@@ -1278,8 +1304,9 @@ describe("Endpoints tab", () => {
       "orders-access",
       { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
       { outputs: { grpcHost: "grpc.orders.example.com:443" } },
+      { labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: ACCESS_SECTION } },
     );
-    render(view({ initial: data({ cluster: c, accessRequests: [access] }) }));
+    render(view({ initial: data({ cluster: c, requests: [access] }) }));
     const table = screen.getByRole("table", { name: "Endpoints" });
     expect(within(table).getByText("grpc.orders.example.com:443")).toBeTruthy();
   });
