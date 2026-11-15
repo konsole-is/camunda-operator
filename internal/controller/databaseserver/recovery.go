@@ -87,13 +87,14 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 	resolved resolvedSpec,
 ) (bool, error) {
 	contract, err := r.recoveryContract(ctx, server, resolved.merged)
-	if err != nil || contract == nil {
+	if err != nil {
 		return false, err
 	}
 
-	request, ok := pendingRequest(server, contract)
-	if !ok {
-		return false, nil
+	var request v1.RecoveryRequest
+	pending := false
+	if contract != nil {
+		request, pending = pendingRequest(server, contract)
 	}
 
 	// The answer lives in two places, and either one alone is enough to know
@@ -102,21 +103,30 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 	// first. A look that finds one and not the other completes the pair. A
 	// look that reads the answer from neither builds the cluster of an
 	// answered request a second time.
-	published := publishedOutcome(contract)
-	switch {
-	case recoveryAnswered(server.Status.Recovery, request):
-		if err := r.republishRecoveryOutcome(ctx, contract, server.Status.Recovery); err != nil {
-			return false, err
+	if pending && !recoveryAnswered(server.Status.Recovery, request) {
+		if published := publishedOutcome(contract); request.AnsweredBy(published) {
+			if err := r.recordPublishedOutcome(ctx, server, contract, published); err != nil {
+				return false, err
+			}
+
+			return r.cleanUpAnsweredRecovery(ctx, server)
 		}
+	}
 
-		return r.cleanUpAnsweredRecovery(ctx, server)
-
-	case request.AnsweredBy(published):
-		if err := r.recordPublishedOutcome(ctx, server, contract, published); err != nil {
-			return false, err
+	// The cleanup reads the record alone, so it also runs once the contract
+	// drops the request or moves. A new request waits until it is done.
+	if answered := server.Status.Recovery; answered != nil && answered.CompletedAt != nil {
+		if waiting, err := r.cleanUpAnsweredRecovery(ctx, server); waiting || err != nil {
+			return waiting, err
 		}
+	}
 
-		return r.cleanUpAnsweredRecovery(ctx, server)
+	if !pending {
+		return false, nil
+	}
+
+	if recoveryAnswered(server.Status.Recovery, request) {
+		return false, r.republishRecoveryOutcome(ctx, contract, server.Status.Recovery)
 	}
 
 	// Past the cutover the contract already points at the cluster the recovery
