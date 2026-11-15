@@ -301,8 +301,7 @@ func listOperatorResources(ctx context.Context) ([]utils.CRD, []utils.CustomReso
 }
 
 // undeployManager removes the controller-manager, the CRDs, and the manager
-// namespace. A step that still runs when ctx ends is killed, and the custom
-// resources of the operator that remain then are printed.
+// namespace. A step that still runs when ctx ends is killed.
 func undeployManager(ctx context.Context) {
 	By("undeploying the controller-manager")
 	_, _ = utils.RunContext(ctx, "make", "undeploy")
