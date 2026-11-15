@@ -310,9 +310,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5.1.0
         with:
-          version: v4.3.1
+          version: v4.3.2
 
       - name: Create a kind cluster
         run: |

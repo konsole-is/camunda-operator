@@ -6,7 +6,7 @@ replace github.com/konsole-is/camunda-operator/api => ../api
 
 require (
 	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261024225545-5c9b1c4af551
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/stretchr/testify v1.12.1
 	k8s.io/api v0.37.2
