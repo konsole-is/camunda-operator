@@ -17,7 +17,7 @@ const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 
 // Recharts keeps the width of each axis label for the life of the page, and
 // the label style names no font, so a label measured in the fallback font
-// keeps that width. A chart draws only once this font has loaded.
+// keeps that width.
 const CHART_FONT = '400 11px "IBM Plex Sans"';
 
 /**
