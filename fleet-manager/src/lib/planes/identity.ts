@@ -32,9 +32,15 @@ export type ExternalKeycloakDraft = {
   caBundle?: { name: string; key: string };
 };
 
-/** PlaneIssuer is the issuer of the tokens of a plane: a known URL, a new issuer, or unknown. */
+/**
+ * PlaneIssuer is the issuer of the tokens of a plane: a known URL, a new
+ * issuer, or unknown. backendUrl is the address of the same issuer inside
+ * the Kubernetes cluster, which a cluster can trust too.
+ */
 export type PlaneIssuer =
-  { kind: "known"; url: string } | { kind: "new" } | { kind: "unknown" };
+  | { kind: "known"; url: string; backendUrl?: string }
+  | { kind: "new" }
+  | { kind: "unknown" };
 
 const DEFAULT_REALM = "camunda-platform";
 const MAX_URL = 2048;
@@ -187,6 +193,25 @@ export function planeIssuer(
     default:
       return { kind: "unknown" };
   }
+}
+
+/**
+ * keycloakIssuer is the issuer of the realm of the Keycloak that a plane
+ * runs: publicUrl is spec.identityProvider.keycloak.externalUrl of the
+ * CamundaManagementCluster, and serviceUrl the address of its Keycloak
+ * Service with the base path.
+ */
+export function keycloakIssuer(
+  publicUrl: string,
+  serviceUrl: string | undefined,
+): PlaneIssuer {
+  const realm = (url: string) =>
+    `${url.replace(/\/+$/, "")}/realms/${DEFAULT_REALM}`;
+  return {
+    kind: "known",
+    url: realm(publicUrl),
+    ...(serviceUrl && { backendUrl: realm(serviceUrl) }),
+  };
 }
 
 function parseHttpUrl(value: string): URL | undefined {

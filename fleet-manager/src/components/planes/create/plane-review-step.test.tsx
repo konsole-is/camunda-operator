@@ -25,7 +25,7 @@ import type {
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
-import { PlaneReviewStep } from "./plane-review-step";
+import { ATTACH_CAUTION, PlaneReviewStep } from "./plane-review-step";
 
 afterEach(cleanup);
 
@@ -137,12 +137,17 @@ describe("PlaneReviewStep", () => {
       "Creates the CamundaManagementCluster plane-a.",
       "The plane writes the contract plane-a.",
     ]);
+    expect(screen.queryByText(ATTACH_CAUTION)).toBeNull();
+    await waitFor(() => expect(confirm().disabled).toBe(false));
+  });
+
+  it("says that an attaching cluster restarts only when the plane runs Console", () => {
+    review({ ...draft, console: true });
     expect(
       screen.getByText(
         "Each cluster that attaches restarts its pods once, because it gets the Console settings.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(confirm().disabled).toBe(false));
   });
 
   it("names the new namespace and the access option when the draft has them", () => {

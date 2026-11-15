@@ -110,7 +110,7 @@ export function PlaneReviewStep({
       diffLabel="The claim"
       lines={objectDiff(undefined, claim)}
       effects={effectsOf(draft, ctx, claim)}
-      caution={ATTACH_CAUTION}
+      caution={draft.console ? ATTACH_CAUTION : undefined}
       notices={
         refusals.length > 0 && (
           <div

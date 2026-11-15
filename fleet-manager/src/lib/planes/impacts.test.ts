@@ -15,6 +15,7 @@ import { componentEdits, identityMoveEdits, type PlaneEdit } from "./edits";
 import {
   CALLBACKS_MOVE,
   CONSOLE_OFF,
+  CONSOLE_ON,
   FIRST_ADMIN_STAYS,
   KEYCLOAK_DELETED,
   MOVE_AT_ONCE,
@@ -127,6 +128,69 @@ function input(
   } as PlaneChangeInput;
 }
 
+const consoleClaim = (spec: Partial<PlaneClaim["spec"]> = {}) =>
+  planeClaim({
+    management: {
+      identityProvider: {
+        keycloak: { externalUrl: "https://mgmt.example.com/auth" },
+      },
+      identity: { admin: { username: "admin" } },
+      console: {},
+    },
+    versions: { identity: "8.9.14", keycloak: "26.6.4", console: "8.9.133" },
+    ...spec,
+  });
+
+// keycloakPlane runs the Keycloak of the keycloak mode, as the claim
+// controller writes it from consoleClaim.
+const keycloakPlane = {
+  metadata: { name: "mgmt", namespace: "mgmt-ns" },
+  spec: {
+    identityProvider: {
+      keycloak: { externalUrl: "https://mgmt.example.com/auth" },
+    },
+  },
+  status: {
+    endpoints: [
+      {
+        name: "keycloak",
+        service: "mgmt-keycloak-service",
+        port: 8080,
+        pathPrefix: "/auth",
+        protocol: "HTTP",
+      },
+    ],
+  },
+};
+const kcTrust = {
+  metadata: { name: "kc-trust" },
+  spec: {
+    auth: {
+      method: "oidc",
+      oidc: {
+        issuerUrl: "https://mgmt.example.com/auth/realms/camunda-platform",
+      },
+    },
+  },
+} as Resource<"CamundaPlatformConfig">;
+const kcServiceTrust = {
+  metadata: { name: "kc-service-trust" },
+  spec: {
+    auth: {
+      method: "oidc",
+      oidc: {
+        issuerUrl:
+          "http://mgmt-keycloak-service.mgmt-ns.svc:8080/auth/realms/camunda-platform",
+      },
+    },
+  },
+} as Resource<"CamundaPlatformConfig">;
+const trusting = (namespace: string, name: string, config: string) =>
+  ({
+    ...cluster(namespace, name),
+    spec: { platformConfigRef: config },
+  }) as unknown as Resource<"CamundaCluster">;
+
 describe("planeImpacts", () => {
   it("lists nothing for a change that moves nothing", () => {
     const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Orphan"]);
@@ -134,7 +198,7 @@ describe("planeImpacts", () => {
   });
 
   it("lists a cluster that attaches when an environment is added", () => {
-    const s = changed(planeClaim(), [
+    const s = changed(consoleClaim(), [
       at("spec", "environments"),
       ["production", "staging"],
     ]);
@@ -144,7 +208,7 @@ describe("planeImpacts", () => {
   });
 
   it("lists a cluster that detaches when an environment is removed", () => {
-    const live = planeClaim({ environments: ["production", "staging"] });
+    const live = consoleClaim({ environments: ["production", "staging"] });
     const s = changed(live, [at("spec", "environments"), ["production"]]);
     expect(planeImpacts(input(s))).toEqual([
       "team-qa/qa detaches. It loses its Console settings and restarts once.",
@@ -152,12 +216,106 @@ describe("planeImpacts", () => {
   });
 
   it("lists a cluster that detaches when the selector stops matching", () => {
-    const s = changed(planeClaim(), [
+    const s = changed(consoleClaim(), [
       at("spec", "clusterSelector"),
       { matchLabels: { tier: "gold" } },
     ]);
     expect(planeImpacts(input(s))).toEqual([
       "team-orders/orders detaches. It loses its Console settings and restarts once.",
+    ]);
+  });
+
+  it("names no restart for a cluster that attaches or detaches while the plane runs no Console", () => {
+    const s = changed(planeClaim(), [at("spec", "environments"), ["staging"]]);
+    expect(planeImpacts(input(s))).toEqual([
+      "team-qa/qa attaches.",
+      "team-orders/orders detaches.",
+    ]);
+  });
+
+  it("says that each served cluster restarts when Console turns on", () => {
+    const live = planeClaim();
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", true).map(asEdit),
+      [at("spec", "versions", "console"), "8.9.133"],
+    );
+    expect(planeImpacts(input(s))).toEqual([CONSOLE_ON]);
+  });
+
+  it("shows the callback move of a change of the External Keycloak realm", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "realm"),
+      "other",
+    ]);
+    const plane = {
+      metadata: { name: "mgmt", namespace: "mgmt-ns" },
+      status: { optimize: [{ namespace: "team-orders", name: "optimize" }] },
+    };
+    expect(planeImpacts(input(s, { plane }))).toEqual([
+      CALLBACKS_MOVE,
+      MOVE_WAITS,
+    ]);
+  });
+
+  it("moves at once on a change of the External Keycloak URL while the plane serves no Optimize", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://other.example.com",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([CALLBACKS_MOVE, MOVE_AT_ONCE]);
+  });
+
+  it("names no callback move for a new administrator Secret of the External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at(
+        "spec",
+        "management",
+        "identityProvider",
+        "externalKeycloak",
+        "adminCredentialsSecretRef",
+        "name",
+      ),
+      "kc-2",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("detaches an OIDC cluster that trusts the Keycloak of the plane on a move to OIDC", () => {
+    const live = consoleClaim({ platformConfigRef: "sso" });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+    );
+    const lines = planeImpacts(
+      input(s, {
+        plane: keycloakPlane,
+        clusters: [trusting("team-orders", "orders", "kc-trust")],
+        platformConfigs: [...platformConfigs, kcTrust],
+      }),
+    );
+    expect(lines).toContain(
+      "team-orders/orders detaches. It loses its Console settings and restarts once.",
+    );
+  });
+
+  it("attaches an OIDC cluster that trusts the service address of the Keycloak of the plane", () => {
+    const s = changed(consoleClaim(), [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    const lines = planeImpacts(
+      input(s, {
+        plane: keycloakPlane,
+        clusters: [
+          cluster("team-orders", "orders"),
+          trusting("team-qa", "qa", "kc-service-trust"),
+        ],
+        platformConfigs: [...platformConfigs, kcServiceTrust],
+      }),
+    );
+    expect(lines).toEqual([
+      "team-qa/qa attaches and restarts its pods once, because it gets the Console settings.",
     ]);
   });
 

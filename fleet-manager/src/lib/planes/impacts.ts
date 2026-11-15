@@ -10,11 +10,13 @@ import { runningOfClaim } from "./components";
 import {
   IDENTITY_MODE_LABEL,
   type IdentityModeId,
+  type PlaneIssuer,
   externalKeycloakDraftOf,
   identityModeOf,
+  keycloakIssuer,
   planeIssuer,
 } from "./identity";
-import { type PreviewRow, servedPreview } from "./preview";
+import { type PreviewRow, normalizeIssuer, servedPreview } from "./preview";
 import {
   type PlaneVersions,
   VERSION_LABEL,
@@ -56,6 +58,9 @@ export const KEYCLOAK_DELETED =
 /** OIDC_CALLBACKS is the impact of a move to the oidc mode. */
 export const OIDC_CALLBACKS =
   "In OIDC mode the plane registers no callbacks. Add the callback of each Optimize to the application at your identity provider.";
+/** CONSOLE_ON is the impact of turning Console on. */
+export const CONSOLE_ON =
+  "Console starts. Served clusters get the Console settings and restart once.";
 /** CONSOLE_OFF is the impact of turning Console off. */
 export const CONSOLE_OFF =
   "Console stops. Served clusters lose their Console settings and restart once.";
@@ -105,10 +110,11 @@ export function planeModeMove(
 
 /**
  * planeImpacts returns what the change of the session does, as lines for
- * the review, in this order: the move of the identity mode and where the
- * callbacks go, each cluster that attaches or detaches, Console off and
- * Web Modeler off, then each version move with the version warnings. A
- * change that moves nothing gives no line.
+ * the review, in this order: the move of the identity mode or of the
+ * External Keycloak realm and where the callbacks go, each cluster that
+ * attaches or detaches, Console on, Console off and Web Modeler off, then
+ * each version move with the version warnings. A change that moves nothing
+ * gives no line.
  */
 export function planeImpacts(input: PlaneChangeInput): string[] {
   const live: Spec = input.session.claim.spec ?? {};
@@ -116,6 +122,10 @@ export function planeImpacts(input: PlaneChangeInput): string[] {
   return [
     ...moveLines(input),
     ...servedLines(input, live, spec),
+    ...(live.management?.console === undefined &&
+    spec.management?.console !== undefined
+      ? [CONSOLE_ON]
+      : []),
     ...(live.management?.console !== undefined &&
     spec.management?.console === undefined
       ? [CONSOLE_OFF]
@@ -129,14 +139,18 @@ export function planeImpacts(input: PlaneChangeInput): string[] {
 }
 
 function moveLines(input: PlaneChangeInput): string[] {
+  const servesOptimize = (input.plane?.status?.optimize?.length ?? 0) > 0;
   const move = planeModeMove(input.session);
-  if (!move) return [];
+  if (!move) {
+    return realmMoves(input.session)
+      ? [CALLBACKS_MOVE, servesOptimize ? MOVE_WAITS : MOVE_AT_ONCE]
+      : [];
+  }
   const lines = [
     `Sign-in moves from ${IDENTITY_MODE_LABEL[move.from]} to ${IDENTITY_MODE_LABEL[move.to]}.`,
     FIRST_ADMIN_STAYS,
   ];
   if (move.from === "externalKeycloak") {
-    const servesOptimize = (input.plane?.status?.optimize?.length ?? 0) > 0;
     lines.push(
       CALLBACKS_MOVE,
       move.to !== "oidc" && servesOptimize ? MOVE_WAITS : MOVE_AT_ONCE,
@@ -145,6 +159,25 @@ function moveLines(input: PlaneChangeInput): string[] {
   if (move.from === "keycloak") lines.push(KEYCLOAK_DELETED);
   if (move.to === "oidc") lines.push(OIDC_CALLBACKS);
   return lines;
+}
+
+// realmMoves reports whether the change points the External Keycloak mode
+// at another realm. A new administrator or certificate authority keeps the
+// realm (SameRealm of camundamanagementcluster).
+function realmMoves(session: Session<PlaneClaim>): boolean {
+  const realm = (claim: PlaneClaim) => {
+    const provider = claim.spec?.management?.identityProvider;
+    if (identityModeOf(provider) !== "externalKeycloak") return undefined;
+    const issuer = planeIssuer(
+      "externalKeycloak",
+      externalKeycloakDraftOf(provider?.externalKeycloak),
+      undefined,
+    );
+    return issuer.kind === "known" ? normalizeIssuer(issuer.url) : undefined;
+  };
+  const before = realm(session.claim);
+  const after = realm(claimAfter(session));
+  return before !== undefined && after !== undefined && before !== after;
 }
 
 function servedLines(
@@ -163,14 +196,17 @@ function servedLines(
       );
     return moved ? [PREVIEW_NEEDS_ISSUER] : [];
   }
+  // The plane writes the Console settings only while it runs Console.
   return [
-    ...changes.attach.map(
-      (r) =>
-        `${r.namespace}/${r.name} attaches and restarts its pods once, because it gets the Console settings.`,
+    ...changes.attach.map((r) =>
+      spec.management?.console !== undefined
+        ? `${r.namespace}/${r.name} attaches and restarts its pods once, because it gets the Console settings.`
+        : `${r.namespace}/${r.name} attaches.`,
     ),
-    ...changes.detach.map(
-      (r) =>
-        `${r.namespace}/${r.name} detaches. It loses its Console settings and restarts once.`,
+    ...changes.detach.map((r) =>
+      live.management?.console !== undefined
+        ? `${r.namespace}/${r.name} detaches. It loses its Console settings and restarts once.`
+        : `${r.namespace}/${r.name} detaches.`,
     ),
   ];
 }
@@ -209,10 +245,9 @@ function rowsOf(
   const ref =
     spec.platformConfigRef || input.environment?.spec.platformConfigRef;
   const config = input.platformConfigs.find((c) => c.metadata?.name === ref);
-  const identityProvider = spec.management?.identityProvider;
-  const issuer = planeIssuer(
-    identityModeOf(identityProvider),
-    externalKeycloakDraftOf(identityProvider?.externalKeycloak),
+  const issuer = issuerOf(
+    claim,
+    input.plane,
     generated<CamundaPlatformConfig | undefined>(config),
   );
   if (issuer.kind === "unknown") return undefined;
@@ -229,6 +264,34 @@ function rowsOf(
     namespaces: generated<V1Namespace[]>(input.namespaces),
     platformConfigs: generated<CamundaPlatformConfig[]>(input.platformConfigs),
   });
+}
+
+// issuerOf returns the issuer of the plane of claim. A Keycloak that the
+// live plane runs already is no new issuer: a cluster can trust it, at its
+// public or its Service address (trustsIssuer of camundamanagementcluster).
+function issuerOf(
+  claim: PlaneClaim,
+  plane: PlaneChangeInput["plane"],
+  config: CamundaPlatformConfig | undefined,
+): PlaneIssuer {
+  const provider = claim.spec?.management?.identityProvider;
+  const mode = identityModeOf(provider);
+  const running = plane?.spec?.identityProvider?.keycloak;
+  const publicUrl = provider?.keycloak?.externalUrl || running?.externalUrl;
+  if (mode === "keycloak" && running && publicUrl) {
+    const service = plane.status?.endpoints?.find((e) => e.name === "keycloak");
+    const namespace = plane.metadata?.namespace;
+    return keycloakIssuer(
+      publicUrl,
+      service &&
+        `http://${service.service}.${namespace}.svc:${service.port}${service.pathPrefix ?? ""}`,
+    );
+  }
+  return planeIssuer(
+    mode,
+    externalKeycloakDraftOf(provider?.externalKeycloak),
+    config,
+  );
 }
 
 // attached returns the rows of rows that attach and do not attach in
