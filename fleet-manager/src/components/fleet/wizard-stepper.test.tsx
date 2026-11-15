@@ -144,31 +144,31 @@ describe("WizardStepper", () => {
   });
 
   it("moves focus to the step heading on Next", async () => {
-    render(<Flow />);
+    render(<Flow />, { reactStrictMode: true });
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(document.activeElement).toBe(stepHeading("Storage and access"));
   });
 
   it("moves focus to the step heading on Next to the last step", async () => {
-    render(<Flow start="storage" />);
+    render(<Flow start="storage" />, { reactStrictMode: true });
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(document.activeElement).toBe(stepHeading("Review"));
   });
 
   it("moves focus to the step heading on Back to the first step", async () => {
-    render(<Flow start="storage" />);
+    render(<Flow start="storage" />, { reactStrictMode: true });
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(document.activeElement).toBe(stepHeading("Namespace"));
   });
 
   it("moves focus to the step heading on a click on an earlier step", async () => {
-    render(<Flow start="review" />);
+    render(<Flow start="review" />, { reactStrictMode: true });
     await userEvent.click(screen.getByRole("button", { name: /Namespace/ }));
     expect(document.activeElement).toBe(stepHeading("Namespace"));
   });
 
   it("leaves focus alone on the first render", () => {
-    render(<Flow />);
+    render(<Flow />, { reactStrictMode: true });
     expect(document.activeElement).toBe(document.body);
   });
 
@@ -177,6 +177,7 @@ describe("WizardStepper", () => {
       <WizardStepper steps={steps()} current="storage">
         <input aria-label="Field" />
       </WizardStepper>,
+      { reactStrictMode: true },
     );
     await userEvent.click(screen.getByLabelText("Field"));
     rerender(
