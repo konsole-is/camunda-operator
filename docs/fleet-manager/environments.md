@@ -126,7 +126,7 @@ A choice that another field manager set stays when you remove it, and the review
 
 A host pattern of an access option shows the host that it gives the first claim of the environment, for example `orders in team-a gets orders.team-a.example.com`. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section **Presets** allows. With an empty list, a new claim of the option is refused with `NotAllowed`, and the page says so.
 
-A parameter that the option requires needs a value from the environment or from the option, or **A claim can change it**. Without one, the page shows `This parameter needs a value.` under the parameter. You can still save. The create flow refuses a new claim that picks the option. A claim that another tool writes gets a request that is refused with the reason `InvalidParameters`, and the claim waits with `RequestsReady` at `False`.
+A parameter that the option requires needs a value from the environment or from the option, or **A claim can change it**. Without one, the page shows `This parameter needs a value.` under the parameter. You can still save. The create flow refuses a new claim that picks the option. When another tool writes such a claim, the request of the claim is refused with the reason `InvalidParameters`. The claim then waits with `RequestsReady` at `False`.
 
 ## Template parameters
 
