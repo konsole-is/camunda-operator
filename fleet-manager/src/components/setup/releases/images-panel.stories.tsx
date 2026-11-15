@@ -24,16 +24,10 @@ export const DefaultsFor89: Story = { name: "Defaults for 8.9" };
 export const PinnedImages: Story = {
   name: "Pinned images",
   args: {
-    rows: releaseImages(
-      {
-        version: "8.9.0",
-        images: {
-          camunda: "registry.example.com/camunda/camunda:8.9.0-patched",
-          connectors: "registry.example.com/camunda/connectors-bundle:8.9.7",
-        },
-      },
-      imagesFixture,
-    ),
+    pinned: {
+      camunda: "registry.example.com/camunda/camunda:8.9.0-patched",
+      connectors: "registry.example.com/camunda/connectors-bundle:8.9.7",
+    },
   },
 };
 

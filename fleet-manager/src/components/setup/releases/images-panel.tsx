@@ -21,11 +21,10 @@ const PIN_LABELS: Record<PinField, string> = {
 
 /**
  * ImagesPanel shows each image of a release with the image that the
- * release pins and the default for the version. Only the Camunda and the
- * Connectors image can be pinned: onPin gets the field and the typed
- * reference, empty for unset. Without rows, the images table has no entry
- * for minor, and the panel still offers the two pins with the values of
- * pinned.
+ * release pins, from pinned, and the default for the version. Only the
+ * Camunda and the Connectors image can be pinned: onPin gets the field and
+ * the typed reference, empty for unset. Without rows, the images table has
+ * no entry for minor, and the panel still offers the two pins.
  */
 export function ImagesPanel({
   rows,
@@ -84,7 +83,7 @@ export function ImagesPanel({
               <TableCell className="font-medium">{row.label}</TableCell>
               <TableCell>
                 {row.pinField ? (
-                  pin(row.pinField, row.pinned)
+                  pin(row.pinField, pinned[row.pinField])
                 ) : row.image === "optimize" ? (
                   <span className="text-sm text-muted">
                     The release pins no Optimize image

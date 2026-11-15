@@ -36,15 +36,13 @@ describe("releaseImages", () => {
     });
   });
 
-  it("shows the pinned images of the release", () => {
-    const rows = rowsOf({ version: "8.9.3", images: { camunda: "reg/c:1" } });
-    expect(rows.camunda).toMatchObject({
-      pinned: "reg/c:1",
-      pinField: "camunda",
-    });
+  it("names the pin field only of the camunda and connectors images", () => {
+    const rows = rowsOf({ version: "8.9.3" });
+    expect(rows.camunda.pinField).toBe("camunda");
     expect(rows.connectors.pinField).toBe("connectors");
-    expect(rows.connectors.pinned).toBeUndefined();
     expect(rows.optimize.pinField).toBeUndefined();
+    expect(rows.elasticsearch.pinField).toBeUndefined();
+    expect(rows.postgres.pinField).toBeUndefined();
   });
 
   it("leaves the connectors tag unset when the release sets no connectors version", () => {

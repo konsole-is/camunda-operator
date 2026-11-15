@@ -7,8 +7,8 @@ export type ReleaseImage =
   "camunda" | "optimize" | "connectors" | "elasticsearch" | "postgres";
 
 /**
- * ReleaseImageRow is one image of a release. pinned is the image that the
- * release pins in pinField, the only images that a release can pin.
+ * ReleaseImageRow is one image of a release. pinField is the field of
+ * spec.images that pins it, set only for the images that a release can pin.
  * repository and tag give the default for the version: repository is unset
  * for an image that another operator picks, and tag is unset for connectors
  * when the release sets no connectors version.
@@ -16,7 +16,6 @@ export type ReleaseImage =
 export type ReleaseImageRow = {
   image: ReleaseImage;
   label: string;
-  pinned?: string;
   pinField?: "camunda" | "connectors";
   repository?: string;
   tag?: string;
@@ -56,13 +55,11 @@ export function releaseImages(
           : entry.tag;
     const pinField =
       image === "camunda" || image === "connectors" ? image : undefined;
-    const pinned = pinField && spec.images?.[pinField];
     return [
       {
         image,
         label,
         ...(pinField && { pinField }),
-        ...(pinned && { pinned }),
         ...(entry.repository !== undefined && {
           repository: entry.repository,
         }),

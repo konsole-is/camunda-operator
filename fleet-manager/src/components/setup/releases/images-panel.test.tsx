@@ -52,11 +52,9 @@ describe("ImagesPanel", () => {
     const onPin = vi.fn();
     render(
       <ImagesPanel
-        rows={releaseImages(
-          { version: "8.9.0", images: { camunda: "reg/c:1" } },
-          imagesFixture,
-        )}
+        rows={releaseImages({ version: "8.9.0" }, imagesFixture)}
         minor="8.9"
+        pinned={{ camunda: "reg/c:1" }}
         onPin={onPin}
       />,
     );
