@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deleteClaimSteps } from "@/lib/claims/deletion";
 import type { Writer } from "./types";
 
 const fake = {
@@ -294,6 +295,26 @@ describe("claimDeleteSchema", () => {
 
   it("claimChangeSchema still refuses the delete", () => {
     expect(claimChangeSchema.safeParse(remove).success).toBe(false);
+  });
+
+  it("accepts the remove step of deleteClaimSteps, and claimChangeSchema accepts its policy step", () => {
+    const steps = deleteClaimSteps(
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        metadata: {
+          namespace: "team-a",
+          name: "orders",
+          resourceVersion: "41",
+          uid: "uid-1",
+        },
+        spec: {},
+      },
+      "Orphan",
+      "Delete the cluster orders",
+    );
+    expect(claimDeleteSchema.safeParse(steps.remove).success).toBe(true);
+    expect(claimChangeSchema.safeParse(steps.policy).success).toBe(true);
   });
 });
 
