@@ -145,6 +145,10 @@ export function validatePlaneClaim(
         generated<PluginSection[]>(ctx.sections),
         runningOfClaim(spec.management),
       ),
+      addedBefore: planeControllerParameters(
+        generated<PluginSection[]>(ctx.sections),
+        runningOfClaim(live.management),
+      ),
     }),
   );
 

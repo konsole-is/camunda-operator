@@ -19,9 +19,12 @@ export type ClaimWithPlugins = { spec?: { plugins?: unknown } };
 
 // changedParameterErrors checks the request of each selection of after
 // against the schema of its registration, as the create flows do. An error
-// counts only at a parameter that the change sets, changes, or removes, so
-// that a claim that breaks a rule already does not block every later change.
-// added gives the parameters that the claim controller adds to a request.
+// counts only at a parameter that the change sets, changes, or removes, or
+// that the claim controller adds and the change moves, so that a claim that
+// breaks a rule already does not block every later change. added gives the
+// parameters that the claim controller adds to a request after the change,
+// and addedBefore those before it. An error at a parameter that the
+// controller adds and the change moves shows above the fields.
 export function changedParameterErrors(input: {
   claim: ClaimWithPlugins;
   after: ClaimWithPlugins;
@@ -29,8 +32,9 @@ export function changedParameterErrors(input: {
   registrations: readonly Resource<"PluginRegistration">[];
   policy?: ResolvedPolicy;
   added: ControllerParameters;
+  addedBefore?: ControllerParameters;
 }): FieldError[] {
-  const { claim, after, policy, added } = input;
+  const { claim, after, policy, added, addedBefore = added } = input;
   const selections = selectionsOf(after);
   const requests = requestsOf(selections, input);
   return selections.flatMap((selection, i) => {
@@ -52,7 +56,15 @@ export function changedParameterErrors(input: {
     const registration = input.registrations.find(
       (r) => r.metadata?.name === keys.registration,
     );
-    if (!registration || touched.length === 0) return [];
+    if (!registration) return [];
+    const request = { ...keys, parameters: requests[i] };
+    const own = generated<PluginRegistration>(registration);
+    const nowAdded = added(request, own);
+    const beforeAdded = addedBefore(request, own);
+    const moved = Object.keys(nowAdded).filter(
+      (name) => !equalJSON(nowAdded[name], beforeAdded[name]),
+    );
+    if (touched.length === 0 && moved.length === 0) return [];
     const root = asObject(registration.spec.parameters) as OpenAPISchema;
     if (Object.keys(root).length === 0) return [];
     const at = (name: string) => pathFrom("", [...steps, { field: name }]);
@@ -62,22 +74,24 @@ export function changedParameterErrors(input: {
         path: at(name),
         message: `The schema is not valid: ${broken}`,
       }));
-    const { errors } = requestSchemaErrors(
-      generated<PluginRegistration>(registration),
-      requests[i],
-      added(
-        { ...keys, parameters: requests[i] },
-        generated<PluginRegistration>(registration),
-      ),
+    const { errors } = requestSchemaErrors(own, requests[i], nowAdded);
+    const of = (name: string) =>
+      errors.filter((e) => e.path === name || e.path.startsWith(`${name}.`));
+    const controller = moved.flatMap((name) =>
+      of(name).map((e) => ({
+        message: `Parameter ${e.path} that the claim controller sets on section "${keys.section}" ${e.message}.`,
+      })),
     );
-    return touched.flatMap((name) => {
-      // The policy check covers the name of a choice that the claim sets.
-      const choices = policy?.parameters?.[keys.registration]?.[name]?.allowed;
-      if (Object.hasOwn(now, name) && choices?.length) return [];
-      return errors
-        .filter((e) => e.path === name || e.path.startsWith(`${name}.`))
-        .map((e) => ({ path: at(name), message: e.message }));
-    });
+    return [
+      ...controller,
+      ...touched.flatMap((name) => {
+        // The policy check covers the name of a choice that the claim sets.
+        const choices =
+          policy?.parameters?.[keys.registration]?.[name]?.allowed;
+        if (Object.hasOwn(now, name) && choices?.length) return [];
+        return of(name).map((e) => ({ path: at(name), message: e.message }));
+      }),
+    ];
   });
 }
 

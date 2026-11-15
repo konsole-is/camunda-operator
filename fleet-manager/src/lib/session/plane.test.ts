@@ -696,4 +696,58 @@ describe("validatePlaneClaim", () => {
     const s = changed(live, [at("spec", "deletionPolicy"), "Delete"]);
     expect(validatePlaneClaim(s, configsCtx)).toEqual([]);
   });
+
+  it("refuses a database list of the claim controller that the registration schema refuses", () => {
+    const live = planeClaim({
+      plugins: [
+        { section: "access", registration: "gateway" },
+        { section: "databases", registration: "postgres" },
+      ],
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+      },
+    });
+    const registrations = [
+      {
+        metadata: { name: "postgres" },
+        spec: {
+          deletionPolicies: ["Delete"],
+          parameters: {
+            type: "object",
+            properties: {
+              databases: {
+                type: "array",
+                items: { enum: ["keycloak", "identity"] },
+              },
+            },
+          },
+        },
+      },
+    ];
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "webModeler", true).map(asEdit),
+      [at("spec", "versions", "webModeler"), "8.9.15"],
+      [
+        at("spec", "management", "webModeler", "mail"),
+        mailOf({
+          ...EMPTY_MAIL,
+          smtpHost: "smtp.example.com",
+          fromAddress: "a@example.com",
+        }),
+      ],
+    );
+    expect(
+      validatePlaneClaim(s, {
+        ...configsCtx,
+        registrations,
+      } as unknown as PlaneClaimContext),
+    ).toEqual([
+      {
+        message:
+          'Parameter databases.2 that the claim controller sets on section "databases" must be one of "keycloak", "identity".',
+      },
+    ]);
+  });
 });
