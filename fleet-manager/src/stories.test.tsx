@@ -108,6 +108,11 @@ describe("the Storybook stories", () => {
       "OptionSettings",
       "TemplatePreview",
       "ImpactLine",
+      "NamespacedSecretRefPicker",
+      "PlatformList",
+      "PlatformDetail",
+      "ImagesSection",
+      "UsersSection",
     ]) {
       expect(components).toContain(name);
     }
