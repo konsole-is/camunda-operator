@@ -2,6 +2,8 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { fn } from "storybook/test";
 import { useCreateFlow } from "@/components/create/use-create-flow";
+import { AppShell } from "@/components/fleet/app-shell";
+import { heading } from "@/components/fleet/fixtures";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import { planesOf } from "@/components/planes/plane";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
@@ -589,6 +591,20 @@ export const StorageAndAccessWithAnAccessOption: Story = {
       },
     },
   },
+};
+
+export const StorageAndAccessInThePageFrame: Story = {
+  name: "Storage and access in the page frame",
+  args: StorageAndAccessWithAnAccessOption.args,
+  parameters: { layout: "fullscreen" },
+  render: (args) => (
+    <AppShell pathname="/fleet/planes/new">
+      <div className="flex flex-col gap-6">
+        {heading("New management plane")}
+        <PlaneCreateHarness key={JSON.stringify(args.initial)} {...args} />
+      </div>
+    </AppShell>
+  ),
 };
 
 export const StorageAndAccessWithATakenHost: Story = {

@@ -15,9 +15,11 @@ type StepState = "Done" | "Current" | "Not started" | "Has errors";
  * the state of each: done before the current step, the current step, or not
  * started. A step with errors shows "Has errors". The current step renders
  * as children in a card, so children bring no card of their own. On a wide
- * screen the steps are a list beside the card. On a narrow screen they sit
- * above it, with the label of the current step only. "Next" stays blocked
- * while the current step has errors, and the errors show under it. The last
+ * screen the steps are a list left of the card. In AppShell the list moves
+ * into the empty space beside the page as far as it fits, and the card
+ * grows into the room it leaves. On a narrow screen the steps sit above the
+ * card, with the label of the current step only. "Next" stays blocked while
+ * the current step has errors, and the errors show under it. The last
  * step has no "Next": its review holds the confirm. The first step has no
  * "Back". With onStep, a step before the current one is a button that goes
  * back to it.
@@ -48,7 +50,9 @@ export function WizardStepper({
   const back = index > 0 && onBack !== undefined;
   const next = index < steps.length - 1;
   return (
-    <div className="flex min-w-0 flex-col gap-4 lg:grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+    // The list and its gap are 220 px wide, so the card lines up with the
+    // page once the list has moved all the way into the gutter.
+    <div className="flex min-w-0 flex-col gap-4 lg:ml-[calc(-1*min(var(--page-gutter,0px),220px))] lg:grid lg:grid-cols-[196px_minmax(0,1fr)] lg:items-start lg:gap-6">
       <div className="flex flex-col gap-3 lg:sticky lg:top-6">
         <div className="flex flex-col gap-0.5 lg:hidden">
           <p className="text-sm text-muted">

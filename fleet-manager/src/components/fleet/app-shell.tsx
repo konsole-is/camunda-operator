@@ -9,9 +9,9 @@ import { TopNav } from "./top-nav";
  * theme switch, an optional banner (the Git waiting banner), an optional side
  * navigation, and the page. A banner needs its own page gutter, because
  * AppShell adds none. A page without a side navigation is at most 1280 px
- * wide, or 1600 px when it holds an element with data-width="wide".
- * pathname goes to TopNav, for a story. AppShell needs a ThemeProvider above
- * it.
+ * wide, and the CSS variable --page-gutter in it holds the width of the
+ * empty space on each side. pathname goes to TopNav, for a story. AppShell
+ * needs a ThemeProvider above it.
  */
 export function AppShell({
   pathname,
@@ -44,7 +44,7 @@ export function AppShell({
           </main>
         </div>
       ) : (
-        <main className="mx-auto max-w-[1280px] px-4 py-6 has-[[data-width=wide]]:max-w-[1600px] md:px-8 md:py-7">
+        <main className="mx-auto max-w-[1280px] px-4 py-6 [--page-gutter:max(0px,(100vw_-_1280px)/2)] md:px-8 md:py-7">
           {children}
         </main>
       )}
