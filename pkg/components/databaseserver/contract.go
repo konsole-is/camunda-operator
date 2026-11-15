@@ -34,8 +34,8 @@ import (
 // address of the primary instance, a reference to the superuser Secret that
 // CloudNativePG writes, and the point-in-time-recovery capability that the
 // archive of the server gives it. The recoverableFrom of that capability comes
-// from status.archive.history of server as it stands when the component is
-// built. Only a record that a rollback can read at location, where the server
+// from status.archive of server as it stands when the component is built.
+// Only a record that a rollback can read at location, where the server
 // archives to now, counts. now is the time from which the retention period
 // counts back.
 //
@@ -119,13 +119,11 @@ func ContractComponent(
 }
 
 // pitrCapability renders the point-in-time-recovery capability the server
-// publishes at now. A server without an archive declares that no restore can
-// reach it, and that nobody rolls it back.
+// publishes. A server without an archive declares that no restore can reach
+// it, and that nobody rolls it back.
 //
-// A server with no archive record to publish declares the same as a server
-// without an archive, unless it runs a recovery. A restore that asked for that
-// recovery reads a contract that does not declare operator as one that nobody
-// answers.
+// A server whose history holds no record that a rollback can read declares
+// the same, unless it runs a recovery.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
@@ -150,6 +148,8 @@ func pitrCapability(
 		prunedFloor(server, merged.Archive.RetentionPeriodDays, now),
 	)
 
+	// A restore that asked for a running recovery reads a contract that does
+	// not declare operator as one that nobody answers.
 	running := server.Status.Recovery != nil && server.Status.Recovery.CompletedAt == nil
 	if from == nil && !running {
 		return disabled
@@ -183,8 +183,7 @@ func prunedFloor(server *v1.DatabaseServer, retentionDays int32, now time.Time) 
 
 // recoverableFrom returns the oldest point that a rollback can reach in the
 // records of history that it can read at location through bucket, and nil
-// when no record is left. It is no earlier than floor, and a record that ends
-// at or before floor does not count.
+// when no readable record reaches floor. It is no earlier than floor.
 func recoverableFrom(history []v1.ArchiveRecord, location, bucket string, floor *metav1.Time) *metav1.Time {
 	var oldest *metav1.Time
 	for _, record := range history {

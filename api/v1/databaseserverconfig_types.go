@@ -154,17 +154,17 @@ type PITRCapability struct {
 	// +kubebuilder:default=external
 	// +optional
 	Recovery RecoveryMode `json:"recovery,omitempty"`
-	// RecoverableFrom is the oldest point that a restore can reach. The
-	// window of a restore starts here and continues to the present. A restore
-	// refuses a point before it, also when the point is inside the retention
-	// period. When it is unset, the window is the whole retention period. It
-	// requires enabled: true.
+	// RecoverableFrom is the oldest point that a restore can reach. A restore
+	// admits a point from here to the present. A restore refuses a point before
+	// it, also when the point is inside the retention period. When it is unset,
+	// the window is the whole retention period. It requires enabled: true.
 	//
 	// A DatabaseServer publishes here the start of the oldest archive that a
-	// restore can still read at the location that it archives to now. Its
-	// archive can have a gap after this point, for example after a rollback.
-	// A restore to a point in a gap fails, and the server keeps the data that
-	// it had.
+	// restore can still read at the location that it archives to now. After a
+	// shorter retention period pruned the bucket, it can publish a later point.
+	// Its archive can have a gap after this point, for example after a
+	// rollback. A restore to a point in a gap fails, and the server keeps the
+	// data that it had.
 	// +optional
 	RecoverableFrom *metav1.Time `json:"recoverableFrom,omitempty"`
 	// LastRecovery is how the last recovery request ended. It is unset until

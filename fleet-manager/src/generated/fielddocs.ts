@@ -2845,7 +2845,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.history.unverifiedFrom": {
-        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set after CloudNativePG has reported\nthis for five minutes, while the server runs and asks for an archive.\nThe archive can miss the write-ahead log after it, and the write-ahead\nlog before it that the segment of the first failed upload held.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
+        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set after CloudNativePG has reported\nthis for five minutes, while the server runs and asks for an archive.\nThe archive can miss the write-ahead log after it.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
         "anchor": "#archiverecord"
       },
       "status.archive.reachableFrom": {
@@ -3035,7 +3035,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#recoveryoutcome"
       },
       "spec.pitr.recoverableFrom": {
-        "description": "RecoverableFrom is the oldest point that a restore can reach. The\nwindow of a restore starts here and continues to the present. A restore\nrefuses a point before it, also when the point is inside the retention\nperiod. When it is unset, the window is the whole retention period. It\nrequires enabled: true.\n\nA DatabaseServer publishes here the start of the oldest archive that a\nrestore can still read at the location that it archives to now. Its\narchive can have a gap after this point, for example after a rollback.\nA restore to a point in a gap fails, and the server keeps the data that\nit had.",
+        "description": "RecoverableFrom is the oldest point that a restore can reach. A restore\nadmits a point from here to the present. A restore refuses a point before\nit, also when the point is inside the retention period. When it is unset,\nthe window is the whole retention period. It requires enabled: true.\n\nA DatabaseServer publishes here the start of the oldest archive that a\nrestore can still read at the location that it archives to now. After a\nshorter retention period pruned the bucket, it can publish a later point.\nIts archive can have a gap after this point, for example after a\nrollback. A restore to a point in a gap fails, and the server keeps the\ndata that it had.",
         "anchor": "#pitrcapability"
       },
       "spec.pitr.recovery": {
