@@ -529,6 +529,27 @@ describe("planeImpacts", () => {
       KEYCLOAK_REALM_WARNING,
     ]);
   });
+
+  it("names no callback move for another spelling of the same External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://admin@KC.example.com.:443/",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("warns on two minors when the change turns on an app with a version from before", () => {
+    const live = planeClaim({
+      versions: { identity: "8.10.1", keycloak: "26.6.4", console: "8.9.133" },
+    });
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", true).map(asEdit),
+    );
+    expect(planeImpacts(input(s))).toContain(
+      "Management Identity and Console run on different minors: 8.10, 8.9. Camunda supports them together on one minor only.",
+    );
+  });
 });
 
 describe("servedChanges", () => {

@@ -16,7 +16,7 @@ import {
   keycloakIssuer,
   planeIssuer,
 } from "./identity";
-import { type PreviewRow, normalizeIssuer, servedPreview } from "./preview";
+import { type PreviewRow, servedPreview } from "./preview";
 import {
   type PlaneVersions,
   VERSION_LABEL,
@@ -46,7 +46,7 @@ export const FIRST_ADMIN_STAYS =
   "The first administrator stays. Management Identity keeps the one in its database.";
 /** CALLBACKS_MOVE is the impact of a move away from the externalKeycloak mode. */
 export const CALLBACKS_MOVE =
-  "The Optimize sign-in callbacks move from the old realm to the new one. Keep the old administrator Secret until status.callbackRealm of the plane names the new realm or is gone.";
+  "The Optimize sign-in callbacks move from the old realm to the new one. Keep the old administrator Secret, and the old CA bundle Secret if there is one, until status.callbackRealm of the plane names the new realm or is gone.";
 /** MOVE_WAITS is the impact of a move from the externalKeycloak mode to another Keycloak while the plane serves an Optimize. */
 export const MOVE_WAITS =
   "The move waits while the plane serves an Optimize. Users keep signing in at the old Keycloak until its realm holds no callbacks.";
@@ -173,11 +173,27 @@ function realmMoves(session: Session<PlaneClaim>): boolean {
       externalKeycloakDraftOf(provider?.externalKeycloak),
       undefined,
     );
-    return issuer.kind === "known" ? normalizeIssuer(issuer.url) : undefined;
+    return issuer.kind === "known" ? realmKey(issuer.url) : undefined;
   };
   const before = realm(session.claim);
   const after = realm(claimAfter(session));
   return before !== undefined && after !== undefined && before !== after;
+}
+
+// realmKey folds the spellings of one realm URL as RealmIdentity of
+// camundamanagementcluster does.
+function realmKey(url: string): string {
+  if (!URL.canParse(url)) return url;
+  const parsed = new URL(url);
+  let path = parsed.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // A malformed escape stays as it is.
+  }
+  const host = parsed.hostname.replace(/\.$/, "");
+  const port = parsed.port ? `:${parsed.port}` : "";
+  return `${parsed.protocol}//${host}${port}${path.replace(/\/+$/, "")}`;
 }
 
 function servedLines(
@@ -219,8 +235,13 @@ function versionLines(live: Spec, spec: Spec): string[] {
   const set = fields.filter(
     (f) => after[f] !== undefined && after[f] !== before[f],
   );
+  const turnedOn = fields.some(
+    (f) => !runningFields(runningOfClaim(live.management)).includes(f),
+  );
   const matrix =
-    set.length > 0 ? versionMatrixWarning(after, running) : undefined;
+    set.length > 0 || turnedOn
+      ? versionMatrixWarning(after, running)
+      : undefined;
   return [
     ...set.flatMap((f) =>
       before[f]
