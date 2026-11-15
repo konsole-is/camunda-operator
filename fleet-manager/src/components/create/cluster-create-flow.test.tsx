@@ -207,6 +207,16 @@ describe("ClusterCreateFlow", () => {
     );
   });
 
+  it("puts the section headings of a step under the step heading", () => {
+    render(<ClusterCreateFlow initial={data()} />);
+    const texts = (level: number) =>
+      screen.getAllByRole("heading", { level }).map((h) => h.textContent);
+    expect(texts(2)).toEqual(["Environment and name"]);
+    expect(texts(3)).toEqual(
+      expect.arrayContaining(["Environment", "Namespace", "Preset"]),
+    );
+  });
+
   it("shows the hosts of the default access option under the name", async () => {
     render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
     await fillBasics("search");

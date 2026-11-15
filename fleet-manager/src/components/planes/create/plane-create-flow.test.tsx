@@ -234,6 +234,16 @@ describe("PlaneCreateFlow", () => {
     ).toBe("Basics: The name plane-a is taken in this namespace.");
   });
 
+  it("puts the section headings of a step under the step heading", () => {
+    show();
+    const texts = (level: number) =>
+      screen.getAllByRole("heading", { level }).map((h) => h.textContent);
+    expect(texts(2)).toEqual(["Basics"]);
+    expect(texts(3)).toEqual(
+      expect.arrayContaining(["Environment", "Namespace"]),
+    );
+  });
+
   it("blocks Next on step 1 until the basics are complete", async () => {
     show();
     expect(next().disabled).toBe(true);
