@@ -128,7 +128,8 @@ export function planeIssuer(
   }
 }
 
-function parseHttpUrl(value: string): URL | undefined {
+/** parseHttpUrl returns value as a URL when it is an http or https URL with a host, as the CRD rules of the URL fields accept, else undefined. */
+export function parseHttpUrl(value: string): URL | undefined {
   if (!HTTP_AUTHORITY.test(value)) return undefined;
   try {
     const url = new URL(value);
