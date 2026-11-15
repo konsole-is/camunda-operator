@@ -25,9 +25,8 @@ const HEALTH: Record<PartitionHealthState, { text: string; tone: StatusTone }> =
 
 /**
  * PartitionTable lists the partitions of the brokers with their leader,
- * followers, processor phase, and health, under a heading that counts the
- * partitions with a leader. undefined means that the first answer is not in
- * yet.
+ * followers, processor phase, and health, in its own titled section.
+ * undefined means that the first answer is not in yet.
  */
 export function PartitionTable({
   partitions,
