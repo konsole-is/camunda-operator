@@ -78,4 +78,16 @@ describe("ComponentStats", () => {
     render(<ComponentStats pods={pods} usage={usage} />);
     expect(tile("Restarts")).toBe("Restarts7Since each pod started");
   });
+
+  it("counts the restarts of an init container too", () => {
+    const sidecar = {
+      metadata: { name: "orders-zeebe-0" },
+      status: {
+        initContainerStatuses: [{ ready: true, restartCount: 5 }],
+        containerStatuses: [{ ready: true, restartCount: 0 }],
+      },
+    };
+    render(<ComponentStats pods={[sidecar]} usage={usage} />);
+    expect(tile("Restarts")).toBe("Restarts5Since each pod started");
+  });
 });

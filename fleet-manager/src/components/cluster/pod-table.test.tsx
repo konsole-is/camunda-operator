@@ -77,6 +77,26 @@ describe("PodTable", () => {
     );
   });
 
+  it("counts the restarts of an init container too", () => {
+    render(
+      <PodTable
+        pods={[
+          {
+            metadata: { name: "orders-zeebe-0" },
+            status: {
+              initContainerStatuses: [{ ready: true, restartCount: 5 }],
+              containerStatuses: [{ ready: true, restartCount: 1 }],
+            },
+          },
+        ]}
+        usage={usage}
+      />,
+    );
+    expect(row("orders-zeebe-0").querySelectorAll("td")[1]?.textContent).toBe(
+      "6",
+    );
+  });
+
   it("shows the CPU and the memory of a pod against its limit, and where they come from", () => {
     render(<PodTable pods={pods} usage={usage} />);
     const cells = within(row("orders-zeebe-0"));

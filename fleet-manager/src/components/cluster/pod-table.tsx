@@ -21,13 +21,27 @@ export type PodLike = {
     creationTimestamp?: string | Date;
   };
   spec?: { containers?: unknown[]; nodeName?: string };
-  status?: Omit<NonNullable<PodStateLike["status"]>, "containerStatuses"> & {
-    containerStatuses?: (ContainerStateLike & {
-      ready: boolean;
-      restartCount: number;
-    })[];
+  status?: Omit<
+    NonNullable<PodStateLike["status"]>,
+    "containerStatuses" | "initContainerStatuses"
+  > & {
+    initContainerStatuses?: ContainerStatusLike[];
+    containerStatuses?: ContainerStatusLike[];
   };
 };
+
+type ContainerStatusLike = ContainerStateLike & {
+  ready: boolean;
+  restartCount: number;
+};
+
+/** podRestarts counts the restarts of all containers of pod, init containers too. */
+export function podRestarts(pod: PodLike): number {
+  return [
+    ...(pod.status?.initContainerStatuses ?? []),
+    ...(pod.status?.containerStatuses ?? []),
+  ].reduce((n, c) => n + c.restartCount, 0);
+}
 
 /**
  * USAGE_UNAVAILABLE says why a table shows no usage. The usage reader gives
@@ -105,10 +119,7 @@ export function PodTable({
                   </span>
                 </TableCell>
                 <TableCell className="align-top tabular-nums">
-                  {(pod.status?.containerStatuses ?? []).reduce(
-                    (n, c) => n + c.restartCount,
-                    0,
-                  )}
+                  {podRestarts(pod)}
                 </TableCell>
                 {showUsage &&
                   (["cpu", "memory"] as const).map((resource) => (
