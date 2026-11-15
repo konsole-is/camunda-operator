@@ -75,17 +75,21 @@ describe("SectionsTable", () => {
     renderEditor("platform", environmentFixtures());
     const database = row("Management planes", "Management database");
     expect(
-      within(database).getByRole("checkbox", { name: "Required" }),
-    ).toHaveProperty("checked", true);
+      within(database)
+        .getByRole("checkbox", { name: "Required" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
     expect(
       (within(database).getByLabelText("Default option") as HTMLSelectElement)
         .value,
     ).toBe("management-database-server");
     expect(
-      within(database).getByRole("checkbox", {
-        name: "PostgreSQL in the cluster",
-      }),
-    ).toHaveProperty("checked", true);
+      within(database)
+        .getByRole("checkbox", {
+          name: "PostgreSQL in the cluster",
+        })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   it("shows a section of both claim kinds in both groups", () => {
@@ -183,7 +187,7 @@ describe("SectionsTable", () => {
       "checkbox",
       { name: "vault-transit" },
     );
-    expect(missing).toHaveProperty("checked", true);
+    expect(missing.getAttribute("aria-checked")).toBe("true");
     expect(missing.closest("li")?.textContent).toContain("Not offered");
     fireEvent.click(missing);
     const spec = await save(actions);
