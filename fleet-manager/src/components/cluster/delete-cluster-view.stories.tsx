@@ -1,0 +1,280 @@
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
+import { deleteClaimSteps } from "@/lib/claims/deletion";
+import type { Resource } from "@/lib/k8s/kinds";
+import type { DeletionPolicy } from "@/lib/policy";
+import {
+  type DeleteClusterData,
+  deleteClusterModel,
+  deleteProgress,
+} from "./delete-cluster-model";
+import { DeleteClusterView } from "./delete-cluster-view";
+
+type Kind =
+  | "CamundaClusterClaim"
+  | "CamundaCluster"
+  | "CamundaOptimize"
+  | "BackupSchedule"
+  | "LogicalBackupElasticsearch"
+  | "PluginSection"
+  | "PluginRegistration"
+  | "PluginRequest";
+
+// The stories build their objects as plain JSON, as the cache gives them.
+const object = <K extends Kind>(kind: K, value: object) =>
+  value as unknown as Resource<K>;
+
+const selections = [
+  { section: "access", registration: "gateway" },
+  { section: "backup-storage", registration: "aws-s3" },
+  { section: "secondary-storage", registration: "elasticsearch" },
+];
+
+const claim = (deletionPolicy?: DeletionPolicy) =>
+  object("CamundaClusterClaim", {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: {
+      namespace: "team-orders",
+      name: "orders",
+      resourceVersion: "41",
+      uid: "8c1f6c1e-1d1a-4c5e-9d43-0f3b1c2d4e5f",
+    },
+    spec: { releaseRef: "camunda-8-9-1", plugins: selections, deletionPolicy },
+    status: {
+      resolvedPolicy: { deletionPolicy: "Orphan" },
+      requests: selections.map((s) => ({ ...s, name: `orders-${s.section}` })),
+    },
+  });
+
+const section = (name: string, label: string, order: number, slot?: string) =>
+  object("PluginSection", {
+    metadata: { name },
+    spec: {
+      label,
+      order,
+      selection: "One",
+      appliesTo: ["CamundaClusterClaim"],
+      ...(slot && { slot }),
+    },
+  });
+
+const registration = (
+  name: string,
+  label: string,
+  sections: string[],
+  deletionPolicies: DeletionPolicy[],
+) =>
+  object("PluginRegistration", {
+    metadata: { name },
+    spec: { label, sections, deletionPolicies },
+  });
+
+const request = (name: string, resources: object[]) =>
+  object("PluginRequest", {
+    metadata: { namespace: "team-orders", name },
+    status: { resources },
+  });
+
+const of = (cluster: string) => ({ spec: { clusterRef: { name: cluster } } });
+
+const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
+  claim: claim(),
+  cluster: object("CamundaCluster", {
+    metadata: { namespace: "team-orders", name: "orders" },
+  }),
+  sections: [
+    section("access", "Access", 10, "externalAccess"),
+    section("backup-storage", "Backup storage", 20, "backupStorage"),
+    section("secondary-storage", "Secondary storage", 30, "secondaryStorage"),
+  ],
+  registrations: [
+    registration("gateway", "Gateway", ["access"], ["Delete", "Orphan"]),
+    registration(
+      "aws-s3",
+      "Amazon S3",
+      ["backup-storage"],
+      ["Delete", "Orphan"],
+    ),
+    registration(
+      "elasticsearch",
+      "Elasticsearch",
+      ["secondary-storage"],
+      ["Delete", "Orphan"],
+    ),
+  ],
+  requests: [
+    request("orders-access", [
+      { kind: "HTTPRoute", name: "orders", onOrphan: "Deleted" },
+      { kind: "Certificate", name: "orders-tls", onOrphan: "Kept" },
+    ]),
+    request("orders-backup-storage", [
+      {
+        kind: "S3Bucket",
+        name: "orders-backups-7f3a",
+        id: "arn:aws:s3:::orders-backups-7f3a",
+        onOrphan: "Kept",
+      },
+    ]),
+    request("orders-secondary-storage", [
+      { kind: "ElasticsearchCluster", name: "orders-es", onOrphan: "Kept" },
+    ]),
+  ],
+  optimizes: [
+    object("CamundaOptimize", {
+      metadata: { namespace: "team-orders", name: "orders-optimize" },
+      ...of("orders"),
+    }),
+  ],
+  schedules: [
+    object("BackupSchedule", {
+      metadata: { namespace: "team-orders", name: "orders-daily" },
+      ...of("orders"),
+    }),
+  ],
+  backups: {
+    elasticsearch: ["orders-1", "orders-2", "orders-3"].map((name) =>
+      object("LogicalBackupElasticsearch", {
+        metadata: { namespace: "team-orders", name },
+        ...of("orders"),
+      }),
+    ),
+    rdbms: [],
+  },
+  volumes: "Retain",
+  ...over,
+});
+
+const refused = data({
+  claim: claim("Orphan"),
+  registrations: [
+    registration("gateway", "Gateway", ["access"], ["Delete"]),
+    registration(
+      "aws-s3",
+      "Amazon S3",
+      ["backup-storage"],
+      ["Delete", "Orphan"],
+    ),
+    registration(
+      "elasticsearch",
+      "Elasticsearch",
+      ["secondary-storage"],
+      ["Delete", "Orphan"],
+    ),
+  ],
+});
+
+const keep = deleteClusterModel(data(), "Orphan");
+const remove = deleteClaimSteps(
+  data().claim,
+  "Orphan",
+  "Delete the cluster orders",
+);
+
+const meta = {
+  title: "cluster/DeleteClusterView",
+  component: DeleteClusterView,
+  args: {
+    model: keep,
+    mode: "direct",
+    stage: { kind: "choose" },
+    remove: remove.remove,
+    policyStep: false,
+    onPick: fn(),
+    preview: fn(async () => ({ objects: [], errors: [] })),
+    apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
+    show: fn(),
+    onWritten: fn(),
+    onStopWaiting: fn(),
+  },
+  decorators: [
+    (Story) => (
+      <div className="max-w-3xl">
+        <Story />
+      </div>
+    ),
+  ],
+} satisfies Meta<typeof DeleteClusterView>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+const progress = deleteProgress(keep.targets, {
+  CamundaOptimize: [],
+  BackupSchedule: [],
+  CamundaCluster: [
+    {
+      metadata: { name: "orders", deletionTimestamp: "2026-11-15T10:00:00Z" },
+    },
+  ],
+  PluginRequest: [
+    { metadata: { name: "orders-access" } },
+    { metadata: { name: "orders-backup-storage" } },
+    { metadata: { name: "orders-secondary-storage" } },
+  ],
+  CamundaClusterClaim: [
+    {
+      metadata: { name: "orders", deletionTimestamp: "2026-11-15T10:00:00Z" },
+    },
+  ],
+});
+
+export const KeepTheResources: Story = {
+  name: "Keep the resources",
+};
+
+export const DeleteTheResources: Story = {
+  name: "Delete the resources, with the bucket warning",
+  args: { model: deleteClusterModel(data(), "Delete"), policyStep: true },
+};
+
+export const KeepRefused: Story = {
+  name: "A claim on Keep with an option that cannot keep",
+  args: { model: deleteClusterModel(refused, "Delete") },
+};
+
+export const DirectProgress: Story = {
+  name: "The cluster and its requests going",
+  args: { stage: { kind: "deleting", progress, gitWaiting: false } },
+};
+
+export const GitPolicyWait: Story = {
+  name: "Git: waiting for the deletion policy",
+  args: { mode: "git", stage: { kind: "waiting" } },
+};
+
+export const GitDeleteWait: Story = {
+  name: "Git: waiting for GitOps to delete the claim",
+  args: {
+    mode: "git",
+    stage: {
+      kind: "deleting",
+      progress: deleteProgress(keep.targets, {
+        CamundaOptimize: [{ metadata: { name: "orders-optimize" } }],
+        BackupSchedule: [{ metadata: { name: "orders-daily" } }],
+        CamundaCluster: [{ metadata: { name: "orders" } }],
+        PluginRequest: [
+          { metadata: { name: "orders-access" } },
+          { metadata: { name: "orders-backup-storage" } },
+          { metadata: { name: "orders-secondary-storage" } },
+        ],
+        CamundaClusterClaim: [{ metadata: { name: "orders" } }],
+      }),
+      gitWaiting: true,
+    },
+  },
+};
+
+export const Deleted: Story = {
+  name: "The cluster is deleted",
+  args: { stage: { kind: "deleted" } },
+};
+
+export const Replaced: Story = {
+  name: "The claim was made again",
+  args: { stage: { kind: "replaced" } },
+};
+
+export const ChangesOff: Story = {
+  name: "Changes are off",
+  args: { mode: undefined },
+};

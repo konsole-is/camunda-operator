@@ -1,0 +1,350 @@
+"use client";
+
+import { CircleAlert } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { ChangeReview } from "@/components/fleet/change-review";
+import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
+import { PrecheckLine } from "@/components/fleet/precheck-line";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { DeletionGroup } from "@/lib/claims/deletion";
+import type { Resource } from "@/lib/k8s/kinds";
+import type { DeletionPolicy } from "@/lib/policy";
+import type {
+  ApiError,
+  Change,
+  Preview,
+  WriteMode,
+  WriteResult,
+} from "@/lib/write/types";
+import type {
+  DeleteClusterModel,
+  DeleteState,
+  DeleteTarget,
+} from "./delete-cluster-model";
+import { CHANGES_OFF } from "./edit/cluster-edit";
+import { WaitingPanel } from "./edit/waiting-panel";
+
+/**
+ * KEEP_REFUSED_ON_DELETE says that a claim keeps its resources, but an
+ * option cannot, so the delete removes them.
+ */
+export const KEEP_REFUSED_ON_DELETE =
+  "The claim keeps its resources, but an option below cannot keep them. The delete removes them.";
+
+/**
+ * DeleteStage is what the delete page shows. choose holds the errors of a
+ * refused delete after a Git wait. waiting: in Git mode, the commit of the
+ * deletion policy waits for GitOps. deleting holds the state of each target,
+ * whether the delete commit waits for GitOps, and the live claim. deleted:
+ * the claim is gone. replaced: the claim was made again under its name.
+ */
+export type DeleteStage =
+  | { kind: "choose"; errors?: ApiError[] }
+  | { kind: "waiting" }
+  | {
+      kind: "deleting";
+      progress: { target: DeleteTarget; state: DeleteState }[];
+      gitWaiting: boolean;
+      claim?: Resource<"CamundaClusterClaim">;
+    }
+  | { kind: "deleted" }
+  | { kind: "replaced" };
+
+const PRUNE_NOTE =
+  "Your GitOps tool must prune: the fleet manager removes the claim file, and GitOps deletes the claim.";
+
+/**
+ * DeleteClusterView is the delete page of a cluster. It never writes: the
+ * confirm of its review calls apply with remove, and the review previews
+ * remove once for each remove object. Without a mode it shows CHANGES_OFF
+ * and what the delete takes, and no review. policyStep says that the
+ * delete writes the deletion policy first.
+ */
+export function DeleteClusterView({
+  model,
+  mode,
+  stage,
+  remove,
+  policyStep,
+  onPick,
+  preview,
+  apply,
+  show,
+  onWritten,
+  onStopWaiting,
+}: {
+  model: DeleteClusterModel;
+  mode: WriteMode | undefined;
+  stage: DeleteStage;
+  remove: Change;
+  policyStep: boolean;
+  onPick(policy: DeletionPolicy): void;
+  preview(change: Change): Promise<Preview>;
+  apply(change: Change): Promise<WriteResult>;
+  show(result: WriteResult, message: string): void;
+  onWritten(): void;
+  onStopWaiting(): void;
+}): ReactNode {
+  const { name, namespace } = model;
+  const clusterHref = `/fleet/clusters/${namespace}/${name}`;
+  const effects = effectsOf(model, mode === "git" && policyStep);
+  return (
+    <div className="flex max-w-3xl min-w-0 flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <Link
+          href={clusterHref}
+          className="relative w-fit text-sm text-muted hit-area hover:text-text"
+        >
+          Back to the cluster
+        </Link>
+        <h1 className="font-heading text-2xl font-bold tracking-[-0.02em] break-all">
+          Delete the cluster {name}
+        </h1>
+      </div>
+      {stage.kind === "deleted" ? (
+        <div className="flex flex-col gap-2 text-sm">
+          <p role="status" className="text-text">
+            The cluster {name} is deleted.
+          </p>
+          <Link
+            href="/fleet"
+            className="relative w-fit text-accent hit-area hover:underline"
+          >
+            Back to the fleet
+          </Link>
+        </div>
+      ) : stage.kind === "replaced" ? (
+        <div className="flex flex-col gap-2 text-sm">
+          <p role="status" className="text-text">
+            The claim {name} was made again after this page opened. Open the
+            delete page again to delete the new claim.
+          </p>
+          <Link
+            href={clusterHref}
+            className="relative w-fit text-accent hit-area hover:underline"
+          >
+            Back to the cluster
+          </Link>
+        </div>
+      ) : stage.kind === "waiting" ? (
+        <WaitingPanel
+          text="Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
+          onStopWaiting={onStopWaiting}
+        />
+      ) : stage.kind === "deleting" ? (
+        <Progress name={name} stage={stage} />
+      ) : (
+        <>
+          <DeletionChoiceField
+            subject="cluster"
+            choice={model.choice}
+            onChange={onPick}
+          />
+          {model.keepRefused && model.choice.policy !== "Orphan" && (
+            <p className="-mt-3 text-sm text-warn">{KEEP_REFUSED_ON_DELETE}</p>
+          )}
+          {mode === "git" && (
+            <p className="text-sm text-text-2">{PRUNE_NOTE}</p>
+          )}
+          {stage.errors && stage.errors.length > 0 && (
+            <Alert texts={stage.errors.map((e) => e.message)} />
+          )}
+          {mode === undefined ? (
+            <>
+              <p role="alert" className="text-sm text-bad">
+                {CHANGES_OFF}
+              </p>
+              <section aria-label="What the delete takes">
+                <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-text-2">
+                  {effects.map((effect, i) => (
+                    <li key={i}>{effect}</li>
+                  ))}
+                </ul>
+              </section>
+            </>
+          ) : (
+            <ChangeReview
+              change={remove}
+              mode={mode}
+              diffLabel="The claim that the delete removes"
+              effects={effects}
+              caution={model.warning}
+              confirm={{
+                label: "Delete the cluster",
+                gitLabel: "Push the delete to Git",
+                danger: true,
+                typed: name,
+              }}
+              savedMessage={
+                mode === "direct"
+                  ? `The claim ${name} is being deleted.`
+                  : policyStep
+                    ? `Pushed the deletion policy of ${name}. The delete follows when GitOps applies it.`
+                    : `Pushed the delete of ${name}.`
+              }
+              preview={preview}
+              apply={apply}
+              show={show}
+              onWritten={onWritten}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function effectsOf(
+  model: DeleteClusterModel,
+  twoCommits: boolean,
+): ReactNode[] {
+  const always = model.targets.filter((t) => t.kind !== "PluginRequest");
+  return [
+    <div key="always" className="flex flex-col gap-1">
+      <span className="font-medium text-text">Always deleted</span>
+      <ul className="flex flex-col gap-0.5">
+        {always.map((t) => (
+          <li key={`${t.kind}/${t.name}`}>
+            {t.label}
+            {t.note && <span className="text-muted">: {t.note}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>,
+    ...model.groups.map((group) => <GroupTable key={group.id} group={group} />),
+    ...(model.backups > 0
+      ? [
+          `The ${model.backups} backups of ${model.name} stay, and their artifacts stay in the bucket.`,
+        ]
+      : []),
+    ...(twoCommits
+      ? [
+          "Pushes two commits: the deletion policy first, then the delete once GitOps applied it.",
+        ]
+      : []),
+  ];
+}
+
+// The fate is the one emphasis of the page: Deleted in the bad tone, so
+// that a reader sees at a glance what goes.
+function GroupTable({ group }: { group: DeletionGroup }) {
+  const many = group.id.includes("/");
+  const caption = many ? `${group.label} (${group.registration})` : group.label;
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      {group.rows.length === 0 ? (
+        <>
+          <span className="font-medium text-text">{caption}</span>
+          <span>This option made no resources.</span>
+        </>
+      ) : (
+        <Table label={`Resources of ${caption}`}>
+          <TableCaption className="mt-0 mb-1 caption-top text-left font-medium text-text">
+            {caption}
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Kind</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>What happens</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {group.rows.map((row) => (
+              <TableRow key={`${row.kind}/${row.name}`}>
+                <TableCell>{row.kind}</TableCell>
+                <TableCell className="break-all whitespace-normal">
+                  {row.name}
+                </TableCell>
+                <TableCell className="break-all whitespace-normal text-muted">
+                  {row.id ?? "-"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={row.fate === "Deleted" ? "destructive" : "outline"}
+                    className={row.fate === "Kept" ? "text-muted" : undefined}
+                  >
+                    {row.fate}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {group.alwaysDeletes && (
+        <span className="text-warn">
+          This option always deletes what it made.
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Progress({
+  name,
+  stage,
+}: {
+  name: string;
+  stage: Extract<DeleteStage, { kind: "deleting" }>;
+}) {
+  return (
+    <section aria-label="Delete progress" className="flex flex-col gap-3">
+      {stage.gitWaiting && (
+        <div className="flex flex-col gap-1 text-sm">
+          <p role="status" className="text-text">
+            Waiting for GitOps to delete {name}
+          </p>
+          <p className="text-text-2">{PRUNE_NOTE}</p>
+        </div>
+      )}
+      {stage.claim && <PrecheckLine claim={stage.claim} />}
+      <ol className="flex flex-col divide-y divide-divider rounded-md border border-border">
+        {stage.progress.map(({ target, state }) => (
+          <li
+            key={`${target.kind}/${target.name}`}
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 text-sm"
+          >
+            <span className="flex min-w-0 flex-col">
+              <span className="break-all text-text">{target.label}</span>
+              {target.note && <span className="text-muted">{target.note}</span>}
+            </span>
+            <Badge
+              variant={state === "Waiting" ? "outline" : "secondary"}
+              className={state === "Deleted" ? "text-muted" : undefined}
+            >
+              {state}
+            </Badge>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function Alert({ texts }: { texts: string[] }) {
+  return (
+    <div
+      role="alert"
+      className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
+    >
+      <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+      <ul className="flex flex-col gap-1">
+        {texts.map((text, i) => (
+          <li key={i}>{text}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
