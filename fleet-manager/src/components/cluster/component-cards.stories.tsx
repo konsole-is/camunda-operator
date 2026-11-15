@@ -196,7 +196,6 @@ export const SectionCards: Story = {
             ],
           }),
           condition: {
-            type: "Ready",
             status: "False",
             reason: "GrantRejected",
             message: "Grant orders-backup-storage-read has Ready=False",
@@ -210,7 +209,6 @@ export const SectionCards: Story = {
             resources: [resource("KMSKey", "orders-encryption-key")],
           }),
           condition: {
-            type: "Ready",
             status: "False",
             reason: "KeyPendingDeletion",
             message: "The key is scheduled for deletion",

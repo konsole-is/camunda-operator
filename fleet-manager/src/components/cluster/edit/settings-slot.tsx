@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { clusterFields, type Step } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
 import { claimAfter, type Session } from "@/lib/session";
-import type { CardId } from "../cards";
+import { isSectionId, type ProcessCardId } from "../cards";
 import { settingsOf } from "../editable-settings";
 import { mergedSpecs } from "../impacts";
 import { clusterFieldsInputOf, componentSettings } from "../settings";
@@ -22,13 +22,14 @@ import { useEditorGeneration } from "./editor-generation";
  * open component. Changes go to the session of the edit host. The values
  * are those after the pending changes. After the pending changes are
  * discarded or written, the editors show the live values again. It renders
- * nothing without an open component or without a session.
+ * nothing without an open component, for a selection of the claim, or
+ * without a session.
  */
 export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
   const { session, pending, set, reset } = useClusterEdit();
   const [open, setOpen] = useState(false);
   const { generation, own } = useEditorGeneration(pending);
-  if (!ctx.openId || !session) return null;
+  if (!ctx.openId || isSectionId(ctx.openId) || !session) return null;
   return (
     <div className="flex flex-col gap-3">
       <Button
@@ -64,7 +65,7 @@ function Editors({
   reset,
 }: {
   ctx: ClusterSlotContext;
-  openId: CardId;
+  openId: ProcessCardId;
   session: Session<ClusterClaim>;
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;

@@ -20,6 +20,7 @@ import {
   SECTION_LABEL,
   isManaged,
 } from "@/lib/labels";
+import { type SectionClaim, sectionComponents } from "@/lib/claims/sections";
 import { clusterFields } from "@/lib/fields";
 import type { WriteMode } from "@/lib/write/types";
 import { mergeCluster } from "@/lib/merge";
@@ -29,7 +30,14 @@ import { ActionSlot, rowActionsOf } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
-import { type CardId, componentCards, componentOf } from "./cards";
+import {
+  type CardId,
+  componentCards,
+  componentOf,
+  isSectionId,
+  overviewHref,
+  sectionCards,
+} from "./cards";
 import { claimView } from "./claim";
 import { ClaimTab } from "./claim-tab";
 import { ClusterComponentDetail } from "./cluster-detail";
@@ -47,6 +55,7 @@ import {
   operatorVersionOf,
 } from "./settings";
 import { type ClaimActions, ClusterEditProvider } from "./edit/cluster-edit";
+import { SectionComponentDetail } from "./section-detail";
 import type { ClusterSlotContext, ClusterSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
@@ -105,11 +114,12 @@ export type ClusterPageData = {
  * ClusterView is the cluster page. It follows the objects of initial live,
  * and selects the tab that the tab query parameter of the URL names. A
  * click on a tab replaces that parameter. The component query parameter
- * opens the detail of a used component, or of an app embedded in one, on
- * the Overview tab, in place of the cards. slots fill the action slots of a
- * managed cluster, and an unmanaged cluster ignores them. A render function
- * of slots gets the slot context of the page, and the render function of
- * cluster.backups.row also gets each backup row. For a managed cluster with a
+ * opens the detail of a used component, of an app embedded in one, or of a
+ * selection of the claim, on the Overview tab, in place of the cards. slots
+ * fill the action slots of a managed cluster, and an unmanaged cluster
+ * ignores them. A render function of slots gets the slot context of the
+ * page, and the render function of cluster.backups.row also gets each
+ * backup row. For a managed cluster with a
  * claim, a filled cluster.claim.editor slot shows in place of the read view
  * of the claim. writeMode is the write mode of the fleet manager, undefined
  * when the page could not read it. claimActions turn on the edit host of a
@@ -352,18 +362,33 @@ export function ClusterView({
     ConditionLike | undefined;
   const clusterConditions = conditionRows(live.status?.conditions);
   const optimize = clusterOptimize(name ?? "", optimizes.items);
-  const cards = componentCards({
-    spec: merged.spec,
-    pods: pods.items,
-    conditions: clusterConditions,
-    optimize,
-    usage,
-    partitions,
-  });
+  const sectionList = claim
+    ? sectionComponents({
+        // A claim holds the parameters of a selection as unknown, because the
+        // CRD schema does not give them a shape. sectionComponents reads no
+        // parameter.
+        claim: claim as SectionClaim,
+        sections: sections.items,
+        requests: claimRequests,
+      })
+    : [];
+  const cards = [
+    ...componentCards({
+      spec: merged.spec,
+      pods: pods.items,
+      conditions: clusterConditions,
+      optimize,
+      usage,
+      partitions,
+    }),
+    ...sectionCards(sectionList),
+  ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
     Object.fromEntries(
       cards.flatMap((c) =>
-        c.id !== "optimize" && c.condition ? [[c.id, c.condition]] : [],
+        c.id !== "optimize" && !isSectionId(c.id) && c.condition
+          ? [[c.id, c.condition]]
+          : [],
       ),
     );
 
@@ -413,6 +438,7 @@ export function ClusterView({
     window.history.replaceState(null, "", overviewHref(id));
   };
   const openId = componentOf(component, cards);
+  const openSection = sectionList.find((s) => s.id === openId);
   const context: ClusterSlotContext = {
     cluster: live,
     claim,
@@ -501,28 +527,40 @@ export function ClusterView({
               >
                 All components
               </a>
-              <ClusterComponentDetail
-                id={openId}
-                cards={cards}
-                cluster={live}
-                namespace={ns}
-                podSelector={initial.podSelector}
-                conditions={clusterConditions}
-                optimize={optimize}
-                partitions={partitions}
-                now={clock}
-                settings={
-                  <div className="flex flex-col gap-4">
-                    <ComponentSettings
-                      groups={componentSettings(fields, openId, merged.spec)}
-                      docs={initial.fieldDocs}
-                      operatorVersion={operatorVersionOf(registrations.items)}
-                      cluster={{ namespace: ns, name: name ?? "" }}
-                    />
-                    {slot("component.settings.editor")}
-                  </div>
-                }
-              />
+              {isSectionId(openId) ? (
+                openSection && (
+                  <SectionComponentDetail
+                    component={openSection}
+                    registrations={registrations.items}
+                    namespace={ns}
+                    settings={slot("component.settings.editor")}
+                    now={clock}
+                  />
+                )
+              ) : (
+                <ClusterComponentDetail
+                  id={openId}
+                  cards={cards}
+                  cluster={live}
+                  namespace={ns}
+                  podSelector={initial.podSelector}
+                  conditions={clusterConditions}
+                  optimize={optimize}
+                  partitions={partitions}
+                  now={clock}
+                  settings={
+                    <div className="flex flex-col gap-4">
+                      <ComponentSettings
+                        groups={componentSettings(fields, openId, merged.spec)}
+                        docs={initial.fieldDocs}
+                        operatorVersion={operatorVersionOf(registrations.items)}
+                        cluster={{ namespace: ns, name: name ?? "" }}
+                      />
+                      {slot("component.settings.editor")}
+                    </div>
+                  }
+                />
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -615,12 +653,6 @@ function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
         : "This cluster was not made from a claim."}
     </p>
   );
-}
-
-// overviewHref is the URL of the Overview tab with the detail of id open,
-// or with the cards when id is null.
-function overviewHref(id: CardId | null): string {
-  return id ? `?tab=overview&component=${id}` : "?tab=overview";
 }
 
 // conditionRows gives the conditions of a status as the table rows. The

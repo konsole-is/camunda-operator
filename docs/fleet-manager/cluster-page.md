@@ -6,7 +6,7 @@ The cluster page shows one Camunda cluster: its processes and pods, their logs a
 
 | Tab | What it shows |
 | --- | --- |
-| **Overview** | The **Topology** of the processes and their pods, a card for each component, and the **Conditions** of the cluster, of Optimize, and of the claim. |
+| **Overview** | The **Topology** of the processes and their pods, and a card for each component and for each selection of the claim. Then the **Conditions** of the cluster, of Optimize, and of the claim. |
 | **Backups** | The backup storage, the schedules, the backups, and the restores, as [Back up and restore a cluster](backups.md) shows. |
 | **Endpoints** | The address of each app: its public URL, its Service, its protocol, and the process that serves it. |
 | **Claim** | The choices of the claim for the whole cluster, as [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) shows. |
@@ -28,6 +28,23 @@ A component has five tabs:
 | **Settings** | Each field of the component with its value and where the value comes from, as [Change the settings of a component](change-a-cluster.md#change-the-settings-of-a-component) shows. |
 
 An app that runs inside another process has no pods of its own. Its page says, for example, **Embedded in Gateway**. Its tabs show the pods, the logs, and the events of that process.
+
+## Storage, security, and access
+
+A cluster that a claim made also has a card for each selection of the claim, for example **Backup storage** or **Access**. These cards come after the cards of the Camunda processes, in the order of the sections. Each card has the label of its section.
+
+A card shows the first item of the summary of the request of its section, and the number of resources of the request. A Warning or an Error item shows in the color of its severity. The dot of the card shows the `Ready` condition of the request, for example **Not ready (GrantRejected)**. When the request does not exist yet, the card shows **Request: Not made yet**.
+
+Select the card to open the request. Its tabs show:
+
+| Tab | What it shows |
+| --- | --- |
+| **Overview** | The conditions of the request, and a table of its pods. |
+| **Metrics** | The live CPU and memory of the pods of the request. Then the charts of those pods, and the charts that the registration adds. |
+| **Logs** | The logs of the pods of the request, and the lines about the request in the logs of its controller. The group **Controller** of the list **Pod** holds the pods of the controller. |
+| **Events** | The events of the `PluginRequest` and of its pods. |
+
+A request that runs no pods says "This component runs no pods." on its **Overview** tab. Its **Events** tab lists only the events of the `PluginRequest`. When the request does not exist yet, the **Overview** tab says "The claim controller has not made the request of this section yet."
 
 ## Logs
 
@@ -76,7 +93,7 @@ The **Events** tab lists the Kubernetes events of the component, newest first. I
 - The pods of the component.
 - Its Services and its PersistentVolumeClaims.
 - Its StatefulSet or Deployment, and the ReplicaSets of the Deployment.
-- The `CamundaCluster`, or the `CamundaOptimize` on the page of Optimize.
+- The `CamundaCluster`, or the `CamundaOptimize` on the page of Optimize, or the `PluginRequest` on the page of a section.
 
 Each event shows its age, its reason, the object that it is about, and its message. A Warning event has the label **Warning**. An event that repeated shows the count, for example "(4 times)". With no event, the tab shows "No events".
 
