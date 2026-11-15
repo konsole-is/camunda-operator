@@ -84,7 +84,7 @@ export function changedParameterErrors(input: {
 // requestsOf returns the parameters of the request of each selection, as
 // resolve gives them. Without the snapshot of the claim, they are the
 // parameters of the selections.
-function requestsOf(
+export function requestsOf(
   selections: PluginSelection[],
   input: {
     environment?: Resource<"Environment">;

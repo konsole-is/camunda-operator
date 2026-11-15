@@ -14,16 +14,22 @@ import {
   type IdentityModeId,
   type PlaneManagement,
 } from "@/lib/planes/identity";
-import { planeControllerParameters } from "@/lib/planes/storage";
+import {
+  databaseConfigErrors,
+  databaseSection,
+  planeControllerParameters,
+} from "@/lib/planes/storage";
 import { planeUrlFields, urlErrors } from "@/lib/planes/urls";
 import {
   runningFields,
   versionError,
   type PlaneVersionField,
 } from "@/lib/planes/versions";
+import { pathFrom, type Step } from "@/lib/fields";
 import {
   checkAllowed,
   checkDeletionPolicy,
+  checkSlotConflicts,
   deletionPolicyOf,
   equalJSON,
   type ResolvedPolicy,
@@ -33,9 +39,11 @@ import {
   changedParameterErrors,
   generated,
   messagesOf,
+  requestsOf,
   selectionsOf,
 } from "./parameters";
 import { claimAfter, type Session } from "./session";
+import { valueAt } from "./steps";
 
 /**
  * PlaneClaim is a CamundaManagementClusterClaim as the cache reads it. The
@@ -72,22 +80,12 @@ const EXTERNAL_PATHS: Record<string, string> = {
 
 /**
  * validatePlaneClaim returns the errors of the plane claim after the change
- * of s, before review, in this order: no environment, or an added name that
- * no Environment has; a move to OIDC while the platform config of the plane
- * uses basic authentication; a provider that names no mode or two; the
- * admin fields that the mode after the change needs or refuses, and the
- * admin email that Web Modeler needs in a Keycloak mode; the External
- * Keycloak fields; without an access selection, the URL of each running
- * app that the change sets or that the change makes needed; the version of
- * each running app that the change sets or
- * that an app needs once the change turns it on; the Web Modeler mail that
- * the change sets; the first value that the resolved policy does not allow;
- * each section parameter that the change touches and that the schema of
- * its registration refuses; and a refused deletion policy. An environment,
- * a version, the mail, and a parameter that s does not change stay
- * unchecked, so that a claim that breaks one of those rules already does
- * not block another change. Types and ranges of the CRD are left to the dry
- * run.
+ * of s. An Environment name, an app URL that the claim already needed, a set
+ * version of an app that already ran, the mail, the DatabaseConfigs while
+ * the running apps stay, and the schema check of a section parameter skip a
+ * value that s does not change, so that a claim that already breaks one of
+ * those rules does not block another change. Types and ranges of the CRD are
+ * left to the dry run.
  */
 export function validatePlaneClaim(
   s: Session<PlaneClaim>,
@@ -125,6 +123,16 @@ export function validatePlaneClaim(
       }),
     ),
   );
+
+  errors.push(
+    ...messagesOf(
+      checkSlotConflicts(generated<PluginSection[]>(ctx.sections), selections, {
+        management: spec.management,
+      }),
+    ),
+  );
+
+  errors.push(...databaseErrorsOf(s.claim, after, ctx, policy));
 
   errors.push(
     ...changedParameterErrors({
@@ -286,6 +294,41 @@ function urlErrorsOf(
       message,
     }));
   });
+}
+
+// The plugin refuses one DatabaseConfig for two apps, and a plane waits for
+// the database of an app without one.
+function databaseErrorsOf(
+  claim: PlaneClaim,
+  after: PlaneClaim,
+  ctx: PlaneClaimContext,
+  policy: ResolvedPolicy | undefined,
+): FieldError[] {
+  const section = databaseSection(generated<PluginSection[]>(ctx.sections));
+  const selections = selectionsOf(after);
+  const i = selections.findIndex((p) => p.section === section?.metadata.name);
+  if (i < 0) return [];
+  const { section: name, registration } = selections[i];
+  const steps: Step[] = [
+    { field: "spec" },
+    { field: "plugins" },
+    { item: { section: name, registration } },
+    { field: "parameters" },
+  ];
+  const running = runningOfClaim(after.spec?.management);
+  if (
+    equalJSON(valueAt(claim, steps), selections[i].parameters) &&
+    equalJSON(runningOfClaim(claim.spec?.management), running)
+  )
+    return [];
+  const parameters = requestsOf(selections, {
+    environment: ctx.environment,
+    registrations: ctx.registrations,
+    policy,
+  })[i];
+  return databaseConfigErrors({ ...selections[i], parameters }, running).map(
+    (message) => ({ path: pathFrom("", steps), message }),
+  );
 }
 
 function hasAccess(claim: PlaneClaim, ctx: PlaneClaimContext): boolean {

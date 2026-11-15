@@ -95,11 +95,17 @@ const ctx = (over: Partial<PlaneClaimContext> = {}): PlaneClaimContext =>
 
 const accessSection = {
   metadata: { name: "access" },
-  spec: { slot: "externalAccess" },
+  spec: {
+    slot: "externalAccess",
+    appliesTo: ["CamundaManagementClusterClaim"],
+  },
 } as unknown as PlaneClaimContext["sections"][number];
 const databaseSection = {
   metadata: { name: "databases" },
-  spec: { slot: "managementDatabases" },
+  spec: {
+    slot: "managementDatabases",
+    appliesTo: ["CamundaManagementClusterClaim"],
+  },
 };
 
 const withAccess = (claim: PlaneClaim): PlaneClaim => ({
@@ -109,6 +115,26 @@ const withAccess = (claim: PlaneClaim): PlaneClaim => ({
     plugins: [{ section: "access", registration: "gateway" }],
   },
 });
+
+// configsClaim names a DatabaseConfig for each app through the built-in
+// registration existing-database-configs.
+const configsClaim = (
+  parameters: Record<string, string> = { keycloak: "kc-db", identity: "id-db" },
+) =>
+  planeClaim({
+    plugins: [
+      { section: "access", registration: "gateway" },
+      {
+        section: "databases",
+        registration: "existing-database-configs",
+        parameters,
+      },
+    ],
+  });
+const configsCtx = {
+  ...ctx(),
+  sections: [accessSection, databaseSection],
+} as unknown as PlaneClaimContext;
 
 // urlClaim is a claim without an access option that sets the URL of each
 // app that it runs.
@@ -396,7 +422,10 @@ describe("validatePlaneClaim", () => {
     expect(
       validatePlaneClaim(
         s,
-        ctx({ registrations } as unknown as Partial<PlaneClaimContext>),
+        ctx({
+          registrations,
+          sections: [accessSection],
+        } as unknown as Partial<PlaneClaimContext>),
       ),
     ).toEqual([
       {
@@ -437,7 +466,10 @@ describe("validatePlaneClaim", () => {
     expect(
       validatePlaneClaim(
         s,
-        ctx({ registrations } as unknown as Partial<PlaneClaimContext>),
+        ctx({
+          registrations,
+          sections: [accessSection],
+        } as unknown as Partial<PlaneClaimContext>),
       ).map((e) => e.path),
     ).toEqual([pathFrom("", steps)]);
   });
@@ -452,7 +484,7 @@ describe("validatePlaneClaim", () => {
       },
     } as PlaneClaim;
     const s = changed(live, [at("spec", "deletionPolicy"), "Delete"]);
-    const errors = validatePlaneClaim(s, ctx());
+    const errors = validatePlaneClaim(s, ctx({ sections: [accessSection] }));
     expect(errors).toHaveLength(1);
     expect(errors[0].path).toBeUndefined();
     expect(errors[0].message).toMatch(/gateway/);
@@ -592,5 +624,76 @@ describe("validatePlaneClaim", () => {
         } as unknown as Partial<PlaneClaimContext>),
       ),
     ).toEqual([]);
+  });
+
+  it("refuses a URL in the claim that the access selection fills", () => {
+    const s = changed(withAccess(planeClaim()), [
+      at("spec", "management", "identity", "externalUrl"),
+      "https://other.example.com",
+    ]);
+    expect(validatePlaneClaim(s, ctx({ sections: [accessSection] }))).toEqual([
+      {
+        message:
+          'spec.management.identity.externalUrl is filled by section "access", so the claim cannot set it',
+      },
+    ]);
+  });
+
+  it("refuses one DatabaseConfig for two running apps", () => {
+    const steps: Step[] = [
+      ...at("spec", "plugins"),
+      {
+        item: {
+          section: "databases",
+          registration: "existing-database-configs",
+        },
+      },
+      ...at("parameters", "identity"),
+    ];
+    const s = changed(configsClaim(), [steps, "kc-db"]);
+    expect(validatePlaneClaim(s, configsCtx)).toEqual([
+      {
+        path: pathFrom("", steps.slice(0, -1)),
+        message:
+          "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use kc-db.",
+      },
+    ]);
+  });
+
+  it("asks for the DatabaseConfig of an app that the change turns on", () => {
+    const live = configsClaim();
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "webModeler", true).map(asEdit),
+      [at("spec", "versions", "webModeler"), "8.9.15"],
+      [[...at(...ADMIN), { field: "email" }], "a@example.com"],
+      [
+        at("spec", "management", "webModeler", "mail"),
+        mailOf({
+          ...EMPTY_MAIL,
+          smtpHost: "smtp.example.com",
+          fromAddress: "a@example.com",
+        }),
+      ],
+    );
+    expect(validatePlaneClaim(s, configsCtx)).toContainEqual({
+      path: pathFrom("", [
+        ...at("spec", "plugins"),
+        {
+          item: {
+            section: "databases",
+            registration: "existing-database-configs",
+          },
+        },
+        { field: "parameters" },
+      ]),
+      message: "Pick a DatabaseConfig for Web Modeler.",
+    });
+  });
+
+  it("a deletion policy change passes while two apps share a DatabaseConfig", () => {
+    const live = configsClaim({ keycloak: "shared", identity: "shared" });
+    const s = changed(live, [at("spec", "deletionPolicy"), "Delete"]);
+    expect(validatePlaneClaim(s, configsCtx)).toEqual([]);
   });
 });
