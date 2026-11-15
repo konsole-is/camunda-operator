@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
-import { presetUsage } from "./presets";
+import {
+  type PresetUsageSources,
+  presetResources,
+  presetUsage,
+  presetUsers,
+} from "./presets";
 
 function cluster(namespace: string, name: string, presetRef?: string) {
   return {
@@ -24,5 +29,144 @@ describe("presetUsage", () => {
 
   it("gives no entry without clusters", () => {
     expect(presetUsage([])).toEqual(new Map());
+  });
+});
+
+type Spec = Record<string, unknown>;
+const named = (namespace: string, name: string, spec: Spec) => ({
+  metadata: { namespace, name },
+  spec,
+});
+const selection = (registration: string, parameters: unknown) => ({
+  section: "storage",
+  registration,
+  parameters,
+});
+
+const sources: PresetUsageSources = {
+  clusters: [named("team-a", "orders", { presetRef: "medium" })],
+  elasticsearchClusters: [
+    named("team-a", "orders-es", { presetRef: "standard" }),
+  ],
+  databaseServers: [named("team-a", "orders-db", { presetRef: "standard" })],
+  clusterClaims: [
+    named("team-b", "billing", { presetRef: "large" }),
+    named("team-a", "orders", {
+      presetRef: "medium",
+      plugins: [selection("database-server", { preset: "small" })],
+    }),
+    named("team-d", "twice", {
+      presetRef: "medium",
+      plugins: [
+        selection("elasticsearch", { preset: "twice" }),
+        selection("elasticsearch", { preset: "twice" }),
+      ],
+    }),
+  ],
+  planeClaims: [
+    named("platform", "plane", {
+      plugins: [selection("management-database-server", { preset: "small" })],
+    }),
+  ],
+  requests: [
+    named("team-c", "search-abc12", {
+      registration: "elasticsearch",
+      parameters: { preset: "kept" },
+    }),
+    named("team-c", "files-abc12", {
+      registration: "rustfs",
+      parameters: { preset: "rustfs-small" },
+    }),
+  ],
+};
+
+describe("presetResources", () => {
+  it("lists the resources of the preset kind whose presetRef names the preset", () => {
+    expect(
+      presetResources("ElasticsearchClusterPreset", "standard", sources),
+    ).toEqual([
+      { kind: "ElasticsearchCluster", namespace: "team-a", name: "orders-es" },
+    ]);
+  });
+
+  it("ignores a resource of another kind with the same presetRef", () => {
+    expect(
+      presetResources("DatabaseServerPreset", "standard", sources).map(
+        (u) => u.kind,
+      ),
+    ).toEqual(["DatabaseServer"]);
+  });
+
+  it("matches nothing for an empty name", () => {
+    expect(
+      presetResources("CamundaClusterPreset", "", {
+        ...sources,
+        clusters: [named("team-a", "bare", { presetRef: "" })],
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("presetUsers", () => {
+  it("counts a cluster claim that names a cluster preset before its cluster exists", () => {
+    expect(presetUsers("CamundaClusterPreset", "large", sources)).toEqual([
+      { kind: "CamundaClusterClaim", namespace: "team-b", name: "billing" },
+    ]);
+  });
+
+  it("lists the resources first, then the claims", () => {
+    expect(presetUsers("CamundaClusterPreset", "medium", sources)).toEqual([
+      { kind: "CamundaCluster", namespace: "team-a", name: "orders" },
+      { kind: "CamundaClusterClaim", namespace: "team-a", name: "orders" },
+      { kind: "CamundaClusterClaim", namespace: "team-d", name: "twice" },
+    ]);
+  });
+
+  it("counts a built-in storage selection by its preset parameter, in both claim kinds", () => {
+    expect(presetUsers("DatabaseServerPreset", "small", sources)).toEqual([
+      { kind: "CamundaClusterClaim", namespace: "team-a", name: "orders" },
+      {
+        kind: "CamundaManagementClusterClaim",
+        namespace: "platform",
+        name: "plane",
+      },
+    ]);
+  });
+
+  it("counts a request of a built-in storage registration by its preset parameter", () => {
+    expect(presetUsers("ElasticsearchClusterPreset", "kept", sources)).toEqual([
+      { kind: "PluginRequest", namespace: "team-c", name: "search-abc12" },
+    ]);
+  });
+
+  it("does not count a preset parameter of a registration that names no preset kind", () => {
+    expect(
+      presetUsers("ElasticsearchClusterPreset", "rustfs-small", sources),
+    ).toEqual([]);
+  });
+
+  it("does not count a selection of a registration whose preset is of another kind", () => {
+    expect(presetUsers("ElasticsearchClusterPreset", "small", sources)).toEqual(
+      [],
+    );
+  });
+
+  it("lists a user once", () => {
+    expect(presetUsers("ElasticsearchClusterPreset", "twice", sources)).toEqual(
+      [{ kind: "CamundaClusterClaim", namespace: "team-d", name: "twice" }],
+    );
+  });
+
+  it("matches nothing for an empty name", () => {
+    expect(
+      presetUsers("DatabaseServerPreset", "", {
+        ...sources,
+        planeClaims: [
+          named("platform", "plane", {
+            plugins: [selection("management-database-server", { preset: "" })],
+          }),
+        ],
+      }),
+    ).toEqual([]);
   });
 });
