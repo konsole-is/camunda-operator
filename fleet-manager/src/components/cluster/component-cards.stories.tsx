@@ -1,10 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { fn } from "storybook/test";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import type { SectionComponent } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
-import { componentCards } from "./cards";
+import {
+  type CardId,
+  componentCards,
+  overviewHref,
+  sectionCards,
+} from "./cards";
 import { ComponentCards } from "./component-card";
 
 function pod(name: string, component: string, isReady = true): Resource<"Pod"> {
@@ -108,30 +114,112 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+const allUsedAndReady = componentCards({
+  spec: standalone,
+  pods: allPods,
+  conditions: [
+    "ZeebeReady",
+    "GatewayReady",
+    "OperateReady",
+    "TasklistReady",
+    "AdminReady",
+    "ConnectorsReady",
+  ].map(healthy),
+  optimize,
+  usage: allPods.map((p, i) =>
+    usage(p.metadata?.name ?? "", 0.1 * (i + 1), 0.8 * 1024 ** 3),
+  ),
+  partitions: threePartitions.map((p) => ({
+    ...p,
+    followers: [...p.followers],
+  })),
+});
+
 export const AllUsedAndReady: Story = {
   name: "All used and ready",
   args: {
-    cards: componentCards({
-      spec: standalone,
-      pods: allPods,
-      conditions: [
-        "ZeebeReady",
-        "GatewayReady",
-        "OperateReady",
-        "TasklistReady",
-        "AdminReady",
-        "ConnectorsReady",
-      ].map(healthy),
-      optimize,
-      usage: allPods.map((p, i) =>
-        usage(p.metadata?.name ?? "", 0.1 * (i + 1), 0.8 * 1024 ** 3),
-      ),
-      partitions: threePartitions.map((p) => ({
-        ...p,
-        followers: [...p.followers],
-      })),
-    }),
+    cards: allUsedAndReady,
     hrefOf: (id) => `?tab=overview&component=${id}`,
+  },
+};
+
+function request(
+  name: string,
+  status: NonNullable<Resource<"PluginRequest">["status"]>,
+): Resource<"PluginRequest"> {
+  return {
+    kind: "PluginRequest",
+    metadata: { name, namespace: "team-a" },
+    status,
+  } as Resource<"PluginRequest">;
+}
+
+function section(
+  name: string,
+  label: string,
+  order: number,
+  registration: string,
+  rest: Partial<SectionComponent> = {},
+): SectionComponent {
+  return {
+    id: `section:${name}`,
+    section: name,
+    label,
+    order,
+    selection: { section: name, registration },
+    ...rest,
+  };
+}
+
+const resource = (kind: string, name: string) =>
+  ({ kind, name, onOrphan: "Kept" }) as const;
+
+export const SectionCards: Story = {
+  name: "Section cards",
+  args: {
+    cards: [
+      ...allUsedAndReady,
+      ...sectionCards([
+        section("cloud-identity", "Cloud identity", 1, "aws-iam-role", {
+          request: request("orders-cloud-identity", {
+            summary: [{ label: "Role", value: "orders-camunda" }],
+            resources: [resource("IAMRole", "orders-camunda")],
+          }),
+          condition: healthy("Ready"),
+        }),
+        section("backup-storage", "Backup storage", 2, "aws-s3", {
+          request: request("orders-backup-storage", {
+            summary: [{ label: "Bucket", value: "orders-backups-eu-west-1" }],
+            resources: [
+              resource("S3Bucket", "orders-backups-eu-west-1"),
+              resource("Grant", "orders-backup-storage-read"),
+            ],
+          }),
+          condition: {
+            type: "Ready",
+            status: "False",
+            reason: "GrantRejected",
+            message: "Grant orders-backup-storage-read has Ready=False",
+          },
+        }),
+        section("encryption-key", "Encryption key", 3, "aws-kms-key", {
+          request: request("orders-encryption-key", {
+            summary: [
+              { label: "Key", value: "Pending deletion", severity: "Error" },
+            ],
+            resources: [resource("KMSKey", "orders-encryption-key")],
+          }),
+          condition: {
+            type: "Ready",
+            status: "False",
+            reason: "KeyPendingDeletion",
+            message: "The key is scheduled for deletion",
+          },
+        }),
+        section("access", "Access", 4, "gateway-access"),
+      ]),
+    ],
+    hrefOf: (id) => overviewHref(id as CardId),
   },
 };
 

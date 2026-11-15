@@ -1,6 +1,10 @@
 import type { ConditionLike } from "@/components/fleet/status";
 import type { CoreCamundaOptimizeConditionType } from "@/generated/conditions";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import type {
+  SectionComponent,
+  SectionComponentId,
+} from "@/lib/claims/sections";
 import {
   CAMUNDA_CLUSTER_PLACEMENT,
   CAMUNDA_OPTIMIZE_PLACEMENT,
@@ -25,24 +29,39 @@ import {
   topologyOf,
 } from "./topology";
 
-/** CardId names one component card. */
-export type CardId = Process | "optimize";
+/** ProcessCardId names the card of a Camunda process or of Optimize. */
+export type ProcessCardId = Process | "optimize";
 
-/** CardNumber is one number of a card, as the card shows it. */
-export type CardNumber = { label: string; value: string };
+/**
+ * CardId names one component card: a process card, or the card of a
+ * selection of the claim.
+ */
+export type CardId = ProcessCardId | SectionComponentId;
+
+/**
+ * CardNumber is one number of a card, as the card shows it. severity marks
+ * a value that the card shows as a warning or an error.
+ */
+export type CardNumber = {
+  label: string;
+  value: string;
+  severity?: "Warning" | "Error";
+};
 
 type Condition = ConditionLike & { type: string };
 
 /**
  * ComponentCardModel is one card. pods are the names of the pods that the
- * card counts. A card that is not used has no condition and no numbers.
+ * card counts, and a section card counts none. embedded are the apps that
+ * run in the card, each with its own id. A card that is not used has no
+ * condition and no numbers.
  */
-export type ComponentCardModel = {
-  id: CardId;
+export type ComponentCardModel<Id extends string = CardId> = {
+  id: Id;
   label: string;
   used: boolean;
   condition?: Condition;
-  embedded: { process: Process; label: string }[];
+  embedded: { process: Id; label: string }[];
   pods: string[];
   numbers: CardNumber[];
 };
@@ -81,7 +100,7 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
     sorted.filter((p) =>
       components.includes(p.metadata?.labels?.[COMPONENT_LABEL] ?? ""),
     );
-  const numbersOf = (id: CardId, pods: readonly Resource<"Pod">[]) => [
+  const numbersOf = (id: ProcessCardId, pods: readonly Resource<"Pod">[]) => [
     podsReady(pods),
     id === "zeebe"
       ? partitionsLed(input.partitions)
@@ -143,13 +162,58 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
 }
 
 /**
+ * sectionCards returns one used card for each section component, in the
+ * order given. The headline is the first summary item of the request, with
+ * its Warning or Error severity, then the count of its resources. A section
+ * whose request does not exist yet says so. The Ready condition of the
+ * request is the state of the card.
+ */
+export function sectionCards(
+  components: readonly SectionComponent[],
+): ComponentCardModel[] {
+  return components.map((component) => ({
+    id: component.id,
+    label: component.label,
+    used: true,
+    ...(component.condition
+      ? { condition: { type: "Ready", ...component.condition } }
+      : {}),
+    embedded: [],
+    pods: [],
+    numbers: sectionNumbers(component.request),
+  }));
+}
+
+function sectionNumbers(
+  request: Resource<"PluginRequest"> | undefined,
+): CardNumber[] {
+  if (!request) return [{ label: "Request", value: "Not made yet" }];
+  const first = request.status?.summary?.[0];
+  const severity = first?.severity;
+  const headline: CardNumber = first
+    ? {
+        label: first.label,
+        value: first.value,
+        ...(severity === "Warning" || severity === "Error" ? { severity } : {}),
+      }
+    : { label: "Summary", value: "Not written yet" };
+  return [
+    headline,
+    {
+      label: "Resources",
+      value: String(request.status?.resources?.length ?? 0),
+    },
+  ];
+}
+
+/**
  * componentReady returns the condition that decides the state of component
  * id, from the conditions that the maps place at it: Ready for Optimize, and
  * the first one for every other component, which has one. It returns
  * undefined when there is none.
  */
 export function componentReady<C extends { type: string }>(
-  id: CardId,
+  id: ProcessCardId,
   conditions: readonly C[],
 ): C | undefined {
   return id === "optimize"
@@ -235,7 +299,7 @@ export function partitionsLed(
   return { label, value: `${led}/${partitions.length}` };
 }
 
-function notUsed(id: CardId, label: string): ComponentCardModel {
+function notUsed(id: ProcessCardId, label: string): ComponentCardModel {
   return { id, label, used: false, embedded: [], pods: [], numbers: [] };
 }
 
@@ -258,4 +322,20 @@ export function componentOf(
     if (app) return app.process;
   }
   return undefined;
+}
+
+/** isSectionId reports whether id names the card of a selection of the claim. */
+export function isSectionId(id: string): id is SectionComponentId {
+  return id.startsWith("section:");
+}
+
+/**
+ * overviewHref is the URL of the Overview tab with the detail of id open,
+ * or with the cards when id is null. componentOf reads the id back from
+ * its component parameter.
+ */
+export function overviewHref(id: CardId | null): string {
+  return id === null
+    ? "?tab=overview"
+    : `?${new URLSearchParams({ tab: "overview", component: id })}`;
 }

@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ComponentCardModel } from "./cards";
+import { type ComponentCardModel, overviewHref } from "./cards";
 import { ComponentCards } from "./component-card";
 
 afterEach(cleanup);
@@ -134,5 +134,74 @@ describe("ComponentCards", () => {
       screen.getByRole("img", { name: "Brokers: Not ready (Degraded)" })
         .parentElement?.className,
     ).toContain("z-10");
+  });
+
+  it("shows a section card with its headline and opens it by its id", async () => {
+    const onOpen = vi.fn();
+    const access: ComponentCardModel = {
+      id: "section:access/gateway-access",
+      label: "Access",
+      used: true,
+      condition: { type: "Ready", status: "True", reason: "Healthy" },
+      embedded: [],
+      pods: [],
+      numbers: [
+        { label: "Host", value: "orders.example.com" },
+        { label: "Resources", value: "1" },
+      ],
+    };
+    render(
+      <ComponentCards cards={[access]} hrefOf={overviewHref} onOpen={onOpen} />,
+    );
+    const card = screen.getByRole("article", { name: "Access" });
+    expect(valueOf(card, "Host")).toBe("orders.example.com");
+    const link = within(card).getByRole("link", { name: "Access" });
+    expect(link.getAttribute("href")).toBe(
+      overviewHref("section:access/gateway-access"),
+    );
+    await userEvent.click(link);
+    expect(onOpen.mock.calls).toEqual([["section:access/gateway-access"]]);
+  });
+
+  it("shows the error of a rejected request on its card", () => {
+    const backup: ComponentCardModel = {
+      id: "section:backup-storage",
+      label: "Backup storage",
+      used: true,
+      condition: {
+        type: "Ready",
+        status: "False",
+        reason: "GrantRejected",
+        message: "Grant orders-read has Ready=False",
+      },
+      embedded: [],
+      pods: [],
+      numbers: [{ label: "Bucket", value: "orders-backups" }],
+    };
+    render(<ComponentCards cards={[backup]} />);
+    expect(
+      screen.getByRole("img", {
+        name: "Backup storage: Not ready (GrantRejected)",
+      }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["Error", "text-bad"],
+    ["Warning", "text-warn"],
+  ] as const)("marks a headline with %s severity", (severity, tone) => {
+    const key: ComponentCardModel = {
+      id: "section:encryption-key",
+      label: "Encryption key",
+      used: true,
+      embedded: [],
+      pods: [],
+      numbers: [{ label: "Key", value: "Pending deletion", severity }],
+    };
+    render(<ComponentCards cards={[key]} />);
+    const card = screen.getByRole("article", { name: "Encryption key" });
+    expect(within(card).getByText("Pending deletion").className).toContain(
+      tone,
+    );
   });
 });

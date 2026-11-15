@@ -1,9 +1,8 @@
 import type { MouseEvent } from "react";
 import { StatusDot } from "@/components/fleet/status-dot";
-import type { CardId, ComponentCardModel } from "./cards";
+import { cn } from "@/lib/utils";
+import type { CardId, CardNumber, ComponentCardModel } from "./cards";
 import { statValueClass } from "./stat-tile";
-
-type Open = (id: CardId) => void;
 
 /**
  * ComponentCards shows one card for each model, in the order given.
@@ -11,14 +10,14 @@ type Open = (id: CardId) => void;
  * card without one, and a card that is not used, is no link. onOpen, when
  * set, takes a plain click on a link in place of the navigation.
  */
-export function ComponentCards({
+export function ComponentCards<Id extends string = CardId>({
   cards,
   hrefOf,
   onOpen,
 }: {
-  cards: ComponentCardModel[];
-  hrefOf?: (id: CardId) => string | undefined;
-  onOpen?: Open;
+  cards: ComponentCardModel<Id>[];
+  hrefOf?: (id: Id) => string | undefined;
+  onOpen?: (id: Id) => void;
 }) {
   return (
     <section
@@ -41,14 +40,14 @@ export function ComponentCards({
   );
 }
 
-function ComponentCard({
+function ComponentCard<Id extends string>({
   card,
   hrefOf,
   onOpen,
 }: {
-  card: ComponentCardModel;
-  hrefOf?: (id: CardId) => string | undefined;
-  onOpen?: Open;
+  card: ComponentCardModel<Id>;
+  hrefOf?: (id: Id) => string | undefined;
+  onOpen?: (id: Id) => void;
 }) {
   const href = hrefOf?.(card.id);
   const frame = card.used
@@ -108,9 +107,12 @@ function ComponentCard({
       {card.used ? (
         <dl className="mt-auto grid grid-cols-2 gap-3">
           {card.numbers.map((n) => (
-            <div key={n.label} className="flex flex-col-reverse gap-0.5">
+            <div
+              key={n.label}
+              className="flex min-w-0 flex-col-reverse gap-0.5"
+            >
               <dt className="text-xs text-muted">{n.label}</dt>
-              <dd className={statValueClass(n.value)}>{n.value}</dd>
+              <dd className={numberClass(n)}>{n.value}</dd>
             </div>
           ))}
         </dl>
@@ -121,9 +123,19 @@ function ComponentCard({
   );
 }
 
+// numberClass keeps the style of a stat, and shows a value with a severity
+// in the tone of that severity.
+function numberClass(n: CardNumber): string {
+  if (!n.severity) return cn(statValueClass(n.value), "break-words");
+  return cn(
+    "text-sm break-words",
+    n.severity === "Error" ? "text-bad" : "text-warn",
+  );
+}
+
 // opener leaves a click with a modifier key or another button to the
 // browser, so that a new tab still opens.
-function opener(id: CardId, onOpen?: Open) {
+function opener<Id extends string>(id: Id, onOpen?: (id: Id) => void) {
   if (!onOpen) return undefined;
   return (event: MouseEvent<HTMLAnchorElement>) => {
     if (
