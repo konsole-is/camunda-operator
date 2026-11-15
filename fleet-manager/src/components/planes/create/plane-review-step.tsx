@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { ReviewPanel } from "@/components/fleet/review-panel";
 import { objectDiff } from "@/lib/diff";
 import {
-  type PlaneClaim,
   type PlaneContext,
+  type PlaneCreateClaim,
   type PlaneDraft,
 } from "@/lib/planes/draft";
 import {
@@ -45,7 +45,7 @@ export function PlaneReviewStep({
   blocked: held = false,
 }: {
   change: Change;
-  claim: PlaneClaim;
+  claim: PlaneCreateClaim;
   draft: PlaneDraft;
   ctx: PlaneContext;
   mode: WriteMode;
@@ -140,7 +140,7 @@ export function PlaneReviewStep({
 function effectsOf(
   draft: PlaneDraft,
   ctx: PlaneContext,
-  claim: PlaneClaim,
+  claim: PlaneCreateClaim,
 ): string[] {
   const { name, namespace } = claim.metadata;
   const label = (registration: string | undefined) =>

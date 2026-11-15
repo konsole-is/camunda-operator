@@ -40,6 +40,7 @@ import {
   type IdentityModeId,
   authMethod,
   externalKeycloakErrors,
+  externalKeycloakSpecOf,
 } from "./identity";
 import { accessSelection, planeSelections, runningSelection } from "./storage";
 import { type PlaneUrlId, planeUrlFields } from "./urls";
@@ -120,8 +121,12 @@ export type PlaneContext = {
   planeClaims: readonly CamundaManagementClusterClaim[];
 };
 
-/** PlaneClaim is the CamundaManagementClusterClaim that the plane create flow writes. It always has a clusterSelector. */
-export type PlaneClaim = {
+/**
+ * PlaneCreateClaim is the CamundaManagementClusterClaim that the plane
+ * create flow writes. It always has a clusterSelector. A live claim is the
+ * PlaneClaim of @/lib/session.
+ */
+export type PlaneCreateClaim = {
   apiVersion: "fleet.camunda.io/v1alpha1";
   kind: "CamundaManagementClusterClaim";
   metadata: { name: string; namespace: string };
@@ -284,7 +289,10 @@ export function componentsErrors(
 }
 
 /** planeClaimOf returns the claim of draft. */
-export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
+export function planeClaimOf(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): PlaneCreateClaim {
   const environment = environmentOf(draft, ctx);
   const own = environment?.spec.platformConfigRef;
   const ref =
@@ -388,9 +396,10 @@ function adminOf(draft: PlaneDraft): Management["identity"]["admin"] {
   };
 }
 
-function mailOf(
-  mail: MailDraft,
-): NonNullable<Management["webModeler"]>["mail"] {
+type PlaneMail = NonNullable<Management["webModeler"]>["mail"];
+
+/** mailOf returns the mail of a plane claim for the draft mail. */
+export function mailOf(mail: MailDraft): PlaneMail {
   return {
     smtpHost: mail.smtpHost,
     smtpPort: mail.smtpPort,
@@ -403,24 +412,29 @@ function mailOf(
   };
 }
 
+/** mailDraftOf returns the draft of the mail of a plane claim, with the values of EMPTY_MAIL for the keys that mail lacks. */
+export function mailDraftOf(mail: Partial<PlaneMail> | undefined): MailDraft {
+  return {
+    smtpHost: mail?.smtpHost ?? EMPTY_MAIL.smtpHost,
+    smtpPort: mail?.smtpPort ?? EMPTY_MAIL.smtpPort,
+    fromAddress: mail?.fromAddress ?? EMPTY_MAIL.fromAddress,
+    fromName: mail?.fromName ?? EMPTY_MAIL.fromName,
+    tls: mail?.tls ?? EMPTY_MAIL.tls,
+    credentialsSecret:
+      mail?.credentialsSecretRef?.name ?? EMPTY_MAIL.credentialsSecret,
+  };
+}
+
 function identityProviderOf(draft: PlaneDraft): Management["identityProvider"] {
   switch (draft.mode) {
     case "keycloak":
       return { keycloak: {} };
     case "oidc":
       return { oidc: {} };
-    case "externalKeycloak": {
-      const { url, realm, adminSecret, caBundle } = draft.externalKeycloak;
-      // No usernameKey or passwordKey: the CRD defaults apply.
+    case "externalKeycloak":
       return {
-        externalKeycloak: {
-          url,
-          ...(realm !== "" && { realm }),
-          adminCredentialsSecretRef: { name: adminSecret },
-          ...(caBundle && { caBundleSecretRef: { ...caBundle } }),
-        },
+        externalKeycloak: externalKeycloakSpecOf(draft.externalKeycloak),
       };
-    }
     default:
       return {};
   }
