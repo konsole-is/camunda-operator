@@ -12,6 +12,13 @@ export const DELETION_LABELS: Readonly<Record<DeletionPolicy, string>> = {
   Delete: "Delete the resources",
 };
 
+/**
+ * KEEP_REFUSED says why a claim that keeps its resources cannot keep them:
+ * an option that it selects always deletes what it made.
+ */
+export const KEEP_REFUSED =
+  "The claim keeps its resources, but an option below cannot keep them. Choose Delete, or remove that option.";
+
 /** deletionQuestion is the question that a deletion policy answers. */
 export function deletionQuestion(
   subject: "cluster" | "management plane",

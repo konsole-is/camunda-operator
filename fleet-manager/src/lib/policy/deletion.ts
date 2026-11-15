@@ -1,5 +1,7 @@
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
+import { offeredSection } from "./options";
 import type { ResolvedPolicy } from "./resolve";
 import type { PluginSelection, PolicyResult, SectionView } from "./types";
 
@@ -118,5 +120,57 @@ export function deletionChoice(
     keepAllowed,
     alwaysDeleted,
     policy: policy === "Orphan" && !keepAllowed ? "Delete" : policy,
+  };
+}
+
+/**
+ * DeletableClaim is the part of a live claim of either kind that a delete
+ * reads: its reference, its resourceVersion and UID, its own deletion
+ * policy, and the policy that it recorded when it was made.
+ */
+export type DeletableClaim = {
+  apiVersion: string;
+  kind: string;
+  metadata: {
+    name?: string;
+    namespace?: string;
+    resourceVersion?: string;
+    uid?: string;
+  };
+  spec?: { deletionPolicy?: DeletionPolicy | "" };
+  status?: { resolvedPolicy?: ResolvedPolicy };
+};
+
+/**
+ * claimDeletionChoice returns the deletion choice of a live claim of kind.
+ * defaultPolicy is the policy that the claim recorded, else Delete, never
+ * the current default of environment. policy is the policy of the claim,
+ * else that default. Unlike deletionChoice, policy stays Orphan when the
+ * claim keeps and an option cannot: keepAllowed is then false. The labels
+ * of alwaysDeleted come from the sections as a claim of kind sees them.
+ */
+export function claimDeletionChoice(input: {
+  claim: DeletableClaim & { spec?: { plugins?: PluginSelection[] } };
+  environment: Environment | undefined;
+  sections: readonly PluginSection[];
+  registrations: readonly PluginRegistration[];
+  kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
+}): DeletionChoice {
+  const { claim, environment, sections, registrations, kind } = input;
+  const views = sections.map((s) =>
+    offeredSection(s, registrations, environment, kind),
+  );
+  const resolved = claim.status?.resolvedPolicy;
+  const choice = deletionChoice(
+    claim.spec?.deletionPolicy || undefined,
+    claim.spec?.plugins ?? [],
+    environment,
+    registrations,
+    views,
+    deletionPolicyOf(undefined, resolved),
+  );
+  return {
+    ...choice,
+    policy: deletionPolicyOf(claim.spec?.deletionPolicy, resolved),
   };
 }
