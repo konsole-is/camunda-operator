@@ -347,5 +347,7 @@ function holds(
   rowValue: string | readonly string[] | undefined,
   value: string,
 ): boolean {
-  return Array.isArray(rowValue) ? rowValue.includes(value) : rowValue === value;
+  return Array.isArray(rowValue)
+    ? rowValue.includes(value)
+    : rowValue === value;
 }

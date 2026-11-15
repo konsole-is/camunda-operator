@@ -37,7 +37,10 @@ export function releaseRows(sources: ReleasesData): ReleaseRow[] {
       const environment = sources.environments.find(
         (e) => e.metadata.name === name,
       );
-      return { name, label: environment ? environmentLabel(environment) : name };
+      return {
+        name,
+        label: environment ? environmentLabel(environment) : name,
+      };
     });
   return sources.releases
     .map((release) => {

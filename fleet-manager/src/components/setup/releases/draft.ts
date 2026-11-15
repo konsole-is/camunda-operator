@@ -58,8 +58,7 @@ const BLOCKS = new Set([
 export function specOf(draft: ReleaseDraft): CamundaReleaseSpec {
   const spec: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(structuredClone(draft.spec))) {
-    const kept =
-      BLOCKS.has(key) && isObject(value) ? compact(value) : value;
+    const kept = BLOCKS.has(key) && isObject(value) ? compact(value) : value;
     if (!isEmpty(kept)) spec[key] = kept;
   }
   return spec as CamundaReleaseSpec;
@@ -159,7 +158,10 @@ export function createChange(draft: ReleaseDraft): Change {
  * that kubectl apply set changes too. It keeps the labels and annotations
  * of live, without the last applied file of kubectl.
  */
-export function updateChange(live: CamundaRelease, draft: ReleaseDraft): Change {
+export function updateChange(
+  live: CamundaRelease,
+  draft: ReleaseDraft,
+): Change {
   const name = live.metadata.name ?? "";
   const { labels, annotations } = live.metadata;
   const kept = Object.fromEntries(
@@ -191,7 +193,12 @@ export function deleteChange(releases: readonly CamundaRelease[]): Change {
   const uids = Object.fromEntries(
     releases.flatMap((r) =>
       r.metadata.uid
-        ? [[refKey({ kind: KIND, name: r.metadata.name ?? "" }), r.metadata.uid]]
+        ? [
+            [
+              refKey({ kind: KIND, name: r.metadata.name ?? "" }),
+              r.metadata.uid,
+            ],
+          ]
         : [],
     ),
   );
@@ -201,7 +208,11 @@ export function deleteChange(releases: readonly CamundaRelease[]): Change {
         ? `Delete the release ${names[0]}`
         : `Delete the releases ${names.join(", ")}`,
     apply: [],
-    delete: names.map((name) => ({ apiVersion: API_VERSION, kind: KIND, name })),
+    delete: names.map((name) => ({
+      apiVersion: API_VERSION,
+      kind: KIND,
+      name,
+    })),
     ...preconditionsOf(releases),
     ...(Object.keys(uids).length > 0 && { uids }),
   };

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { releaseFixtures } from "./fixtures";
-import {
-  allowedInText,
-  defaultInText,
-  releaseRows,
-  usedByText,
-} from "./rows";
+import { allowedInText, defaultInText, releaseRows, usedByText } from "./rows";
 
 const rowOf = (name: string) => {
   const row = releaseRows(releaseFixtures()).find((r) => r.name === name);

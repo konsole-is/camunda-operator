@@ -60,6 +60,12 @@ describe("releaseImages", () => {
       (releaseImages({ version: "8.9.3" }, imagesFixture) ?? []).map(
         (row) => row.image,
       ),
-    ).toEqual(["camunda", "optimize", "connectors", "elasticsearch", "postgres"]);
+    ).toEqual([
+      "camunda",
+      "optimize",
+      "connectors",
+      "elasticsearch",
+      "postgres",
+    ]);
   });
 });

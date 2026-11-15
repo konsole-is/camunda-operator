@@ -4,11 +4,7 @@ import type { ImagesTable } from "@/startup/bundled-data";
 
 /** ReleaseImage is an image that the resources of a release run. */
 export type ReleaseImage =
-  | "camunda"
-  | "optimize"
-  | "connectors"
-  | "elasticsearch"
-  | "postgres";
+  "camunda" | "optimize" | "connectors" | "elasticsearch" | "postgres";
 
 /**
  * ReleaseImageRow is one image of a release. pinned is the image that the

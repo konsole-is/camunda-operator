@@ -12,7 +12,10 @@ import type { ImagesTable } from "@/startup/bundled-data";
 import type { ReleasesData } from "./sources";
 
 /** release returns a CamundaRelease named name with spec, for stories and tests. */
-export function release(name: string, spec: CamundaReleaseSpec): CamundaRelease {
+export function release(
+  name: string,
+  spec: CamundaReleaseSpec,
+): CamundaRelease {
   return {
     apiVersion: "core.camunda.io/v1",
     kind: "CamundaRelease",

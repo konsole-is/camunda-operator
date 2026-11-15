@@ -89,7 +89,10 @@ describe("draftErrors", () => {
 
   it("refuses a taken name for a new release only", () => {
     expect(
-      errorsOf({ version: "8.9.0" }, "taken", { isNew: true, taken: ["taken"] }),
+      errorsOf({ version: "8.9.0" }, "taken", {
+        isNew: true,
+        taken: ["taken"],
+      }),
     ).toEqual([{ path: "name", message: "A release with this name exists." }]);
     expect(
       errorsOf({ version: "8.9.0" }, "taken", {
@@ -160,7 +163,9 @@ describe("changeCount", () => {
         false,
       ),
     ).toBe(2);
-    expect(changeCount(undefined, { name: "n", spec: { version: "" } }, true)).toBe(1);
+    expect(
+      changeCount(undefined, { name: "n", spec: { version: "" } }, true),
+    ).toBe(1);
   });
 });
 
@@ -172,7 +177,10 @@ describe("change builders", () => {
       note: "kept",
     };
     expect(
-      updateChange(live, { name: "r", spec: { version: "8.9.1", extraEnv: [] } }),
+      updateChange(live, {
+        name: "r",
+        spec: { version: "8.9.1", extraEnv: [] },
+      }),
     ).toEqual({
       intent: "Change the release r",
       apply: [
@@ -264,7 +272,11 @@ describe("saveEffects", () => {
 
   it("says that a new release has no user", () => {
     expect(
-      saveEffects(undefined, { name: "n", spec: { version: "8.9.1" } }, noUsers),
+      saveEffects(
+        undefined,
+        { name: "n", spec: { version: "8.9.1" } },
+        noUsers,
+      ),
     ).toEqual(["The release is new. No resource uses it yet."]);
   });
 });
