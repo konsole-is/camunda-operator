@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
 
@@ -32,6 +33,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/test/utils"
 )
 
@@ -132,19 +136,39 @@ var _ = BeforeSuite(func() {
 	setupRustFS()
 })
 
-// teardownTimeout bounds the AfterSuite. A teardown takes less than a minute.
-// A custom resource that a failed spec left with a finalizer holds the
-// deletion of its CRD for good once the manager is gone, and without a bound
-// the suite waits for it until the timeout of go test.
+// teardownTimeout bounds the AfterSuite: finalizeTimeout for the custom
+// resources of the operator, and less than a minute for the rest. Without a
+// bound, a step that hangs waits until the timeout of go test.
 const teardownTimeout = 10 * time.Minute
 
+// finalizeTimeout bounds the wait of removeOperatorResources.
+const finalizeTimeout = 5 * time.Minute
+
+// reportTimeout bounds the kubectl calls that run after a deadline passed.
+const reportTimeout = 20 * time.Second
+
+// operatorGroups are the API groups of the CRDs that the manager serves.
+var operatorGroups = []string{
+	v1.GroupVersion.Group,
+	fleetv1alpha1.GroupVersion.Group,
+	pluginsv1alpha1.GroupVersion.Group,
+}
+
 var _ = AfterSuite(func(ctx SpecContext) {
+	stuck, err := removeOperatorResources(ctx)
 	teardownRustFS()
 	undeployManager(ctx)
 	teardownKeycloakCRDs()
 	teardownECK()
 	teardownCNPG()
 	teardownCertManager()
+
+	Expect(err).NotTo(HaveOccurred())
+	Expect(stuck).To(
+		BeEmpty(),
+		"custom resources of the operator did not go while the manager ran:\n%s",
+		utils.FormatCustomResources(stuck),
+	)
 }, NodeTimeout(teardownTimeout))
 
 // A spec without a label never runs under a label filter, so a container
@@ -190,6 +214,92 @@ func deployManager() {
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 }
 
+// removeOperatorResources deletes every custom resource of operatorGroups and
+// waits until they are gone, while the manager runs and releases their
+// finalizers. A spec that deletes its resources without a wait, or that fails
+// before its cleanup, leaves them to this step. When finalizeTimeout passes or
+// ctx ends first, it prints the resources that remain, removes their
+// finalizers so that the deletion of the CRDs can end, and returns them. It
+// returns an error when the last list of the resources failed.
+func removeOperatorResources(ctx context.Context) ([]utils.CustomResource, error) {
+	By("removing the custom resources of the operator while the manager runs")
+	start := time.Now()
+	waitCtx, cancel := context.WithTimeout(ctx, finalizeTimeout)
+	defer cancel()
+
+	var remaining []utils.CustomResource
+	var err error
+	for waitCtx.Err() == nil {
+		var crds []utils.CRD
+		var resources []utils.CustomResource
+		crds, resources, err = listOperatorResources(waitCtx)
+		if err == nil && len(resources) == 0 {
+			_, _ = fmt.Fprintf(
+				GinkgoWriter,
+				"The custom resources of the operator are gone after %s\n",
+				time.Since(start).Round(time.Second),
+			)
+			return nil, nil
+		}
+		if err == nil {
+			remaining = resources
+		}
+
+		// A controller can still create a resource, such as the backup of a
+		// BackupSchedule, after an earlier round deleted everything.
+		if slices.ContainsFunc(remaining, func(r utils.CustomResource) bool { return r.DeletionTimestamp == nil }) {
+			_, _ = utils.RunContext(
+				waitCtx,
+				"kubectl",
+				"delete",
+				utils.CRDNames(crds),
+				"--all",
+				"--all-namespaces",
+				"--ignore-not-found",
+				"--wait=false",
+			)
+		}
+
+		select {
+		case <-waitCtx.Done():
+		case <-time.After(5 * time.Second):
+		}
+	}
+
+	_, _ = fmt.Fprintf(
+		GinkgoWriter,
+		"The custom resources of the operator did not go within %s:\n%s",
+		time.Since(start).Round(time.Second),
+		utils.FormatCustomResources(remaining),
+	)
+	reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+	defer cancelReport()
+	for _, r := range remaining {
+		if err := utils.ForceDelete(reportCtx, r); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "warning: force deleting %s %s: %v\n", r.Kind, r.Name, err)
+		}
+	}
+
+	if err != nil {
+		return remaining, fmt.Errorf("listing the custom resources of the operator: %w", err)
+	}
+
+	return remaining, nil
+}
+
+// listOperatorResources returns the CRDs of operatorGroups that the cluster
+// serves now, and every resource of them.
+func listOperatorResources(ctx context.Context) ([]utils.CRD, []utils.CustomResource, error) {
+	crds, err := utils.CRDsOfGroups(ctx, operatorGroups...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resources, err := utils.ListCustomResources(ctx, crds)
+
+	return crds, resources, err
+}
+
 // undeployManager removes the controller-manager, the CRDs, and the manager
 // namespace. A step that still runs when ctx ends is killed.
 func undeployManager(ctx context.Context) {
@@ -201,6 +311,23 @@ func undeployManager(ctx context.Context) {
 
 	By("removing manager namespace")
 	_, _ = utils.RunContext(ctx, "kubectl", "delete", "ns", namespace)
+
+	if ctx.Err() == nil {
+		return
+	}
+
+	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+	defer cancel()
+	_, resources, err := listOperatorResources(reportCtx)
+	if err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "warning: listing the custom resources of the operator: %v\n", err)
+		return
+	}
+	_, _ = fmt.Fprintf(
+		GinkgoWriter,
+		"The teardown timed out with these custom resources of the operator:\n%s",
+		utils.FormatCustomResources(resources),
+	)
 }
 
 // setupRustFS deploys the object store of the backup flows. Each flow creates
