@@ -15,7 +15,7 @@ const KIND = "CamundaRelease";
 
 /** RELEASE_CHANGE_NOTICE is the notice above the save of a release that exists. */
 export const RELEASE_CHANGE_NOTICE =
-  "A change reaches every resource that uses this release. Their pods roll. A version change moves the version of each user. The Rollout tab moves clusters one by one.";
+  "A change reaches every resource that uses this release. Their pods roll. A version change moves each user that does not set its own version. The Rollout tab moves clusters one by one.";
 
 /** ReleaseDraft is the form of one release: its name and the spec as the admin edits it. */
 export type ReleaseDraft = { name: string; spec: CamundaReleaseSpec };
@@ -220,8 +220,8 @@ export function deleteChange(releases: readonly CamundaRelease[]): Change {
 
 /**
  * saveEffects returns the effect lines of the save of draft for the users
- * of the release. A version change of a release that a resource uses gets
- * its own line.
+ * of the release. Each version that the save changes gets its own line,
+ * when a resource of the kind that runs that version uses the release.
  */
 export function saveEffects(
   base: CamundaRelease | undefined,
@@ -237,10 +237,14 @@ export function saveEffects(
     const lines = [
       `${usedByText(usage)} ${resources === 1 ? "uses" : "use"} this release. Their pods roll.`,
     ];
-    if (base.spec.version !== draft.spec.version)
-      lines.push(
-        `The version changes from ${base.spec.version} to ${draft.spec.version} for each of them.`,
-      );
+    for (const v of VERSIONS) {
+      const before = v.of(base.spec) ?? "";
+      const after = v.of(draft.spec) ?? "";
+      if (before !== after && usage[v.users].length > 0)
+        lines.push(
+          `The ${v.label} version changes from ${before || "none"} to ${after || "none"} for each ${v.user} that does not set its own.`,
+        );
+    }
     return lines;
   }
   const claims = usage.claims.length;
@@ -250,6 +254,38 @@ export function saveEffects(
     ];
   return ["No resource uses this release."];
 }
+
+const VERSIONS: readonly {
+  label: string;
+  of: (spec: CamundaReleaseSpec) => string | undefined;
+  users: keyof ReleaseUsage;
+  user: string;
+}[] = [
+  {
+    label: "Camunda",
+    of: (spec) => spec.version,
+    users: "clusters",
+    user: "cluster",
+  },
+  {
+    label: "Connectors",
+    of: (spec) => spec.connectors?.version,
+    users: "clusters",
+    user: "cluster",
+  },
+  {
+    label: "Elasticsearch",
+    of: (spec) => spec.elasticsearch?.version,
+    users: "elasticsearchClusters",
+    user: "Elasticsearch cluster",
+  },
+  {
+    label: "PostgreSQL",
+    of: (spec) => spec.databaseServer?.version,
+    users: "databaseServers",
+    user: "database server",
+  },
+];
 
 function preconditionsOf(
   releases: readonly CamundaRelease[],

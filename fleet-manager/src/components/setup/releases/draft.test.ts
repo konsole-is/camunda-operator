@@ -248,8 +248,51 @@ describe("saveEffects", () => {
       ),
     ).toEqual([
       "2 clusters use this release. Their pods roll.",
-      "The version changes from 8.9.0 to 8.9.1 for each of them.",
+      "The Camunda version changes from 8.9.0 to 8.9.1 for each cluster that does not set its own.",
     ]);
+  });
+
+  it("names each version change for the kind of user that runs it", () => {
+    const base = release("r", {
+      version: "8.9.0",
+      connectors: { version: "8.9.7" },
+      elasticsearch: { version: "9.2.4" },
+      databaseServer: { version: "16" },
+    });
+    expect(
+      saveEffects(
+        base,
+        {
+          name: "r",
+          spec: {
+            version: "8.9.0",
+            elasticsearch: { version: "9.2.8" },
+            databaseServer: { version: "17" },
+          },
+        },
+        {
+          ...noUsers,
+          clusters: ["a/one"],
+          elasticsearchClusters: ["a/search"],
+          databaseServers: ["a/db"],
+        },
+      ),
+    ).toEqual([
+      "1 cluster, 1 Elasticsearch cluster, 1 database server use this release. Their pods roll.",
+      "The Connectors version changes from 8.9.7 to none for each cluster that does not set its own.",
+      "The Elasticsearch version changes from 9.2.4 to 9.2.8 for each Elasticsearch cluster that does not set its own.",
+      "The PostgreSQL version changes from 16 to 17 for each database server that does not set its own.",
+    ]);
+  });
+
+  it("names no version change for a kind of user that the release does not have", () => {
+    expect(
+      saveEffects(
+        live,
+        { name: "r", spec: { version: "8.9.1" } },
+        { ...noUsers, elasticsearchClusters: ["a/search"] },
+      ),
+    ).toEqual(["1 Elasticsearch cluster uses this release. Their pods roll."]);
   });
 
   it("says that a claim takes the change when its cluster is made", () => {
@@ -284,7 +327,7 @@ describe("saveEffects", () => {
 describe("RELEASE_CHANGE_NOTICE", () => {
   it("says that a change reaches every user and that their pods roll", () => {
     expect(RELEASE_CHANGE_NOTICE).toBe(
-      "A change reaches every resource that uses this release. Their pods roll. A version change moves the version of each user. The Rollout tab moves clusters one by one.",
+      "A change reaches every resource that uses this release. Their pods roll. A version change moves each user that does not set its own version. The Rollout tab moves clusters one by one.",
     );
   });
 });

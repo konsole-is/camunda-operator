@@ -112,7 +112,7 @@ describe("ReleaseSettings", () => {
     ).toBeTruthy();
     expect(
       review.getByText(
-        "The version changes from 8.9.0 to 8.9.1 for each of them.",
+        "The Camunda version changes from 8.9.0 to 8.9.1 for each cluster that does not set its own.",
       ),
     ).toBeTruthy();
     await confirm("Save");

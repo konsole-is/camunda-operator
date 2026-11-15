@@ -105,9 +105,9 @@ The Secret lists hold the Secrets of the namespaces of the users of the release.
 
 Above the save, the page shows this notice:
 
-> A change reaches every resource that uses this release. Their pods roll. A version change moves the version of each user. The Rollout tab moves clusters one by one.
+> A change reaches every resource that uses this release. Their pods roll. A version change moves each user that does not set its own version. The Rollout tab moves clusters one by one.
 
-Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A version change moves the version of each of them. The review of a save names the users, such as `2 clusters use this release. Their pods roll.`, and the old and the new version. The rules about a version that a resource refuses are in the [CamundaRelease](../crds/camundarelease.md#versions) reference.
+Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A resource that sets its own version keeps it. The review of a save names the users and each version that changes. A version line names the kind of resource that runs the version. Clusters run the Camunda and Connectors versions. Elasticsearch clusters run the Elasticsearch version, and database servers run the PostgreSQL version. The rules about a version that a resource refuses are in the [CamundaRelease](../crds/camundarelease.md#versions) reference.
 
 ## Environments of a release
 
