@@ -34,6 +34,9 @@ const PRESET_WORDS = {
   DatabaseServerPreset: "PostgreSQL",
 } as const;
 
+const NEEDS_VALUE =
+  "This parameter needs a value. A new claim that picks this option is refused until you give it a value or let a claim change it.";
+
 /**
  * OptionSettingsSection edits the parameters of each option that a section
  * of environment allows: the environment value, "A claim can change it",
@@ -270,6 +273,9 @@ function ParameterSettingRow({
           No {presetWords} preset is allowed. A new claim that picks this option
           is refused until you check one under Presets.
         </p>
+      )}
+      {option.allowedBySection && setting.needsValue && (
+        <p className="text-xs text-warn">{NEEDS_VALUE}</p>
       )}
       {setting.hostPattern && registration && (
         <HostLine

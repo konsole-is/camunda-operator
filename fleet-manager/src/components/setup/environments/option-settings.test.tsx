@@ -86,6 +86,28 @@ function withRustfsSchema() {
   return sources;
 }
 
+const NEEDS_VALUE =
+  "This parameter needs a value. A new claim that picks this option is refused until you give it a value or let a claim change it.";
+
+// withRequiredBucket gives RustFS a required bucket without a value and an
+// optional region.
+function withRequiredBucket(values?: Record<string, unknown>) {
+  const sources = sectionFixtures();
+  const rustfs = sources.registrations.find(
+    (r) => r.metadata.name === "rustfs",
+  )!;
+  rustfs.spec.parameters = {
+    type: "object",
+    required: ["bucket"],
+    properties: {
+      bucket: { type: "string", minLength: 1, title: "Bucket" },
+      region: { type: "string", title: "Region" },
+    },
+  };
+  if (values) rustfs.spec.parameterValues = values;
+  return sources;
+}
+
 function withElasticsearch(listed: string[]) {
   const sources = sectionFixtures();
   sources.sections.push({
@@ -193,6 +215,78 @@ describe("OptionSettings", () => {
     expect(review).toHaveProperty("disabled", true);
     fireEvent.click(review);
     expect(previewChange).not.toHaveBeenCalled();
+  });
+
+  describe("a required parameter without a value", () => {
+    it("warns at the parameter", () => {
+      renderEditor("production", withRequiredBucket());
+      expect(
+        within(group("RustFS", "Bucket")).getByText(NEEDS_VALUE),
+      ).toBeTruthy();
+      expect(
+        within(group("RustFS", "Region")).queryByText(NEEDS_VALUE),
+      ).toBeNull();
+    });
+
+    it("stops warning once the environment gives a value", () => {
+      renderEditor("production", withRequiredBucket());
+      fireEvent.change(
+        within(group("RustFS", "Bucket")).getByLabelText("Bucket"),
+        { target: { value: "backups" } },
+      );
+      expect(
+        within(group("RustFS", "Bucket")).queryByText(NEEDS_VALUE),
+      ).toBeNull();
+    });
+
+    it("does not warn when the registration gives a value", () => {
+      renderEditor("production", withRequiredBucket({ bucket: "backups" }));
+      expect(
+        within(group("RustFS", "Bucket")).queryByText(NEEDS_VALUE),
+      ).toBeNull();
+    });
+
+    it("stops warning once a claim can change it", () => {
+      renderEditor("production", withRequiredBucket());
+      fireEvent.click(
+        within(group("RustFS", "Bucket")).getByRole("checkbox", {
+          name: "A claim can change it",
+        }),
+      );
+      expect(
+        within(group("RustFS", "Bucket")).queryByText(NEEDS_VALUE),
+      ).toBeNull();
+    });
+
+    it("does not block Review", () => {
+      renderEditor("production", withRequiredBucket());
+      fireEvent.change(
+        within(group("RustFS", "Region")).getByLabelText("Region"),
+        { target: { value: "eu" } },
+      );
+      expect(
+        within(group("RustFS", "Bucket")).getByText(NEEDS_VALUE),
+      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+        "disabled",
+        false,
+      );
+    });
+
+    it("does not warn for an option that no section allows", () => {
+      const sources = withRequiredBucket();
+      const spec = sources.environments[0].spec;
+      delete spec.sections!["backup-storage"];
+      spec.parameters = {
+        ...spec.parameters,
+        rustfs: { region: { value: "eu" } },
+      };
+      renderEditor("production", sources);
+      expect(screen.getByRole("region", { name: "RustFS" })).toBeTruthy();
+      expect(
+        within(group("RustFS", "Bucket")).queryByText(NEEDS_VALUE),
+      ).toBeNull();
+    });
   });
 
   describe("a map of strings", () => {

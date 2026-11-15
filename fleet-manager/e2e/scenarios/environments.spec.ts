@@ -1,6 +1,6 @@
 import { blockingViolations } from "../axe";
 import { expect, test } from "./fixture";
-import { inBothThemes } from "./themes";
+import { checkPage, inBothThemes } from "./themes";
 
 test.use({ scenarioName: "environment-named-new" });
 
@@ -38,4 +38,26 @@ test("New environment opens the create page beside the lists", async ({
       .getByRole("navigation", { name: "Setup" })
       .getByRole("link", { name: "Environments" }),
   ).toHaveAttribute("aria-current", "page");
+});
+
+test("an allowed built-in option warns at its required preset", async ({
+  page,
+}) => {
+  await page.goto("/setup/environments/new");
+  await page
+    .getByRole("region", { name: "Clusters" })
+    .getByRole("group", { name: "Secondary storage" })
+    .getByRole("checkbox", { name: "New Elasticsearch cluster" })
+    .click();
+  const option = page.getByRole("region", {
+    name: "New Elasticsearch cluster",
+  });
+  await expect(
+    option
+      .getByRole("group", { name: "Preset" })
+      .getByText(
+        "This parameter needs a value. A new claim that picks this option is refused until you give it a value or let a claim change it.",
+      ),
+  ).toBeVisible();
+  await checkPage(page, "environment-required-parameter");
 });
