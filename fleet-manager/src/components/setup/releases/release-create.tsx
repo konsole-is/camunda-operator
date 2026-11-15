@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { ReadError } from "@/components/planes/planes-table";
 import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import type { ReleaseActions } from "./release-detail";
 import { ReleaseSettings } from "./release-settings";
+import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
 /**
@@ -24,14 +26,39 @@ export function ReleaseCreate({
 }): ReactNode {
   const sources = useReleaseSources(data.sources);
   return (
+    <ReleaseCreateView
+      sources={sources}
+      imagesTable={data.imagesTable}
+      from={data.from}
+      mode={mode}
+      actions={actions}
+    />
+  );
+}
+
+/** ReleaseCreateView is the create page of a release on sources. */
+export function ReleaseCreateView({
+  sources,
+  imagesTable,
+  from,
+  mode,
+  actions,
+}: {
+  sources: ReleasesData & { errors: ReadError[] } & SourceReads;
+  imagesTable: ImagesTable;
+  from?: string;
+  mode?: WriteMode;
+  actions: ReleaseActions;
+}): ReactNode {
+  return (
     <div className="flex flex-col gap-6">
       <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
         New release
       </h1>
       <ReleaseSettings
         sources={sources}
-        copyFrom={data.from}
-        imagesTable={data.imagesTable}
+        copyFrom={from}
+        imagesTable={imagesTable}
         secrets={{}}
         mode={mode}
         actions={actions}
