@@ -1,0 +1,278 @@
+// @vitest-environment jsdom
+import { createHash } from "node:crypto";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyClaimChange,
+  applyClaimDelete,
+  previewClaimDelete,
+} from "@/app/fleet/clusters/[namespace]/[name]/actions";
+import { watchId } from "@/lib/k8s/shared-watch";
+import { REVISION_ANNOTATION } from "@/lib/labels";
+import type { DeletionPolicy } from "@/lib/policy";
+import type { WriteMode, WriteResult } from "@/lib/write/types";
+import { FakeEventSource } from "../../../test/fakes/event-source";
+import { fakeWriter } from "../../../test/fakes/writer";
+import { GitPushesProvider } from "./git-pushes";
+import { type ClaimDeleteActions, useClaimDelete } from "./use-claim-delete";
+
+vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
+
+const KIND = "CamundaManagementClusterClaim";
+const key = `${KIND}/platform/plane-a` as const;
+const ref = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: KIND,
+  namespace: "platform",
+  name: "plane-a",
+};
+type Claim = {
+  apiVersion: string;
+  kind: string;
+  metadata: {
+    namespace: string;
+    name: string;
+    resourceVersion: string;
+    uid: string;
+    [key: string]: unknown;
+  };
+  spec: { releaseRef: string; deletionPolicy?: DeletionPolicy };
+  status: { resolvedPolicy: { deletionPolicy: DeletionPolicy } };
+};
+const claim = (
+  over: { metadata?: object; spec?: { deletionPolicy?: DeletionPolicy } } = {},
+): Claim => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: KIND,
+  metadata: {
+    namespace: "platform",
+    name: "plane-a",
+    resourceVersion: "41",
+    uid: "uid-1",
+    ...over.metadata,
+  },
+  spec: { releaseRef: "camunda-8-9-1", ...over.spec },
+  status: { resolvedPolicy: { deletionPolicy: "Delete" } },
+});
+
+const actions: ClaimDeleteActions = {
+  preview: previewClaimDelete,
+  remove: applyClaimDelete,
+  applyPolicy: applyClaimChange,
+};
+const removeOf = {
+  intent: "Delete the plane plane-a",
+  apply: [],
+  delete: [ref],
+  uids: { [key]: "uid-1" },
+};
+
+function mount(
+  initial: Claim,
+  props: { policy?: DeletionPolicy; mode?: WriteMode } = {},
+) {
+  const shown: [WriteResult, string][] = [];
+  const client = new QueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <GitPushesProvider>{children}</GitPushesProvider>
+    </QueryClientProvider>
+  );
+  const hook = renderHook(
+    (p: { policy: DeletionPolicy }) =>
+      useClaimDelete({
+        initial,
+        policy: p.policy,
+        mode: props.mode ?? "direct",
+        intent: "Delete the plane plane-a",
+        pushedMessage: "Pushed the delete of plane-a.",
+        actions,
+        show: (result, message) => shown.push([result, message]),
+      }),
+    { wrapper, initialProps: { policy: props.policy ?? "Delete" } },
+  );
+  return { hook, shown };
+}
+
+// live sends the claim on the watch of the claim as a snapshot, an empty
+// one when it is undefined.
+async function live(c: Claim | undefined) {
+  const watch = watchId({ kind: KIND, namespace: "platform", name: "plane-a" });
+  await waitFor(() =>
+    expect(FakeEventSource.instances.at(-1)?.ids()).toContain(watch),
+  );
+  FakeEventSource.instances
+    .at(-1)!
+    .emit("snapshot", { watch, kind: KIND, objects: c ? [c] : [] });
+  await act(async () => {});
+}
+
+// confirm calls the apply of the hook as the review does, then onWritten
+// on an ok result.
+async function confirm(hook: ReturnType<typeof mount>["hook"]) {
+  const { apply, remove, onWritten } = hook.result.current;
+  const result = await act(() => apply(remove));
+  if (result.ok) act(() => onWritten());
+  return result;
+}
+
+beforeEach(() => {
+  fakeWriter.reset();
+  FakeEventSource.instances = [];
+  vi.stubGlobal("EventSource", FakeEventSource);
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("useClaimDelete", () => {
+  it("gives the remove step of the live claim, a new one for each claim version", async () => {
+    const { hook } = mount(claim());
+    const first = hook.result.current.remove;
+    expect(first).toEqual(removeOf);
+    hook.rerender({ policy: "Orphan" });
+    expect(hook.result.current.remove).toBe(first);
+    expect(hook.result.current.policyStep).toBe(true);
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+    expect(hook.result.current.remove).toEqual(removeOf);
+  });
+
+  it("direct mode sends the policy, then the delete, and then follows the delete", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    expect(hook.result.current.stage).toEqual({ kind: "choose" });
+    expect(await confirm(hook)).toEqual({ ok: true, mode: "direct" });
+    expect(fakeWriter.applied).toHaveLength(2);
+    expect(fakeWriter.applied[0]).toMatchObject({
+      apply: [{ kind: KIND, spec: { deletionPolicy: "Orphan" } }],
+      preconditions: { [key]: "41" },
+    });
+    expect(fakeWriter.applied[1]).toEqual(removeOf);
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+    });
+  });
+
+  it("direct mode returns a refused policy write and sends no delete", async () => {
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message: "Changed." }] },
+    ];
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    expect(await confirm(hook)).toEqual({
+      ok: false,
+      errors: [{ code: "Stale", message: "Changed." }],
+    });
+    expect(fakeWriter.applied).toHaveLength(1);
+    expect(hook.result.current.stage).toEqual({ kind: "choose" });
+  });
+
+  it("Git mode pushes the policy, waits until the live claim carries it, then pushes the delete once", async () => {
+    fakeWriter.reset("git");
+    const { hook, shown } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    expect(fakeWriter.applied).toHaveLength(1);
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    const revision = createHash("sha1")
+      .update(JSON.stringify(fakeWriter.applied[0].apply[0]))
+      .digest("hex");
+    const applied = claim({
+      metadata: {
+        resourceVersion: "42",
+        annotations: { [REVISION_ANNOTATION]: revision },
+      },
+      spec: { deletionPolicy: "Orphan" },
+    });
+    await live(applied);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    expect(fakeWriter.applied[1]).toEqual(removeOf);
+    expect(shown.at(-1)?.[1]).toBe("Pushed the delete of plane-a.");
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: true,
+    });
+    await live({
+      ...applied,
+      metadata: { ...applied.metadata, resourceVersion: "43" },
+    });
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("43"),
+    );
+    expect(fakeWriter.applied).toHaveLength(2);
+  });
+
+  it("Git mode goes back to the choice with the refusal of the delete after the wait", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    const revision = createHash("sha1")
+      .update(JSON.stringify(fakeWriter.applied[0].apply[0]))
+      .digest("hex");
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Invalid", message: "No file." }] },
+    ];
+    await live(
+      claim({ metadata: { annotations: { [REVISION_ANNOTATION]: revision } } }),
+    );
+    await waitFor(() =>
+      expect(hook.result.current.stage).toEqual({
+        kind: "choose",
+        errors: [{ code: "Invalid", message: "No file." }],
+      }),
+    );
+  });
+
+  it("Git mode: stop waiting goes back to the choice and sends no delete", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    act(() => hook.result.current.stopWaiting());
+    expect(hook.result.current.stage).toEqual({ kind: "choose" });
+    const revision = createHash("sha1")
+      .update(JSON.stringify(fakeWriter.applied[0].apply[0]))
+      .digest("hex");
+    await live(
+      claim({
+        metadata: {
+          resourceVersion: "42",
+          annotations: { [REVISION_ANNOTATION]: revision },
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("a claim that is being deleted opens on the delete", () => {
+    const { hook } = mount(
+      claim({ metadata: { deletionTimestamp: "2026-11-15T10:00:00Z" } }),
+      { mode: "git" },
+    );
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+    });
+  });
+
+  it("a claim that is gone is deleted, and a claim made again under its name is replaced", async () => {
+    const gone = mount(claim());
+    await live(undefined);
+    await waitFor(() =>
+      expect(gone.hook.result.current.stage).toEqual({ kind: "deleted" }),
+    );
+    gone.hook.unmount();
+
+    FakeEventSource.instances = [];
+    const again = mount(claim());
+    await live(claim({ metadata: { uid: "uid-2" } }));
+    await waitFor(() =>
+      expect(again.hook.result.current.stage).toEqual({ kind: "replaced" }),
+    );
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
