@@ -33,39 +33,51 @@ function setup(spec: CamundaReleaseSpec = { version: "8.9.0" }) {
 }
 
 const scope = (label: string) =>
-  screen
-    .getByText(label, { selector: "summary *, summary" })
-    .closest("details") as HTMLElement;
+  within(screen.getByRole("group", { name: label }));
+
+async function open(label: string) {
+  await userEvent.click(scope(label).getByRole("button", { expanded: false }));
+  return scope(label);
+}
 
 describe("EnvScopes", () => {
   it("offers every env scope of a release and no Optimize scope", () => {
     setup();
-    const summaries = [...document.querySelectorAll("summary")].map(
-      (s) => s.textContent,
-    );
-    expect(summaries).toEqual([
-      "Every workload0",
-      "Connectors0",
-      "Brokers0",
-      "Gateway0",
-      "Operate0",
-      "Tasklist0",
-      "Admin0",
+    expect(
+      screen
+        .getAllByRole("button", { expanded: false })
+        .map((b) => b.closest("[role=group]")?.getAttribute("aria-label")),
+    ).toEqual([
+      "Every workload",
+      "Connectors",
+      "Brokers",
+      "Gateway",
+      "Operate",
+      "Tasklist",
+      "Admin",
     ]);
+    expect(screen.queryByRole("group", { name: "Optimize" })).toBeNull();
   });
 
-  it("opens the scopes that hold entries", () => {
+  it("opens the scopes that hold entries and shows their count", () => {
     setup({
       version: "8.9.0",
       zeebe: { extraEnv: [{ name: "A", value: "1" }] },
     });
-    expect(scope("Brokers").hasAttribute("open")).toBe(true);
-    expect(scope("Gateway").hasAttribute("open")).toBe(false);
+    const toggle = scope("Brokers").getByRole("button", { expanded: true });
+    expect(toggle.textContent).toContain("1");
+    expect(
+      scope("Brokers").getByRole("group", { name: "Variables of Brokers" }),
+    ).toBeTruthy();
+    expect(
+      scope("Gateway").getByRole("button", { expanded: false }),
+    ).toBeTruthy();
+    expect(scope("Gateway").queryByRole("textbox")).toBeNull();
   });
 
   it("edits the variables of a scope without YAML", async () => {
     const onChange = setup();
-    const brokers = within(scope("Brokers"));
+    const brokers = await open("Brokers");
     await userEvent.click(
       brokers.getByRole("button", { name: "Add a variable" }),
     );
@@ -80,7 +92,7 @@ describe("EnvScopes", () => {
 
   it("reports the errors of a scope with the scope in the path", async () => {
     const onChange = setup();
-    const gateway = within(scope("Gateway"));
+    const gateway = await open("Gateway");
     await userEvent.click(
       gateway.getByRole("button", { name: "Add a variable" }),
     );
@@ -90,9 +102,9 @@ describe("EnvScopes", () => {
     ]);
   });
 
-  it("edits extraEnvFrom as YAML only", () => {
+  it("edits extraEnvFrom as YAML only", async () => {
     const onChange = setup();
-    const tasklist = within(scope("Tasklist"));
+    const tasklist = await open("Tasklist");
     fireEvent.change(
       tasklist.getByRole("textbox", { name: "extraEnvFrom of Tasklist" }),
       { target: { value: "- configMapRef:\n    name: tuning\n" } },
@@ -103,9 +115,25 @@ describe("EnvScopes", () => {
     });
     expect(errors).toEqual([]);
     expect(
-      screen
+      tasklist
         .getAllByRole("textbox")
         .filter((box) => box.tagName === "TEXTAREA"),
-    ).toHaveLength(7);
+    ).toHaveLength(1);
+  });
+
+  it("keeps the edits of a scope when it is closed and opened again", async () => {
+    const onChange = setup();
+    const operate = await open("Operate");
+    await userEvent.click(
+      operate.getByRole("button", { name: "Add a variable" }),
+    );
+    await userEvent.click(
+      scope("Operate").getByRole("button", { expanded: true }),
+    );
+    expect(scope("Operate").queryByRole("textbox")).toBeNull();
+    const [, errors] = onChange.mock.calls.at(-1) ?? [];
+    expect(errors).toEqual([
+      { path: "operate.extraEnv.0.name", message: "Enter a name" },
+    ]);
   });
 });

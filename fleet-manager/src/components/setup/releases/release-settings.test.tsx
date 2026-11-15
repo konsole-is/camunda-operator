@@ -118,11 +118,7 @@ describe("ReleaseSettings", () => {
 
   it("keeps a Secret entry that no user namespace holds and marks where it is missing", () => {
     setup({ secrets: { "team-orders": [] } });
-    const every = within(
-      screen
-        .getAllByText("Every workload")[0]
-        .closest("details") as HTMLElement,
-    );
+    const every = within(screen.getByRole("group", { name: "Every workload" }));
     const row = within(every.getByRole("group", { name: "Variable 2" }));
     expect(
       (row.getByRole("combobox", { name: "Secret" }) as HTMLSelectElement)

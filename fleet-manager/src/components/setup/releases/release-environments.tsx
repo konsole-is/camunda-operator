@@ -55,7 +55,7 @@ export function ReleaseEnvironments({
             >
               <Link
                 href={`/setup/environments/${encodeURIComponent(row.name)}`}
-                className="relative min-w-0 truncate text-sm font-medium text-text hit-area hover:text-info"
+                className="relative min-w-0 text-sm font-medium break-words text-text hit-area hover:text-info"
               >
                 {row.label}
               </Link>

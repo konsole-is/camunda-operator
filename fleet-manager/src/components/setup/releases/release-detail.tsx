@@ -111,7 +111,7 @@ export function ReleaseDetailView({
           ))}
         </TabsList>
         <TabsContent value="settings">
-          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <ReleaseSettings
               sources={sources}
               name={name}
