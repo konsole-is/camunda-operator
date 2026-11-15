@@ -117,6 +117,10 @@ type snapshotRepository struct {
 	nodeConfig map[string]any
 	// identity is how the nodes prove who they are to the bucket.
 	identity identityMechanism
+	// webIdentityToken reports that the nodes read an AWS web identity token.
+	// Elasticsearch takes it from one fixed path under its config directory,
+	// whatever AWS_WEB_IDENTITY_TOKEN_FILE names.
+	webIdentityToken bool
 }
 
 // The federated-token plumbing of Azure workload identity. Elasticsearch
@@ -129,6 +133,19 @@ const (
 	azureTokenAudience          = "api://AzureADTokenExchange"
 	azureTokenExpirationSeconds = 3600
 	azureFederatedTokenFileEnv  = "AZURE_FEDERATED_TOKEN_FILE"
+)
+
+// The web identity plumbing of S3 workload identity. Elasticsearch reads the
+// token only at repository-s3/aws-web-identity-token-file under its config
+// directory, not at the path where the EKS webhook mounts it. So the operator
+// projects a second token there. The webhook still sets AWS_ROLE_ARN and
+// AWS_WEB_IDENTITY_TOKEN_FILE, and Elasticsearch needs both to be set.
+const (
+	awsTokenVolume            = "aws-web-identity-token"
+	awsTokenDir               = "/usr/share/elasticsearch/config/repository-s3"
+	awsTokenFile              = "aws-web-identity-token-file"
+	awsTokenAudience          = "sts.amazonaws.com"
+	awsTokenExpirationSeconds = 86400
 )
 
 // azureEndpointSuffixSetting is the node setting that names the service
@@ -266,6 +283,41 @@ func snapshotStorageMutations(storage *SnapshotStorage) []eckelasticsearch.Mutat
 			},
 		},
 		{
+			Name:    "AWSWebIdentityToken",
+			Feature: feature.NewBooleanGate(repo.webIdentityToken),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					template := &es.Spec.NodeSets[0].PodTemplate
+					expiration := int64(awsTokenExpirationSeconds)
+					template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
+						Name: awsTokenVolume,
+						VolumeSource: corev1.VolumeSource{
+							Projected: &corev1.ProjectedVolumeSource{
+								Sources: []corev1.VolumeProjection{{
+									ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+										Audience:          awsTokenAudience,
+										ExpirationSeconds: &expiration,
+										Path:              awsTokenFile,
+									},
+								}},
+							},
+						},
+					})
+					return nil
+				})
+				m.EditContainer(nodeSetName, func(c *editors.ContainerEditor) error {
+					container := c.Raw()
+					container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+						Name:      awsTokenVolume,
+						MountPath: awsTokenDir,
+						ReadOnly:  true,
+					})
+					return nil
+				})
+				return nil
+			},
+		},
+		{
 			// Only the settings that the keystore does not take land here, and
 			// a client whose settings are all default needs none of them.
 			Name:    "NodeConfig",
@@ -344,6 +396,8 @@ func (s *SnapshotStorage) resolve() (*snapshotRepository, error) {
 		if s.Credentials != nil {
 			repo.keystore[accessKeyKeystorePath] = []byte(s.Credentials.AccessKeyID)
 			repo.keystore[secretKeyKeystorePath] = []byte(s.Credentials.SecretAccessKey)
+		} else {
+			repo.webIdentityToken = true
 		}
 
 		return repo, nil

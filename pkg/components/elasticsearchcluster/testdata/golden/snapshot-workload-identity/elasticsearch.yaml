@@ -49,8 +49,22 @@ spec:
           camunda.io/elasticsearch-cluster: my-cluster-es
       spec:
         automountServiceAccountToken: true
-        containers: null
+        containers:
+        - name: elasticsearch
+          resources: {}
+          volumeMounts:
+          - mountPath: /usr/share/elasticsearch/config/repository-s3
+            name: aws-web-identity-token
+            readOnly: true
         serviceAccountName: my-cluster-es-es
+        volumes:
+        - name: aws-web-identity-token
+          projected:
+            sources:
+            - serviceAccountToken:
+                audience: sts.amazonaws.com
+                expirationSeconds: 86400
+                path: aws-web-identity-token-file
     volumeClaimTemplates:
     - metadata:
         labels:

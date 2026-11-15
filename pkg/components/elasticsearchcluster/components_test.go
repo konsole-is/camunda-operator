@@ -266,7 +266,7 @@ func snapshotBucket(auth v1.S3StorageAuth) *v1.ObjectStorageConfig {
 // A cluster whose bucket uses workload identity gets the identity annotation
 // on a ServiceAccount that the operator renders even though the spec asks for
 // none, and no keystore Secret: the nodes authenticate as their
-// ServiceAccount.
+// ServiceAccount, with its token projected where Elasticsearch reads it.
 func TestElasticsearchClusterGoldenSnapshotWorkloadIdentity(t *testing.T) {
 	t.Parallel()
 
