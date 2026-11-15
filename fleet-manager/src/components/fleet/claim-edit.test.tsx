@@ -139,10 +139,12 @@ function page(
   actions: ClaimActions = fakeActions().actions,
 ) {
   const client = new QueryClient();
+  let mount = 0;
+  let last = h;
   const tree = (next: ClaimEditHost<PlaneClaim>) => (
     <QueryClientProvider client={client}>
       <GitPushesProvider>
-        <ClaimEditProvider host={next} actions={actions}>
+        <ClaimEditProvider key={mount} host={next} actions={actions}>
           <Probe />
         </ClaimEditProvider>
       </GitPushesProvider>
@@ -151,7 +153,16 @@ function page(
   const result = render(tree(h));
   return {
     ...result,
-    update: (next: ClaimEditHost<PlaneClaim>) => result.rerender(tree(next)),
+    update: (next: ClaimEditHost<PlaneClaim>) => {
+      last = next;
+      result.rerender(tree(next));
+    },
+    // remount mounts a new host in the same tab, as when the user leaves
+    // the plane page and comes back.
+    remount: () => {
+      mount++;
+      result.rerender(tree(last));
+    },
   };
 }
 
@@ -369,6 +380,29 @@ describe("ClaimEditProvider", () => {
     expect(review().disabled).toBe(false);
     expect(screen.queryByText("Pending 1")).toBeTruthy();
     expect(screen.queryByText("Suspended true")).toBeTruthy();
+  });
+
+  it("in Git mode, a new host of a plane claim with a waiting push blocks Review and shows the live claim", async () => {
+    const { actions } = fakeActions(pushed);
+    const { remount } = page(host({ writeMode: "git" }), actions);
+    click("Suspend");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+
+    remount();
+    click("Identity 8.9.11");
+
+    expect(screen.queryByText("Suspended false")).toBeTruthy();
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(
+      within(bar()!).getByText(
+        "Waiting for GitOps to apply your last change. The page shows the live claim until GitOps applies it.",
+      ),
+    ).toBeTruthy();
   });
 
   it("useClaimEdit throws without a provider", () => {
