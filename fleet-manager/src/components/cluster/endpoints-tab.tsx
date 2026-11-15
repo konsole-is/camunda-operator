@@ -80,7 +80,7 @@ function PublicUrl({ row }: { row: EndpointRow }) {
         href={row.url}
         target="_blank"
         rel="noreferrer"
-        className="relative text-info underline-offset-4 hit-area hover:underline"
+        className="relative inline-block text-info underline-offset-4 hit-area hover:underline"
       >
         {row.url}
       </a>

@@ -6,9 +6,9 @@ export const MIN_TARGET = 24;
 /**
  * smallTargets returns one line for each control on the page that a pointer
  * hits in a box under MIN_TARGET wide or high, "<tag> "<name>" <w>x<h>". The
- * box of a control is the largest of its own box, the box of an absolute
- * ::before or ::after of it, and the box of each of its labels. A link in
- * running text, a disabled control, and a control that is not shown are not
+ * box is what a hit test through the center of the control gives to it or to
+ * its labels, so a part that another element covers does not count. A link
+ * in a sentence, a disabled control, and a control that is not shown are not
  * counted. An empty list means that the page passes.
  */
 export async function smallTargets(page: Page): Promise<string[]> {
@@ -27,25 +27,47 @@ export async function smallTargets(page: Page): Promise<string[]> {
       if (el.tagName !== "A" || getComputedStyle(el).display !== "inline")
         return false;
       return [...(el.parentElement?.childNodes ?? [])].some(
-        (n) => n !== el && (n.textContent ?? "").trim() !== "",
+        (n) =>
+          n.nodeType === Node.TEXT_NODE &&
+          /\p{L}{2}/u.test(n.textContent ?? ""),
       );
     };
+    // The open popup of a trigger sits beside it and does not take its target.
+    const owns = (el: Element, x: number, y: number) => {
+      const hit = document.elementFromPoint(x, y);
+      if (!hit) return false;
+      const labels = [...((el as HTMLInputElement).labels ?? [])];
+      const popup =
+        el.getAttribute("aria-expanded") === "true"
+          ? document.getElementById(el.getAttribute("aria-controls") ?? "")
+          : null;
+      return [el, ...labels, popup].some((box) => box?.contains(hit));
+    };
+    const ownedSteps = (
+      el: Element,
+      x: number,
+      y: number,
+      dx: number,
+      dy: number,
+    ) => {
+      let n = 0;
+      while (n < min && owns(el, x + dx * (n + 1), y + dy * (n + 1))) n++;
+      return n;
+    };
     const size = (el: Element) => {
-      const r = el.getBoundingClientRect();
-      let w = r.width;
-      let h = r.height;
-      for (const pseudo of ["::before", "::after"]) {
-        const style = getComputedStyle(el, pseudo);
-        if (style.content === "none" || style.position !== "absolute") continue;
-        w = Math.max(w, parseFloat(style.width) || 0);
-        h = Math.max(h, parseFloat(style.height) || 0);
-      }
-      for (const label of (el as HTMLInputElement).labels ?? []) {
-        const l = label.getBoundingClientRect();
-        w = Math.max(w, l.width);
-        h = Math.max(h, l.height);
-      }
-      return { w: Math.round(w), h: Math.round(h) };
+      el.scrollIntoView({ block: "center", inline: "center" });
+      // A link that wraps has a box for each line, and the space between them
+      // is not the link.
+      const r = [...el.getClientRects()].reduce((a, b) =>
+        b.width * b.height > a.width * a.height ? b : a,
+      );
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (!owns(el, x, y)) return { w: 0, h: 0 };
+      return {
+        w: ownedSteps(el, x, y, -1, 0) + ownedSteps(el, x, y, 1, 0) + 1,
+        h: ownedSteps(el, x, y, 0, -1) + ownedSteps(el, x, y, 0, 1) + 1,
+      };
     };
     const lines: string[] = [];
     for (const el of document.querySelectorAll(CONTROLS)) {
