@@ -99,6 +99,7 @@ nav:
       - The cluster page: fleet-manager/cluster-page.md
       - Management planes: fleet-manager/management-planes.md
       - Environments: fleet-manager/environments.md
+      - Platform config and connections: fleet-manager/platform-and-connections.md
       - Back up and restore a cluster: fleet-manager/backups.md
   - Guides:
       - Presets: guides/presets.md
