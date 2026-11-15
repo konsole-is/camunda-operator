@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestParseCRDs(t *testing.T) {
 }
 
 func TestListCustomResourcesWithoutCRDs(t *testing.T) {
-	resources, err := ListCustomResources(nil)
+	resources, err := ListCustomResources(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, resources)
 }

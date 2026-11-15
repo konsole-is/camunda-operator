@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -26,9 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// requestTimeout bounds each kubectl call of this file. The teardown also
-// calls them after its own timeout, when only the grace period of Ginkgo is
-// left.
+// requestTimeout bounds each API request of the kubectl calls of this file, so
+// that one stalled request does not use all of the context of the caller.
 const requestTimeout = "--request-timeout=10s"
 
 // CRD is a custom resource definition that the cluster serves.
@@ -54,8 +54,8 @@ type CustomResource struct {
 }
 
 // CRDsOfGroups returns the CRDs that the cluster serves in one of groups.
-func CRDsOfGroups(groups ...string) ([]CRD, error) {
-	out, err := Kubectl("get", "crd", "-o", "json", requestTimeout)
+func CRDsOfGroups(ctx context.Context, groups ...string) ([]CRD, error) {
+	out, err := RunContext(ctx, "kubectl", "get", "crd", "-o", "json", requestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +95,12 @@ func parseCRDs(out string, groups []string) ([]CRD, error) {
 
 // ListCustomResources returns every resource of crds in every namespace. No
 // CRDs is no resources.
-func ListCustomResources(crds []CRD) ([]CustomResource, error) {
+func ListCustomResources(ctx context.Context, crds []CRD) ([]CustomResource, error) {
 	if len(crds) == 0 {
 		return nil, nil
 	}
 
-	out, err := Kubectl("get", CRDNames(crds), "--all-namespaces", "-o", "json", requestTimeout)
+	out, err := RunContext(ctx, "kubectl", "get", CRDNames(crds), "--all-namespaces", "-o", "json", requestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -185,12 +185,12 @@ func FormatCustomResources(resources []CustomResource) string {
 
 // RemoveFinalizers removes every finalizer of resource, so that its deletion
 // ends without the controller that set them.
-func RemoveFinalizers(resource CustomResource) error {
+func RemoveFinalizers(ctx context.Context, resource CustomResource) error {
 	args := append(
 		[]string{"patch", resource.Resource, resource.Name, "--type=merge", "-p", `{"metadata":{"finalizers":null}}`},
 		namespaceArgs(resource.Namespace)...,
 	)
-	_, err := Kubectl(append(args, requestTimeout)...)
+	_, err := RunContext(ctx, "kubectl", append(args, requestTimeout)...)
 
 	return err
 }

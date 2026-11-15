@@ -144,6 +144,9 @@ const teardownTimeout = 10 * time.Minute
 // finalizeTimeout bounds the wait of removeOperatorResources.
 const finalizeTimeout = 5 * time.Minute
 
+// reportTimeout bounds the kubectl calls that run after a deadline passed.
+const reportTimeout = 20 * time.Second
+
 // operatorGroups are the API groups of the CRDs that the manager serves.
 var operatorGroups = []string{
 	v1.GroupVersion.Group,
@@ -229,7 +232,7 @@ func removeOperatorResources(ctx context.Context) ([]utils.CustomResource, error
 	for waitCtx.Err() == nil {
 		var crds []utils.CRD
 		var resources []utils.CustomResource
-		crds, resources, err = listOperatorResources()
+		crds, resources, err = listOperatorResources(waitCtx)
 		if err == nil && len(resources) == 0 {
 			_, _ = fmt.Fprintf(
 				GinkgoWriter,
@@ -269,8 +272,10 @@ func removeOperatorResources(ctx context.Context) ([]utils.CustomResource, error
 		time.Since(start).Round(time.Second),
 		utils.FormatCustomResources(remaining),
 	)
+	reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+	defer cancelReport()
 	for _, r := range remaining {
-		if err := utils.RemoveFinalizers(r); err != nil {
+		if err := utils.RemoveFinalizers(reportCtx, r); err != nil {
 			_, _ = fmt.Fprintf(GinkgoWriter, "warning: removing the finalizers of %s %s: %v\n", r.Kind, r.Name, err)
 		}
 	}
@@ -284,13 +289,13 @@ func removeOperatorResources(ctx context.Context) ([]utils.CustomResource, error
 
 // listOperatorResources returns the CRDs of operatorGroups that the cluster
 // serves now, and every resource of them.
-func listOperatorResources() ([]utils.CRD, []utils.CustomResource, error) {
-	crds, err := utils.CRDsOfGroups(operatorGroups...)
+func listOperatorResources(ctx context.Context) ([]utils.CRD, []utils.CustomResource, error) {
+	crds, err := utils.CRDsOfGroups(ctx, operatorGroups...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	resources, err := utils.ListCustomResources(crds)
+	resources, err := utils.ListCustomResources(ctx, crds)
 
 	return crds, resources, err
 }
@@ -312,7 +317,9 @@ func undeployManager(ctx context.Context) {
 		return
 	}
 
-	_, resources, err := listOperatorResources()
+	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reportTimeout)
+	defer cancel()
+	_, resources, err := listOperatorResources(reportCtx)
 	if err != nil {
 		_, _ = fmt.Fprintf(GinkgoWriter, "warning: listing the custom resources of the operator: %v\n", err)
 		return
