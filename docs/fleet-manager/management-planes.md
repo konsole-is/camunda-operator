@@ -147,3 +147,57 @@ status:
 ```
 
 In this example, the plane has no access option and the claim has no Console URL. The [Status](../crds/camundamanagementclusterclaim.md#status) section of the claim lists each reason and what to do.
+
+## Read the state of a management plane
+
+Select the name of a plane in the list at `/fleet/planes`. The page of the plane opens at `/fleet/planes/<namespace>/<name>`.
+
+The header shows the name of the plane and its `Ready` condition. A reason other than `Healthy` shows next to `Ready`, for example `Ready · Suspended`. Under the name, the header shows these facts:
+
+| Fact | What it shows |
+| --- | --- |
+| Identity provider | `Keycloak`, `External Keycloak`, or `OIDC` |
+| Namespace | The namespace of the plane |
+| Platform config | The platform config of the plane, or of its environment when the claim names none |
+| Serves | The environments of the claim. A plane that no claim made shows its namespace selector, or `Every namespace`. |
+
+### Conditions
+
+The **Conditions** section lists the conditions of the `CamundaManagementCluster` that belong to no component: `SecretsReady`, `MirroredSecretsReady`, `ServiceAccountsReady`, `ManagementAuthReady`, and `OptimizeCallbacksReady`. The group **Claim** follows, with `RequestsReady` and `ManagementClusterReady` of the claim. Each row shows the status, the reason, the message, and the time since the last change.
+
+`KeycloakReady`, `IdentityReady`, `ConsoleReady`, and `WebModelerReady` belong to a component, so they do not show in this section. `Ready` shows in the header.
+
+In OIDC mode, three conditions read `True` with the reason `Disabled`. The plane runs no Keycloak, so `KeycloakReady` is `Disabled`. Your provider issues every client secret, so `SecretsReady` is `Disabled`. Your provider also holds the login callbacks of Optimize, so `OptimizeCallbacksReady` is `Disabled`:
+
+```yaml
+status:
+  conditions:
+    - type: SecretsReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: KeycloakReady
+      status: "True"
+      reason: Disabled
+      message: Component is disabled.
+    - type: ManagementAuthReady
+      status: "True"
+      reason: Healthy
+      message: ManagementAuthConfig "plane-a" is up to date
+    - type: OptimizeCallbacksReady
+      status: "True"
+      reason: Disabled
+      message: The identity provider of the platform config holds the callback URLs of Optimize
+```
+
+A condition with the reason `Disabled` does not hold `Ready` back. The [Status](../crds/camundamanagementcluster.md#status) section of the `CamundaManagementCluster` lists each reason and what to do.
+
+### A plane that does not exist yet
+
+After you create a plane, its claim can exist before the `CamundaManagementCluster`. The page then shows the `Ready` condition of the claim in the header, and the line `The claim controller has not created the management plane yet.` The **Conditions** section shows only the group **Claim**. The page shows the plane when the `CamundaManagementCluster` appears. If the plane does not appear, read the reason and the message of `RequestsReady` and `ManagementClusterReady`. The [Status](../crds/camundamanagementclusterclaim.md#status) section of the claim lists each reason and what to do.
+
+When the plane and its claim are both deleted, the page shows `This management plane no longer exists.` and a link to all management planes.
+
+### A plane that no claim made
+
+A `CamundaManagementCluster` without the label `fleet.camunda.io/claim` is not managed by the fleet manager. The page shows `Not managed by the fleet manager. You can read this management plane but not change it here.` The **Conditions** section has no group **Claim**. A claim with the same name in the same namespace does not change this plane, so the page does not show that claim. To change such a plane, change the `CamundaManagementCluster` where you manage it, for example in your GitOps repository.
