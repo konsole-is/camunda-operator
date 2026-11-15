@@ -571,11 +571,11 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 
 // logReadyChange writes one line when the status or the reason of Ready
 // changed. A nil before means that the request had no Ready condition yet.
-func logReadyChange(log logr.Logger, before, after *metav1.Condition) {
+func logReadyChange(logger logr.Logger, before, after *metav1.Condition) {
 	if after == nil || before != nil && before.Status == after.Status && before.Reason == after.Reason {
 		return
 	}
-	log.Info("Set Ready of PluginRequest", "status", after.Status, "reason", after.Reason)
+	logger.Info("Set Ready of PluginRequest", "status", after.Status, "reason", after.Reason)
 }
 
 // servedGrants are existing, the Grants that the cache holds, and each Grant
