@@ -51,8 +51,11 @@ export function setupItemOf(pathname: string): SetupItem | undefined {
 
 /**
  * setupBreadcrumb returns the list and the object name of a Setup detail
- * path, /setup/<list>/<name>, and the list and the label of a create page.
- * A name with bad percent-encoding stays as it is in the path.
+ * path, and the list and the label of a create page. The name is the last
+ * segment of /setup/<list>/<name> and /setup/<list>/<kind>/<name>, and
+ * <namespace>/<name> of /setup/<list>/<kind>/<namespace>/<name>. Each
+ * segment is decoded on its own, and a segment with bad percent-encoding
+ * stays as it is in the path.
  */
 export function setupBreadcrumb(
   pathname: string,
@@ -60,13 +63,18 @@ export function setupBreadcrumb(
   const found = setupItemOf(pathname);
   if (found?.create && pathname === found.create.href)
     return { item: found, name: found.create.label };
-  const raw = pathname.split("/")[3];
-  if (!found || !raw) return undefined;
-  let name = raw;
+  const rest = pathname.split("/").slice(3);
+  if (!found || rest.length === 0 || rest.length > 3 || rest.includes(""))
+    return undefined;
+  const named = rest.length === 3 ? rest.slice(1) : rest.slice(-1);
+  return { item: found, name: named.map(decoded).join("/") };
+}
+
+function decoded(segment: string): string {
   try {
-    name = decodeURIComponent(raw);
+    return decodeURIComponent(segment);
   } catch {
     // URIError: keep the raw segment.
+    return segment;
   }
-  return { item: found, name };
 }
