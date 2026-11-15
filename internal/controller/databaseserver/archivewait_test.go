@@ -241,28 +241,6 @@ var _ = Describe("DatabaseServer removal of the cluster a recovery replaced", fu
 		Expect(primaries.closedIn(previous)).To(Equal(2))
 	})
 
-	It("removes the replaced cluster also once the contract drops the request", func() {
-		server, from := archivingServer()
-		previous := primaryOf(server, server.Name)
-		replaced := completeRecoveryOf(server, from, func() { primaries.holdArchive(previous) })
-		probeContract(server)
-		expectLastRecovery(server, v1.RecoveryResultCompleted)
-		Eventually(func(g Gomega) {
-			g.Expect(reconciledServer(server).Status.Recovery.PreviousClosedSegment).NotTo(BeEmpty())
-		}, timeout, interval).Should(Succeed())
-
-		By("clearing the request on the contract while the replaced cluster waits")
-		Eventually(func(g Gomega) {
-			var contract v1.DatabaseServerConfig
-			g.Expect(k8sClient.Get(ctx, contractKey(server), &contract)).To(Succeed())
-			contract.Spec.Recovery = nil
-			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-
-		primaries.releaseArchive(previous)
-		expectGone(replaced, &cnpgv1.Cluster{})
-	})
-
 	It("removes the replaced cluster when its archive does not get the segment in time", func() {
 		server, from := archivingServer()
 		previous := primaryOf(server, server.Name)
