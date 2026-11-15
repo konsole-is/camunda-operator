@@ -223,7 +223,7 @@ jobs:
 
       # cosign-installer v4 is the first major that can install cosign v3.
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@v4.1.3
         with:
           cosign-release: v3.1.4
 
@@ -333,7 +333,7 @@ jobs:
 
       - name: Install oras
         if: env.DRY_RUN != 'true'
-        uses: oras-project/setup-oras@v2.0.2
+        uses: oras-project/setup-oras@v2.0.3
         with:
           version: 1.3.4
 

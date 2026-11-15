@@ -326,6 +326,23 @@ describe("a section panel", () => {
     ).toBe(true);
   });
 
+  it("emptying a required parameter that the policy gives writes no value, so the policy value applies", async () => {
+    const context = contextOf();
+    const registration = structuredClone(harness);
+    (registration.spec.parameters as { required: string[] }).required = [
+      "hostPrefix",
+    ];
+    context.registrations = [registration];
+    panel(context);
+    await userEvent.clear(within(row("hostPrefix")).getByRole("textbox"));
+    expect(within(row("hostPrefix")).queryByRole("alert")).toBeNull();
+    const written = await save();
+    expect(written.spec.plugins![0].parameters).toEqual({
+      tier: "gold",
+      policies: ["sqs"],
+    });
+  });
+
   it("says when no parameter can change", () => {
     const context = contextOf();
     context.claim!.status!.resolvedPolicy!.parameters!["fleet-harness"] = {

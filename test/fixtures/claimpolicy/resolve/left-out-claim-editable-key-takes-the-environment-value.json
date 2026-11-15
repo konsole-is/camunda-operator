@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "name": "A claim-editable key that the selection leaves out takes the value of the Environment",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ],
+            "default": "s3"
+          }
+        },
+        "parameters": {
+          "s3": {
+            "bucket": {
+              "claimEditable": true,
+              "value": "team-backups"
+            }
+          }
+        }
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "bucket"
+            ],
+            "properties": {
+              "bucket": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "default": "s3",
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "bucket": {
+              "value": "team-backups",
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "bucket": "team-backups"
+          }
+        }
+      ]
+    }
+  }
+}

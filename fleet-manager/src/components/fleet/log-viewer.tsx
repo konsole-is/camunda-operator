@@ -84,15 +84,11 @@ export function LogViewer({
       <div className="flex flex-wrap items-end gap-2">
         {controls}
         {paused === undefined ? (
-          <Button variant="outline" size="sm" onClick={() => setPaused(lines)}>
+          <Button variant="outline" onClick={() => setPaused(lines)}>
             Pause
           </Button>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPaused(undefined)}
-          >
+          <Button variant="outline" onClick={() => setPaused(undefined)}>
             Follow
           </Button>
         )}

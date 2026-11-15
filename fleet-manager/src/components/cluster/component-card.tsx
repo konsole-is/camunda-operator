@@ -109,7 +109,13 @@ function ComponentCard({
           {card.numbers.map((n) => (
             <div key={n.label} className="flex flex-col-reverse gap-0.5">
               <dt className="text-xs text-muted">{n.label}</dt>
-              <dd className="font-heading text-lg font-semibold text-text tabular-nums">
+              <dd
+                className={
+                  /^\d/.test(n.value)
+                    ? "font-heading text-lg font-semibold text-text tabular-nums"
+                    : "text-sm text-muted"
+                }
+              >
                 {n.value}
               </dd>
             </div>

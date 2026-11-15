@@ -257,55 +257,47 @@ export function DataTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {shown.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={columns.length + (selection ? 1 : 0)}
-                className="py-6 text-center text-muted"
-              >
-                {emptyText}
-              </TableCell>
+          {shown.map((row) => (
+            <TableRow
+              key={row.id}
+              data-state={selected.has(row.id) ? "selected" : undefined}
+            >
+              {selection && (
+                <TableCell>
+                  <Checkbox
+                    aria-label={`Select ${row.label ?? row.id}`}
+                    disabled={!applicable(row)}
+                    checked={selected.has(row.id)}
+                    onCheckedChange={(value) => {
+                      const next = new Set(selected);
+                      if (value === true) next.add(row.id);
+                      else next.delete(row.id);
+                      select(next);
+                    }}
+                  />
+                </TableCell>
+              )}
+              {columns.map((column, index) => (
+                <TableCell key={column.key}>
+                  {index === 0 && row.href ? (
+                    <Link
+                      href={row.href}
+                      className="relative font-medium text-text hit-area hover:text-info"
+                    >
+                      {row.cells[column.key]}
+                    </Link>
+                  ) : (
+                    row.cells[column.key]
+                  )}
+                </TableCell>
+              ))}
             </TableRow>
-          ) : (
-            shown.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={selected.has(row.id) ? "selected" : undefined}
-              >
-                {selection && (
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`Select ${row.label ?? row.id}`}
-                      disabled={!applicable(row)}
-                      checked={selected.has(row.id)}
-                      onCheckedChange={(value) => {
-                        const next = new Set(selected);
-                        if (value === true) next.add(row.id);
-                        else next.delete(row.id);
-                        select(next);
-                      }}
-                    />
-                  </TableCell>
-                )}
-                {columns.map((column, index) => (
-                  <TableCell key={column.key}>
-                    {index === 0 && row.href ? (
-                      <Link
-                        href={row.href}
-                        className="relative font-medium text-text hit-area hover:text-info"
-                      >
-                        {row.cells[column.key]}
-                      </Link>
-                    ) : (
-                      row.cells[column.key]
-                    )}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          )}
+          ))}
         </TableBody>
       </Table>
+      {shown.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted">{emptyText}</p>
+      )}
       {pages > 1 && (
         <div className="flex items-center justify-end gap-2 text-sm text-muted">
           <Button

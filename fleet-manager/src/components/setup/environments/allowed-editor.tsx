@@ -11,6 +11,7 @@ import type { NamedValue, ParameterSetting } from "./settings";
 import { isStructured, TemplateEditor } from "./template-editor";
 
 const MAX_CHOICES = 32;
+const FIELD = "min-w-24 flex-1 sm:flex-none";
 
 /**
  * AllowedEditor edits the allowed choices of a claim-editable parameter: a
@@ -70,19 +71,23 @@ export function AllowedEditor({
           <fieldset key={id} className="flex min-w-0 flex-col gap-2">
             <legend className="sr-only">{`Choice ${row + 1}`}</legend>
             <div className="flex flex-wrap items-start gap-3">
-              <TextField
-                label="Name"
-                value={choice.name}
-                mono
-                error={errorAt(`${row}.name`)}
-                onChange={(name) => update(row, { name })}
-              />
-              <TextField
-                label="Label"
-                value={choice.label}
-                error={errorAt(`${row}.label`)}
-                onChange={(label) => update(row, { label })}
-              />
+              <div className={FIELD}>
+                <TextField
+                  label="Name"
+                  value={choice.name}
+                  mono
+                  error={errorAt(`${row}.name`)}
+                  onChange={(name) => update(row, { name })}
+                />
+              </div>
+              <div className={FIELD}>
+                <TextField
+                  label="Label"
+                  value={choice.label}
+                  error={errorAt(`${row}.label`)}
+                  onChange={(label) => update(row, { label })}
+                />
+              </div>
               <Button
                 variant="ghost"
                 size="icon-sm"

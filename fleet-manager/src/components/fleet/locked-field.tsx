@@ -30,9 +30,9 @@ export function LockedField({
       </div>
       <p
         id={`${id}-reason`}
-        className="flex items-center gap-1.5 text-xs text-muted"
+        className="flex items-start gap-1.5 text-xs text-muted"
       >
-        <Lock aria-hidden className="size-3.5 shrink-0" />
+        <Lock aria-hidden className="mt-px size-3.5 shrink-0" />
         {reason}
       </p>
     </div>

@@ -46,7 +46,8 @@ export type StorageDraft = {
 /**
  * ControllerParameters returns the parameters that the claim controller
  * adds to request, for the schema check of resolvedErrors. A value that the
- * draft does not know yet is undefined, and the check skips that request.
+ * draft does not know yet is undefined, and the check of that request then
+ * holds only what requestSchemaErrors finds without it.
  */
 export type ControllerParameters = (
   request: RequestParameters,
@@ -192,9 +193,9 @@ export function valueErrors(
 
 /**
  * ValueProblem is why a value of a claim-editable parameter does not pass:
- * a required parameter without a value, a refusal of the names of its
- * choices, a count of names outside the schema, or the errors of the
- * schema.
+ * a required parameter that neither the value nor the policy gives a value,
+ * a refusal of the names of its choices, a count of names outside the
+ * schema, or the errors of the schema.
  */
 export type ValueProblem =
   | { kind: "required" }
@@ -204,10 +205,33 @@ export type ValueProblem =
   | { kind: "schema"; errors: ValidationError[] };
 
 /**
+ * givesNoValue says that value gives rule no value of its own: value is
+ * undefined, or rule is required and value is an empty list of its choices,
+ * or "" that neither the enum of its schema nor its choices hold. A claim
+ * leaves such a value out, so the value of the policy, rule.value, applies.
+ */
+export function givesNoValue(
+  rule: Pick<EditableParameter, "required" | "schema" | "allowed">,
+  value: unknown,
+): boolean {
+  if (value === undefined) return true;
+  if (!rule.required) return false;
+  if (value === "") {
+    const members = [
+      ...(Array.isArray(rule.schema?.enum) ? rule.schema.enum : []),
+      ...(rule.allowed ?? []).map((a) => a.name),
+    ];
+    return !members.includes("");
+  }
+  return !!rule.allowed && Array.isArray(value) && value.length === 0;
+}
+
+/**
  * valueProblem returns the problem of value, the value of rule in option,
- * or undefined when it passes. claimed says that the claim sets the value:
- * only then is it checked against the names of the choices, as the claim
- * controller does.
+ * or undefined when it passes. A value that givesNoValue names passes,
+ * unless rule is required and has no rule.value either. claimed says that
+ * the claim sets the value: only then is it checked against the names of
+ * the choices, as the claim controller does.
  */
 export function valueProblem(
   option: OptionView,
@@ -215,9 +239,10 @@ export function valueProblem(
   value: unknown,
   claimed: boolean,
 ): ValueProblem | undefined {
-  const empty = value === "" || (Array.isArray(value) && value.length === 0);
-  if (value === undefined || (empty && rule.required)) {
-    return rule.required ? { kind: "required" } : undefined;
+  if (givesNoValue(rule, value)) {
+    return rule.required && rule.value === undefined
+      ? { kind: "required" }
+      : undefined;
   }
   const names =
     option.choices?.parameter === rule.name
@@ -410,7 +435,7 @@ function schemaErrors(
       request.parameters ?? {},
       controllerParameters(request, registration),
     );
-    if (!checked.whole || checked.errors.length === 0) return [];
+    if (checked.errors.length === 0) return [];
     const [first] = checked.errors;
     return [
       `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,

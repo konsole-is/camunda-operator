@@ -58,7 +58,7 @@ export function TopologyBoxes({
   return (
     <ul
       aria-label={label}
-      className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
     >
       {boxes.map((box) => {
         const mark = marks?.[box.process];
@@ -71,7 +71,7 @@ export function TopologyBoxes({
                 : "border-border bg-panel-2"
             }`}
           >
-            <div className="flex items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="flex items-center gap-2 font-medium text-text">
                 {conditions?.[box.process] && (
                   <StatusDot
