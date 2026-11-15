@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { requestSchemaErrors } from "@/lib/drafts";
 import { checkAllowed, claimEditable, resolve } from "@/lib/policy";
 import type { OptionView, SectionView } from "@/lib/policy/types";
 import { SectionCards } from "./section-cards";
@@ -512,8 +513,8 @@ describe("SectionCards", () => {
     ).toBe("a: 2\n");
   });
 
-  it("shows the required error of a cleared YAML parameter at its field", async () => {
-    const option: OptionView = {
+  describe("a cleared required YAML parameter", () => {
+    const tuning = (value?: unknown): OptionView => ({
       registration: "tuning",
       label: "Tuning",
       isDefault: true,
@@ -524,18 +525,42 @@ describe("SectionCards", () => {
           schema: { type: "object" },
           required: true,
           claimEditable: true,
-          value: { a: 1 },
+          ...(value !== undefined && { value }),
         },
       ],
-    };
-    render(<SectionCards section={section({}, option)} />);
-    const box = screen.getByRole("textbox", { name: "Overrides" });
-    await userEvent.clear(box);
-    expect(box.getAttribute("aria-invalid")).toBe("true");
-    expect(
-      document.getElementById(box.getAttribute("aria-describedby")!)
-        ?.textContent,
-    ).toBe("is required");
+    });
+
+    it("shows the required error at its field when the policy gives no value", async () => {
+      render(<SectionCards section={section({}, tuning())} />);
+      const box = screen.getByRole("textbox", { name: "Overrides" });
+      await userEvent.type(box, "a: 1");
+      await userEvent.clear(box);
+      expect(box.getAttribute("aria-invalid")).toBe("true");
+      expect(
+        document.getElementById(box.getAttribute("aria-describedby")!)
+          ?.textContent,
+      ).toBe("is required");
+    });
+
+    it("leaves the selection with no error and says that the policy value applies", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={section({}, tuning({ a: 1 }))}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.clear(screen.getByRole("textbox", { name: "Overrides" }));
+      const box = screen.getByRole("textbox", {
+        name: "Overrides",
+        description: "No value. The inherited value applies.",
+      });
+      expect(box.getAttribute("aria-invalid")).toBeNull();
+      expect(onChange).toHaveBeenLastCalledWith(
+        [{ section: "connectors-permissions", registration: "tuning" }],
+        [],
+      );
+    });
   });
 
   it.each([
@@ -598,12 +623,20 @@ describe("SectionCards", () => {
     const option = (
       schema: Record<string, unknown>,
       value: string,
+      required = false,
     ): OptionView => ({
       registration: "naming",
       label: "Naming",
       isDefault: true,
       parameters: [
-        { name: "prefix", label: "Prefix", schema, claimEditable: true, value },
+        {
+          name: "prefix",
+          label: "Prefix",
+          schema,
+          claimEditable: true,
+          value,
+          ...(required && { required }),
+        },
       ],
     });
 
@@ -648,29 +681,70 @@ describe("SectionCards", () => {
       ]);
     });
 
-    it("lets a select pick an empty enum value", async () => {
-      const onChange = vi.fn();
-      render(
-        <SectionCards
-          section={section(
-            {},
-            option({ type: "string", enum: ["", "enabled"] }, "enabled"),
-          )}
-          onChange={onChange}
-        />,
-      );
-      await userEvent.selectOptions(
-        screen.getByRole("combobox", { name: "Prefix" }),
-        "Empty",
-      );
-      expect(onChange.mock.lastCall![0]).toEqual([
+    it.each([
+      ["an optional", false],
+      ["a required", true],
+    ])(
+      "lets a select of %s parameter pick an empty enum value",
+      async (_, required) => {
+        const onChange = vi.fn();
+        render(
+          <SectionCards
+            section={section(
+              {},
+              option(
+                { type: "string", enum: ["", "enabled"] },
+                "enabled",
+                required,
+              ),
+            )}
+            onChange={onChange}
+          />,
+        );
+        await userEvent.selectOptions(
+          screen.getByRole("combobox", { name: "Prefix" }),
+          "Empty",
+        );
+        expect(onChange.mock.lastCall![0]).toEqual([
+          {
+            section: "connectors-permissions",
+            registration: "naming",
+            parameters: { prefix: "" },
+          },
+        ]);
+        expect(onChange.mock.lastCall![1]).toEqual([]);
+      },
+    );
+  });
+
+  it("checks a typed empty list against the schema of a required parameter with a policy value", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
         {
-          section: "connectors-permissions",
-          registration: "naming",
-          parameters: { prefix: "" },
+          name: "zones",
+          label: "Zones",
+          schema: { type: "array", items: { type: "string" }, minItems: 1 },
+          required: true,
+          claimEditable: true,
+          value: ["a"],
         },
-      ]);
-    });
+      ],
+    };
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    const zones = screen.getByRole("textbox", { name: "Zones" });
+    await userEvent.clear(zones);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(zones, "[[]");
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "tuning/zones", message: "must NOT have fewer than 1 items" },
+    ]);
+    expect(
+      screen.queryByText("No value. The inherited value applies."),
+    ).toBeNull();
   });
 
   it("checks an empty list against the schema of an optional parameter", async () => {
@@ -1552,6 +1626,107 @@ describe("SectionCards", () => {
         name: "Policies",
       }) as HTMLSelectElement;
       expect(select.selectedOptions[0].textContent).toBe("Messaging");
+    });
+  });
+
+  describe("a required parameter that the Environment gives a value", () => {
+    const environment = (owner?: string): Environment => ({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "dev" },
+      spec: {
+        sections: { "connectors-permissions": { allowed: ["store"] } },
+        parameters: {
+          store: {
+            owner: { claimEditable: true, ...(owner && { value: owner }) },
+          },
+        },
+      },
+    });
+    const store: PluginRegistration = {
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name: "store" },
+      spec: {
+        sections: ["connectors-permissions"],
+        mode: "Optional",
+        label: "Store",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "store", namespace: "plugins" },
+        parameters: {
+          type: "object",
+          required: ["owner"],
+          properties: { owner: { type: "string", title: "Owner" } },
+        },
+      },
+    };
+    const storeSection = (env: Environment): SectionView =>
+      section(
+        {},
+        {
+          registration: "store",
+          label: "Store",
+          isDefault: true,
+          parameters: claimEditable(store, env),
+        },
+      );
+
+    it("sends no value after a clear, and the request gets the value of the Environment and passes", async () => {
+      const onChange = vi.fn();
+      const env = environment("platform-team");
+      render(<SectionCards section={storeSection(env)} onChange={onChange} />);
+      await userEvent.clear(screen.getByRole("textbox", { name: "Owner" }));
+
+      expect(
+        screen.getByRole("textbox", {
+          name: "Owner",
+          description: "No value. The inherited value applies.",
+        }),
+      ).toBeTruthy();
+      const [selections, errors] = onChange.mock.lastCall!;
+      expect(errors).toEqual([]);
+      expect(selections).toEqual([
+        { section: "connectors-permissions", registration: "store" },
+      ]);
+      const resolved = resolve({
+        environment: env,
+        registrations: [store],
+        selections,
+      });
+      expect(resolved).toHaveProperty("value");
+      if (!("value" in resolved)) return;
+      expect(
+        checkAllowed({ policy: resolved.value.policy, selections }),
+      ).toEqual({ value: {} });
+      const parameters = resolved.value.requests?.[0].parameters ?? {};
+      expect(parameters).toEqual({ owner: "platform-team" });
+      expect(requestSchemaErrors(store, parameters, {})).toEqual({
+        whole: true,
+        errors: [],
+      });
+    });
+
+    it("stays required after a clear when the Environment gives no value", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={storeSection(environment())}
+          onChange={onChange}
+        />,
+      );
+      const owner = screen.getByRole("textbox", { name: "Owner" });
+      await userEvent.type(owner, "me");
+      await userEvent.clear(owner);
+
+      expect(
+        screen.getByRole("textbox", {
+          name: "Owner",
+          description: "is required",
+        }),
+      ).toBeTruthy();
+      expect(onChange.mock.lastCall![1]).toEqual([
+        { path: "store/owner", message: "is required" },
+      ]);
     });
   });
 });

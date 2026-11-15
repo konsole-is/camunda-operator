@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import type { SectionView } from "@/lib/policy/types";
 import { SectionCards } from "./section-cards";
 
@@ -293,5 +293,39 @@ export const ParameterRules: Story = {
         },
       ],
     },
+  },
+};
+
+export const RequiredParameterOverInherited: Story = {
+  name: "Required parameter over an inherited value",
+  args: {
+    section: {
+      ...backupStorage,
+      options: [
+        {
+          registration: "aws-s3",
+          label: "New S3 bucket",
+          description: "A bucket for this cluster, deleted with the claim.",
+          isDefault: true,
+          parameters: [
+            {
+              name: "owner",
+              label: "Owner",
+              schema: { type: "string" },
+              required: true,
+              claimEditable: true,
+              value: "platform-team",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.clear(canvas.getByRole("textbox", { name: "Owner" }));
+    await expect(
+      canvas.getByText("No value. The inherited value applies."),
+    ).toBeVisible();
   },
 };

@@ -16,7 +16,7 @@ import type {
   PluginSelection,
   SectionView,
 } from "@/lib/policy/types";
-import { valueProblem } from "@/lib/drafts";
+import { givesNoValue, valueProblem } from "@/lib/drafts";
 import { type ValidationError, schemaRules } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { ParameterField, RuleHints } from "./parameter-field";
@@ -50,14 +50,17 @@ function parameterKey(registration: string, parameter: string): string {
  * the names. An array whose choices are whole lists is a select of one name.
  * Nothing is preselected in an allowed list unless the environment value is
  * one of its names. A selection holds only the parameters that differ
- * from the policy. Each x-kubernetes-validations rule of a claim-editable
- * parameter shows as a hint under it, and each rule of the root of an
- * option's schema shows under the option when the option has a claim-editable
- * parameter. The form does not check the rules. A selected option that new
- * options no longer hold, or disable, leaves the selection. onChange gets the
- * initial selections and errors once, then each change. An error path is
- * `<registration>/<parameter>`, then `.<path>` for an error inside the value,
- * or the section name when a required section has no selection.
+ * from the policy. A parameter that givesNoValue names stays out of it, so
+ * the policy value applies, and a required one is an error only when the
+ * policy gives no value. Each x-kubernetes-validations rule of a
+ * claim-editable parameter shows as a hint under it, and each rule of the
+ * root of an option's schema shows under the option when the option has a
+ * claim-editable parameter. The form does not check the rules. A selected
+ * option that new options no longer hold, or disable, leaves the selection.
+ * onChange gets the initial selections and errors once, then each change.
+ * An error path is `<registration>/<parameter>`, then `.<path>` for an error
+ * inside the value, or the section name when a required section has no
+ * selection.
  */
 export function SectionCards({
   section,
@@ -374,11 +377,7 @@ function OptionParameters({
           rule={rule}
           value={values[rule.name]}
           error={errorOf(rule.name)}
-          emptyMap={
-            rule.claimEditable && rule.value !== undefined
-              ? "inherited"
-              : undefined
-          }
+          inherited={rule.claimEditable && rule.value !== undefined}
           onValue={(v, parse) => onValue(rule.name, v, parse)}
         />
       ))}
@@ -508,13 +507,13 @@ function selectionsOf(
     const option = findOption(section, registration);
     if (!option) return [];
     const parameters = Object.fromEntries(
-      option.parameters
-        .filter(isEditable)
-        .map((rule) => [rule.name, values[registration]?.[rule.name]] as const)
-        .filter(
-          ([name, value]) =>
-            value !== undefined && !same(value, policyValue(option, name)),
-        ),
+      option.parameters.filter(isEditable).flatMap((rule) => {
+        const value = values[registration]?.[rule.name];
+        return givesNoValue(rule, value) ||
+          same(value, policyValue(option, rule.name))
+          ? []
+          : [[rule.name, value] as const];
+      }),
     );
     return Object.keys(parameters).length
       ? { section: section.name, registration, parameters }

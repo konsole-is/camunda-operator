@@ -7,6 +7,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { givesNoValue } from "@/lib/drafts";
 import { claimValueOf, editorValueOf, parameterEditorOf } from "@/lib/fields";
 import type { ParameterRule } from "@/lib/policy/types";
 import {
@@ -27,14 +28,17 @@ import { YamlEditor } from "./yaml-editor";
  * cleared text field and [] for choices with none checked. It also gets the
  * errors of an editor that shows its own, but from YamlEditor only those of
  * text that does not parse. error shows while the editor shows no error of
- * its own. emptyMap lets a map of strings take {}, as KeyValueEditor says.
- * A map that starts as {} gets "unset" when emptyMap is not given.
+ * its own. inherited says that a value applies while the field has none of
+ * its own, as givesNoValue decides. emptyMap lets a map of strings take {},
+ * as KeyValueEditor says. Without it, a map gets "inherited" when inherited
+ * is set, or else "unset" when it starts as {}.
  */
 export function ParameterField({
   id,
   rule,
   value,
   error,
+  inherited = false,
   emptyMap,
   onValue,
 }: {
@@ -42,6 +46,7 @@ export function ParameterField({
   rule: ParameterRule;
   value: unknown;
   error?: string;
+  inherited?: boolean;
   emptyMap?: EmptyMap;
   onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
@@ -52,14 +57,24 @@ export function ParameterField({
   const schema = rule.schema ?? {};
   const rules = rule.claimEditable ? schemaRules(schema) : [];
   const hints = <RuleHints id={`${id}-rules`} rules={rules} />;
+  const applies =
+    inherited && !error && rule.claimEditable && givesNoValue(rule, value);
   const describedBy =
-    [error && `${id}-error`, rules.length > 0 && `${id}-rules`]
+    [
+      error && `${id}-error`,
+      applies && `${id}-inherited`,
+      rules.length > 0 && `${id}-rules`,
+    ]
       .filter(Boolean)
       .join(" ") || undefined;
   const invalid = error ? true : undefined;
   const message = error ? (
     <p id={`${id}-error`} className="text-xs text-bad">
       {error}
+    </p>
+  ) : applies ? (
+    <p id={`${id}-inherited`} className="text-xs text-muted">
+      No value. The inherited value applies.
     </p>
   ) : null;
   const label = (
@@ -226,9 +241,14 @@ export function ParameterField({
             defaultValue={value}
             schema={editor.schema}
             error={error}
-            describedBy={rules.length > 0 ? `${id}-rules` : undefined}
+            describedBy={
+              [applies && `${id}-inherited`, rules.length > 0 && `${id}-rules`]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             onChange={(v, found) => onValue(v, v === undefined ? found : [])}
           />
+          {applies && message}
           {hints}
         </div>
       );
@@ -241,7 +261,14 @@ export function ParameterField({
             defaultValue={
               editorValueOf(editor, value) as Record<string, string> | undefined
             }
-            emptyMap={emptyMap ?? (isEmptyMap(mounted) ? "unset" : undefined)}
+            emptyMap={
+              emptyMap ??
+              (inherited
+                ? "inherited"
+                : isEmptyMap(mounted)
+                  ? "unset"
+                  : undefined)
+            }
             describedBy={
               [
                 !rowErrors && error && `${id}-error`,
@@ -255,7 +282,8 @@ export function ParameterField({
               onValue(claimValueOf(editor, v), errors);
             }}
           />
-          {!rowErrors && message}
+          {/* KeyValueEditor says itself that the inherited value applies. */}
+          {!rowErrors && error && message}
           {hints}
         </div>
       );
