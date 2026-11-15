@@ -12,6 +12,7 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
   ENVIRONMENT_LABEL,
@@ -21,6 +22,7 @@ import {
   REQUEST_LABEL,
   REQUEST_NAMESPACE_LABEL,
 } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 import {
   type ContractRef,
   type ContractUserSources,
@@ -28,6 +30,7 @@ import {
   contractKey,
   contractUsage,
   contractWriter,
+  unreadUserKinds,
   writerEditable,
   writerLabel,
 } from "./contracts";
@@ -121,6 +124,37 @@ describe("contractWriter", () => {
         [],
       ),
     ).toEqual({ by: "plane", namespace: "platform", name: "plane-a" });
+  });
+
+  it("names a plane with a long name by its own name when the plane is known", () => {
+    const name = `plane-${"a".repeat(70)}`;
+    expect(
+      contractWriter(
+        labelled({
+          [MANAGEMENT_CLUSTER_LABEL]: ownerName(name),
+          [MANAGEMENT_CLUSTER_NAMESPACE_LABEL]: "platform",
+        }),
+        [],
+        [
+          { metadata: { namespace: "other", name } },
+          { metadata: { namespace: "platform", name } },
+        ],
+      ),
+    ).toEqual({ by: "plane", namespace: "platform", name });
+  });
+
+  it("shows the label value of a plane that is not known", () => {
+    const name = `plane-${"a".repeat(70)}`;
+    expect(
+      contractWriter(
+        labelled({
+          [MANAGEMENT_CLUSTER_LABEL]: ownerName(name),
+          [MANAGEMENT_CLUSTER_NAMESPACE_LABEL]: "platform",
+        }),
+        [],
+        [{ metadata: { namespace: "other", name } }],
+      ),
+    ).toEqual({ by: "plane", namespace: "platform", name: ownerName(name) });
   });
 
   it("names the controller owner of a contract", () => {
@@ -280,6 +314,7 @@ function sourcesWith(
     planes: [],
     elasticsearchBackups: [],
     rdbmsBackups: [],
+    pointInTimeRestores: [],
     ...partial,
   };
 }
@@ -606,6 +641,118 @@ describe("contractUsage", () => {
     ]);
   });
 
+  it("counts the storage contract that an Elasticsearch backup pinned", () => {
+    const sources = sourcesWith({
+      elasticsearchBackups: [
+        object<LogicalBackupElasticsearch>(
+          "LogicalBackupElasticsearch",
+          "team-a",
+          "es-backup",
+          {},
+          {
+            storage: {
+              secondaryStorageConfig: "old-es",
+              bucketRef: "b",
+              bucketLocation: "l",
+              endpoint: "e",
+            },
+          },
+        ),
+      ],
+    });
+    expect(
+      usersOf(sources, {
+        kind: "SecondaryStorageConfig",
+        namespace: "team-a",
+        name: "old-es",
+      }),
+    ).toEqual([
+      {
+        kind: "LogicalBackupElasticsearch",
+        namespace: "team-a",
+        name: "es-backup",
+        fields: ["status.storage.secondaryStorageConfig"],
+      },
+    ]);
+  });
+
+  it("counts the contracts that a point-in-time restore resolved", () => {
+    const sources = sourcesWith({
+      pointInTimeRestores: [
+        object<PointInTimeRestore>(
+          "PointInTimeRestore",
+          "team-a",
+          "restore",
+          {},
+          {
+            storage: {
+              secondaryStorageConfig: "rdbms",
+              databaseConfig: "orders-db",
+              databaseServerConfig: "postgres",
+              databaseName: "orders",
+              endpoint: "e",
+            },
+          },
+        ),
+      ],
+    });
+    const fieldsOf = (ref: ContractRef) =>
+      usersOf(sources, ref).map((u) => [u.kind, u.name, u.fields]);
+    expect(
+      fieldsOf({
+        kind: "SecondaryStorageConfig",
+        namespace: "team-a",
+        name: "rdbms",
+      }),
+    ).toEqual([
+      [
+        "PointInTimeRestore",
+        "restore",
+        ["status.storage.secondaryStorageConfig"],
+      ],
+    ]);
+    expect(
+      fieldsOf({
+        kind: "DatabaseConfig",
+        namespace: "team-a",
+        name: "orders-db",
+      }),
+    ).toEqual([
+      ["PointInTimeRestore", "restore", ["status.storage.databaseConfig"]],
+    ]);
+    expect(
+      fieldsOf({
+        kind: "DatabaseServerConfig",
+        namespace: "team-a",
+        name: "postgres",
+      }),
+    ).toEqual([
+      [
+        "PointInTimeRestore",
+        "restore",
+        ["status.storage.databaseServerConfig"],
+      ],
+    ]);
+  });
+
+  it("counts the document storage that a claim sets before its cluster exists", () => {
+    const sources = sourcesWith({
+      clusterClaims: [
+        object<CamundaClusterClaim>("CamundaClusterClaim", "team-a", "orders", {
+          cluster: { documentStorageRef: "docs" },
+        }),
+      ],
+    });
+    expect(usersOf(sources, objectStorage("team-a", "docs"))).toEqual([
+      {
+        kind: "CamundaClusterClaim",
+        namespace: "team-a",
+        name: "orders",
+        fields: ["spec.cluster.documentStorageRef"],
+      },
+    ]);
+  });
+
   it("lists the database configs and databases of a database server config", () => {
     const sources = sourcesWith({
       databaseConfigs: [
@@ -806,5 +953,125 @@ describe("contractUsage", () => {
       "ElasticsearchCluster es",
       "LogicalBackupRDBMS bk",
     ]);
+  });
+});
+
+describe("unreadUserKinds", () => {
+  it("names the unread kinds that can use a contract of the kind", () => {
+    expect(
+      unreadUserKinds("ObjectStorageConfig", [
+        "PluginRequest",
+        "ElasticsearchClusterPreset",
+        "CamundaCluster",
+      ]),
+    ).toEqual(["CamundaCluster", "ElasticsearchClusterPreset"]);
+  });
+
+  it("is empty when no unread kind can use a contract of the kind", () => {
+    expect(
+      unreadUserKinds("ManagementAuthConfig", ["CamundaCluster", "Namespace"]),
+    ).toEqual([]);
+  });
+
+  // A new reference of contractUsage belongs in these sources too, or this
+  // test misses its kind.
+  it("knows every kind that contractUsage lists as a user", () => {
+    const named = { storageRef: "s", backupStorageRef: "o" };
+    const sources = sourcesWith({
+      clusters: [
+        object<CamundaCluster>("CamundaCluster", "ns", "c", {
+          ...named,
+          documentStorageRef: "o",
+        }),
+      ],
+      clusterClaims: [
+        object<CamundaClusterClaim>("CamundaClusterClaim", "ns", "cc", {
+          cluster: { documentStorageRef: "o" },
+          attachments: { optimize: { managementAuthConfigRef: "m" } },
+        }),
+      ],
+      elasticsearchClusters: [
+        object<ElasticsearchCluster>("ElasticsearchCluster", "ns", "es", {
+          snapshotStorageRef: "o",
+        }),
+      ],
+      databaseServers: [
+        object<DatabaseServer>(
+          "DatabaseServer",
+          "ns",
+          "db",
+          { archive: { objectStorageRef: "o" } },
+          { archive: { boundary: { objectStorageRef: "o" } } },
+        ),
+      ],
+      databases: [
+        object<Database>("Database", "ns", "d", { serverRef: "dsc" }),
+      ],
+      databaseConfigs: [
+        object<DatabaseConfig>("DatabaseConfig", "ns", "dc", {
+          serverRef: "dsc",
+        }),
+      ],
+      secondaryStorageConfigs: [
+        object<SecondaryStorageConfig>("SecondaryStorageConfig", "ns", "s", {
+          rdbms: { databaseConfigRef: "dc" },
+        }),
+      ],
+      optimizes: [
+        object<CamundaOptimize>("CamundaOptimize", "ns", "o", {
+          managementAuthRef: "m",
+        }),
+      ],
+      planes: [
+        object<CamundaManagementCluster>(
+          "CamundaManagementCluster",
+          "ns",
+          "p",
+          {
+            identity: { databaseConfigRef: "dc" },
+          },
+        ),
+      ],
+      elasticsearchBackups: [
+        object<LogicalBackupElasticsearch>(
+          "LogicalBackupElasticsearch",
+          "ns",
+          "eb",
+          {},
+          { storage: { secondaryStorageConfig: "s", bucketRef: "o" } },
+        ),
+      ],
+      rdbmsBackups: [
+        object<LogicalBackupRDBMS>(
+          "LogicalBackupRDBMS",
+          "ns",
+          "rb",
+          {},
+          { bucketRef: "o" },
+        ),
+      ],
+      pointInTimeRestores: [
+        object<PointInTimeRestore>(
+          "PointInTimeRestore",
+          "ns",
+          "r",
+          {},
+          {
+            storage: {
+              secondaryStorageConfig: "s",
+              databaseConfig: "dc",
+              databaseServerConfig: "dsc",
+            },
+          },
+        ),
+      ],
+    });
+    const usage = contractUsage(sources);
+    expect(usage.size).toBe(5);
+    for (const [key, users] of usage) {
+      const kind = key.split("/")[0] as ContractRef["kind"];
+      const kinds = [...new Set(users.map((u) => u.kind))];
+      expect(unreadUserKinds(kind, kinds)).toEqual(kinds.sort());
+    }
   });
 });

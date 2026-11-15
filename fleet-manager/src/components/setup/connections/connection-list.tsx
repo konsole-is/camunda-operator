@@ -15,10 +15,15 @@ import {
   contractKey,
   contractUsage,
   contractWriter,
+  unreadUserKinds,
   writerLabel,
 } from "@/lib/usage";
 import { KEY_FACT_LABELS, type KeyFacts, keyFacts, readyOf } from "./facts";
-import { type ConnectionSources, useConnectionSources } from "./sources";
+import {
+  type ConnectionPageData,
+  type ConnectionSources,
+  useConnectionSources,
+} from "./sources";
 import {
   CONNECTION_TABS,
   type ConnectionTab,
@@ -27,12 +32,17 @@ import {
   contractsOf,
 } from "./tabs";
 
-/** ContractRow is one contract of the Connections list. users counts the distinct objects that name it. */
+/**
+ * ContractRow is one contract of the Connections list. users counts the
+ * distinct objects that name it. unread names the kinds that can use the
+ * contract and that the page could not read, so users can be too low.
+ */
 export type ContractRow = {
   ref: ContractRef;
   facts: KeyFacts;
   writer: ContractWriter;
   users: number;
+  unread: string[];
   ready?: ConditionLike;
 };
 
@@ -48,6 +58,10 @@ export function contractRows(
 ): ContractRow[] {
   const usage = contractUsage(sources);
   const requests = requestsOf(sources);
+  const unread = unreadUserKinds(
+    kind,
+    (sources.errors ?? []).map((e) => e.kind),
+  );
   return contractsOf(sources, kind)
     .map((contract) => {
       const ref: ContractRef = {
@@ -61,8 +75,9 @@ export function contractRows(
       return {
         ref,
         facts: keyFacts(contract),
-        writer: contractWriter(contract, requests),
+        writer: contractWriter(contract, requests, sources.planes),
         users: usage.get(contractKey(ref))?.length ?? 0,
+        unread,
         ...(ready && { ready }),
       };
     })
@@ -220,7 +235,17 @@ function ContractTable({
               ]),
             ),
             writer,
-            users: row.users,
+            users:
+              row.unread.length > 0 ? (
+                <div className="flex flex-col items-start gap-0.5">
+                  <span>{row.users}</span>
+                  <span className="text-xs text-bad [overflow-wrap:anywhere]">
+                    Could not read {row.unread.join(", ")}
+                  </span>
+                </div>
+              ) : (
+                row.users
+              ),
             status: <StatusChip condition={row.ready} />,
           },
         };
@@ -233,7 +258,7 @@ function ContractTable({
 export function ConnectionListLive({
   initial,
 }: {
-  initial: ConnectionSources;
+  initial: ConnectionPageData;
 }): ReactNode {
   const sources = useConnectionSources(initial);
   const params = useSearchParams();

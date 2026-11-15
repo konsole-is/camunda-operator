@@ -5,5 +5,6 @@ import { describeIsomorphic } from "../../../test/imports/scan";
 describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/policy",
   "@/lib/labels",
+  "@/lib/labels/owner-name",
   "@/lib/merge",
 ]);

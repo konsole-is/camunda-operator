@@ -270,6 +270,7 @@ export function connectionFixtures(): ConnectionSources {
     planes: [],
     elasticsearchBackups: [],
     rdbmsBackups: [],
+    pointInTimeRestores: [],
     objectStorageConfigs,
     databaseServerConfigs,
     managementAuthConfigs,

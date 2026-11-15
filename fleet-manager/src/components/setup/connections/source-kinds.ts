@@ -18,6 +18,7 @@ export const CONNECTION_SOURCE_KINDS = {
   planes: "CamundaManagementCluster",
   elasticsearchBackups: "LogicalBackupElasticsearch",
   rdbmsBackups: "LogicalBackupRDBMS",
+  pointInTimeRestores: "PointInTimeRestore",
   objectStorageConfigs: "ObjectStorageConfig",
   databaseServerConfigs: "DatabaseServerConfig",
   managementAuthConfigs: "ManagementAuthConfig",

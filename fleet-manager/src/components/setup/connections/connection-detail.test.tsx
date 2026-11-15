@@ -140,6 +140,23 @@ describe("ConnectionDetail", () => {
     );
   });
 
+  it("says that Used by can miss users of a kind that could not be read", () => {
+    render(
+      <ConnectionDetail
+        target={inTeamA("ObjectStorageConfig", "backups")}
+        sources={{
+          ...connectionFixtures(),
+          errors: [{ kind: "DatabaseServer", message: "forbidden" }],
+        }}
+      />,
+    );
+    expect(
+      within(panel("Used by")).getByText(
+        "This list can miss users. Could not read DatabaseServer.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows the read errors", () => {
     render(
       <ConnectionDetail

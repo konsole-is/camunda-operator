@@ -12,6 +12,7 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
   MANAGEMENT_CLUSTER_LABEL,
@@ -20,6 +21,7 @@ import {
   REQUEST_LABEL,
   REQUEST_NAMESPACE_LABEL,
 } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 import { mergeDatabaseServer, mergeElasticsearch } from "@/lib/merge";
 import { byCodeUnit, environmentNameOf } from "@/lib/policy";
 
@@ -47,6 +49,8 @@ export type ContractWriter =
   | { by: "owner"; kind: string; name: string }
   | { by: "hand" };
 
+type NamedObject = { metadata: { namespace?: string; name?: string } };
+
 type WriterMeta = {
   metadata: {
     namespace?: string;
@@ -66,12 +70,14 @@ type WriterMeta = {
  * else a person wrote it. A contract whose request label names a request
  * that requests does not hold is kept from its registration. With requests
  * undefined, the request list is not known, and a contract with the plugin
- * labels stays with its registration.
+ * labels stays with its registration. A plane of planes gives its own name;
+ * else the plane shows the label value, which differs from the plane name
+ * when that name is longer than 63 characters.
  */
 export function contractWriter(
   contract: WriterMeta,
-  requests:
-    readonly { metadata: { namespace?: string; name?: string } }[] | undefined,
+  requests: readonly NamedObject[] | undefined,
+  planes: readonly NamedObject[] = [],
 ): ContractWriter {
   const { namespace, labels = {}, ownerReferences = [] } = contract.metadata;
   const registration = labels[REGISTRATION_LABEL];
@@ -94,10 +100,17 @@ export function contractWriter(
   }
   const plane = labels[MANAGEMENT_CLUSTER_LABEL];
   if (plane) {
+    const planeNamespace =
+      labels[MANAGEMENT_CLUSTER_NAMESPACE_LABEL] ?? namespace ?? "";
+    const known = planes.find(
+      (p) =>
+        p.metadata.namespace === planeNamespace &&
+        ownerName(p.metadata.name ?? "") === plane,
+    );
     return {
       by: "plane",
-      namespace: labels[MANAGEMENT_CLUSTER_NAMESPACE_LABEL] ?? namespace ?? "",
-      name: plane,
+      namespace: planeNamespace,
+      name: known?.metadata.name ?? plane,
     };
   }
   const owner = ownerReferences.find((ref) => ref.controller === true);
@@ -168,6 +181,7 @@ export type ContractUserSources = {
   planes: readonly CamundaManagementCluster[];
   elasticsearchBackups: readonly LogicalBackupElasticsearch[];
   rdbmsBackups: readonly LogicalBackupRDBMS[];
+  pointInTimeRestores: readonly PointInTimeRestore[];
 };
 
 /** contractKey is the key of a contract in the map of contractUsage: "<kind>/<namespace>/<name>". */
@@ -289,6 +303,11 @@ export function contractUsage(
   for (const claim of sources.clusterClaims) {
     add("CamundaClusterClaim", claim, [
       {
+        kind: "ObjectStorageConfig",
+        name: claim.spec.cluster?.documentStorageRef,
+        field: "spec.cluster.documentStorageRef",
+      },
+      {
         kind: "ManagementAuthConfig",
         name: claim.spec.attachments?.optimize?.managementAuthConfigRef,
         field: "spec.attachments.optimize.managementAuthConfigRef",
@@ -357,6 +376,11 @@ export function contractUsage(
         name: backup.status?.storage?.bucketRef,
         field: "status.storage.bucketRef",
       },
+      {
+        kind: "SecondaryStorageConfig",
+        name: backup.status?.storage?.secondaryStorageConfig,
+        field: "status.storage.secondaryStorageConfig",
+      },
     ]);
   }
   for (const backup of sources.rdbmsBackups) {
@@ -365,6 +389,26 @@ export function contractUsage(
         kind: "ObjectStorageConfig",
         name: backup.status?.bucketRef,
         field: "status.bucketRef",
+      },
+    ]);
+  }
+  for (const restore of sources.pointInTimeRestores) {
+    const storage = restore.status?.storage;
+    add("PointInTimeRestore", restore, [
+      {
+        kind: "SecondaryStorageConfig",
+        name: storage?.secondaryStorageConfig,
+        field: "status.storage.secondaryStorageConfig",
+      },
+      {
+        kind: "DatabaseConfig",
+        name: storage?.databaseConfig,
+        field: "status.storage.databaseConfig",
+      },
+      {
+        kind: "DatabaseServerConfig",
+        name: storage?.databaseServerConfig,
+        field: "status.storage.databaseServerConfig",
       },
     ]);
   }
@@ -448,6 +492,45 @@ export function contractUsage(
     );
   }
   return usage;
+}
+
+// USER_KINDS holds, for each contract kind, the kinds whose objects
+// contractUsage reads for its users, the presets of those objects included.
+const USER_KINDS: Record<ContractKind, readonly string[]> = {
+  ObjectStorageConfig: [
+    "CamundaCluster",
+    "CamundaClusterClaim",
+    "DatabaseServer",
+    "DatabaseServerPreset",
+    "ElasticsearchCluster",
+    "ElasticsearchClusterPreset",
+    "LogicalBackupElasticsearch",
+    "LogicalBackupRDBMS",
+  ],
+  SecondaryStorageConfig: [
+    "CamundaCluster",
+    "LogicalBackupElasticsearch",
+    "PointInTimeRestore",
+  ],
+  DatabaseServerConfig: ["Database", "DatabaseConfig", "PointInTimeRestore"],
+  DatabaseConfig: [
+    "CamundaManagementCluster",
+    "PointInTimeRestore",
+    "SecondaryStorageConfig",
+  ],
+  ManagementAuthConfig: ["CamundaClusterClaim", "CamundaOptimize"],
+};
+
+/**
+ * unreadUserKinds returns the kinds of unread that can use a contract of
+ * kind, sorted. The users of such a contract that contractUsage gives are
+ * then not complete.
+ */
+export function unreadUserKinds(
+  kind: ContractKind,
+  unread: readonly string[],
+): string[] {
+  return USER_KINDS[kind].filter((k) => unread.includes(k));
 }
 
 function readyOf(user: User): ContractUser["ready"] {

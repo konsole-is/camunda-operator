@@ -24,6 +24,31 @@ function rowOf(name: string): HTMLElement {
 }
 
 describe("UsersTable", () => {
+  it("says that the list can miss users of a kind that the page could not read", () => {
+    render(
+      <UsersTable
+        users={[refused]}
+        unread={["CamundaCluster", "ElasticsearchClusterPreset"]}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "This list can miss users. Could not read CamundaCluster, ElasticsearchClusterPreset.",
+      ),
+    ).toBeTruthy();
+    expect(rowOf("team-a/billing")).toBeTruthy();
+  });
+
+  it("does not say that no resource uses the contract while a kind is unread", () => {
+    render(<UsersTable users={[]} unread={["CamundaCluster"]} />);
+    expect(screen.queryByText("No resource uses this contract.")).toBeNull();
+    expect(
+      screen.getByText(
+        "No resource that the page could read uses this contract.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows a cluster refused by a secondary storage contract with its own Ready", () => {
     render(<UsersTable users={[refused]} />);
     const row = rowOf("team-a/billing");

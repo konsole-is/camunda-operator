@@ -8,15 +8,22 @@ import {
   type ContractRow,
   contractRows,
 } from "./connection-list";
+import {
+  MANAGEMENT_CLUSTER_LABEL,
+  MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
+} from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 import { connectionFixtures } from "./fixtures";
 import { CONNECTION_TABS, type ConnectionTab } from "./tabs";
 
-const failing = vi.hoisted(() => ({ kind: "" }));
+const failing = vi.hoisted(() => ({ kind: "", fresh: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => failing.fresh.includes(kind)),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -26,6 +33,7 @@ vi.mock("next/navigation", () => ({
 afterEach(() => {
   cleanup();
   failing.kind = "";
+  failing.fresh = [];
 });
 
 function rowsOf(): Record<ConnectionTab, ContractRow[]> {
@@ -114,6 +122,27 @@ describe("ConnectionList", () => {
     expect(cells[users].textContent).toBe("2");
   });
 
+  it("says in the Users column that a user kind could not be read", () => {
+    const sources = {
+      ...connectionFixtures(),
+      errors: [{ kind: "CamundaCluster", message: "forbidden" }],
+    };
+    render(
+      <ConnectionList
+        tab="object-storage"
+        rows={{
+          ...rowsOf(),
+          "object-storage": contractRows(sources, "ObjectStorageConfig"),
+        }}
+        errors={sources.errors}
+        onTab={vi.fn()}
+      />,
+    );
+    expect(
+      within(rowOf("backups")).getByText("Could not read CamundaCluster"),
+    ).toBeTruthy();
+  });
+
   it("filters by writer", async () => {
     show("object-storage");
     await userEvent.selectOptions(
@@ -170,6 +199,60 @@ describe("contractRows", () => {
       within(rowOf("old-backup")).getByText("Registration aws-s3"),
     ).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("PluginRequest");
+  });
+
+  it("treats a plugin output as managed while the first read of the requests failed", () => {
+    render(
+      <ConnectionListLive
+        initial={{
+          ...connectionFixtures(),
+          requests: [],
+          readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+        }}
+      />,
+    );
+    expect(
+      within(rowOf("orders-backup")).getByText("Registration aws-s3"),
+    ).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read PluginRequest: forbidden",
+    );
+  });
+
+  it("drops a first read error once the watch of its kind answers", () => {
+    failing.fresh = ["PluginRequest"];
+    render(
+      <ConnectionListLive
+        initial={{
+          ...connectionFixtures(),
+          readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+        }}
+      />,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("names the plane of a long name by the plane object", () => {
+    const name = `plane-${"a".repeat(70)}`;
+    const sources = connectionFixtures();
+    const contract = sources.managementAuthConfigs[0];
+    contract.metadata.labels = {
+      ...contract.metadata.labels,
+      [MANAGEMENT_CLUSTER_LABEL]: ownerName(name),
+      [MANAGEMENT_CLUSTER_NAMESPACE_LABEL]: "platform",
+    };
+    sources.planes = [
+      {
+        kind: "CamundaManagementCluster",
+        metadata: { namespace: "platform", name },
+        spec: {},
+      } as unknown as (typeof sources.planes)[number],
+    ];
+    expect(contractRows(sources, "ManagementAuthConfig")[0].writer).toEqual({
+      by: "plane",
+      namespace: "platform",
+      name,
+    });
   });
 
   it("gives each contract of the kind one row, with its writer", () => {

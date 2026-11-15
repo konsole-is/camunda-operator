@@ -16,6 +16,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
   }),
+  useWatchesFresh: (lists: unknown[]) => lists.map(() => false),
 }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
@@ -39,11 +40,14 @@ describe("ConnectionsPage", () => {
     expect(dynamic).toBe("force-dynamic");
   });
 
-  it("renders the page when one kind fails to read", async () => {
+  it("shows the error of a kind that fails to read above the tabs", async () => {
     failing.kind = "ObjectStorageConfig";
     render(await ConnectionsPage());
     expect(
       screen.getByRole("heading", { level: 1, name: "Connections" }),
     ).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read ObjectStorageConfig: ObjectStorageConfig is forbidden",
+    );
   });
 });

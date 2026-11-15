@@ -9,13 +9,18 @@ import {
   contractKey,
   contractUsage,
   contractWriter,
+  unreadUserKinds,
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
 import { requestsOf } from "./connection-list";
 import { contractFacts, readyOf } from "./facts";
 import { SecretRefView } from "./secret-ref-view";
-import { type ConnectionSources, useConnectionSources } from "./sources";
+import {
+  type ConnectionPageData,
+  type ConnectionSources,
+  useConnectionSources,
+} from "./sources";
 import { CONNECTION_TABS, contractsOf } from "./tabs";
 import { UsersTable } from "./users-table";
 
@@ -54,8 +59,12 @@ export function ConnectionDetail({
     );
   }
   const ready = readyOf(contract);
-  const writer = contractWriter(contract, requestsOf(sources));
+  const writer = contractWriter(contract, requestsOf(sources), sources.planes);
   const users = contractUsage(sources).get(contractKey(target)) ?? [];
+  const unread = unreadUserKinds(
+    target.kind,
+    sources.errors.map((e) => e.kind),
+  );
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -107,7 +116,7 @@ export function ConnectionDetail({
         </Terms>
       </Panel>
       <Panel label="Used by">
-        <UsersTable users={users} />
+        <UsersTable users={users} unread={unread} />
       </Panel>
     </div>
   );
@@ -118,7 +127,7 @@ export function ConnectionDetailLive({
   initial,
   target,
 }: {
-  initial: ConnectionSources;
+  initial: ConnectionPageData;
   target: ContractRef;
 }): ReactNode {
   return (

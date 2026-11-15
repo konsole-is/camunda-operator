@@ -62,14 +62,19 @@ The panel **Used by** lists each object that names the contract, with the fields
 | Contract | User | Field |
 | --- | --- | --- |
 | Object storage | `CamundaCluster` | `spec.backupStorageRef`, `spec.documentStorageRef` |
+| Object storage | `CamundaClusterClaim` | `spec.cluster.documentStorageRef` |
 | Object storage | `ElasticsearchCluster` | `spec.snapshotStorageRef` |
 | Object storage | `DatabaseServer` | `spec.archive.objectStorageRef` |
 | Object storage | `DatabaseServer` | `status.archive.boundary.objectStorageRef`, `status.archive.history.objectStorageRef`, `status.recovery.archive.objectStorageRef` |
 | Object storage | `LogicalBackupElasticsearch` | `status.storage.bucketRef` |
 | Object storage | `LogicalBackupRDBMS` | `status.bucketRef` |
 | Secondary storage | `CamundaCluster` | `spec.storageRef` |
+| Secondary storage | `LogicalBackupElasticsearch` | `status.storage.secondaryStorageConfig` |
+| Secondary storage | `PointInTimeRestore` | `status.storage.secondaryStorageConfig` |
 | Database servers | `Database`, `DatabaseConfig` | `spec.serverRef` |
+| Database servers | `PointInTimeRestore` | `status.storage.databaseServerConfig` |
 | Databases | `SecondaryStorageConfig` | `spec.rdbms.databaseConfigRef` |
+| Databases | `PointInTimeRestore` | `status.storage.databaseConfig` |
 | Databases | `CamundaManagementCluster` | `spec.identityProvider.keycloak.databaseConfigRef`, `spec.identity.databaseConfigRef`, `spec.webModeler.databaseConfigRef` |
 | Management Identity | `CamundaOptimize` | `spec.managementAuthRef` |
 | Management Identity | `CamundaClusterClaim` | `spec.attachments.optimize.managementAuthConfigRef` |
@@ -77,6 +82,10 @@ The panel **Used by** lists each object that names the contract, with the fields
 An `ElasticsearchCluster` or a `DatabaseServer` can take its reference from its preset. It is then a user of the contract too, and it shows `from preset <preset>` under its field.
 
 A backup and the archive history of a database server keep their bucket in their status. They count as users, because a restore reads from that bucket. A database server that moved its archive to another bucket still uses the old bucket for as long as its history names it.
+
+An Elasticsearch backup also keeps its secondary storage contract in its status. The deletion of the backup removes its snapshots through that contract, also after the cluster moved to another contract. A point-in-time restore keeps the contracts that it read. Each of these counts as a user.
+
+If the fleet manager cannot read a kind that can use a contract, the column **Users** and the panel **Used by** name that kind. The count can then be too low.
 
 ### Status
 

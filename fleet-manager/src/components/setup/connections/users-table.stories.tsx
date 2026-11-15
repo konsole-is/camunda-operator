@@ -70,3 +70,8 @@ export const AReferenceFromAPreset: Story = {
 };
 
 export const NoUser: Story = { name: "No user", args: { users: [] } };
+
+export const AKindThatCannotBeRead: Story = {
+  name: "A kind that cannot be read",
+  args: { users: [], unread: ["CamundaCluster", "DatabaseServerPreset"] },
+};

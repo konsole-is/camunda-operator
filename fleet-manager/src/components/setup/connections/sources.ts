@@ -7,6 +7,7 @@ import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { useAnswered } from "@/lib/k8s/use-answered";
 import type { ContractUserSources } from "@/lib/usage";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
 
@@ -23,12 +24,22 @@ export type ConnectionSources = ContractUserSources & {
 };
 
 /**
+ * ConnectionPageData is the first snapshot of a Connections page. readErrors
+ * holds the error of each kind that the server could not read.
+ */
+export type ConnectionPageData = ConnectionSources & {
+  readErrors?: ReadError[];
+};
+
+/**
  * useConnectionSources follows each list of initial live. errors holds the
- * error of each failed watch, with the kind of CONNECTION_SOURCE_KINDS. The
- * list of a failed watch keeps its last items, which can be out of date.
+ * error of each failed watch, with the kind of CONNECTION_SOURCE_KINDS, and
+ * the error of initial.readErrors of each other kind until the watch of that
+ * kind answers. The list of a failed watch keeps its last items, which can be
+ * out of date.
  */
 export function useConnectionSources(
-  initial: ConnectionSources,
+  initial: ConnectionPageData,
 ): ConnectionSources & { errors: ReadError[] } {
   const namespaces = useLive("Namespace", initial.namespaces);
   const environments = useLive("Environment", initial.environments);
@@ -60,6 +71,10 @@ export function useConnectionSources(
     initial.elasticsearchBackups,
   );
   const rdbmsBackups = useLive("LogicalBackupRDBMS", initial.rdbmsBackups);
+  const pointInTimeRestores = useLive(
+    "PointInTimeRestore",
+    initial.pointInTimeRestores,
+  );
   const objectStorageConfigs = useLive(
     "ObjectStorageConfig",
     initial.objectStorageConfigs,
@@ -89,19 +104,25 @@ export function useConnectionSources(
     planes,
     elasticsearchBackups,
     rdbmsBackups,
+    pointInTimeRestores,
     objectStorageConfigs,
     databaseServerConfigs,
     managementAuthConfigs,
     requests,
   };
-  const errors = (Object.keys(results) as (keyof ConnectionSources)[]).flatMap(
-    (key) => {
-      const error = results[key].error;
-      return error
-        ? [{ kind: CONNECTION_SOURCE_KINDS[key], message: error }]
-        : [];
-    },
+  const liveErrors = (
+    Object.keys(results) as (keyof ConnectionSources)[]
+  ).flatMap((key) => {
+    const error = results[key].error;
+    return error
+      ? [{ kind: CONNECTION_SOURCE_KINDS[key], message: error }]
+      : [];
+  });
+  const answered = useAnswered(Object.values(CONNECTION_SOURCE_KINDS));
+  const firstErrors = (initial.readErrors ?? []).filter(
+    (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
   );
+  const errors = [...liveErrors, ...firstErrors];
   return {
     namespaces: namespaces.items,
     environments: environments.items,
@@ -118,6 +139,7 @@ export function useConnectionSources(
     planes: planes.items,
     elasticsearchBackups: elasticsearchBackups.items,
     rdbmsBackups: rdbmsBackups.items,
+    pointInTimeRestores: pointInTimeRestores.items,
     objectStorageConfigs: objectStorageConfigs.items,
     databaseServerConfigs: databaseServerConfigs.items,
     managementAuthConfigs: managementAuthConfigs.items,
