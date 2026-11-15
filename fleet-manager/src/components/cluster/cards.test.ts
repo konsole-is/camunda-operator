@@ -7,7 +7,9 @@ import {
   type ComponentCardModel,
   componentCards,
   componentOf,
+  componentReady,
   highestUse,
+  highestUseOf,
   partitionsLed,
 } from "./cards";
 
@@ -304,6 +306,36 @@ describe("highestUse", () => {
   });
 });
 
+describe("highestUseOf", () => {
+  const both = [
+    usage("p-0", { cpu: [0.9, 1], memory: [1, 4] }),
+    usage("p-1", { cpu: [0.2, 1], memory: [3, 4] }),
+  ];
+
+  it("names the pod with the highest CPU against its limit", () =>
+    expect(highestUseOf(both, ["p-0", "p-1"], ["cpu"])).toEqual({
+      pod: "p-0",
+      resource: "cpu",
+      share: 0.9,
+    }));
+
+  it("names the pod with the highest memory against its limit, whatever the CPU", () =>
+    expect(highestUseOf(both, ["p-0", "p-1"], ["memory"])).toEqual({
+      pod: "p-1",
+      resource: "memory",
+      share: 0.75,
+    }));
+
+  it("says No limit when no sample of the resource has a limit", () =>
+    expect(
+      highestUseOf(
+        [usage("p-0", { cpu: [0.5, 1], memory: [10, undefined] })],
+        ["p-0"],
+        ["memory"],
+      ),
+    ).toBe("No limit"));
+});
+
 describe("componentOf", () => {
   const card = (
     id: ComponentCardModel["id"],
@@ -338,4 +370,23 @@ describe("componentOf", () => {
   ])("gives undefined for %s", (_, value) =>
     expect(componentOf(value, cards)).toBeUndefined(),
   );
+});
+
+describe("componentReady", () => {
+  const webapp = { type: "WebappReady", status: "False" as const };
+  const ready = { type: "Ready", status: "True" as const };
+
+  it("decides Optimize by its Ready, not by the condition of an app", () =>
+    expect(componentReady("optimize", [webapp, ready])).toBe(ready));
+
+  it("gives Optimize no condition when it has no Ready", () =>
+    expect(componentReady("optimize", [webapp])).toBeUndefined());
+
+  it("decides every other component by its own condition", () => {
+    const zeebe = { type: "ZeebeReady", status: "False" as const };
+    expect(componentReady("zeebe", [zeebe])).toBe(zeebe);
+  });
+
+  it("gives a component without a condition none", () =>
+    expect(componentReady("operate", [])).toBeUndefined());
 });

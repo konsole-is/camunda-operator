@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { UsageBars } from "./usage-bars";
+import { UsageBars, UsageMeter } from "./usage-bars";
 
 afterEach(cleanup);
 
@@ -110,4 +110,23 @@ describe("UsageBars", () => {
         />,
       ).container.querySelector('[data-slot="request-mark"]'),
     ).toBeNull());
+});
+
+describe("UsageMeter", () => {
+  it("shows one resource of a pod as its text and one meter with the rules of UsageBars", () => {
+    render(
+      <UsageMeter
+        usage={{
+          pod: "x",
+          cpu: { usedCores: 0.25, limitCores: 1 },
+          memory: { usedBytes: 3.8 * 2 ** 30, limitBytes: 4 * 2 ** 30 },
+        }}
+        resource="memory"
+      />,
+    );
+    expect(screen.getAllByRole("meter")).toHaveLength(1);
+    const memory = screen.getByRole("meter", { name: "Memory" });
+    expect(screen.getByText("3.8 GiB of 4 GiB")).toBeTruthy();
+    expect(memory.firstElementChild?.className).toContain("bg-warn");
+  });
 });

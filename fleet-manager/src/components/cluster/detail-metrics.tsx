@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import { MetricChart } from "@/components/fleet/metric-chart";
-import { type PodLike, USAGE_UNAVAILABLE } from "@/components/fleet/pod-table";
+import { type PodLike, USAGE_UNAVAILABLE } from "./pod-table";
 import { UsageBars } from "@/components/fleet/usage-bars";
 import {
   NativeSelect,

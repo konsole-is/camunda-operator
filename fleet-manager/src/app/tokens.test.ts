@@ -8,7 +8,7 @@ const THEMES: Theme[] = ["light", "dark"];
 
 // The dark values are those of the UI draft, as issue #611 lists them, with
 // one change: --faint is lighter than the draft's #6B7591, which is under
-// 4.5:1 as text.
+// 4.5:1 as text. The two control edges are not in the draft.
 const TOKENS: Record<string, [light: string, dark: string]> = {
   "--bg": ["#F4F6FA", "#0A0F1E"],
   "--panel": ["#FFFFFF", "#0F1630"],
@@ -26,6 +26,8 @@ const TOKENS: Record<string, [light: string, dark: string]> = {
   "--bad": ["#AB1A37", "#FF6B81"],
   "--info": ["#1A55BF", "#5B9BFF"],
   "--off": ["#AAB4CF", "#3C4C85"],
+  "--control-edge": ["#AEB6C8", "#3B466B"],
+  "--control-edge-strong": ["#80899F", "#5F6987"],
 };
 
 // --off is a dot color only, never text, so it is not in this list.
@@ -165,15 +167,44 @@ describe("design tokens", () => {
     },
   );
 
+  // A control at rest is identified by its fill, input at 30%, and its edge
+  // together. So the rest edge stays under 3:1, which keeps it quiet on the
+  // dark surfaces. Hover, focus, and an invalid value give an edge of 3:1 or
+  // more.
   it.each(inThemes(SURFACE_TOKENS.map((surface) => [surface])))(
-    "%s: gives the border of a form control on %s a contrast of at least 3:1",
+    "%s: gives the rest edge of a form control on %s and on its fill a contrast from 1.65:1 to under 3:1",
     (theme, surface) => {
-      const edge = mappedToken("control-edge");
-      expect(edge).toBeDefined();
-      const border = tokenValue(edge!, theme);
-      expect(border).toBeDefined();
+      expect(mappedToken("control-edge")).toBe("--control-edge");
+      const edge = tokenValue("--control-edge", theme)!;
+      const background = tokenValue(surface, theme)!;
+      const fill = over(
+        tokenValue(mappedToken("input")!, theme)!,
+        0.3,
+        background,
+      );
+      expect(contrast(edge, background)).toBeGreaterThanOrEqual(1.65);
+      expect(contrast(edge, background)).toBeLessThan(3);
+      expect(contrast(edge, fill)).toBeGreaterThanOrEqual(1.65);
+    },
+  );
+
+  it.each(
+    inThemes(
+      [
+        ["hovered or selected", "control-edge-strong"],
+        ["focused", "ring"],
+        ["invalid", "destructive"],
+      ].flatMap((state) =>
+        SURFACE_TOKENS.map((surface) => [...state, surface]),
+      ),
+    ),
+  )(
+    "%s: gives the edge of a %s form control (%s) on %s a contrast of at least 3:1",
+    (theme, _state, color, surface) => {
+      const token = mappedToken(color);
+      expect(token).toBeDefined();
       expect(
-        contrast(border!, tokenValue(surface, theme)!),
+        contrast(tokenValue(token!, theme)!, tokenValue(surface, theme)!),
       ).toBeGreaterThanOrEqual(3);
     },
   );
@@ -244,10 +275,15 @@ describe("design tokens", () => {
     },
   );
 
-  it("gives an input of the light Storybook theme an edge of at least 3:1", () => {
-    const { inputBorder, inputBg, appContentBg } = themes.light;
-    expect(inputBorder).toBe(tokenValue("--faint", "light")?.toLowerCase());
-    expect(contrast(inputBorder, inputBg)).toBeGreaterThanOrEqual(3);
-    expect(contrast(inputBorder, appContentBg)).toBeGreaterThanOrEqual(3);
-  });
+  it.each(THEMES)(
+    "gives an input of the %s Storybook theme the rest edge of a form control",
+    (theme) => {
+      const { inputBorder, inputBg, appContentBg } = themes[theme];
+      expect(inputBorder).toBe(
+        tokenValue("--control-edge", theme)?.toLowerCase(),
+      );
+      expect(contrast(inputBorder, inputBg)).toBeGreaterThanOrEqual(1.65);
+      expect(contrast(inputBorder, appContentBg)).toBeGreaterThanOrEqual(1.65);
+    },
+  );
 });

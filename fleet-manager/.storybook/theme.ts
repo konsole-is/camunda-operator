@@ -27,7 +27,7 @@ const light = create({
   barHoverColor: "#963808",
   barSelectedColor: "#b5440b",
   inputBg: "#ffffff",
-  inputBorder: "#59637d",
+  inputBorder: "#aeb6c8",
   inputTextColor: "#0d1430",
 });
 
@@ -48,7 +48,7 @@ const dark = create({
   barHoverColor: "#ff8541",
   barSelectedColor: "#ff6b1a",
   inputBg: "#0f1630",
-  inputBorder: "#1f2a55",
+  inputBorder: "#3b466b",
   inputTextColor: "#e8ecf5",
 });
 

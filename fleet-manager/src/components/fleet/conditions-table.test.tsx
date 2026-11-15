@@ -32,6 +32,24 @@ describe("ConditionsTable", () => {
     expect(row.textContent).toContain("12m");
   });
 
+  it("names each column after what its cells hold", () => {
+    render(
+      <ConditionsTable
+        now={now}
+        conditions={[{ type: "Ready", status: "True", reason: "Healthy" }]}
+      />,
+    );
+    expect(
+      screen.getAllByRole("columnheader").map((h) => h.textContent),
+    ).toEqual([
+      "Condition",
+      "Status",
+      "Reason",
+      "Message",
+      "Since last change",
+    ]);
+  });
+
   it("renders the ungrouped conditions first, then the groups in order", () => {
     render(
       <ConditionsTable

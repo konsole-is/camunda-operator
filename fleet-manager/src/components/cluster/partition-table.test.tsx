@@ -52,6 +52,21 @@ describe("PartitionTable", () => {
     expect(cells(row)).toEqual(["3", "-", "-", "-", "Dead"]);
   });
 
+  it("counts the partitions with a leader next to the heading", () => {
+    render(
+      <PartitionTable
+        partitions={[
+          ...degraded,
+          { partition: 3, followers: [], health: "dead" },
+        ]}
+      />,
+    );
+    const heading = screen.getByRole("heading", { name: "Partitions" });
+    expect(heading.parentElement!.textContent).toBe(
+      "Partitions2 of 3 with a leader",
+    );
+  });
+
   it("says when the management API does not answer", () => {
     render(<PartitionTable partitions="unavailable" />);
     expect(
