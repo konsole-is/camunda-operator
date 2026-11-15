@@ -1842,6 +1842,31 @@ describe("Section components", () => {
     ).toBe("orders-backups");
   });
 
+  it("says that the request could not be read, never that it is not made yet, when the requests watch fails", async () => {
+    live.errors.PluginRequest = "forbidden";
+    render(view({ initial: withSections({ requests: [] }) }));
+    const card = within(components()).getByRole("article", {
+      name: "Backup storage",
+    });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Could not read");
+    await userEvent.click(
+      within(card).getByRole("link", { name: "Backup storage" }),
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Backup storage" })).getByText(
+        "Could not read PluginRequest: forbidden",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeNull();
+  });
+
   it("shows no section card for a cluster without a claim", () => {
     render(
       view({

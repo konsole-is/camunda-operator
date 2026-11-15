@@ -500,6 +500,24 @@ describe("sectionCards", () => {
     expect(card.condition).toBeUndefined();
   });
 
+  it("says that the request could not be read when the read of the requests failed", () => {
+    const [card] = sectionCards([section()], "forbidden");
+    expect(card.numbers).toEqual([
+      { label: "Request", value: "Could not read", severity: "Warning" },
+    ]);
+  });
+
+  it("shows a request that the page holds although the read of the requests failed", () => {
+    const [card] = sectionCards(
+      [section({ request: request({ resources: [row("Bucket")] }) })],
+      "watch broke",
+    );
+    expect(card.numbers).toEqual([
+      { label: "Summary", value: "Not written yet" },
+      { label: "Resources", value: "1" },
+    ]);
+  });
+
   it("takes the Ready condition of the request as the state of the card", () => {
     const rejected = {
       type: "Ready",

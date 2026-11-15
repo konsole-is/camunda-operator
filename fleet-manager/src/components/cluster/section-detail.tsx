@@ -10,13 +10,18 @@ import { ComponentDetail } from "./component-detail";
  * claim. It shows the request of the selection with its conditions, the
  * pods of its pod selector, its metrics, the lines of its controller about
  * it, and its events. A selection whose request does not exist yet shows
- * none of them, and says why. The Overview ends with children, and the
- * Settings tab holds settings. It needs a QueryClientProvider above it.
+ * none of them, and says why. requestsError is the error of the read of the
+ * PluginRequests: a selection without its request then says that the
+ * request could not be read. A request whose pod selector has an operator
+ * that is not valid shows no pods, and says so. The Overview ends with
+ * children, and the Settings tab holds settings. It needs a
+ * QueryClientProvider above it.
  */
 export function SectionComponentDetail({
   component,
   registrations,
   namespace,
+  requestsError,
   settings,
   now,
   children,
@@ -24,6 +29,7 @@ export function SectionComponentDetail({
   component: SectionComponent;
   registrations: readonly Resource<"PluginRegistration">[];
   namespace: string;
+  requestsError?: string;
   settings?: ReactNode;
   now: string;
   children?: ReactNode;
@@ -47,21 +53,28 @@ export function SectionComponentDetail({
         settings={settings}
         now={now}
       >
-        <p className="text-sm text-muted">
-          The claim controller has not made the request of this section yet.
-        </p>
+        {requestsError === undefined ? (
+          <p className="text-sm text-muted">
+            The claim controller has not made the request of this section yet.
+          </p>
+        ) : (
+          <p className="text-sm text-warn">
+            Could not read PluginRequest: {requestsError}
+          </p>
+        )}
         {children}
       </ComponentDetail>
     );
   }
 
   const name = request.metadata?.name ?? "";
+  const pods = podSelectorOf(request);
   return (
     <ComponentDetail
       title={component.label}
       subtitle={subtitle}
       namespace={namespace}
-      podSelector={labelSelectorString(request.status?.podSelector)}
+      podSelector={pods.selector}
       metrics={{ request: name }}
       controllerLogs={{
         registration: request.spec.registration,
@@ -80,7 +93,26 @@ export function SectionComponentDetail({
       settings={settings}
       now={now}
     >
+      {pods.error !== undefined && (
+        <p className="text-sm text-warn">
+          The pod selector of the request is not valid: {pods.error}.
+        </p>
+      )}
       {children}
     </ComponentDetail>
   );
+}
+
+// podSelectorOf reads the pod selector of request. The CRD does not limit
+// the operator of a match expression, so a plugin can write one that
+// labelSelectorString refuses.
+function podSelectorOf(request: Resource<"PluginRequest">): {
+  selector?: string;
+  error?: string;
+} {
+  try {
+    return { selector: labelSelectorString(request.status?.podSelector) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }

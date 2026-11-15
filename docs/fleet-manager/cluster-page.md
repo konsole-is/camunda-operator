@@ -33,7 +33,7 @@ An app that runs inside another process has no pods of its own. Its page says, f
 
 A cluster that a claim made also has a card for each selection of the claim, for example **Backup storage** or **Access**. These cards come after the cards of the Camunda processes, in the order of the sections. Each card has the label of its section.
 
-A card shows the first item of the summary of the request of its section, and the number of resources of the request. A Warning or an Error item shows in the color of its severity. The dot of the card shows the `Ready` condition of the request, for example **Not ready (GrantRejected)**. When the request does not exist yet, the card shows **Request: Not made yet**.
+A card shows the first item of the summary of the request of its section, and the number of resources of the request. A Warning or an Error item shows in the color of its severity, with a mark in front. A screen reader reads the severity before the value. The dot of the card shows the `Ready` condition of the request, for example **Not ready (GrantRejected)**. When the request does not exist yet, the card shows **Request: Not made yet**. When the app cannot read the requests, the card shows "Request: Could not read" in place of **Not made yet**.
 
 Select the card to open the request. Its tabs show:
 
@@ -44,7 +44,9 @@ Select the card to open the request. Its tabs show:
 | **Logs** | The logs of the pods of the request, and the lines about the request in the logs of its controller. The group **Controller** of the list **Pod** holds the pods of the controller. |
 | **Events** | The events of the `PluginRequest` and of its pods. |
 
-A request that runs no pods says "This component runs no pods." on its **Overview** tab. Its **Events** tab lists only the events of the `PluginRequest`. When the request does not exist yet, the **Overview** tab says "The claim controller has not made the request of this section yet."
+A request that runs no pods says "This component runs no pods." on its **Overview** tab and on its **Metrics** tab. Its **Events** tab lists only the events of the `PluginRequest`. When the app cannot read the requests, the **Overview** tab says `Could not read PluginRequest:` and the error. When the request does not exist yet, the **Overview** tab says "The claim controller has not made the request of this section yet."
+
+The plugin of a section writes the pod selector of its request. When that pod selector is not valid, the **Overview** tab says "The pod selector of the request is not valid", with the reason, and the detail shows no pods.
 
 ## Logs
 

@@ -381,7 +381,7 @@ export function ClusterView({
       usage,
       partitions,
     }),
-    ...sectionCards(sectionList),
+    ...sectionCards(sectionList, requests.error),
   ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
     Object.fromEntries(
@@ -533,6 +533,7 @@ export function ClusterView({
                     component={openSection}
                     registrations={registrations.items}
                     namespace={ns}
+                    requestsError={requests.error}
                     settings={slot("component.settings.editor")}
                     now={clock}
                   />

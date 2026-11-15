@@ -160,6 +160,66 @@ describe("SectionComponentDetail", () => {
     expect(detail.seen.podSelector).toBeFalsy();
   });
 
+  it("says that the request could not be read when the read of the requests failed", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage()}
+        registrations={[]}
+        namespace="team-a"
+        requestsError="watch broke"
+        now={now}
+      />,
+    );
+    expect(
+      screen.getByText("Could not read PluginRequest: watch broke"),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeNull();
+    expect(detail.seen.podSelector).toBeFalsy();
+  });
+
+  it("opens a request that the page holds although the read of the requests failed", () => {
+    render(
+      <SectionComponentDetail
+        component={withRequest}
+        registrations={[]}
+        namespace="team-a"
+        requestsError="watch broke"
+        now={now}
+      />,
+    );
+    expect(detail.seen.podSelector).toBe(
+      "app=aws-s3,request=orders-backup-storage",
+    );
+  });
+
+  it("shows no pods and says so when the pod selector of the request is not valid", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage({
+          request: request({
+            podSelector: {
+              matchExpressions: [
+                { key: "app", operator: "in", values: ["echo"] },
+              ],
+            },
+          }),
+        })}
+        registrations={[]}
+        namespace="team-a"
+        now={now}
+      />,
+    );
+    expect(detail.seen.podSelector).toBeFalsy();
+    expect(
+      screen.getByText(/^The pod selector of the request is not valid/),
+    ).toBeTruthy();
+    expect(detail.seen.metrics).toEqual({ request: "orders-backup-storage" });
+  });
+
   it("passes the settings and the children of the section", () => {
     render(
       <SectionComponentDetail

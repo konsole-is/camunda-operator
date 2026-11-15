@@ -165,11 +165,14 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
  * sectionCards returns one used card for each section component, in the
  * order given. The headline is the first summary item of the request, with
  * its Warning or Error severity, then the count of its resources. A section
- * whose request does not exist yet says so. The Ready condition of the
- * request is the state of the card.
+ * whose request does not exist yet says so. With requestsError, the error
+ * of the read of the PluginRequests, a section without its request says
+ * that the request could not be read. The Ready condition of the request
+ * is the state of the card.
  */
 export function sectionCards(
   components: readonly SectionComponent[],
+  requestsError?: string,
 ): ComponentCardModel[] {
   return components.map((component) => ({
     id: component.id,
@@ -180,13 +183,17 @@ export function sectionCards(
       : {}),
     embedded: [],
     pods: [],
-    numbers: sectionNumbers(component.request),
+    numbers: sectionNumbers(component.request, requestsError !== undefined),
   }));
 }
 
 function sectionNumbers(
   request: Resource<"PluginRequest"> | undefined,
+  unread: boolean,
 ): CardNumber[] {
+  if (!request && unread) {
+    return [{ label: "Request", value: "Could not read", severity: "Warning" }];
+  }
   if (!request) return [{ label: "Request", value: "Not made yet" }];
   const first = request.status?.summary?.[0];
   const severity = first?.severity;
