@@ -152,7 +152,7 @@ export function SectionCards({
       {section.description && (
         <p className="-mt-1 text-sm text-muted">{section.description}</p>
       )}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 @5xl:grid-cols-3">
         {showEmpty && (
           <OptionCard
             name={`${id}-option`}

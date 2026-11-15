@@ -44,7 +44,7 @@ export function PresetCards({
   const id = useId();
   return (
     <div role="radiogroup" aria-label="Preset" className="min-w-0">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 @3xl:grid-cols-3">
         {presets.map((preset) => {
           const name = preset.metadata.name ?? "";
           const used = usage.get(name)?.length ?? 0;

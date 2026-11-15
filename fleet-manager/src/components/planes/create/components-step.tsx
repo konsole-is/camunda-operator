@@ -58,7 +58,7 @@ export function ComponentsStep({
   const text = (path: DraftPath) => (value: string) => set(path, value);
 
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-8">
       <Section title="Management Identity" note="Always runs.">
         {draft.mode === "oidc" ? (
           <>
