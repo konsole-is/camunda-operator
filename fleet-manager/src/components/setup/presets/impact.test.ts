@@ -77,14 +77,32 @@ describe("presetImpact of a cluster preset", () => {
     );
   });
 
-  it("marks No roll and a Connectors restart for a rotation that reaches the cluster", () => {
+  it("marks Connectors restart for a rotation that reaches the cluster", () => {
     const impact = presetImpact({ ...input, after: rotated });
     expect(impact.rows[0]).toMatchObject({
       name: "billing",
-      mark: "No roll",
+      mark: "Connectors restart",
       connectorsRestart: true,
     });
     expect(impact.notes).toEqual([CONNECTORS_RESTART]);
+  });
+
+  it("marks Connectors restart for a change of the Connectors service account annotations", () => {
+    const impact = presetImpact({
+      ...input,
+      after: withCluster((c) => {
+        c.connectors = {
+          ...c.connectors,
+          serviceAccount: {
+            annotations: { "eks.amazonaws.com/role-arn": "x" },
+          },
+        };
+      }),
+    });
+    expect(impact.rows.map((r) => r.mark)).toEqual([
+      "Connectors restart",
+      "Connectors restart",
+    ]);
   });
 
   it("marks Unchanged a cluster that sets its own auth.basic, so the rotation does not reach it", () => {
@@ -214,6 +232,20 @@ describe("presetImpact of an Elasticsearch or PostgreSQL preset", () => {
       sources: fixtures,
     });
     expect(impact.notes).toEqual([STORAGE_NOTES.DatabaseServerPreset.shrink]);
+  });
+
+  it("names the kept WAL volume for a cleared WAL size", () => {
+    const pg = fixtures.databasePresets[1];
+    const server = { ...pg.spec.server };
+    delete server.walStorageSize;
+    const impact = presetImpact({
+      kind: "DatabaseServerPreset",
+      name: "standard",
+      before: pg.spec,
+      after: { server },
+      sources: fixtures,
+    });
+    expect(impact.notes).toEqual([STORAGE_NOTES.DatabaseServerPreset.cleared]);
   });
 });
 

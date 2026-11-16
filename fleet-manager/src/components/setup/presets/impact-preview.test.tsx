@@ -52,6 +52,29 @@ describe("ImpactPreview", () => {
     ).toBeTruthy();
   });
 
+  it("shows a Connectors restart in the warning tone, as a roll", () => {
+    render(
+      <ImpactPreview
+        impact={{
+          rows: [
+            {
+              kind: "CamundaCluster",
+              namespace: "team-billing",
+              name: "billing",
+              mark: "Connectors restart",
+              connectorsRestart: true,
+            },
+          ],
+          notes: [],
+          unread: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("Connectors restart").className).toContain(
+      "border-warn/40",
+    );
+  });
+
   it("says that no resource inherits the preset", () => {
     render(<ImpactPreview impact={{ rows: [], notes: [], unread: [] }} />);
     expect(screen.getByText("No resource inherits this preset.")).toBeTruthy();

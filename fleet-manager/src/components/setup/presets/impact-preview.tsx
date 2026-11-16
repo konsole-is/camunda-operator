@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { PresetImpact, RollMark } from "./impact";
 
-const WARN: ReadonlySet<RollMark> = new Set(["Pods roll", "Pods may roll"]);
+const WARN: ReadonlySet<RollMark> = new Set([
+  "Pods roll",
+  "Connectors restart",
+  "Pods may roll",
+]);
 
 /**
  * ImpactPreview shows each resource that inherits the preset with its roll

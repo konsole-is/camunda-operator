@@ -23,7 +23,12 @@ import type { PresetSources } from "./sources";
  * server whose merged spec changes: the app cannot tell which of those
  * changes roll pods.
  */
-export type RollMark = "Pods roll" | "No roll" | "Unchanged" | "Pods may roll";
+export type RollMark =
+  | "Pods roll"
+  | "Connectors restart"
+  | "No roll"
+  | "Unchanged"
+  | "Pods may roll";
 
 /** ResourceImpact is the mark of one resource that inherits the preset. connectorsRestart says that its Connectors pods restart. */
 export type ResourceImpact = {
@@ -49,10 +54,10 @@ export type PresetImpact = {
 /** CONNECTORS_RESTART is the note of a change that restarts the Connectors pods of a cluster. */
 export const CONNECTORS_RESTART = "Connectors pods restart.";
 
-/** STORAGE_NOTES holds, for each preset kind, the rule of a smaller storage size and of a new storage class, in the words of the docs of the kind. */
+/** STORAGE_NOTES holds, for each preset kind, the rule of a smaller storage size, of a new storage class, and of a cleared size whose volume stays, in the words of the docs of the kind. */
 export const STORAGE_NOTES: Record<
   PresetKind,
-  { shrink: string; storageClass?: string }
+  { shrink: string; storageClass?: string; cleared?: string }
 > = {
   CamundaClusterPreset: {
     shrink:
@@ -69,6 +74,8 @@ export const STORAGE_NOTES: Record<
   DatabaseServerPreset: {
     shrink:
       "A smaller storage size is ignored for database servers that grew. They record StorageShrinkIgnored.",
+    cleared:
+      "A cleared walStorageSize does not remove the write-ahead log volume of a running server. The server keeps the volume and records WALStorageKept.",
   },
 };
 
@@ -80,10 +87,11 @@ const IMPACT_KINDS: Record<PresetKind, readonly KindName[]> = {
 };
 
 // STORAGE_FIELDS are the paths in the body of each preset kind of the
-// storage sizes and of the storage class.
+// storage sizes, of the storage class, and of the size whose volume stays
+// when it is cleared.
 const STORAGE_FIELDS: Record<
   PresetKind,
-  { sizes: string[][]; storageClass?: string[] }
+  { sizes: string[][]; storageClass?: string[]; kept?: string[] }
 > = {
   CamundaClusterPreset: {
     sizes: [["zeebe", "storageSize"]],
@@ -93,7 +101,10 @@ const STORAGE_FIELDS: Record<
     sizes: [["storageSize"]],
     storageClass: ["storageClassName"],
   },
-  DatabaseServerPreset: { sizes: [["storageSize"], ["walStorageSize"]] },
+  DatabaseServerPreset: {
+    sizes: [["storageSize"], ["walStorageSize"]],
+    kept: ["walStorageSize"],
+  },
 };
 
 /**
@@ -115,15 +126,14 @@ export function impactUnread(
  * presetImpact returns the impact of the change of the spec of the preset
  * name of kind from before to after on each resource that inherits it,
  * sorted by namespace, then name. A cluster gets "Pods roll" when the
- * preset fingerprint moves, whatever it sets itself. Otherwise it gets "No
- * roll" when its merged spec changes, else "Unchanged". connectorsRestart
- * is set when the change reaches the merged password rotation or Connectors
+ * preset fingerprint moves, whatever it sets itself. connectorsRestart is
+ * set when the change reaches the merged password rotation or Connectors
  * service account of a cluster. An Elasticsearch cluster or a database
  * server gets "Unchanged" when its merged spec stays, else "Pods may roll".
  * unread are the lists of impactUnread. The notes name, in this order, the
  * restart of the brokers when a cluster rolls, the restart of the
- * Connectors pods, and the storage rule of a smaller size or a new class
- * that the change touches.
+ * Connectors pods, and the storage rule of a smaller size, a new class, or
+ * a cleared size that the change touches.
  */
 export function presetImpact(input: {
   kind: PresetKind;
@@ -170,19 +180,20 @@ function rowsOf(input: {
         )?.spec;
         const was = mergeCluster(before, release, cluster.spec).spec;
         const will = mergeCluster(after, release, cluster.spec).spec;
+        const connectorsRestart =
+          was.auth?.basic?.passwordRotation !==
+            will.auth?.basic?.passwordRotation ||
+          !equalJSON(
+            was.connectors?.serviceAccount,
+            will.connectors?.serviceAccount,
+          );
         const mark: RollMark = moved
           ? "Pods roll"
           : equalJSON(was, will)
             ? "Unchanged"
-            : "No roll";
-        const connectorsRestart =
-          mark !== "Unchanged" &&
-          (was.auth?.basic?.passwordRotation !==
-            will.auth?.basic?.passwordRotation ||
-            !equalJSON(
-              was.connectors?.serviceAccount,
-              will.connectors?.serviceAccount,
-            ));
+            : connectorsRestart
+              ? "Connectors restart"
+              : "No roll";
         return [{ ...user, kind: "CamundaCluster", mark, connectorsRestart }];
       });
     }
@@ -260,10 +271,18 @@ function storageNotes(
   const moves =
     storageClass !== undefined &&
     !equalJSON(at(before, storageClass), at(after, storageClass));
+  const kept = fields.kept;
+  const cleared =
+    kept !== undefined &&
+    at(before, kept) !== undefined &&
+    at(after, kept) === undefined;
   return [
     ...(shrinks ? [STORAGE_NOTES[kind].shrink] : []),
     ...(moves && STORAGE_NOTES[kind].storageClass
       ? [STORAGE_NOTES[kind].storageClass]
+      : []),
+    ...(cleared && STORAGE_NOTES[kind].cleared
+      ? [STORAGE_NOTES[kind].cleared]
       : []),
   ];
 }

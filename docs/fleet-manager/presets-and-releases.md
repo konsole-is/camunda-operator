@@ -122,7 +122,7 @@ To change a field of a cluster preset, for example the brokers of `medium`:
 4. Read the diff and the impact on the inheriting resources. See [The impact of a change](#the-impact-of-a-change).
 5. Select **Save**, or **Push to Git** in Git mode.
 
-The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows `Missing in <namespaces>` on its row. Every other key shows `<name>/<key> is missing in <namespaces>.` under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret.
+The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows `Missing in <namespaces>` on its row. Every other key shows `<name>/<key> is missing in <namespaces>.` under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret. If the fleet manager cannot read a list that it needs to find these namespaces, the page names the list. It then shows no Secret list and no missing key. Reload the page when it can read the list.
 
 If you clear a field that a tool other than the fleet manager set, for example `kubectl apply`, the field stays. The review names it: `<field> stays, because another field manager set it.` Remove the field with the tool that set it.
 
@@ -132,9 +132,10 @@ The review lists each resource that inherits the preset, as `<namespace>/<name>`
 
 | Mark | Meaning |
 | --- | --- |
-| `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of `No roll` are the only exception. |
-| `No roll` | The change reaches the cluster but rolls no pods: a change of `auth.basic.passwordRotation`, `auth.basic.adminEmail`, or a field under `connectors.serviceAccount`. |
-| `Unchanged` | The change does not reach the resource. For a cluster, this occurs only for a change of the fields of `No roll`. For example, a cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
+| `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of `Connectors restart` and `No roll` are the only exceptions. |
+| `Connectors restart` | The change reaches the cluster and restarts only its Connectors pods: a new `auth.basic.passwordRotation`, or a change of a field under `connectors.serviceAccount`. |
+| `No roll` | The change reaches the cluster but restarts no pods: a change of `auth.basic.adminEmail`. |
+| `Unchanged` | The change does not reach the resource. For a cluster, this occurs only when the change touches no field of `spec.cluster` other than the fields of `Connectors restart` and `No roll`. A change of the description only is an example. A cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
 | `Pods may roll` | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
 
 The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field that stays, because another field manager set it, does not count as a change.
@@ -144,6 +145,7 @@ Under the marks, the review shows a note for each rule that the change touches:
 - `The brokers restart one at a time. The other processes restart.` when a cluster rolls.
 - `Connectors pods restart.` when a new password rotation or a change under `connectors.serviceAccount` reaches a cluster.
 - A note about a smaller storage size, and for a cluster or an Elasticsearch preset a note about a new storage class. A resource that already has larger volumes keeps them, and a resource with existing volumes keeps its storage class.
+- For a PostgreSQL preset, a note about a cleared `walStorageSize`. A running server keeps its write-ahead log volume.
 
 The rules of each kind are in [CamundaClusterPreset: Changes](../crds/camundaclusterpreset.md#changes), [ElasticsearchClusterPreset: Changes](../crds/elasticsearchclusterpreset.md#changes), and [DatabaseServerPreset: Changes](../crds/databaseserverpreset.md#changes).
 
@@ -179,7 +181,7 @@ The section **Fields a preset cannot set** lists the fields that each resource s
 
 ### Inheriting resources
 
-The section **Inheriting resources** lists each `CamundaCluster`, `ElasticsearchCluster`, or `DatabaseServer` whose `spec.presetRef` names the preset. Each row shows the environment of its namespace, the namespace, its own fields, and its `Ready` condition. A cluster row links to the cluster page.
+The section **Inheriting resources** lists each `CamundaCluster`, `ElasticsearchCluster`, or `DatabaseServer` whose `spec.presetRef` names the preset. Each row shows the environment of its namespace, the namespace, its own fields, and its `Ready` condition. A cluster row links to the cluster page. If the fleet manager cannot read the list of that kind, the section shows no row and names the list.
 
 An own field is a field that the resource sets itself, so its value does not come from the preset. A cluster made from a claim can also get a field from an option that the claim selects. Such a field shows **Filled by** and the label of the section of that option. For example, an option of the section **Volume encryption** sets the storage class, and the row shows `zeebe.storageClassName Filled by Volume encryption`. The fields that a preset cannot set are not listed as own fields.
 

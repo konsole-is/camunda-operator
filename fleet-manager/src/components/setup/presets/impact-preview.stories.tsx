@@ -41,8 +41,8 @@ type Story = StoryObj<typeof meta>;
 
 export const PodsRoll: Story = { name: "Pods roll" };
 
-export const NoRollWithAConnectorsRestart: Story = {
-  name: "No roll with a Connectors restart",
+export const ConnectorsRestart: Story = {
+  name: "Connectors restart",
   args: {
     impact: cluster(
       after((c) => {
