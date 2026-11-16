@@ -570,11 +570,10 @@ function selectedContracts(
     ),
   );
   if (!selects) return [];
-  const requested = requestedParameters(claim, sources);
-  return selections.flatMap((s, i) =>
+  return selections.flatMap((s) =>
     contractParameters(
       s.registration,
-      requested ? requested[i] : s.parameters,
+      requestedParameters(claim, s, sources) ?? s.parameters,
     ).map(([kind, name, parameter]) => ({
       kind,
       name,
@@ -602,12 +601,13 @@ function isContractKind(kind: string): kind is ContractKind {
   return (CONTRACT_KINDS as readonly string[]).includes(kind);
 }
 
-// requestedParameters gives the parameters of the request of each selection
-// of claim, in claim order, or undefined when the policy cannot be resolved.
+// requestedParameters gives the parameters of the request of selection of
+// claim, or undefined when the policy cannot be resolved for it.
 function requestedParameters(
   claim: SelectingClaim,
+  selection: { section: string; registration: string; parameters?: unknown },
   sources: ContractUserSources,
-): unknown[] | undefined {
+): unknown {
   const namespace = sources.namespaces.find(
     (n) => n.metadata?.name === claim.metadata.namespace,
   );
@@ -616,10 +616,10 @@ function requestedParameters(
     environment:
       namespace && environmentOf(namespace, sources.environments).environment,
     registrations: [...sources.registrations],
-    selections: (claim.spec.plugins ?? []) as PluginSelection[],
+    selections: [selection as PluginSelection],
   });
   if (!("value" in resolved)) return undefined;
-  return resolved.value.requests?.map((r) => r.parameters) ?? [];
+  return resolved.value.requests?.[0]?.parameters ?? {};
 }
 
 // USER_KINDS holds, for each contract kind, the kinds whose objects

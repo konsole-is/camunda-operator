@@ -875,6 +875,24 @@ describe("contractUsage", () => {
       );
     });
 
+    it("counts the contract that the policy gives one selection while another selection does not resolve", () => {
+      const orders = claim("team-a", "existing-object-storage", undefined, {
+        "existing-object-storage": { name: { value: "backups" } },
+      });
+      orders.spec.plugins = [
+        ...(orders.spec.plugins ?? []),
+        {
+          section: "secondary-storage",
+          registration: "existing-secondary-storage",
+          parameters: "not an object" as unknown as object,
+        },
+      ];
+      const sources = sourcesWith({ clusterClaims: [orders] });
+      expect(
+        usersOf(sources, objectStorage("team-a", "backups")).map((u) => u.name),
+      ).toEqual(["orders"]);
+    });
+
     it("resolves the selection in the namespace of the claim", () => {
       const sources = sourcesWith({
         clusterClaims: [
