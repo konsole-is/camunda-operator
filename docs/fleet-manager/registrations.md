@@ -64,3 +64,20 @@ spec:
 ```
 
 The controller name is the chart name, unless you change it at install. If you install a chart with another controller name, the panel still lists that chart as not installed. Keep the default controller name if you want the panel to know the chart. When every official chart is installed, the panel does not show.
+
+If the fleet manager cannot read the catalog of charts in its image, the panel shows `Could not read the chart catalog:` and the error. The panel then lists no chart. This does not mean that every chart is installed. Reload the page to read the catalog again.
+
+## When the page cannot read a list
+
+The page reads five kinds: `PluginSection`, `PluginRegistration`, `PluginRequest`, `Namespace`, and `Environment`. If the fleet manager cannot read one of them, a red line under the title names the kind and the error. A line `Not read:` names each kind that the page has not read. When the page opens, this line can show for a moment, until the page has read each kind.
+
+The page does not show an empty or healthy value for a kind that it has not read. It shows `not known` instead:
+
+| Kind that is not read | What the page shows |
+| --- | --- |
+| `PluginRegistration` | `Health not known` in place of the count under the title. `Options not known` in a section without a row. `Which charts are installed is not known.` in the panel **Charts you can install**, with no chart. |
+| `PluginSection` | A last group **Section not known** in place of **Not in a section**, with each registration that is in no section that the page knows. |
+| `PluginRequest` | `Not known` in the column **Requests**. |
+| `Namespace` or `Environment` | The number of requests in the column **Requests**, with `Environments not known` in place of the number in each environment. |
+
+When the fleet manager can read the kind again, the page shows its values without a reload.
