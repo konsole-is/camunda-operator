@@ -151,6 +151,18 @@ describe("applyContractChange", () => {
     await refusedWith(update("CamundaCluster", "team-a", "orders"), "Invalid");
   });
 
+  it("refuses a change that writes more than one contract, and writes nothing", async () => {
+    const change = update("SecondaryStorageConfig", "team-a", "shared-es");
+    const removed = remove("DatabaseConfig", "team-a", "orders-db");
+    delete change.force;
+    change.delete = removed.delete;
+    change.preconditions = {
+      ...change.preconditions,
+      ...removed.preconditions,
+    };
+    await refusedWith(change, "Invalid");
+  });
+
   it("refuses a delete without precondition", async () => {
     const change = remove("DatabaseConfig", "team-a", "orders-db");
     delete change.preconditions;

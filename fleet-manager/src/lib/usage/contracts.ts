@@ -558,9 +558,7 @@ export function contractUsage(
   return usage;
 }
 
-// selectedContracts returns the contracts that the selections of claim
-// name, by the parameters of the request of each selection, or of the
-// selection itself when the policy cannot be resolved.
+// selectedContracts returns the contracts that the selections of claim name.
 function selectedContracts(
   claim: SelectingClaim,
   sources: ContractUserSources,
