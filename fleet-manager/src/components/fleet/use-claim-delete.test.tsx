@@ -385,7 +385,7 @@ describe("useClaimDelete", () => {
     });
   });
 
-  it("direct mode writes the policy, waits until the claim shows it, then deletes the claim at its new generation without a wait for the claim controller", async () => {
+  it("direct mode writes the policy, waits until the claim controller read it and the requests carry it, then deletes the claim at its new generation", async () => {
     const { hook, shown } = mount(claim(), { policy: "Orphan" });
     expect(hook.result.current.stage).toEqual({ kind: "choose" });
     expect(await confirm(hook)).toEqual({ ok: true, mode: "direct" });
@@ -397,13 +397,22 @@ describe("useClaimDelete", () => {
     });
     expect(hook.result.current.stage).toEqual({ kind: "waiting" });
 
+    // An older pass of the claim controller can still make a request with
+    // the old policy while the list of the requests is empty.
     const unread = read("42");
     await live({
       ...unread,
       status: { ...unread.status, observedGeneration: 1 },
     } as unknown as Claim);
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    expect(fakeWriter.applied).toHaveLength(1);
+
+    await live(read("43"));
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    expect(fakeWriter.applied[1]).toEqual(removeOf(2, "42"));
+    expect(fakeWriter.applied[1]).toEqual(removeOf(2, "43"));
     await waitFor(() =>
       expect(hook.result.current.stage).toEqual({
         kind: "deleting",

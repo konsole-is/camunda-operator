@@ -309,6 +309,9 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     sent.kind === "waiting" &&
     live !== undefined &&
     (sent.revision === undefined || sync === "applied") &&
+    // An older pass of the claim controller can still make a request with
+    // the old policy until it read the generation of the policy write.
+    observed(live) &&
     carry(live, sent.policy);
   if (changedSince && live !== undefined && isOriginal(live))
     setSent({
@@ -396,6 +399,15 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     onWritten,
     stopWaiting,
   };
+}
+
+// observed says that the claim controller read the current generation of
+// claim. A claim that lacks one of the numbers counts as read.
+function observed(claim: DeletableClaim): boolean {
+  const generation = claim.metadata.generation;
+  const seen = (claim.status as { observedGeneration?: number } | undefined)
+    ?.observedGeneration;
+  return generation === undefined || seen === undefined || generation === seen;
 }
 
 function controls(
