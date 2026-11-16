@@ -1,14 +1,48 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import {
+  SecretRefsReaderContext,
+  staticSecretRefs,
+} from "@/components/fleet/namespaced-secret-ref-picker";
+import type { ReadError } from "@/components/planes/planes-table";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { ContractRef } from "@/lib/usage";
-import { ConnectionDetail } from "./connection-detail";
+import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
+import { type ContractActions, ConnectionDetail } from "./connection-detail";
+import { deleteChange, draftOf, updateChange } from "./draft";
+import type { ContractObject } from "./facts";
 import { connectionFixtures } from "./fixtures";
+import type { ConnectionSources } from "./sources";
+
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("@/lib/k8s/hooks", () => ({
+  useGitSync: () => "waiting",
+  useGitGone: () => "waiting",
+  useResources: () => {
+    throw new Error("the test reads Secrets through the static reader");
+  },
+  useWatchesFresh: () => [false],
+}));
 
 afterEach(cleanup);
 
+// The detail shows the toast of a write, which reads the Git pushes.
+const renderIn = (ui: ReactElement) =>
+  render(ui, { wrapper: GitPushesProvider });
+
 function show(target: ContractRef) {
-  render(
+  renderIn(
     <ConnectionDetail
       target={target}
       sources={{ ...connectionFixtures(), errors: [] }}
@@ -42,7 +76,7 @@ describe("ConnectionDetail", () => {
       ...sources.objectStorageConfigs[0],
       status: undefined,
     };
-    render(
+    renderIn(
       <ConnectionDetail
         target={inTeamA("ObjectStorageConfig", "backups")}
         sources={{ ...sources, errors: [] }}
@@ -140,8 +174,8 @@ describe("ConnectionDetail", () => {
     );
   });
 
-  it("says that Used by can miss users of a kind that could not be read", () => {
-    render(
+  it("says that the users are not known while a kind that can use the contract could not be read", () => {
+    renderIn(
       <ConnectionDetail
         target={inTeamA("ObjectStorageConfig", "backups")}
         sources={{
@@ -152,13 +186,13 @@ describe("ConnectionDetail", () => {
     );
     expect(
       within(panel("Used by")).getByText(
-        "This list can miss users. Could not read DatabaseServer.",
+        "The users are not known while the fleet manager cannot read DatabaseServer.",
       ),
     ).toBeTruthy();
   });
 
   it("does not say that a contract is missing while its kind cannot be read", () => {
-    render(
+    renderIn(
       <ConnectionDetail
         target={inTeamA("ObjectStorageConfig", "backups")}
         sources={{
@@ -174,7 +208,7 @@ describe("ConnectionDetail", () => {
   });
 
   it("shows the read errors", () => {
-    render(
+    renderIn(
       <ConnectionDetail
         target={inTeamA("ObjectStorageConfig", "backups")}
         sources={{
@@ -185,6 +219,334 @@ describe("ConnectionDetail", () => {
     );
     expect(screen.getByRole("alert").textContent).toBe(
       "Could not read CamundaCluster: forbidden",
+    );
+  });
+});
+
+const SECRETS = staticSecretRefs({
+  "team-a": [
+    { name: "postgres-admin", keys: ["username", "password"] },
+    { name: "shared-es-user", keys: ["user", "pass"] },
+    { name: "shared-es-ca", keys: ["ca.crt"] },
+  ],
+});
+
+// A preview with one changed line, so the confirm of the review opens.
+function previewOf(contract: ContractObject): Preview {
+  return {
+    objects: [
+      {
+        ref: {
+          apiVersion: "core.camunda.io/v1",
+          kind: contract.kind,
+          namespace: contract.metadata.namespace,
+          name: contract.metadata.name ?? "",
+        },
+        before: contract as unknown as KubeObject,
+        after: contract as unknown as KubeObject,
+        diff: [{ op: "added", text: "changed: true" }],
+      },
+    ],
+    errors: [],
+  };
+}
+
+function edit(
+  target: ContractRef,
+  opts: {
+    sources?: ConnectionSources;
+    errors?: ReadError[];
+    stale?: string[];
+    mode?: WriteMode;
+  } = {},
+) {
+  const sources = opts.sources ?? connectionFixtures();
+  const mode = "mode" in opts ? opts.mode : "direct";
+  const live = [
+    ...sources.objectStorageConfigs,
+    ...sources.secondaryStorageConfigs,
+    ...sources.databaseServerConfigs,
+    ...sources.databaseConfigs,
+    ...sources.managementAuthConfigs,
+  ].find((c) => c.metadata.name === target.name)!;
+  const actions = {
+    previewChange: vi.fn<ContractActions["previewChange"]>(async () =>
+      live ? previewOf(live) : { objects: [], errors: [] },
+    ),
+    applyChange: vi.fn<ContractActions["applyChange"]>(async () => ({
+      ok: true as const,
+      mode: "direct" as const,
+    })),
+  };
+  const view = (s: ConnectionSources, e: ReadError[], st: string[]) => (
+    <GitPushesProvider>
+      <SecretRefsReaderContext.Provider value={SECRETS}>
+        <ConnectionDetail
+          target={target}
+          sources={{ ...s, errors: e, stale: st }}
+          mode={mode}
+          actions={actions}
+        />
+      </SecretRefsReaderContext.Provider>
+    </GitPushesProvider>
+  );
+  const { rerender } = render(
+    view(sources, opts.errors ?? [], opts.stale ?? []),
+  );
+  return {
+    actions,
+    live,
+    rerender: (s: ConnectionSources, e: ReadError[] = [], st: string[] = []) =>
+      rerender(view(s, e, st)),
+  };
+}
+
+async function openDelete(name: string) {
+  fireEvent.change(screen.getByLabelText(`Type ${name} to confirm`), {
+    target: { value: name },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+  return screen.findByRole("region", { name: "Review the delete" });
+}
+
+describe("ConnectionDetail with changes", () => {
+  it("saves a contract created by hand through the review", async () => {
+    const target = inTeamA("DatabaseServerConfig", "postgres");
+    const { actions, live } = edit(target);
+    fireEvent.change(screen.getByLabelText("Host"), {
+      target: { value: "pg-2.team-a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("region", {
+      name: "Review the contract",
+    });
+    const draft = draftOf(live);
+    (draft.spec as { host: string }).host = "pg-2.team-a";
+    await waitFor(() =>
+      expect(actions.previewChange).toHaveBeenCalledWith(
+        updateChange(live, draft),
+      ),
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(actions.applyChange).toHaveBeenCalledWith(
+        updateChange(live, draft),
+      ),
+    );
+  });
+
+  it("names each user and what it does on the change in the review", async () => {
+    edit(inTeamA("SecondaryStorageConfig", "shared-es"));
+    fireEvent.change(screen.getByLabelText("Endpoint"), {
+      target: { value: "https://search-2.example.com:9243" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("region", {
+      name: "Review the contract",
+    });
+    expect(
+      within(review).getByText(
+        /^CamundaCluster team-a\/orders restarts all its pods/,
+      ),
+    ).toBeTruthy();
+    expect(
+      within(review).getByText(
+        /^CamundaCluster team-a\/billing restarts all its pods/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("saves a contract kept from a registration", async () => {
+    const { actions } = edit(inTeamA("ObjectStorageConfig", "old-backup"));
+    fireEvent.change(screen.getByLabelText("Region"), {
+      target: { value: "eu-central-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    expect(actions.previewChange.mock.lastCall![0].intent).toBe(
+      "Change the object storage contract old-backup",
+    );
+  });
+
+  it.each<[string, ContractRef]>([
+    ["owner", inTeamA("SecondaryStorageConfig", "orders-es")],
+    ["registration", inTeamA("ObjectStorageConfig", "orders-backup")],
+    ["plane", { kind: "ManagementAuthConfig", name: "plane-a-optimize" }],
+  ])(
+    "shows no form, Save, or Delete for a contract not created by hand: %s",
+    (_, target) => {
+      edit(target);
+      expect(screen.queryByRole("textbox")).toBeNull();
+      expect(screen.queryByRole("button", { name: /Review|Save/ })).toBeNull();
+      expect(screen.queryByText("Delete the contract")).toBeNull();
+      expect(
+        screen.getByText(/^Managed by .+\. Change it there\.$/),
+      ).toBeTruthy();
+    },
+  );
+
+  it("keeps a contract kept from a registration read only while the requests are not known", () => {
+    edit(inTeamA("ObjectStorageConfig", "old-backup"), {
+      stale: ["PluginRequest"],
+    });
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(
+      screen.getByText("Managed by Registration aws-s3. Change it there."),
+    ).toBeTruthy();
+  });
+
+  it("offers Delete only for an unused contract created by hand", () => {
+    edit(inTeamA("ObjectStorageConfig", "backups"));
+    expect(
+      screen.getByText(
+        "Delete is possible when no resource uses this contract.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type backups to confirm")).toBeNull();
+    cleanup();
+
+    const sources = connectionFixtures();
+    sources.databaseConfigs = [];
+    edit(inTeamA("DatabaseServerConfig", "postgres"), { sources });
+    expect(screen.getByLabelText("Type postgres to confirm")).toBeTruthy();
+  });
+
+  it("refuses Delete while a user kind cannot be read", () => {
+    const sources = connectionFixtures();
+    sources.databaseConfigs = [];
+    edit(inTeamA("DatabaseServerConfig", "postgres"), {
+      sources,
+      errors: [{ kind: "PointInTimeRestore", message: "forbidden" }],
+    });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read PointInTimeRestore.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type postgres to confirm")).toBeNull();
+    expect(
+      within(panel("Used by")).getByText(
+        "The users are not known while the fleet manager cannot read PointInTimeRestore.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("refuses Delete while the watch of a user kind has not answered", () => {
+    edit(inTeamA("DatabaseConfig", "orders-db"), {
+      stale: ["CamundaManagementCluster"],
+    });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read CamundaManagementCluster.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("counts a claim that selects the contract as a user", () => {
+    const sources = connectionFixtures();
+    sources.planeClaims = [
+      {
+        kind: "CamundaManagementClusterClaim",
+        metadata: { namespace: "team-a", name: "new-orders" },
+        spec: {
+          plugins: [
+            {
+              section: "management-database",
+              registration: "existing-database-configs",
+              parameters: { identity: "orders-db" },
+            },
+          ],
+        },
+      } as unknown as CamundaManagementClusterClaim,
+    ];
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources });
+    expect(
+      within(panel("Used by")).getByText("team-a/new-orders"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Delete is possible when no resource uses this contract.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("deletes with the precondition and the UID", async () => {
+    const sources = connectionFixtures();
+    const live = sources.databaseConfigs[0];
+    live.metadata = { ...live.metadata, resourceVersion: "9", uid: "u-9" };
+    const { actions } = edit(inTeamA("DatabaseConfig", "orders-db"), {
+      sources,
+    });
+    const review = await openDelete("orders-db");
+    const button = within(review).getByRole("button", {
+      name: "Delete the contract",
+    });
+    await waitFor(() => expect(button).toHaveProperty("disabled", false));
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(actions.applyChange).toHaveBeenCalledWith(deleteChange(live)),
+    );
+    expect(deleteChange(live).uids).toEqual({
+      "DatabaseConfig/team-a/orders-db": "u-9",
+    });
+  });
+
+  it("closes the delete review when a user appears", async () => {
+    const sources = connectionFixtures();
+    const { rerender } = edit(inTeamA("DatabaseConfig", "orders-db"), {
+      sources,
+    });
+    await openDelete("orders-db");
+    rerender({
+      ...sources,
+      secondaryStorageConfigs: [
+        ...sources.secondaryStorageConfigs,
+        {
+          kind: "SecondaryStorageConfig",
+          apiVersion: "core.camunda.io/v1",
+          metadata: { namespace: "team-a", name: "orders-rdbms" },
+          spec: { type: "rdbms", rdbms: { databaseConfigRef: "orders-db" } },
+        },
+      ],
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+  });
+
+  it("closes the delete review when a user kind stops being read", async () => {
+    const sources = connectionFixtures();
+    const { rerender } = edit(inTeamA("DatabaseConfig", "orders-db"), {
+      sources,
+    });
+    await openDelete("orders-db");
+    rerender(sources, [
+      { kind: "SecondaryStorageConfig", message: "forbidden" },
+    ]);
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+  });
+
+  it("reads Push to Git in Git mode", async () => {
+    edit(inTeamA("DatabaseConfig", "orders-db"), { mode: "git" });
+    const review = await openDelete("orders-db");
+    expect(
+      within(review).getByRole("button", { name: "Push the delete to Git" }),
+    ).toBeTruthy();
+    expect(
+      within(review).getByText(
+        "In Git mode the delete is a commit that removes the file of the contract. GitOps must prune the DatabaseConfig to delete it from the cluster.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("disables the form without a write mode", () => {
+    edit(inTeamA("ObjectStorageConfig", "backups"), { mode: undefined });
+    expect(screen.getByLabelText("Region").closest("fieldset")!.disabled).toBe(
+      true,
     );
   });
 });
