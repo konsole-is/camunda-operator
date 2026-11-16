@@ -63,11 +63,20 @@ export function componentSettings(
  * settingsGroupsOf returns the settings groups of a whole cluster: "Whole
  * cluster" with the fields of group "cluster" first, then the groups of
  * componentSettings for each process that runs, in the order of topologyOf.
+ * Connectors that do not run still have a group when one of their fields
+ * has the state "claim".
  */
 export function settingsGroupsOf(
   fields: readonly ClusterField[],
   spec: CamundaClusterSpec,
 ): SettingsGroup[] {
+  const processes = topologyOf(spec, []).map((box) => box.process);
+  // A claim that turns Connectors off can then turn them on again.
+  if (
+    !processes.includes("connectors") &&
+    fields.some((f) => f.group === "connectors" && f.state.kind === "claim")
+  )
+    processes.push("connectors");
   return [
     {
       label: "Whole cluster",
@@ -75,9 +84,7 @@ export function settingsGroupsOf(
       embedded: false,
       fields: fields.filter((f) => f.group === "cluster"),
     },
-    ...topologyOf(spec, []).flatMap((box) =>
-      componentSettings(fields, box.process, spec),
-    ),
+    ...processes.flatMap((process) => componentSettings(fields, process, spec)),
   ];
 }
 

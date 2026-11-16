@@ -149,7 +149,8 @@ export function ClusterSettingsStep({
         <SettingsEditor
           key={group.component}
           group={group}
-          settings={settingsOf({ group, spec: merged.spec, claim })}
+          // A new cluster has no volume yet, so no size is current.
+          settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
           secrets={secrets}
           set={set}
           reset={reset}

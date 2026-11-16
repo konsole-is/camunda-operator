@@ -191,4 +191,13 @@ describe("settingsGroupsOf", () => {
       settingsGroupsOf(all, {}).some((g) => g.component === "connectors"),
     ).toBe(false);
   });
+
+  it("keeps the Connectors group while the claim turns them off", () => {
+    const off = { ...field("connectors"), state: { kind: "claim" as const } };
+    expect(
+      settingsGroupsOf([field("cluster"), ...fields, off], {
+        connectors: { enabled: false },
+      }).map((g) => g.label),
+    ).toContain("Connectors");
+  });
 });

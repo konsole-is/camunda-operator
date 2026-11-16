@@ -80,9 +80,10 @@ function draftOf(
 function renderStep(
   over: Partial<ComponentProps<typeof ClusterSettingsStep>> = {},
   environment: Environment = prod(),
+  presets = [preset],
 ) {
   const draft = over.draft ?? draftOf();
-  const drafted = draftCluster(draft, [preset], releases, environment);
+  const drafted = draftCluster(draft, presets, releases, environment);
   const fields = clusterFields({
     cluster: drafted.cluster,
     merged: drafted.merged,
@@ -192,6 +193,36 @@ describe("ClusterSettingsStep", () => {
     for (const name of ["presetRef", "releaseRef", "platformConfigRef"])
       expect(within(whole).queryByRole("group", { name })).toBeNull();
     expect(within(whole).queryByText("Change it in the Claim tab.")).toBeNull();
+  });
+
+  it("does not say that the volumes of a new cluster cannot shrink", async () => {
+    const large = {
+      ...preset,
+      spec: { cluster: { zeebe: { storageSize: "32Gi" } } },
+    } as unknown as Resource<"CamundaClusterPreset">;
+    renderStep({}, prod(), [large]);
+    const brokers = screen.getByRole("region", { name: "Brokers settings" });
+    const amount = within(
+      within(brokers).getAllByRole("group", { name: "storageSize" })[0],
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "16");
+    expect(screen.queryByText(/Volumes cannot shrink/)).toBeNull();
+  });
+
+  it("keeps the Connectors settings while the draft turns them off", () => {
+    const connectors = {
+      ...preset,
+      spec: { cluster: { connectors: { enabled: true } } },
+    } as unknown as Resource<"CamundaClusterPreset">;
+    renderStep(
+      { draft: draftOf({ cluster: { connectors: { enabled: false } } }) },
+      prod(),
+      [connectors],
+    );
+    expect(
+      screen.getByRole("region", { name: "Connectors settings" }),
+    ).toBeTruthy();
   });
 
   it("shows the whole cluster settings first", () => {
