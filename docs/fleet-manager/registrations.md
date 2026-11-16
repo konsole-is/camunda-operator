@@ -81,7 +81,13 @@ Each Grant shows its namespace and name, its cluster, its request, and three con
 | `Rejected` | The identity or the cloud refused the Grant. The message says why. | Read the message. |
 | `TemplateChanged` | The statement of the Grant no longer matches its template in the registration. This is a reason of `MatchesTemplate`. | Wait for the controller of the option to write the Grant again from the new template. |
 
-The [Grant](../crds/grant.md#status) reference lists every condition of a Grant. An option without grant templates shows `This option owns the policies of its role and writes no Grant.` A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**.
+The [Grant](../crds/grant.md#status) reference lists every condition of a Grant. An option without grant templates shows this line:
+
+```text
+This option owns the policies of its role and writes no Grant.
+```
+
+A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**.
 
 ### Health
 

@@ -152,14 +152,14 @@ beforeAll(async () => {
     spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
   });
   // The page of a registration reads the registration, its Grants, and its
-  // events. A Grant needs its cluster and request, so the page has none here.
+  // events. The test writes no Grant and no event.
   await api.create({
     apiVersion: "plugins.camunda.io/v1alpha1",
     kind: "PluginRegistration",
     metadata: { name: namespace },
     spec: {
       label: "Leak",
-      sections: [],
+      sections: ["leak"],
       mode: "Optional",
       deletionPolicies: ["Delete"],
       serviceAccount: { name: "leak", namespace },
