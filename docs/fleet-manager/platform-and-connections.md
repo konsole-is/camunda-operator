@@ -74,7 +74,7 @@ The Secret stays picked and shows as `camunda-license (not found)`. A key that t
 
 ### Default images
 
-The section **Image repositories** shows the default repository under each field. A field that you leave empty uses its default. The page shows repositories only, never a tag. The tag always comes from the version of the cluster, management plane, or database server that runs the image.
+The section **Image repositories** shows the default repository under each field. A field that you leave empty uses its default. If another tool set the value of that field, the save keeps it, and the review names the field that stays. The page shows repositories only, never a tag. The tag always comes from the version of the cluster, management plane, or database server that runs the image.
 
 The defaults come from the images table of the operator, for each Camunda minor that the clusters and management planes of the platform config run. When they run more than one minor, each default shows the minors that it covers. For example, from Camunda 8.10 the Web Modeler images move to `camunda/hub` and `camunda/hub-websockets`:
 
