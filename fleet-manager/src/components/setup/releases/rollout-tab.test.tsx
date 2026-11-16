@@ -286,6 +286,55 @@ describe("RolloutTab", () => {
     ).toBeNull();
   });
 
+  it("clears the failed move when a retry writes", async () => {
+    const { actions } = renderTab({ data: freshCanMove() });
+    actions.applyMove.mockResolvedValueOnce({
+      ok: false,
+      errors: [
+        { code: "Unavailable", message: "The API server did not answer." },
+      ],
+    });
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: "Move" }));
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("alert", { name: "The move did not finish" }),
+      ).toBeNull(),
+    );
+  });
+
+  it("keeps the failed move when the write rejects", async () => {
+    const { actions } = renderTab({ data: freshCanMove() });
+    actions.applyMove.mockRejectedValueOnce(new Error("connection lost"));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+    const result = await screen.findByRole("alert", {
+      name: "The move did not finish",
+    });
+    expect(
+      within(result).getByText(/team-orders\/orders: not moved/),
+    ).toBeTruthy();
+  });
+
   it("keeps the boxes and Move selected in step after Back", async () => {
     renderTab({ data: freshCanMove() });
     await userEvent.click(

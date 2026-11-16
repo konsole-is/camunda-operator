@@ -9,7 +9,12 @@ import { Toast, useWriteToast } from "@/components/fleet/toast";
 import type { ReadError } from "@/components/planes/planes-table";
 import { Button } from "@/components/ui/button";
 import type { Resource } from "@/lib/k8s/kinds";
-import type { ApiError, Change, WriteMode } from "@/lib/write/types";
+import type {
+  ApiError,
+  Change,
+  WriteMode,
+  WriteResult,
+} from "@/lib/write/types";
 import type { ReleaseActions } from "./release-detail";
 import {
   type MovePick,
@@ -31,7 +36,11 @@ const EMPTY = <span className="text-muted">-</span>;
 type Review = { plan: MovePlan & { change: Change }; picks: MovePick[] };
 
 // Failed is a refused move: the clusters it picked, by key, and the errors.
-type Failed = { keys: string[]; errors: ApiError[] };
+type Failed = {
+  keys: string[];
+  downgrades: Record<string, string>;
+  errors: ApiError[];
+};
 
 /**
  * RolloutTab lists every cluster with its eligibility for a move to
@@ -147,12 +156,23 @@ export function RolloutTab({
             actions={actions}
             show={(result, message) => {
               show(result, message);
+              if (result.ok) setFailed(undefined);
               setReview(undefined);
             }}
             onCancel={() => setReview(undefined)}
             onWriting={setWriting}
             onRefused={(errors) =>
-              setFailed({ keys: review.picks.map((p) => p.row.key), errors })
+              setFailed({
+                keys: review.picks.map((p) => p.row.key),
+                downgrades: Object.fromEntries(
+                  review.picks.flatMap((p) =>
+                    p.row.status.kind === "downgradeRefused"
+                      ? [[p.row.key, p.row.status.to]]
+                      : [],
+                  ),
+                ),
+                errors,
+              })
             }
           />
         </section>
@@ -373,6 +393,15 @@ function MoveReview({
       apply={(c) =>
         actions
           .applyMove(c)
+          .catch((): WriteResult => ({
+            ok: false,
+            errors: [
+              {
+                code: "Unavailable",
+                message: "The fleet manager could not reach the server.",
+              },
+            ],
+          }))
           .then(namedErrors)
           .then((result) => {
             if (!result.ok) onRefused(result.errors);
@@ -409,7 +438,9 @@ function FailedMove({
     const release = row?.claim?.spec?.releaseRef;
     return [
       // In direct mode the claims before a failed one keep the new release.
-      release === target
+      release === target &&
+      (failed.downgrades[key] === undefined ||
+        row?.claim?.spec?.allowVersionDowngrade === failed.downgrades[key])
         ? `${key}: moved to ${target}.`
         : `${key}: not moved${typeof release === "string" && release !== "" ? `, still on ${release}` : ""}.`,
     ];
