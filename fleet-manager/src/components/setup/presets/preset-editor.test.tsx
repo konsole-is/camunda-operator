@@ -171,6 +171,7 @@ describe("PresetEditor of an Elasticsearch or PostgreSQL preset", () => {
         "The body must be a map of fields.",
       ]),
     );
+    expect(screen.getByText("The body must be a map of fields.")).toBeTruthy();
   });
 
   it("shows a Secret key that is missing in a user namespace", () => {

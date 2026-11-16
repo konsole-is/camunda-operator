@@ -47,12 +47,13 @@ import {
  * inherit it. A save shows a review with the dry run and the impact on
  * each inheriting resource. The save waits while a list that the impact
  * reads cannot be read. A cluster preset offers the rotation of the
- * admin password of its clusters while the form has no pending change. A
- * preset that can be deleted offers a delete after a typed confirm and a
- * review. The delete review closes before its write starts when the preset
- * can no longer be deleted. secrets are the Secret refs of each namespace
- * whose Secrets the body can name, and secretsUnread the lists that they
- * need and that were not read. Without mode nothing can change.
+ * admin password of its clusters while the form has no pending change and
+ * no error. A preset that can be deleted offers a delete after a typed
+ * confirm and a review. The delete review closes before its write starts
+ * when the preset can no longer be deleted. secrets are the Secret refs of
+ * each namespace whose Secrets the body can name, and secretsUnread the
+ * lists that they need and that were not read. Without mode nothing can
+ * change.
  */
 export function PresetDetail({
   sources,
@@ -212,7 +213,12 @@ export function PresetDetail({
             sources={sources}
             unread={rotationUnread(sources.errors, sources.pending)}
             mode={mode}
-            disabled={count > 0 || reviewing !== undefined || locked}
+            disabled={
+              count > 0 ||
+              editorErrors.length > 0 ||
+              reviewing !== undefined ||
+              locked
+            }
             actions={actions}
             show={(result, message) => {
               show(result, message);

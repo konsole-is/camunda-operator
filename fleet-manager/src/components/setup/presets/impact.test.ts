@@ -233,6 +233,16 @@ describe("presetImpact of a cluster preset", () => {
     ).not.toContain(STORAGE_NOTES.CamundaClusterPreset.shrink);
   });
 
+  it("names the shrink rule when a cleared storage size falls back to a smaller default", () => {
+    const after = withCluster((c) => {
+      c.zeebe = { ...c.zeebe };
+      delete c.zeebe.storageSize;
+    });
+    expect(presetImpact({ ...input, after }).notes).toContain(
+      STORAGE_NOTES.CamundaClusterPreset.shrink,
+    );
+  });
+
   it("names the storage class rule for a new class", () => {
     const after = withCluster((c) => {
       c.zeebe = { ...c.zeebe, storageClassName: "gp3" };

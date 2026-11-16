@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import {
   type Setting,
   settingsOf,
@@ -75,6 +75,7 @@ export function PresetEditor({
   onErrors: (errors: string[]) => void;
 }): ReactNode {
   const errors = useRef<Record<string, string[]>>({});
+  const [bodyError, setBodyError] = useState<string>();
   const report = (source: string, messages: string[]) => {
     errors.current[source] = messages;
     onErrors(Object.values(errors.current).flat());
@@ -115,6 +116,7 @@ export function PresetEditor({
             }
             rows={14}
             defaultValue={draft.body}
+            error={bodyError}
             onChange={(value, yamlErrors) => {
               if (yamlErrors.length > 0) {
                 report(
@@ -126,9 +128,11 @@ export function PresetEditor({
                 return;
               }
               if (value !== undefined && !isBody(value)) {
-                report("yaml", ["The body must be a map of fields."]);
+                setBodyError(NOT_A_MAP);
+                report("yaml", [NOT_A_MAP]);
                 return;
               }
+              setBodyError(undefined);
               report("yaml", []);
               onDraft((d) => ({ ...d, body: value ?? {} }));
             }}
@@ -305,6 +309,8 @@ function rulesFor(group: SettingsGroup, parts: PresetPart[]) {
     .filter((p) => titles.includes(p.title))
     .flatMap((p) => p.settings);
 }
+
+const NOT_A_MAP = "The body must be a map of fields.";
 
 function isBody(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

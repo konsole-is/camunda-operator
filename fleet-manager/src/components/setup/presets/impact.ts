@@ -95,10 +95,17 @@ const IMPACT_KINDS: Record<PresetKind, readonly KindName[]> = {
 // when it is cleared.
 const STORAGE_FIELDS: Record<
   PresetKind,
-  { sizes: string[][]; storageClass?: string[]; kept?: string[] }
+  {
+    sizes: string[][];
+    sizeDefault?: string;
+    storageClass?: string[];
+    kept?: string[];
+  }
 > = {
   CamundaClusterPreset: {
     sizes: [["zeebe", "storageSize"]],
+    // The defaultStorageSize of pkg/components/camundacluster/effective.go.
+    sizeDefault: "10Gi",
     storageClass: ["zeebe", "storageClassName"],
   },
   ElasticsearchClusterPreset: {
@@ -302,7 +309,10 @@ function storageNotes(
       path.map((field) => ({ field })),
     );
   const shrinks = fields.sizes.some((path) =>
-    smaller(at(before, path), at(after, path)),
+    smaller(
+      at(before, path) ?? fields.sizeDefault,
+      at(after, path) ?? fields.sizeDefault,
+    ),
   );
   const storageClass = fields.storageClass;
   const moves =

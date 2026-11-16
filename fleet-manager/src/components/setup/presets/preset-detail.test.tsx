@@ -420,6 +420,18 @@ describe("PresetDetail", () => {
     expect(rotate).toHaveProperty("disabled", true);
   });
 
+  it("disables the rotation while the form shows an error", async () => {
+    setup();
+    editReplicas("-1");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Rotate the admin password of 1 cluster",
+        }),
+      ).toHaveProperty("disabled", true),
+    );
+  });
+
   it("locks the form while the rotation review is open", async () => {
     setup();
     fireEvent.click(
