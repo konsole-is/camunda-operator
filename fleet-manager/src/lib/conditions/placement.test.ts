@@ -2,13 +2,17 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   type CoreCamundaClusterConditionType,
   coreCamundaClusterConditionTypes,
+  coreCamundaManagementClusterConditionTypes,
   coreCamundaOptimizeConditionTypes,
   fleetCamundaClusterClaimConditionTypes,
+  fleetCamundaManagementClusterClaimConditionTypes,
 } from "@/generated/conditions";
 import {
   CAMUNDA_CLUSTER_PLACEMENT,
   CAMUNDA_OPTIMIZE_PLACEMENT,
   CLAIM_PLACEMENT,
+  MANAGEMENT_CLUSTER_PLACEMENT,
+  PLANE_CLAIM_PLACEMENT,
   type PlacementMap,
   conditionsAt,
   placementOf,
@@ -30,6 +34,16 @@ describe("placement maps", () => {
       "CamundaClusterClaim",
       CLAIM_PLACEMENT,
       fleetCamundaClusterClaimConditionTypes,
+    ],
+    [
+      "CamundaManagementCluster",
+      MANAGEMENT_CLUSTER_PLACEMENT,
+      coreCamundaManagementClusterConditionTypes,
+    ],
+    [
+      "CamundaManagementClusterClaim",
+      PLANE_CLAIM_PLACEMENT,
+      fleetCamundaManagementClusterClaimConditionTypes,
     ],
   ] as const)(
     "the %s map places exactly the generated types",
@@ -75,6 +89,43 @@ describe("placement maps", () => {
       ClusterReady: "claim",
       AttachmentsReady: "claim",
     });
+    expect(MANAGEMENT_CLUSTER_PLACEMENT).toEqual({
+      Ready: "header",
+      KeycloakReady: "keycloak",
+      IdentityReady: "identity",
+      ConsoleReady: "console",
+      WebModelerReady: "webModeler",
+      SecretsReady: "resource",
+      MirroredSecretsReady: "resource",
+      ServiceAccountsReady: "resource",
+      ManagementAuthReady: "resource",
+      OptimizeCallbacksReady: "resource",
+    });
+    expect(PLANE_CLAIM_PLACEMENT).toEqual({
+      Ready: "header",
+      RequestsReady: "claim",
+      ManagementClusterReady: "claim",
+    });
+  });
+
+  it("the Conditions section of a plane never holds the condition of a component", () => {
+    const rows = coreCamundaManagementClusterConditionTypes.map((type) => ({
+      type,
+    }));
+    expect(
+      conditionsAt(MANAGEMENT_CLUSTER_PLACEMENT, rows, "resource")
+        .map((r) => r.type)
+        .sort(),
+    ).toEqual([
+      "ManagementAuthReady",
+      "MirroredSecretsReady",
+      "OptimizeCallbacksReady",
+      "SecretsReady",
+      "ServiceAccountsReady",
+    ]);
+    expect(
+      conditionsAt(MANAGEMENT_CLUSTER_PLACEMENT, rows, "identity"),
+    ).toEqual([{ type: "IdentityReady" }]);
   });
 });
 
