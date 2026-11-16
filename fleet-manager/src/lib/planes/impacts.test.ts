@@ -246,6 +246,29 @@ describe("planeImpacts", () => {
     ]);
   });
 
+  it("says that a cluster whose platform config sets no auth loses the Web Modeler user of the plane", () => {
+    const live = planeClaim({
+      environments: ["production", "staging"],
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+    });
+    const s = changed(live, [at("spec", "environments"), ["production"]]);
+    const noAuth = [
+      ...platformConfigs,
+      { metadata: { name: "plain" }, spec: {} },
+    ] as Resource<"CamundaPlatformConfig">[];
+    const clusters = [
+      cluster("team-orders", "orders"),
+      trusting("team-qa", "qa", "plain"),
+    ];
+    expect(
+      planeImpacts(input(s, { platformConfigs: noAuth, clusters })),
+    ).toEqual([`team-qa/qa detaches. ${WEB_MODELER_USER_REMOVED}`]);
+  });
+
   it("names no restart for a cluster that attaches or detaches while the plane runs no Console", () => {
     const s = changed(planeClaim(), [at("spec", "environments"), ["staging"]]);
     expect(planeImpacts(input(s))).toEqual([
@@ -905,6 +928,33 @@ describe("planeRestarts", () => {
     expect(planeRestarts(input(s, { plane: servesOptimize }))).toEqual([
       "Management Identity restarts.",
       OPTIMIZE_RESTARTS,
+    ]);
+  });
+
+  it("restarts the Optimize that reads the contract of an OIDC plane, which lists no status.optimize", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [at("spec", "platformConfigRef"), "sso-2"]);
+    const plane = {
+      metadata: { name: "mgmt", namespace: "mgmt-ns" },
+      status: { managementAuthConfig: "mgmt" },
+    };
+    const reader = {
+      metadata: { name: "orders", namespace: "team-orders" },
+      spec: { managementAuthRef: "mgmt" },
+    } as Resource<"CamundaOptimize">;
+    expect(planeRestarts(input(s, { plane, optimizes: [reader] }))).toEqual([
+      "Management Identity restarts.",
+      OPTIMIZE_RESTARTS,
+    ]);
+    expect(planeRestarts(input(s, { plane, optimizes: [] }))).toEqual([
+      "Management Identity restarts.",
     ]);
   });
 

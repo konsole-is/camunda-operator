@@ -587,6 +587,36 @@ describe("PlaneClaimEditor served clusters, components, and versions", () => {
     ).toBe("true");
   });
 
+  it("a change of the SMTP host keeps the keys of the mail credentials", async () => {
+    const claim = claimOf();
+    claim.spec.management.webModeler = {
+      mail: {
+        smtpHost: "smtp",
+        smtpPort: 587,
+        fromAddress: "a@example.com",
+        credentialsSecretRef: {
+          name: "kc-admin",
+          usernameKey: "username",
+          passwordKey: "password",
+        },
+      },
+    };
+    claim.spec.management.identity.admin.email = "a@example.com";
+    claim.spec.versions.webModeler = "8.9.15";
+    editor({ claim });
+    open("Components");
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp2" },
+    });
+    fireEvent.click(reviewButton());
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    const sent = fakeWriter.previewed[0].apply[0] as unknown as PlaneClaim;
+    expect(sent.spec.management.webModeler?.mail).toEqual({
+      ...claim.spec.management.webModeler.mail,
+      smtpHost: "smtp2",
+    });
+  });
+
   it("Console off says that served clusters lose their Console settings and restart once", () => {
     editor();
     open("Components");

@@ -78,6 +78,7 @@ export type PlaneClaimSources = {
   environment?: Resource<"Environment">;
   environments: readonly Resource<"Environment">[];
   namespaces: readonly Resource<"Namespace">[];
+  optimizes: readonly Resource<"CamundaOptimize">[];
   clusters: readonly Resource<"CamundaCluster">[];
   platformConfigs: readonly Resource<"CamundaPlatformConfig">[];
   sections: readonly Resource<"PluginSection">[];
@@ -114,6 +115,7 @@ const PAGE_KINDS: readonly KindName[] = [
   "CamundaManagementClusterClaim",
   "Namespace",
   "Environment",
+  "CamundaOptimize",
 ];
 const OBJECT_KINDS: readonly string[] = [
   "CamundaManagementCluster",
@@ -153,12 +155,12 @@ export function changesWaitText(
 /**
  * PlaneClaimEditProvider holds the claim edit session of the plane page,
  * through ClaimEditProvider, over claim, the live claim of the plane. It
- * follows the lists of data.claimTab live. pageUnread are the kinds of the
- * page whose read failed. While a kind
- * that the checks or the impacts read is unread, the session refuses
- * review with one error that names the kinds, and an open review closes.
- * Without actions it opens no session. It needs a GitPushesProvider above
- * it.
+ * follows the lists of data.claimTab live. optimizes are the
+ * CamundaOptimizes of the page, and pageUnread the kinds of the page whose
+ * read failed. While a kind that the checks or the impacts read is unread,
+ * the session refuses review with one error that names the kinds, and an
+ * open review closes. Without actions it opens no session. It needs a
+ * GitPushesProvider above it.
  */
 export function PlaneClaimEditProvider({
   data,
@@ -166,6 +168,7 @@ export function PlaneClaimEditProvider({
   claim,
   namespaces,
   environments,
+  optimizes = NONE,
   pageUnread,
   writeMode,
   actions,
@@ -176,6 +179,7 @@ export function PlaneClaimEditProvider({
   claim?: PlaneClaim;
   namespaces: readonly Resource<"Namespace">[];
   environments: readonly Resource<"Environment">[];
+  optimizes?: readonly Resource<"CamundaOptimize">[];
   pageUnread: readonly string[];
   writeMode: WriteMode | undefined;
   actions?: ClaimActions;
@@ -205,6 +209,7 @@ export function PlaneClaimEditProvider({
     environment,
     environments,
     namespaces,
+    optimizes,
     clusters: lists.clusters,
     platformConfigs: lists.platformConfigs,
     sections: lists.sections,
@@ -381,6 +386,7 @@ export function planeChangeInput(
     clusters: sources.clusters,
     namespaces: sources.namespaces,
     sections: sources.sections,
+    optimizes: sources.optimizes,
   };
 }
 

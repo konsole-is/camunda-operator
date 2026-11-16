@@ -6,7 +6,8 @@ import { SecretRefsReaderContext } from "@/components/fleet/namespaced-secret-re
 import { MailFields } from "@/components/planes/create/components-step";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Step } from "@/lib/fields";
-import { mailDraftOf, mailOf } from "@/lib/planes/draft";
+import type { MailDraft } from "@/lib/planes/components";
+import { mailDraftOf } from "@/lib/planes/draft";
 import { componentEdits } from "@/lib/planes/edits";
 import { CONSOLE_OFF, CONSOLE_ON, WEB_MODELER_OFF } from "@/lib/planes/impacts";
 import { claimAfter } from "@/lib/session";
@@ -45,6 +46,19 @@ export function ComponentsPanel() {
       else edit.set(e.steps, e.value);
   };
   const mail = mailDraftOf(management?.webModeler?.mail ?? undefined);
+  // Each edit sets one field, so the fields that the form does not show,
+  // such as the keys of the credentials, stay.
+  const setMail = (key: keyof MailDraft, value: unknown) => {
+    const at = (...names: string[]) => [
+      ...MAIL,
+      ...names.map((field) => ({ field })),
+    ];
+    if (key === "credentialsSecret")
+      if (value === "") edit.reset(at("credentialsSecretRef"));
+      else edit.set(at("credentialsSecretRef", "name"), value);
+    else if (key === "fromName" && value === "") edit.reset(at("fromName"));
+    else edit.set(at(key), value);
+  };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -81,13 +95,7 @@ export function ComponentsPanel() {
         )}
         {runs("webModeler") &&
           (secrets ? (
-            <MailFields
-              mail={mail}
-              secrets={secrets}
-              onChange={(key, value) =>
-                edit.set(MAIL, mailOf({ ...mail, [key]: value }))
-              }
-            />
+            <MailFields mail={mail} secrets={secrets} onChange={setMail} />
           ) : (
             <p className="text-sm text-muted">
               Reading the Secrets of the namespace.

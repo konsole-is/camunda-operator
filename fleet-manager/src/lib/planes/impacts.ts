@@ -36,7 +36,8 @@ import {
  * yet. environment is the Environment of the namespace of the claim.
  * clusters and namespaces are those of every namespace. sections are the
  * PluginSections: without them, only the access section is known by its
- * name.
+ * name. optimizes are the CamundaOptimizes of every namespace: without
+ * them, the Optimize of an OIDC plane gets no restart line.
  */
 export type PlaneChangeInput = {
   session: Session<PlaneClaim>;
@@ -46,6 +47,7 @@ export type PlaneChangeInput = {
   clusters: readonly Resource<"CamundaCluster">[];
   namespaces: readonly Resource<"Namespace">[];
   sections?: readonly Resource<"PluginSection">[];
+  optimizes?: readonly Resource<"CamundaOptimize">[];
 };
 
 /** FIRST_ADMIN_STAYS is the impact of every move of the identity mode. */
@@ -322,7 +324,11 @@ function basicAuth(row: PreviewRow, input: PlaneChangeInput): boolean {
   );
   const ref = cluster?.spec?.platformConfigRef;
   const config = input.platformConfigs.find((c) => c.metadata?.name === ref);
-  return config?.spec?.auth?.method === "basic";
+  // An unset auth block or method means basic (Method of
+  // CamundaPlatformConfigSpec).
+  return (
+    config !== undefined && (config.spec?.auth?.method ?? "basic") === "basic"
+  );
 }
 
 function versionLines(live: Spec, spec: Spec): string[] {
@@ -503,9 +509,7 @@ export function planeRestarts(input: PlaneChangeInput): string[] {
   const runs = (app: App) =>
     app === "identity" ||
     app === "database" ||
-    (app === "optimize"
-      ? (input.plane?.status?.optimize?.length ?? 0) > 0
-      : before[app] && after[app]);
+    (app === "optimize" ? servesOptimize(input) : before[app] && after[app]);
   const sure = APPS.filter((app) => runs(app) && restarts.sure.has(app));
   const reasons = new Map<string, App[]>();
   for (const app of APPS) {
@@ -526,6 +530,18 @@ export function planeRestarts(input: PlaneChangeInput): string[] {
         `${sentence(listOf(apps.map((app) => APP_LABEL[app])))} may restart ${reason}.`,
     ),
   ];
+}
+
+// In OIDC mode status.optimize stays empty, so an Optimize that reads the
+// contract of the plane counts too (discoverOptimizes of
+// camundamanagementcluster).
+function servesOptimize(input: PlaneChangeInput): boolean {
+  if ((input.plane?.status?.optimize?.length ?? 0) > 0) return true;
+  const contract = input.plane?.status?.managementAuthConfig;
+  return (
+    contract !== undefined &&
+    (input.optimizes ?? []).some((o) => o.spec?.managementAuthRef === contract)
+  );
 }
 
 type App =
