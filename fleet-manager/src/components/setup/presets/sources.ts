@@ -51,6 +51,8 @@ export function usePresetSources(
     requests: useLive("PluginRequest", initial.requests),
     sections: useLive("PluginSection", initial.sections),
     registrations: useLive("PluginRegistration", initial.registrations),
+    releases: useLive("CamundaRelease", initial.releases),
+    platformConfigs: useLive("CamundaPlatformConfig", initial.platformConfigs),
   };
   const keys = Object.keys(PRESET_SOURCE_KINDS) as (keyof PresetSources)[];
   const kinds = keys.map((key) => PRESET_SOURCE_KINDS[key]);

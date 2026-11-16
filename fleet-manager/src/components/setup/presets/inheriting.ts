@@ -1,6 +1,7 @@
 import type { ConditionLike } from "@/components/fleet/status";
+import type { ReadError } from "@/components/planes/planes-table";
 import { clusterFields } from "@/lib/fields";
-import type { Resource } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import {
   type FieldSourceMap,
@@ -93,6 +94,29 @@ export function inheritingRows(
       ];
     },
   );
+}
+
+const INHERITING_KIND: Record<PresetKind, InheritingRow["kind"]> = {
+  CamundaClusterPreset: "CamundaCluster",
+  ElasticsearchClusterPreset: "ElasticsearchCluster",
+  DatabaseServerPreset: "DatabaseServer",
+};
+
+/**
+ * inheritingUnread returns the kind of the resources that inherit a preset
+ * of kind when it is in errors (not read) or pending (not current), else
+ * an empty list. inheritingRows does not know the users then.
+ */
+export function inheritingUnread(
+  kind: PresetKind,
+  errors: readonly ReadError[],
+  pending: readonly KindName[],
+): KindName[] {
+  const inheriting = INHERITING_KIND[kind];
+  return pending.includes(inheriting) ||
+    errors.some((e) => e.kind === inheriting)
+    ? [inheriting]
+    : [];
 }
 
 function listOf(kind: string, sources: PresetSources): readonly Inheriting[] {

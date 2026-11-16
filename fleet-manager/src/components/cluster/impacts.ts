@@ -30,7 +30,7 @@ export type ClusterChangeInput = PodContext & {
   environment?: Resource<"Environment">;
 };
 
-/** RESTART_ALL is the impact line of a change that restarts every process. */
+/** RESTART_ALL is the impact line of a change that rolls the workloads of every process of a cluster. */
 export const RESTART_ALL =
   "The brokers restart one at a time. The other processes restart.";
 
