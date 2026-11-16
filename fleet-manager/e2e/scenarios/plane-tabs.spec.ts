@@ -48,7 +48,7 @@ test("the tabs of a plane show its served cluster, its callbacks, its contract, 
   await expect(
     contract
       .locator("dt", { hasText: "Client secret name" })
-      .locator("xpath=following-sibling::dd"),
+      .locator("xpath=following-sibling::dd[1]"),
   ).toHaveText("optimize-credentials");
   await expect(
     contract.getByText("No Optimize reads this contract."),
