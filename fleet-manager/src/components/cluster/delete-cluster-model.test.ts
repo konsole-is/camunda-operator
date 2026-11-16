@@ -170,7 +170,7 @@ describe("deleteClusterModel", () => {
     expect(model.targets[2].note).toBe("Volumes deleted");
   });
 
-  it("a cluster that retains its volumes says so, from its own spec or its preset", () => {
+  it("a cluster that retains its volumes by its own spec says so, and one that retains them by its preset says they are not known", () => {
     const note = (d: DeleteClusterData) =>
       deleteClusterModel(d, "Delete").targets.find(
         (t) => t.kind === "CamundaCluster",
@@ -194,7 +194,9 @@ describe("deleteClusterModel", () => {
           ],
         }),
       ),
-    ).toBe("Volumes kept for a cluster of the same name");
+    ).toBe(
+      "Volumes not known: a preset or release of the cluster sets the volume policy, and the page cannot tell if the operator applied it",
+    );
     expect(note(data())).toBe("Volumes deleted");
   });
 

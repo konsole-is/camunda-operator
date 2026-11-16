@@ -87,7 +87,8 @@ export type DeletionGroup = {
 
 /**
  * deletionGroups returns one group for each selection of claim, in the
- * order of sectionComponents, with the fate of each row under policy. Only
+ * order of sectionComponents, with the fate of each row under policy, or
+ * under the policy of its request once that request is being deleted. Only
  * the requests that claim controls by its UID count, so requests can hold
  * those of other claims. The request of a selection is the one that the
  * claim status names, else the request with the section and the
@@ -137,7 +138,15 @@ export function deletionGroups(input: {
         deletionPolicies !== undefined && !deletionPolicies.includes("Orphan"),
       rows: (request?.status?.resources ?? []).map((row) => ({
         ...row,
-        fate: resourceFate(row, policy),
+        // The claim finalizer writes the policy only on requests that are
+        // not being deleted yet (writeDeletionPolicy of
+        // internal/claimdeletion).
+        fate: resourceFate(
+          row,
+          request?.metadata?.deletionTimestamp
+            ? request.spec.deletionPolicy
+            : policy,
+        ),
       })),
     };
   });

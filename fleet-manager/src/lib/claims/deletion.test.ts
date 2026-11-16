@@ -289,6 +289,33 @@ describe("deletionGroups", () => {
     expect(backupWarning("orders", groups)).toBeDefined();
   });
 
+  it("gives the rows of a request that is being deleted the fate of its own policy, whatever the pick", () => {
+    const terminating = {
+      ...request("orders-backup-storage", [bucket()]),
+      metadata: {
+        ...request("orders-backup-storage").metadata,
+        deletionTimestamp: "2026-11-16T10:00:00Z",
+      },
+      spec: {
+        section: "backup-storage",
+        registration: "aws-s3",
+        deletionPolicy: "Delete",
+      },
+    } as unknown as Resource<"PluginRequest">;
+    const requests = [
+      request("orders-encryption-key", [key1]),
+      request("orders-volume-encryption", [storageClass]),
+      terminating,
+    ];
+    const groups = groupsOf("Orphan", requests);
+    expect(groups.map((g) => g.rows.map((r) => r.fate))).toEqual([
+      ["Kept"],
+      ["Deleted"],
+      ["Deleted"],
+    ]);
+    expect(backupWarning("orders", groups)).toBeDefined();
+  });
+
   it("takes no request that the claim does not control, also of the same section and registration", () => {
     const c = claimOf([{ section: "backup-storage", registration: "aws-s3" }], {
       "backup-storage": "orders-backup-storage",

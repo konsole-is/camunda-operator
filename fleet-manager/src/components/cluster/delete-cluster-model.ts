@@ -298,6 +298,7 @@ function volumeNote(
   )
     return "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec";
   const { spec } = cluster;
+  const own = spec?.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted;
   const whenDeleted =
     spec &&
     mergeCluster(
@@ -305,6 +306,11 @@ function volumeNote(
       data.releases.find((r) => r.metadata?.name === spec.releaseRef)?.spec,
       spec,
     ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted;
+  // A change of a preset or a release leaves the generation of the cluster
+  // as it is, so only the spec of the cluster itself shows a Retain that
+  // the operator applied.
+  if (whenDeleted === "Retain" && !own)
+    return "Volumes not known: a preset or release of the cluster sets the volume policy, and the page cannot tell if the operator applied it";
   return whenDeleted === "Retain"
     ? "Volumes kept for a cluster of the same name"
     : "Volumes deleted";
