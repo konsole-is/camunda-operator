@@ -1,0 +1,36 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";import{t as n}from"./jsx-runtime-CndCZlyt.js";import{t as r}from"./hooks-BZtkPEQF.js";import{b as i}from"./labels-CoLYcJ9C.js";import{a,i as o,n as s,r as c,t as l}from"./tabs-DxA4SfCc.js";import"./events-C2nhwmNt.js";import{n as u,t as d}from"./about-tab-BvHVxaml.js";import{i as f,n as p}from"./fixtures-fUctxLbh.js";import{r as m,s as h}from"./groups-tgzbe4Oz.js";import{i as g,n as _,r as v,t as y}from"./contract-tab-CLufwCOi.js";import{n as b,t as x}from"./grants-tab-DOR96yPj.js";import{n as S,t as C}from"./health-tab-CRQ-meAl.js";import{i as w,n as T,r as E,t as D}from"./parameters-tab-Bwhoyi_s.js";import{r as O,t as k}from"./sources-BrqCdSyj.js";import{i as A,n as j,r as M,t as N}from"./used-by-tab-BGjZjAbL.js";function P(){return(P=e((()=>{r(),i(),k()})))()}function F(e){let t=Array.isArray(e)?e[0]:e;return I.find(e=>e.value===t)?.value??`about`}var I;function L(){return(L=e((()=>{I=[{value:`about`,label:`About`},{value:`contract`,label:`Contract`},{value:`parameters`,label:`Parameters`},{value:`grants`,label:`Grants`},{value:`health`,label:`Health`},{value:`usedBy`,label:`Used by`}]})))()}function R({data:e,errors:t,stale:n,tab:r,now:i}){let[a,u]=(0,B.useState)(r),f=e=>{let t=F(e);u(t),window.history.replaceState(null,``,`?tab=${t}`)},p=h({errors:t,stale:n}),{sources:m}=e,g=m.registrations.find(t=>t.metadata.name===e.name)??(p.includes(`PluginRegistration`)?e.registration:void 0);return(0,z.jsxs)(`div`,{className:`flex flex-col gap-6`,children:[(0,z.jsxs)(`header`,{className:`flex min-w-0 flex-col gap-1`,children:[(0,z.jsx)(`h1`,{className:`font-heading text-3xl font-bold tracking-[-0.02em] break-words`,children:g?.spec.label??e.name}),(0,z.jsx)(`p`,{className:`font-mono text-sm break-all text-muted`,children:e.name})]}),t.map(e=>(0,z.jsxs)(`p`,{role:`alert`,className:`text-sm text-bad`,children:[`Could not read `,e.kind,`: `,e.message]},e.kind)),p.length>0&&(0,z.jsx)(`p`,{className:`text-sm text-muted`,children:`Not read: ${p.join(`, `)}. What needs them shows as not known.`}),g?(0,z.jsxs)(l,{value:a,onValueChange:f,children:[(0,z.jsx)(c,{className:`h-auto max-w-full flex-wrap`,children:I.map(e=>(0,z.jsx)(o,{value:e.value,children:e.label},e.value))}),(0,z.jsx)(s,{value:`about`,children:(0,z.jsx)(d,{registration:g,registrations:m.registrations,unread:p})}),(0,z.jsx)(s,{value:`contract`,children:(0,z.jsx)(y,{contract:v(g,m.sections,p)})}),(0,z.jsx)(s,{value:`parameters`,children:(0,z.jsx)(D,{rows:w(g,m.environments,p),unread:p})}),(0,z.jsx)(s,{value:`grants`,children:(0,z.jsx)(x,{registration:g,grants:e.grants,unread:p,now:i})}),(0,z.jsx)(s,{value:`health`,children:(0,z.jsx)(C,{registration:g,events:e.events,unread:p,now:i})}),(0,z.jsx)(s,{value:`usedBy`,children:(0,z.jsx)(N,{rows:A(e.name,{...m,errors:t,stale:n},e.grants),unread:p})})]}):(0,z.jsx)(`p`,{className:`text-sm`,children:`This registration no longer exists.`})]})}var z,B;function V(){return(V=e((()=>{z=n(),B=t(),O(),a(),u(),g(),_(),P(),m(),b(),S(),E(),T(),L(),M(),j(),R.__docgenInfo={description:`RegistrationDetail is the page of the registration data.name, opened on
+tab. A tab change sets the tab query parameter without a navigation.
+errors holds the error of each failed watch, and stale the kind of each
+list whose watch has no snapshot on its current connection. While
+PluginRegistration is read and has no registration of the name, the page
+says that it no longer exists. While it is not read, the page shows the
+registration of its list, else data.registration. now is the time that
+the ages count to.`,methods:[],displayName:`RegistrationDetail`,props:{data:{required:!0,tsType:{name:`signature`,type:`object`,raw:`{
+  name: string;
+  /** registration is the registration as the server read it for the page. */
+  registration: PluginRegistration;
+  sources: RegistrationSources;
+  /** grants are the Grants with REGISTRATION_LABEL=name, in every namespace. */
+  grants: Grant[];
+  /** events are the events that regard the registration. */
+  events: Resource<"Event">[];
+}`,signature:{properties:[{key:`name`,value:{name:`string`,required:!0}},{key:`registration`,value:{name:`PluginRegistration`,required:!0},description:`registration is the registration as the server read it for the page.`},{key:`sources`,value:{name:`signature`,type:`object`,raw:`{
+  sections: PluginSection[];
+  registrations: PluginRegistration[];
+  requests: PluginRequest[];
+  namespaces: V1Namespace[];
+  environments: Environment[];
+}`,signature:{properties:[{key:`sections`,value:{name:`Array`,elements:[{name:`PluginSection`}],raw:`PluginSection[]`,required:!0}},{key:`registrations`,value:{name:`Array`,elements:[{name:`PluginRegistration`}],raw:`PluginRegistration[]`,required:!0}},{key:`requests`,value:{name:`Array`,elements:[{name:`PluginRequest`}],raw:`PluginRequest[]`,required:!0}},{key:`namespaces`,value:{name:`Array`,elements:[{name:`V1Namespace`}],raw:`V1Namespace[]`,required:!0}},{key:`environments`,value:{name:`Array`,elements:[{name:`Environment`}],raw:`Environment[]`,required:!0}}]},required:!0}},{key:`grants`,value:{name:`Array`,elements:[{name:`Grant`}],raw:`Grant[]`,required:!0},description:`grants are the Grants with REGISTRATION_LABEL=name, in every namespace.`},{key:`events`,value:{name:`Array`,elements:[{name:`Resource`,elements:[{name:`literal`,value:`"Event"`}],raw:`Resource<"Event">`}],raw:`Resource<"Event">[]`,required:!0},description:`events are the events that regard the registration.`}]}},description:``},errors:{required:!0,tsType:{name:`Array`,elements:[{name:`ReadError`}],raw:`ReadError[]`},description:``},stale:{required:!0,tsType:{name:`unknown`},description:``},tab:{required:!0,tsType:{name:`union`,raw:`"about" | "contract" | "parameters" | "grants" | "health" | "usedBy"`,elements:[{name:`literal`,value:`"about"`},{name:`literal`,value:`"contract"`},{name:`literal`,value:`"parameters"`},{name:`literal`,value:`"grants"`},{name:`literal`,value:`"health"`},{name:`literal`,value:`"usedBy"`}]},description:``},now:{required:!0,tsType:{name:`string`},description:``}}}})))()}var H,U,W,G,K;function q(){return(q=e((()=>{f(),V(),H=p(`elasticsearch`),U={title:`setup/plugins/RegistrationDetail`,component:R,args:{data:H,errors:[],stale:[],tab:`about`,now:`2026-11-13T09:00:00Z`}},W={name:`About tab of a built-in registration`},G={name:`Registration that no longer exists`,args:{data:{...H,sources:{...H.sources,registrations:[]}}}},K=[`AboutBuiltIn`,`Gone`],W.parameters={...W.parameters,docs:{...W.parameters?.docs,source:{originalSource:`{
+  name: "About tab of a built-in registration"
+}`,...W.parameters?.docs?.source}}},G.parameters={...G.parameters,docs:{...G.parameters?.docs,source:{originalSource:`{
+  name: "Registration that no longer exists",
+  args: {
+    data: {
+      ...data,
+      sources: {
+        ...data.sources,
+        registrations: []
+      }
+    }
+  }
+}`,...G.parameters?.docs?.source}}}})))()}q();export{W as AboutBuiltIn,G as Gone,K as __namedExportsOrder,U as default};
