@@ -225,9 +225,10 @@ states:
     description: >-
       Adds the namespace team-orders of the Environment Platform with the
       CamundaCluster orders, which uses the platform config oidc-platform.
-      The plane lists the cluster. It also adds the CamundaOptimize orders
-      in that namespace, which reads the contract plane-a and sets an
-      external URL, so the plane shows its callbacks and its reader.
+      The plane lists the cluster. After the cluster holds its backend, it
+      adds the CamundaOptimize orders in that namespace, which reads the
+      contract plane-a and sets an external URL, so the plane shows its
+      callbacks and its reader.
     apply:
       - apiVersion: v1
         kind: Namespace
@@ -291,6 +292,7 @@ states:
           releaseRef: camunda-8-9
           externalUrl: "https://orders.example.com"
           storageRef: orders-storage
+    thenApply:
       - apiVersion: core.camunda.io/v1
         kind: CamundaOptimize
         metadata:

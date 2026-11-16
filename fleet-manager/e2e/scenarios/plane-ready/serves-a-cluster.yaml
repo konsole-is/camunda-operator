@@ -6449,52 +6449,6 @@ reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
 type: Normal
 ---
-action: Update
-apiVersion: events.k8s.io/v1
-deprecatedFirstTimestamp: null
-deprecatedLastTimestamp: null
-deprecatedSource: {}
-eventTime: "2026-01-01T00:00:00.000000Z"
-kind: Event
-metadata:
-  creationTimestamp: "2026-01-01T00:00:00Z"
-  managedFields:
-  - apiVersion: events.k8s.io/v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:action: {}
-      f:eventTime: {}
-      f:note: {}
-      f:reason: {}
-      f:regarding: {}
-      f:related: {}
-      f:reportingController: {}
-      f:reportingInstance: {}
-      f:type: {}
-    manager: manager
-    operation: Update
-    time: "2026-01-01T00:00:00Z"
-  name: orders.464e0ecd8a405180
-  namespace: team-orders
-  uid: 1466af56-8d38-5fb0-83d3-1bb387d197f7
-note: Updated Deployment 'orders-importer'
-reason: UpdatedDeployment
-regarding:
-  apiVersion: core.camunda.io/v1
-  kind: CamundaOptimize
-  name: orders
-  namespace: team-orders
-  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
-related:
-  apiVersion: apps/v1
-  kind: Deployment
-  name: orders-importer
-  namespace: team-orders
-  uid: 570f08a0-d19a-5701-9c85-09a8844194f4
-reportingController: camundaoptimize
-reportingInstance: camundaoptimize-scenario-node
-type: Normal
----
 action: Create
 apiVersion: events.k8s.io/v1
 deprecatedFirstTimestamp: null
@@ -6765,46 +6719,6 @@ reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
 type: Normal
 ---
-action: Suspend
-apiVersion: events.k8s.io/v1
-deprecatedFirstTimestamp: null
-deprecatedLastTimestamp: null
-deprecatedSource: {}
-eventTime: "2026-01-01T00:00:00.000000Z"
-kind: Event
-metadata:
-  creationTimestamp: "2026-01-01T00:00:00Z"
-  managedFields:
-  - apiVersion: events.k8s.io/v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:action: {}
-      f:eventTime: {}
-      f:note: {}
-      f:reason: {}
-      f:regarding: {}
-      f:reportingController: {}
-      f:reportingInstance: {}
-      f:type: {}
-    manager: manager
-    operation: Update
-    time: "2026-01-01T00:00:00Z"
-  name: orders.a5be2b58506ff8f2
-  namespace: team-orders
-  uid: 07253cb6-d8c2-5c81-b8ca-e16a5ce59ee7
-note: CamundaCluster "orders" holds its backend and is not suspended, the Optimize
-  workloads follow their spec
-reason: ClusterResumed
-regarding:
-  apiVersion: core.camunda.io/v1
-  kind: CamundaOptimize
-  name: orders
-  namespace: team-orders
-  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
-reportingController: camundaoptimize
-reportingInstance: camundaoptimize-scenario-node
-type: Normal
----
 action: Create
 apiVersion: events.k8s.io/v1
 deprecatedFirstTimestamp: null
@@ -6847,52 +6761,6 @@ related:
   name: orders-optimize-license
   namespace: team-orders
   uid: f0e8df0e-ad8d-52ee-a647-5c1bfcf83696
-reportingController: camundaoptimize
-reportingInstance: camundaoptimize-scenario-node
-type: Normal
----
-action: Update
-apiVersion: events.k8s.io/v1
-deprecatedFirstTimestamp: null
-deprecatedLastTimestamp: null
-deprecatedSource: {}
-eventTime: "2026-01-01T00:00:00.000000Z"
-kind: Event
-metadata:
-  creationTimestamp: "2026-01-01T00:00:00Z"
-  managedFields:
-  - apiVersion: events.k8s.io/v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:action: {}
-      f:eventTime: {}
-      f:note: {}
-      f:reason: {}
-      f:regarding: {}
-      f:related: {}
-      f:reportingController: {}
-      f:reportingInstance: {}
-      f:type: {}
-    manager: manager
-    operation: Update
-    time: "2026-01-01T00:00:00Z"
-  name: orders.b0ee35aa2801cd87
-  namespace: team-orders
-  uid: 790a2414-3e02-5ceb-bbc4-c910e5542872
-note: Updated Deployment 'orders-webapp'
-reason: UpdatedDeployment
-regarding:
-  apiVersion: core.camunda.io/v1
-  kind: CamundaOptimize
-  name: orders
-  namespace: team-orders
-  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
-related:
-  apiVersion: apps/v1
-  kind: Deployment
-  name: orders-webapp
-  namespace: team-orders
-  uid: 0a90d55c-b6d7-5a04-a507-364480fb99d8
 reportingController: camundaoptimize
 reportingInstance: camundaoptimize-scenario-node
 type: Normal

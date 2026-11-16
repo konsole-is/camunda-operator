@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/manager"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
@@ -74,6 +75,22 @@ func TestGenerate(t *testing.T) {
 		readyCond := condition(t, find(t, objs, "CamundaCluster", "team-b", "orders"), "Ready")
 		assert.Equal(t, "True", readyCond["status"])
 		assert.Equal(t, "Healthy", readyCond["reason"])
+	})
+
+	t.Run("applies the objects of thenApply after the objects of apply settled", func(t *testing.T) {
+		objs := first["a-second-cluster-waits.yaml"]
+
+		refunds := condition(t, find(t, objs, "CamundaCluster", "team-b", "refunds"), "Ready")
+		assert.NotEqual(t, v1.ReasonStorageAlreadyAttached, refunds["reason"])
+
+		audit := condition(t, find(t, objs, "CamundaCluster", "team-b", "audit"), "Ready")
+		assert.Equal(
+			t,
+			v1.ReasonStorageAlreadyAttached,
+			audit["reason"],
+			"refunds took the backend before audit existed",
+		)
+		assert.Contains(t, audit["message"], "refunds")
 	})
 
 	t.Run("shows the overlay in every state, written by the overlay manager", func(t *testing.T) {
