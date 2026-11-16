@@ -41,7 +41,7 @@ describe("loadClusterPage", () => {
     expect(await loadClusterPage("team-a", "payments")).toBeUndefined();
   });
 
-  it("lists the pods of the cluster by its label and the access requests by their section", async () => {
+  it("lists the pods of the cluster by its label", async () => {
     named("orders");
     const data = await loadClusterPage("team-a", "orders");
     expect(data?.podSelector).toBe("camunda.io/cluster=orders");
@@ -49,9 +49,15 @@ describe("loadClusterPage", () => {
       namespace: "team-a",
       labelSelector: "camunda.io/cluster=orders",
     });
-    expect(listOf("PluginRequest")).toEqual({
-      namespace: "team-a",
-      labelSelector: "plugins.camunda.io/section=access",
+  });
+
+  it("lists the PluginRequests once, by the claim label", async () => {
+    named("orders");
+    await loadClusterPage("team-a", "orders");
+    const lists = k8s.lists.filter((l) => l.kind === "PluginRequest");
+    expect(lists).toHaveLength(1);
+    expect(lists[0].opts).toMatchObject({
+      labelSelector: expect.stringMatching(/^fleet\.camunda\.io\/claim=/),
     });
   });
 

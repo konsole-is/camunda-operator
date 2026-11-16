@@ -131,6 +131,11 @@ async function openEditors() {
 }
 
 describe("ComponentSettingsEditor", () => {
+  it("renders nothing for a section", () => {
+    renderSlot(contextOf({ openId: "section:backup-storage" }));
+    expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
+  });
+
   it("an embedded Tasklist field writes to spec.cluster.tasklist", async () => {
     renderSlot(contextOf({ openId: "gateway" }));
     await openEditors();

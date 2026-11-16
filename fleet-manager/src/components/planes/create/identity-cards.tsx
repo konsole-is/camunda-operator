@@ -51,9 +51,9 @@ export function IdentityCards({
   const oidcOff = oidcDisabledReason(platformConfig);
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <h2 id={`${id}-label`} className="font-heading text-base font-semibold">
+      <h3 id={`${id}-label`} className="font-heading text-base font-semibold">
         Where users sign in
-      </h2>
+      </h3>
       <div
         role="radiogroup"
         aria-labelledby={`${id}-label`}
@@ -121,9 +121,9 @@ export function ExternalKeycloakFields({
     onChange({ ...value, [key]: text });
   return (
     <section className="flex max-w-md min-w-0 flex-col gap-4">
-      <h2 className="font-heading text-base font-semibold">
+      <h3 className="font-heading text-base font-semibold">
         External Keycloak
-      </h2>
+      </h3>
       <Field id={`${id}-url`} label="Keycloak URL">
         <p id={`${id}-url-hint`} className="text-sm text-muted">
           The URL from inside the Kubernetes cluster, with the /auth path when
