@@ -1,8 +1,7 @@
 import type { CamundaClusterClaim } from "../../src/generated/crds/camundaclusterclaim";
 import { kubeRequest } from "../../test/scenarios/kube";
-import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
-import { checkPage, inBothThemes } from "./themes";
+import { checkPage } from "./themes";
 
 test.use({ scenarioName: "cluster-create" });
 
@@ -59,9 +58,7 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
   ]) {
     await expect(page.getByText(row, { exact: true })).toBeVisible();
   }
-  await inBothThemes(page, (theme) =>
-    shot(page, "cluster-create-progress", { dir: PAGES_DIR, theme }),
-  );
+  await checkPage(page, "cluster-create-progress");
 
   const namespace = await kubeRequest<{
     metadata: { labels: Record<string, string> };
