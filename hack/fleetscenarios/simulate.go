@@ -39,6 +39,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // The field managers of the writes of the simulator: the controllers of
@@ -856,8 +858,15 @@ func (s *simulator) writePodStatus(ctx context.Context, pod *corev1.Pod, status 
 // JSON of t, the template of workload. A template can hold the UID of an
 // owner of workload, such as a label that names the owner, and the UID of
 // an object differs on each run. The hash takes the scenario UID of each
-// owner in its place, so it is the same on each run.
+// owner in its place, so it is the same on each run. It ignores the value of
+// the config hash annotation, so two templates that differ only in that
+// value get one hash.
 func templateHash(t corev1.PodTemplateSpec, workload metav1.Object) string {
+	if _, ok := t.Annotations[camundamanagementcluster.ConfigHashAnnotation]; ok {
+		t.Annotations = maps.Clone(t.Annotations)
+		t.Annotations[camundamanagementcluster.ConfigHashAnnotation] = scenarioConfigHash
+	}
+
 	data, _ := json.Marshal(t)
 	for _, owner := range workload.GetOwnerReferences() {
 		derived := scenarioUID(owner.Kind, workload.GetNamespace(), owner.Name)

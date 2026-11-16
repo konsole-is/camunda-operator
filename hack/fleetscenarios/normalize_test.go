@@ -29,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+
+	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // object returns an unstructured object for the tests of normalize. A uid
@@ -214,6 +216,43 @@ func TestNormalizeKeepsAnObservedGenerationThatIsBehind(t *testing.T) {
 		observed, _, _ := unstructured.NestedInt64(out[0].Object, "status", "observedGeneration")
 		assert.Equal(t, int64(0), observed, "an observed generation of %d is behind 4", observedBefore)
 	}
+}
+
+func TestNormalizeGivesEveryConfigHashOneValue(t *testing.T) {
+	run := func(hash string) []unstructured.Unstructured {
+		deployment := object("apps/v1", "Deployment", "team-a", "web-modeler", "deployment")
+		require.NoError(t, unstructured.SetNestedStringMap(deployment.Object, map[string]string{
+			camundamanagementcluster.ConfigHashAnnotation: hash,
+			"team-a/owner": "modeling",
+		}, "spec", "template", "metadata", "annotations"))
+		pod := object("v1", "Pod", "team-a", "web-modeler-abc", "pod")
+		pod.SetAnnotations(map[string]string{camundamanagementcluster.ConfigHashAnnotation: hash})
+
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{deployment, pod})
+		require.NoError(t, err)
+		return out
+	}
+
+	first := run("0429b9eafb6e532c")
+	assert.Equal(t, first, run("8b18034a08aa4335"), "two runs with different config hashes must write the same objects")
+
+	deployment := find(t, first, "Deployment", "team-a", "web-modeler")
+	annotations, _, _ := unstructured.NestedStringMap(deployment.Object, "spec", "template", "metadata", "annotations")
+	assert.Equal(t, map[string]string{
+		camundamanagementcluster.ConfigHashAnnotation: scenarioConfigHash,
+		"team-a/owner": "modeling",
+	}, annotations)
+	pod := find(t, first, "Pod", "team-a", "web-modeler-abc")
+	assert.Equal(t, scenarioConfigHash, pod.GetAnnotations()[camundamanagementcluster.ConfigHashAnnotation])
+}
+
+func TestNormalizeAddsNoConfigHash(t *testing.T) {
+	pod := object("v1", "Pod", "team-a", "web-modeler-abc", "pod")
+
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{pod})
+	require.NoError(t, err)
+
+	assert.Empty(t, out[0].GetAnnotations())
 }
 
 func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {

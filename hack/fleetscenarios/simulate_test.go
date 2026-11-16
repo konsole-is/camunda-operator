@@ -33,6 +33,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // fakeClient returns a fake client with the status subresource of every kind
@@ -263,6 +265,58 @@ func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 		assert.NotEqual(t, before, pod.Labels[appsv1.ControllerRevisionHashLabelKey])
 		assert.Equal(t, "camunda/camunda:8.9.24", pod.Spec.Containers[0].Image)
 	}
+}
+
+func TestTemplateHashIgnoresTheValueOfTheConfigHash(t *testing.T) {
+	d := webapp()
+	withConfigHash := func(value string) corev1.PodTemplateSpec {
+		template := *d.Spec.Template.DeepCopy()
+		template.Annotations = map[string]string{camundamanagementcluster.ConfigHashAnnotation: value}
+		return template
+	}
+
+	first := withConfigHash("0429b9eafb6e532c")
+	assert.Equal(t, templateHash(first, d), templateHash(withConfigHash("8b18034a08aa4335"), d))
+	assert.Equal(t, "0429b9eafb6e532c", first.Annotations[camundamanagementcluster.ConfigHashAnnotation],
+		"the template keeps its own config hash")
+
+	newImage := withConfigHash("0429b9eafb6e532c")
+	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
+	assert.NotEqual(t, templateHash(first, d), templateHash(newImage, d))
+}
+
+func TestSimulatorKeepsTheReplicaSetWhenOnlyTheConfigHashChanges(t *testing.T) {
+	d := webapp()
+	d.Spec.Template.Annotations = map[string]string{camundamanagementcluster.ConfigHashAnnotation: "0429b9eafb6e532c"}
+	c := fakeClient(t, d)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+	before := replicaSetNames(t, c)
+
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	d.Spec.Template.Annotations[camundamanagementcluster.ConfigHashAnnotation] = "8b18034a08aa4335"
+	require.NoError(t, c.Update(context.Background(), d))
+	for range 2 {
+		_, err = sim.pass(context.Background())
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, before, replicaSetNames(t, c))
+}
+
+// replicaSetNames returns the names of the ReplicaSets of team-a.
+func replicaSetNames(t *testing.T, c client.Client) []string {
+	t.Helper()
+
+	var sets appsv1.ReplicaSetList
+	require.NoError(t, c.List(context.Background(), &sets, client.InNamespace("team-a")))
+	names := make([]string, 0, len(sets.Items))
+	for i := range sets.Items {
+		names = append(names, sets.Items[i].Name)
+	}
+	return names
 }
 
 func TestSimulatorCompletesAJob(t *testing.T) {

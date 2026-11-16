@@ -88,8 +88,15 @@ limitations under the License.
 // The outputs are normalized, so the same input always writes the same
 // bytes: UIDs come from the kind, namespace, and name of an object, there is
 // no resource version, every timestamp is 2026-01-01T00:00:00Z, every value
-// of a Secret is "scenario", and each Event is written once, named after
-// the object it is about, its reason, and its note, with no count.
+// of a Secret is "scenario", every camunda.io/config-hash annotation is
+// "scenario", and each Event is written once, named after the object it is
+// about, its reason, and its note, with no count.
+//
+// The config hash covers the UID of a Secret that the operator generates,
+// and envtest gives that Secret another UID on each run. So the workload
+// simulator also hashes each pod template with "scenario" as its config
+// hash. A state that changes only an input of the config hash therefore
+// makes no new ReplicaSet, StatefulSet revision, or Pod in the simulation.
 //
 // # Writers
 //
