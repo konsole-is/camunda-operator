@@ -89,7 +89,7 @@ test.afterAll(() => {
   );
   kubectl(
     "delete",
-    "configmap,grants.plugins.camunda.io",
+    "configmap,ingress,grants.plugins.camunda.io",
     "-n",
     namespace,
     "-l",
@@ -112,8 +112,10 @@ test("a delete with Keep the resources removes the cluster and keeps the resourc
   await page.goto(`/fleet/clusters/${namespace}/${name}`);
   await page.getByRole("link", { name: "Delete", exact: true }).click();
   await page.getByRole("radio", { name: /Keep the resources/ }).check();
+  // The option also made a StorageClass and an Ingress whose names hold
+  // the name of the ConfigMap, so the row is picked by its kind too.
   await expect(
-    page.getByRole("row").filter({ hasText: `${request}-echo` }),
+    page.getByRole("row", { name: `ConfigMap ${request}-echo` }),
   ).toContainText("Kept");
   await page.getByLabel(`Type ${name} to confirm`).fill(name);
   const confirm = page.getByRole("button", { name: "Delete the cluster" });
