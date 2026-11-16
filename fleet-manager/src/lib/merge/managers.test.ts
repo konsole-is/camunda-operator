@@ -384,6 +384,69 @@ describe("keptRemovals", () => {
     ]);
   });
 
+  it("keeps of an object that another manager owns by its presence only the children that it owns", () => {
+    const owned = {
+      manager: "kubectl",
+      operation: "Apply",
+      fieldsV1: {
+        "f:spec": {
+          "f:clusterSelector": { ".": {}, "f:matchLabels": { "f:team": {} } },
+        },
+      },
+    };
+    const mine = {
+      manager: APP_FIELD_MANAGER,
+      operation: "Apply",
+      fieldsV1: {
+        "f:spec": {
+          "f:clusterSelector": { "f:matchExpressions": {} },
+        },
+      },
+    };
+    const before = {
+      spec: {
+        clusterSelector: {
+          matchLabels: { team: "a" },
+          matchExpressions: [{ key: "tier", operator: "Exists" }],
+        },
+      },
+    };
+    const { kept, result } = keptRemovals(
+      { metadata: { managedFields: [owned, mine] } },
+      before,
+      { spec: {} },
+    );
+    expect(kept).toEqual([
+      { path: "spec.clusterSelector", managers: ["kubectl"] },
+    ]);
+    expect(result).toEqual({
+      spec: { clusterSelector: { matchLabels: { team: "a" } } },
+    });
+  });
+
+  it("keeps the keys of a list item that another manager owns by its presence", () => {
+    const owned = {
+      manager: "kubectl",
+      operation: "Apply",
+      fieldsV1: {
+        "f:spec": {
+          "f:plugins": { 'k:{"section":"s","registration":"r"}': { ".": {} } },
+        },
+      },
+    };
+    const before = {
+      spec: { plugins: [{ section: "s", registration: "r", parameters: {} }] },
+    };
+    const { result } = keptRemovals(
+      { metadata: { managedFields: [owned] } },
+      before,
+      { spec: { plugins: [] } },
+    );
+    expect(result).toEqual({
+      spec: { plugins: [{ section: "s", registration: "r" }] },
+    });
+  });
+
   it("keeps nothing for a change that removes nothing, or without managed fields", () => {
     const after = { ...spec(), deletionPolicy: "Orphan" };
     expect(keptRemovals(live, { spec: spec() }, { spec: after })).toEqual({

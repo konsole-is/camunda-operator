@@ -593,6 +593,21 @@ describe("PlaneView", () => {
       ).toBeGreaterThan(0);
     });
 
+    it("offers no edit while the first snapshot of the plane is overdue", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      live.overdue = new Set(["CamundaManagementCluster"]);
+      render(
+        <GitPushesProvider>
+          <PlaneView
+            data={data({ claimTab })}
+            writeMode="direct"
+            claimActions={{ preview: vi.fn(), apply: vi.fn() }}
+          />
+        </GitPushesProvider>,
+      );
+      expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+    });
+
     it("says that a list of the Claim tab is not current while its first snapshot is overdue", () => {
       window.history.replaceState(null, "", "?tab=claim");
       live.overdue = new Set(["CamundaCluster"]);

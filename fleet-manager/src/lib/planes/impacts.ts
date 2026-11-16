@@ -450,7 +450,13 @@ function platformConfigLines(
   const after = effectiveConfig(spec, input);
   if (before === after) return [];
   const name = (ref: string | undefined) => ref ?? "none";
-  return [`The platform config moves from ${name(before)} to ${name(after)}.`];
+  const oidc = (s: Spec) =>
+    identityModeOf(s.management?.identityProvider) === "oidc";
+  // A move into OIDC mode gives this line in moveLines.
+  return [
+    `The platform config moves from ${name(before)} to ${name(after)}.`,
+    ...(oidc(live) && oidc(spec) ? [OIDC_CALLBACKS] : []),
+  ];
 }
 
 // A claim without a platform config takes the one of its Environment.

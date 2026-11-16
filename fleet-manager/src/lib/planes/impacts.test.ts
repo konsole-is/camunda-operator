@@ -931,6 +931,22 @@ describe("planeRestarts", () => {
     ]);
   });
 
+  it("says where the Optimize callbacks go on a move of the platform config in OIDC mode", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [at("spec", "platformConfigRef"), "sso-2"]);
+    expect(planeImpacts(input(s))).toEqual([
+      "The platform config moves from sso to sso-2.",
+      OIDC_CALLBACKS,
+    ]);
+  });
+
   it("restarts the Optimize that reads the contract of an OIDC plane, which lists no status.optimize", () => {
     const live = planeClaim({
       platformConfigRef: "sso",

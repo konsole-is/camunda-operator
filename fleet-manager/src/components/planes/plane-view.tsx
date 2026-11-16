@@ -14,7 +14,12 @@ import {
 } from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import {
+  useResource,
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { environmentNameOf } from "@/lib/policy";
@@ -134,6 +139,7 @@ export function PlaneView({
   ] as const;
   const answered = useAnswered(followed);
   const fresh = useWatchesFresh(followed);
+  const overdue = useWatchesOverdue(followed);
   const firstErrors = (data.readErrors ?? []).filter(
     (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
   );
@@ -147,6 +153,11 @@ export function PlaneView({
       .filter(({ kind }, i) => answered.has(kind) && !fresh[i])
       .map(({ kind }) => kind),
   };
+  // The Claim tab takes the rule of the cluster page: a list that never
+  // answered is not current once its snapshot is overdue.
+  const claimStale = followed
+    .filter(({ kind }, i) => (answered.has(kind) ? !fresh[i] : overdue[i]))
+    .map(({ kind }) => kind);
   const unreadOf = (kinds: readonly KindName[]) =>
     unreadKinds(reads).filter((k) => kinds.includes(k as KindName));
   const unread = (kind: KindName) => errors.some((e) => e.kind === kind);
@@ -239,8 +250,8 @@ export function PlaneView({
         namespaces={namespaces.items}
         environments={environments.items}
         optimizes={optimizes.items}
-        pageUnread={unreadKinds(reads)}
-        pageStale={reads.stale ?? []}
+        pageUnread={[...new Set([...unreadKinds(reads), ...claimStale])]}
+        pageStale={claimStale}
         writeMode={writeMode}
         actions={claimActions}
       >

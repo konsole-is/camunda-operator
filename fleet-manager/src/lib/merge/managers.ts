@@ -97,11 +97,16 @@ export function keptRemovals(
 }
 
 // Owners is the merged FieldsV1 tree of several managers: the managers
-// that own each node, by the FieldsV1 key of each child.
-type Owners = { managers: string[]; children: Map<string, Owners> };
+// that own each node, by the FieldsV1 key of each child. whole says that a
+// manager owns the node with no child keys, not only by ".".
+type Owners = {
+  managers: string[];
+  whole: boolean;
+  children: Map<string, Owners>;
+};
 
 function newOwners(): Owners {
-  return { managers: [], children: new Map() };
+  return { managers: [], whole: false, children: new Map() };
 }
 
 function addOwner(
@@ -120,8 +125,10 @@ function addOwner(
       at.children.set(key, next);
     }
     const children = isRecord(sub) ? sub : {};
-    if (Object.keys(children).length === 0) own(next, manager);
-    else addOwner(next, children, manager);
+    if (Object.keys(children).length === 0) {
+      own(next, manager);
+      next.whole = true;
+    } else addOwner(next, children, manager);
   }
 }
 
@@ -130,17 +137,23 @@ function own(at: Owners, manager: string): void {
 }
 
 // restore returns after with each value of before that owners own and
-// after leaves out put back, and adds each such value to kept.
+// after leaves out put back, and adds each such value to kept unless quiet.
 function restore(
   owners: Owners,
   before: unknown,
   after: unknown,
   path: FieldPath,
   kept: KeptField[],
+  quiet = false,
+  seed?: unknown,
 ): unknown {
   if (after === undefined && owners.managers.length > 0) {
-    kept.push({ path, managers: [...owners.managers] });
-    return before;
+    if (!quiet) kept.push({ path, managers: [...owners.managers] });
+    // A node owned only by "." is owned for its presence: of its
+    // children, only those that other managers own stay.
+    if (owners.whole) return before;
+    const empty = Array.isArray(before) ? [] : (seed ?? {});
+    return restore(owners, before, empty, path, kept, true);
   }
   if (Array.isArray(before)) {
     let items = Array.isArray(after) ? after : undefined;
@@ -151,7 +164,15 @@ function restore(
       const index =
         items?.findIndex((candidate) => found.matches(candidate)) ?? -1;
       const current = index < 0 ? undefined : items![index];
-      const next = restore(found.owners, item, current, found.path(path), kept);
+      const next = restore(
+        found.owners,
+        item,
+        current,
+        found.path(path),
+        kept,
+        quiet,
+        found.seed,
+      );
       if (next === current) continue;
       changed = true;
       items =
@@ -168,7 +189,14 @@ function restore(
       const below = owners.children.get(`f:${key}`);
       if (below === undefined) continue;
       const current = fields?.[key];
-      const next = restore(below, value, current, child(path, key), kept);
+      const next = restore(
+        below,
+        value,
+        current,
+        child(path, key),
+        kept,
+        quiet,
+      );
       if (next === current) continue;
       changed = true;
       fields = { ...(fields ?? {}), [key]: next };
@@ -188,6 +216,7 @@ function itemOwners(
       owners: Owners;
       matches: (candidate: unknown) => boolean;
       path: (list: FieldPath) => FieldPath;
+      seed?: unknown;
     }
   | undefined {
   for (const [key, node] of owners.children) {
@@ -202,7 +231,12 @@ function itemOwners(
       isRecord(candidate) &&
       Object.entries(keys).every(([k, v]) => sameJSON(candidate[k], v));
     if (matches(item))
-      return { owners: node, matches, path: (list) => keyedItem(list, keys) };
+      return {
+        owners: node,
+        matches,
+        path: (list) => keyedItem(list, keys),
+        seed: { ...keys },
+      };
   }
   const node = owners.children.get(`v:${JSON.stringify(item)}`);
   if (node === undefined) return undefined;
