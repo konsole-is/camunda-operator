@@ -83,6 +83,56 @@ export function releaseChoices(input: {
   return { options, ...(note && { note }) };
 }
 
+/**
+ * createReleaseChoices returns the releases that a new cluster can use: those
+ * that environment allows, every release without an Environment, newest
+ * first. The default release of environment is marked. No option is
+ * current, disabled, or a downgrade, because a new cluster runs no version.
+ */
+export function createReleaseChoices(
+  releases: readonly Resource<"CamundaRelease">[],
+  environment: Environment | undefined,
+): ReleaseOption[] {
+  return releases
+    .filter((r) => releaseAllowed(r.metadata?.name ?? "", environment))
+    .map((r) => {
+      const name = r.metadata?.name ?? "";
+      return {
+        name,
+        version: r.spec.version,
+        isDefault: environment?.spec.releases?.default === name,
+        isCurrent: false,
+      };
+    })
+    .sort(
+      (a, b) =>
+        compareVersions(b.version, a.version) || a.name.localeCompare(b.name),
+    );
+}
+
+/**
+ * releaseLabel returns the text of a release option: its version and name,
+ * then the reason when it is disabled, else its marks Default and
+ * downgrade.
+ */
+export function releaseLabel(
+  release: {
+    name: string;
+    version: string;
+    disabled?: string;
+    downgrade?: { from: string; to: string };
+  },
+  isDefault: boolean,
+): string {
+  const label = `${release.version} (${release.name})`;
+  if (release.disabled) return `${label}: ${release.disabled}`;
+  const marks = [
+    isDefault && "Default",
+    release.downgrade && "downgrade",
+  ].filter(Boolean);
+  return marks.length > 0 ? `${label}, ${marks.join(", ")}` : label;
+}
+
 // A version that parseVersion cannot read is lower than every other.
 function compareVersions(a: string, b: string): number {
   const x = parseVersion(a) ?? [-1, -1, -1];
