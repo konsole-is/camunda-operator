@@ -1,4 +1,4 @@
-import { clusterImpacts } from "@/components/cluster/impacts";
+import { clusterImpacts, RESTART_ALL } from "@/components/cluster/impacts";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
@@ -209,6 +209,10 @@ export function rolloutRows(
             text: `The claim ${cluster.metadata?.labels?.[CLAIM_LABEL]} is missing.`,
           };
         if (currentRelease === target) return targetStatus(claim);
+        return checked();
+      }
+
+      function checked(): MoveStatus {
         return moveStatus(
           releaseMove(
             cluster,
@@ -229,8 +233,12 @@ export function rolloutRows(
           ready.reason === VERSION_DOWNGRADE_REFUSED &&
           to !== "" &&
           claim.spec?.allowVersionDowngrade !== to
-        )
-          return { kind: "downgradeRefused", to, text: refused };
+        ) {
+          const check = checked();
+          return check.kind === "backupRunning"
+            ? check
+            : { kind: "downgradeRefused", to, text: refused };
+        }
         if (
           ready.reason === VERSION_DOWNGRADE_REFUSED ||
           ready.reason === VERSION_SKIP_REFUSED
@@ -314,6 +322,9 @@ export function planMove(
     impacts.push({
       cluster: row.key,
       lines: [
+        // Both specs name the release already, so the change of
+        // allowVersionDowngrade alone shows no restart.
+        ...(row.status.kind === "downgradeRefused" ? [RESTART_ALL] : []),
         ...clusterImpacts({
           session,
           live: row.cluster,

@@ -380,6 +380,65 @@ describe("RolloutTab", () => {
     ).toBeTruthy();
   });
 
+  it("closes the review of a refused downgrade when a backup of its cluster starts", async () => {
+    const base = rolloutData();
+    const refused: RolloutData = {
+      ...base,
+      clusters: base.clusters.map((c) =>
+        c.metadata?.name === "payments"
+          ? cluster("team-pay", "payments", {
+              version: "8.9.4",
+              releaseRef: "camunda-8-9-1",
+              conditions: [
+                {
+                  type: "Ready",
+                  status: "False",
+                  reason: "VersionDowngradeRefused",
+                  message: "the effective version is refused",
+                },
+              ],
+            })
+          : c,
+      ),
+      claims: base.claims.map((c) =>
+        c.metadata.name === "payments"
+          ? clusterClaim("team-pay", "payments", {
+              releaseRef: "camunda-8-9-1",
+            })
+          : c,
+      ),
+    };
+    const { rerender } = renderTab({ data: refused });
+    await userEvent.click(
+      within(rowOf("payments")).getByRole("button", {
+        name: "Confirm downgrade",
+      }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Review the move" }),
+    ).toBeTruthy();
+    rerender({
+      ...refused,
+      rdbmsBackups: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalBackupRDBMS",
+          metadata: { namespace: "team-pay", name: "payments-now" },
+          spec: { clusterRef: { name: "payments" } },
+          status: { phase: "Running" },
+        } as Resource<"LogicalBackupRDBMS">,
+      ],
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
+    expect(
+      within(rowOf("payments")).getByText(
+        "Backup payments-now is running. The move waits until it ends.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("offers no move, names the list, and closes an open review while a list that the move checks is not read", async () => {
     const { rerender } = renderTab();
     await userEvent.click(

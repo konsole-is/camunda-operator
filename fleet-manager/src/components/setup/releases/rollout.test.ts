@@ -128,6 +128,24 @@ describe("rolloutRows", () => {
     expect(payments.refusal).toBeUndefined();
   });
 
+  it("blocks a refused downgrade while a backup of the cluster has not ended", () => {
+    const data = refusedOnTarget("VersionDowngradeRefused");
+    const payments = rolloutRows(targetRelease, {
+      ...data,
+      rdbmsBackups: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalBackupRDBMS",
+          metadata: { namespace: "team-pay", name: "payments-now" },
+          spec: { clusterRef: { name: "payments" } },
+          status: { phase: "Running" },
+        } as Resource<"LogicalBackupRDBMS">,
+      ],
+    }).find((r) => r.name === "payments")!;
+    expect(payments.status.kind).toBe("backupRunning");
+    expect(payments.action).toBeUndefined();
+  });
+
   it("offers no confirm for a refused downgrade that the claim already allows", () => {
     const payments = refusedRow("VersionDowngradeRefused", {
       allowVersionDowngrade: "8.9.1",
@@ -369,6 +387,9 @@ describe("planMove", () => {
     expect(plan.change?.apply[0]).toMatchObject({
       spec: { releaseRef: "camunda-8-9-1", allowVersionDowngrade: "8.9.1" },
     });
+    expect(plan.impacts[0].lines).toContain(
+      "The brokers restart one at a time. The other processes restart.",
+    );
   });
 
   it("refuses a downgrade that the user did not confirm", () => {
