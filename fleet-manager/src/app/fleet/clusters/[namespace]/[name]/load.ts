@@ -7,7 +7,7 @@ import { clusterFields } from "@/lib/fields";
 import { listOrEmpty } from "@/lib/k8s/list-or-empty";
 import { get } from "@/lib/k8s/read";
 import { CLAIM_LABEL, CLUSTER_LABEL } from "@/lib/labels";
-import { ownerName } from "@/lib/labels/server";
+import { ownerName } from "@/lib/labels/owner-name";
 import { mergeCluster } from "@/lib/merge";
 
 /**
