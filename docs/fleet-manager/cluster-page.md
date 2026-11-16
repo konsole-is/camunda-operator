@@ -166,11 +166,11 @@ The backups of the cluster stay, and their artifacts stay in the bucket. When th
 1. Type the name of the cluster.
 2. Select **Delete the cluster**. In Git mode, the button is **Push the delete to Git**.
 
-You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. The page shows "Waiting for the operator to read the deletion policy." Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
+You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. The page shows "Waiting for the claim to show the deletion policy." Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
 
-The wait ends only when the operator reads the deletion policy. If the operator does not run, select **Stop waiting**. The fleet manager then sends no delete. The deletion policy that the fleet manager wrote stays in the claim. The page shows the deletion policy that the claim has, also after another change.
+The wait ends when the claim shows the deletion policy. If the wait does not end, select **Stop waiting**. The fleet manager then sends no delete. The deletion policy that the fleet manager wrote stays in the claim. The page shows the deletion policy that the claim has, also after another change.
 
-If the claim changed after the page read it, the delete fails, and the page shows the claim again for a new review. This also applies when someone else changes the claim during the wait. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
+If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. If the status changes at each of five tries, the delete fails. The page then says "The CamundaClusterClaim my-cluster kept changing during the delete. Delete it again." This also applies when someone else changes the claim during the wait. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
 
 ### When the page cannot read a list
 

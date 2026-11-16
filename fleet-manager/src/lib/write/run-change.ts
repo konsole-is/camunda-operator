@@ -14,7 +14,7 @@ import type {
   Preview,
   WriteResult,
 } from "./types";
-import { firstExisting, getWriter, listObjects } from "./writer";
+import { firstExisting, getWriter, listObjects, readLive } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
 export const kubeObjectSchema: z.ZodType<KubeObject> = z.looseObject({
@@ -46,7 +46,7 @@ const refKeySchema = z.templateLiteral([
 /**
  * changeSchema accepts a Change with an intent and at least one object to
  * apply or delete. Each key of create names an applied object that has no
- * precondition. Each key of uids names a deleted object.
+ * precondition. Each key of uids and of generations names a deleted object.
  */
 export const changeSchema: z.ZodType<Change> = z
   .object({
@@ -55,6 +55,7 @@ export const changeSchema: z.ZodType<Change> = z
     delete: z.array(objectRefSchema).optional(),
     preconditions: z.record(refKeySchema, z.string()).optional(),
     uids: z.record(refKeySchema, z.string().min(1)).optional(),
+    generations: z.record(refKeySchema, z.number().int().positive()).optional(),
     create: z.array(refKeySchema).optional(),
     force: z.boolean().optional(),
     directOnly: z.boolean().optional(),
@@ -80,6 +81,18 @@ export const changeSchema: z.ZodType<Change> = z
     {
       message: "uids names an object that the change does not delete.",
       path: ["uids"],
+    },
+  )
+  .refine(
+    (c) => {
+      const deleted: string[] = (c.delete ?? []).map(refKey);
+      return Object.keys(c.generations ?? {}).every((key) =>
+        deleted.includes(key),
+      );
+    },
+    {
+      message: "generations names an object that the change does not delete.",
+      path: ["generations"],
     },
   )
   .refine(
@@ -116,9 +129,9 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
 /**
  * claimDeleteSchema accepts a Change that deletes exactly one claim of a
  * cluster or a management plane and nothing else: an empty apply, one
- * delete ref with the kind and apiVersion of a claim and a namespace,
- * optional uids and resourceVersion precondition for that ref, and no
- * create, force, or directOnly.
+ * delete ref with the kind and apiVersion of a claim and a namespace, the
+ * UID and the generation of that claim in uids and generations, and no
+ * preconditions, create, force, or directOnly.
  */
 export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -132,7 +145,9 @@ export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
       // wrong apiVersion would report a delete that never happened.
       ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
       ref.namespace !== undefined &&
-      Object.keys(c.preconditions ?? {}).every((key) => key === refKey(ref)) &&
+      c.uids?.[refKey(ref)] !== undefined &&
+      c.generations?.[refKey(ref)] !== undefined &&
+      c.preconditions === undefined &&
       c.create === undefined &&
       c.force === undefined &&
       c.directOnly === undefined
@@ -140,6 +155,96 @@ export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
   },
   { message: "The change must delete one claim and nothing else." },
 );
+
+/**
+ * CLAIM_DELETE_ATTEMPTS is how many deletes runClaimDelete sends before it
+ * refuses a claim whose status keeps changing. A spec change makes the
+ * claim controller write the status once, and once more for each request
+ * that a plugin reports again.
+ */
+export const CLAIM_DELETE_ATTEMPTS = 5;
+
+/**
+ * runClaimDelete is runChange with claimDeleteSchema, for the delete of a
+ * claim. A status write of the claim since the review does not refuse it.
+ * It refuses with Stale, and deletes nothing, when the claim is gone, has
+ * another UID, or has another generation than the change names, that is
+ * when its spec changed since the review. In direct mode it deletes at the
+ * resourceVersion of a fresh read, and reads again after a conflict, at
+ * most CLAIM_DELETE_ATTEMPTS times. Then it refuses with Stale and says
+ * that the claim kept changing. In Git mode the Git writer checks the UID
+ * and the generation. A failed read gives Unavailable.
+ */
+export async function runClaimDelete(input: unknown): Promise<WriteResult> {
+  const parsed = claimDeleteSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  const change = parsed.data;
+  const ref = change.delete![0];
+  try {
+    const writer = await getWriter();
+    for (let attempt = 0; attempt < CLAIM_DELETE_ATTEMPTS; attempt++) {
+      const live = await readLive(ref);
+      const refusal = reviewRefusalOf(change, ref, live);
+      if (refusal !== undefined) return { ok: false, errors: [refusal] };
+      if (writer.mode === "git") return await writer.apply(change);
+      const result = await writer.apply({
+        ...change,
+        preconditions: { [refKey(ref)]: live!.metadata.resourceVersion ?? "" },
+      });
+      if (result.ok || !result.errors.every((e) => e.code === "Stale"))
+        return result;
+    }
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
+  }
+  return {
+    ok: false,
+    errors: [
+      {
+        code: "Stale",
+        message: `The ${ref.kind} ${ref.name} kept changing during the delete. Delete it again.`,
+        ref,
+      },
+    ],
+  };
+}
+
+/**
+ * previewClaimDelete is runPreview with claimDeleteSchema. It gives no
+ * objects and the Stale error of runClaimDelete when the claim is gone or
+ * changed since the review.
+ */
+export async function previewClaimDelete(input: unknown): Promise<Preview> {
+  const parsed = claimDeleteSchema.safeParse(input);
+  if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
+  const change = parsed.data;
+  const ref = change.delete![0];
+  try {
+    const refusal = reviewRefusalOf(change, ref, await readLive(ref));
+    if (refusal !== undefined) return { objects: [], errors: [refusal] };
+    return await (await getWriter()).preview(change);
+  } catch (error) {
+    return { objects: [], errors: [unavailable(error)] };
+  }
+}
+
+function reviewRefusalOf(
+  change: Change,
+  ref: ObjectRef,
+  live: KubeObject | undefined,
+): ApiError | undefined {
+  if (live === undefined)
+    return {
+      code: "Stale",
+      message: `The ${ref.kind} ${ref.name} does not exist.`,
+      ref,
+    };
+  const key = refKey(ref);
+  return live.metadata.uid !== change.uids?.[key] ||
+    live.metadata.generation !== change.generations?.[key]
+    ? staleError(ref)
+    : undefined;
+}
 
 const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
 

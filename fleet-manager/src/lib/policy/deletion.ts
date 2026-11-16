@@ -141,8 +141,9 @@ export function deletionChoice(
 
 /**
  * DeletableClaim is the part of a live claim of either kind that a delete
- * reads: its reference, its resourceVersion and UID, its own deletion
- * policy, its selections, and the policy that it recorded when it was made.
+ * reads: its reference, its resourceVersion, UID, and generation, its own
+ * deletion policy, its selections, and the policy that it recorded when it
+ * was made.
  */
 export type DeletableClaim = {
   apiVersion: string;
@@ -152,6 +153,7 @@ export type DeletableClaim = {
     namespace?: string;
     resourceVersion?: string;
     uid?: string;
+    generation?: number;
   };
   spec?: {
     deletionPolicy?: DeletionPolicy | "";

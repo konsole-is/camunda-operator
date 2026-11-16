@@ -101,8 +101,10 @@ type Remote = {
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
- * applied yet (Conflict), an object to delete with a UID is gone from the
- * cluster or has another UID there (Stale), an object of create exists in
+ * applied yet (Conflict), an object to delete with a UID or a generation
+ * is gone from the cluster or has another one there (Stale), an object to
+ * delete with a generation has a file that GitOps has not applied yet
+ * (Conflict), an object of create exists in
  * the cluster or has a file in the repository (Stale), or the dry run
  * against the cluster fails. The dry run skips an ExternalSecret and an
  * object in a namespace that the same change creates. The preview shows them as rendered. The
@@ -224,13 +226,21 @@ export function gitWriter(options: GitWriterOptions): Writer {
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
       const uid = change.uids?.[refKey(ref)];
-      if (expected === undefined && uid === undefined) continue;
+      const generation = change.generations?.[refKey(ref)];
+      if (
+        expected === undefined &&
+        uid === undefined &&
+        generation === undefined
+      )
+        continue;
       try {
         const object = await read(ref);
         if (
           (expected !== undefined &&
             object?.metadata.resourceVersion !== expected) ||
-          (uid !== undefined && object?.metadata.uid !== uid)
+          (uid !== undefined && object?.metadata.uid !== uid) ||
+          (generation !== undefined &&
+            object?.metadata.generation !== generation)
         ) {
           errors.push(staleError(ref));
         }
@@ -298,9 +308,9 @@ export function gitWriter(options: GitWriterOptions): Writer {
     }
   };
 
-  // The live object of a ref with a precondition passes the stale check
-  // until GitOps applies a pushed save, so a second save from the same
-  // read would undo the first in the repository.
+  // The live object of a ref with a precondition or a generation passes
+  // the stale check until GitOps applies a pushed save, so a second save
+  // from the same read would undo the first in the repository.
   const pendingErrors = async (
     dir: string,
     base: string,
@@ -309,13 +319,20 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const errors: ApiError[] = [];
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
-      if (expected === undefined) continue;
+      const generation = change.generations?.[refKey(ref)];
+      if (expected === undefined && generation === undefined) continue;
       const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
       const committed = await revisionOf(dir, file);
       try {
         // GitOps can apply an earlier save during the clone.
         const object = await read(ref);
-        if (object?.metadata.resourceVersion !== expected) {
+        if (
+          object === undefined ||
+          (expected !== undefined &&
+            object.metadata.resourceVersion !== expected) ||
+          (generation !== undefined &&
+            object.metadata.generation !== generation)
+        ) {
           errors.push(staleError(ref));
           continue;
         }

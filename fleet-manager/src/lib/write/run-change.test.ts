@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
-import type { Writer } from "./types";
+import type { KubeObject, ObjectRef, WriteMode, Writer } from "./types";
 
 const fake = {
-  mode: "direct" as const,
+  mode: "direct" as WriteMode,
   preview: vi.fn<Writer["preview"]>(),
   apply: vi.fn<Writer["apply"]>(),
 };
-vi.mock("./writer", () => ({ getWriter: async () => fake }));
+// readLive answers with the objects of reads, one read after the other,
+// and keeps the last one.
+let reads: (KubeObject | undefined)[] = [];
+const readLive = vi.fn<(ref: ObjectRef) => Promise<KubeObject | undefined>>(
+  async () => (reads.length > 1 ? reads.shift() : reads[0]),
+);
+vi.mock("./writer", () => ({ getWriter: async () => fake, readLive }));
 
 const {
   adminChangeSchema,
@@ -15,11 +21,14 @@ const {
   changeSchema,
   claimBatchChangeSchema,
   claimChangeSchema,
+  CLAIM_DELETE_ATTEMPTS,
   claimDeleteSchema,
   createChangeSchema,
   createClaim,
   namespaceLabelChangeSchema,
+  previewClaimDelete,
   runChange,
+  runClaimDelete,
   runPreview,
 } = await import("./run-change");
 
@@ -44,8 +53,11 @@ const planeClaim = {
 const planeKey = "CamundaManagementClusterClaim/platform/plane-a";
 
 beforeEach(() => {
+  fake.mode = "direct";
   fake.apply.mockReset();
   fake.preview.mockReset();
+  readLive.mockClear();
+  reads = [];
 });
 
 describe("runChange", () => {
@@ -229,45 +241,45 @@ describe("claimDeleteSchema", () => {
     apply: [],
     delete: [ref],
     uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+    generations: { "CamundaClusterClaim/team-a/orders": 3 },
   };
 
-  it("accepts one delete of a claim of either kind, with or without its UID", () => {
+  it("accepts one delete of a claim of either kind with its UID and generation", () => {
     expect(claimDeleteSchema.safeParse(remove).success).toBe(true);
-    expect(
-      claimDeleteSchema.safeParse({
-        ...remove,
-        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
-      }).success,
-    ).toBe(true);
-    expect(
-      claimDeleteSchema.safeParse({ ...remove, uids: undefined }).success,
-    ).toBe(true);
+    const planeKey = "CamundaManagementClusterClaim/team-a/orders";
     expect(
       claimDeleteSchema.safeParse({
         ...remove,
         delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
-        uids: undefined,
+        uids: { [planeKey]: "uid-1" },
+        generations: { [planeKey]: 3 },
       }).success,
     ).toBe(true);
   });
 
   it.each([
+    ["no UID", { ...remove, uids: undefined }],
+    ["no generation", { ...remove, generations: undefined }],
     [
-      "another kind",
-      { ...remove, delete: [{ ...ref, kind: "Environment" }], uids: undefined },
+      "a generation that is not a positive integer",
+      {
+        ...remove,
+        generations: { "CamundaClusterClaim/team-a/orders": 0 },
+      },
     ],
+    [
+      "a resourceVersion precondition",
+      {
+        ...remove,
+        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+      },
+    ],
+    ["another kind", { ...remove, delete: [{ ...ref, kind: "Environment" }] }],
     [
       "another apiVersion",
       { ...remove, delete: [{ ...ref, apiVersion: "core.camunda.io/v1" }] },
     ],
-    [
-      "no namespace",
-      {
-        ...remove,
-        delete: [{ ...ref, namespace: undefined }],
-        uids: undefined,
-      },
-    ],
+    ["no namespace", { ...remove, delete: [{ ...ref, namespace: undefined }] }],
     ["two deletes", { ...remove, delete: [ref, { ...ref, name: "payments" }] }],
     [
       "an apply",
@@ -283,10 +295,10 @@ describe("claimDeleteSchema", () => {
       },
     ],
     [
-      "a precondition of another object",
+      "a generation of another object",
       {
         ...remove,
-        preconditions: { "CamundaClusterClaim/team-a/payments": "41" },
+        generations: { "CamundaClusterClaim/team-a/payments": 3 },
       },
     ],
     ["create", { ...remove, create: ["CamundaClusterClaim/team-a/orders"] }],
@@ -314,6 +326,7 @@ describe("claimDeleteSchema", () => {
           name: "orders",
           resourceVersion: "41",
           uid: "uid-1",
+          generation: 3,
         },
         spec: {},
       },
@@ -322,6 +335,175 @@ describe("claimDeleteSchema", () => {
     );
     expect(claimDeleteSchema.safeParse(steps.remove).success).toBe(true);
     expect(claimChangeSchema.safeParse(steps.policy).success).toBe(true);
+  });
+});
+
+describe("runClaimDelete and previewClaimDelete", () => {
+  const key = "CamundaClusterClaim/team-a/orders";
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+  };
+  const remove = {
+    intent: "Delete the cluster orders",
+    apply: [],
+    delete: [ref],
+    uids: { [key]: "uid-1" },
+    generations: { [key]: 3 },
+  };
+  const live = (
+    resourceVersion: string,
+    over: { uid?: string; generation?: number } = {},
+  ): KubeObject => ({
+    apiVersion: ref.apiVersion,
+    kind: ref.kind,
+    metadata: {
+      name: "orders",
+      namespace: "team-a",
+      uid: "uid-1",
+      generation: 3,
+      resourceVersion,
+      ...over,
+    },
+  });
+  const stale = {
+    ok: false as const,
+    errors: [{ code: "Stale" as const, message: "Changed.", ref }],
+  };
+
+  it("deletes at the resourceVersion of a fresh read when only the status changed since the review", async () => {
+    reads = [live("45")];
+    fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(readLive).toHaveBeenCalledWith(ref);
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+    expect(fake.apply).toHaveBeenCalledWith({
+      ...remove,
+      preconditions: { [key]: "45" },
+    });
+  });
+
+  it.each([
+    ["the spec changed", live("45", { generation: 4 })],
+    ["the claim was made again", live("45", { uid: "uid-2" })],
+    ["the claim is gone", undefined],
+  ])("refuses with Stale and deletes nothing when %s", async (_, object) => {
+    reads = [object];
+
+    const result = await runClaimDelete(remove);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("reads again after a conflict and deletes at the newer resourceVersion", async () => {
+    reads = [live("45"), live("46")];
+    fake.apply
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(fake.apply.mock.calls.map(([c]) => c.preconditions)).toEqual([
+      { [key]: "45" },
+      { [key]: "46" },
+    ]);
+  });
+
+  it("refuses with Stale after a conflict when the spec changed since the review", async () => {
+    reads = [live("45"), live("46", { generation: 4 })];
+    fake.apply.mockResolvedValue(stale);
+
+    const result = await runClaimDelete(remove);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops after CLAIM_DELETE_ATTEMPTS conflicts and says that the claim kept changing", async () => {
+    reads = [live("45")];
+    fake.apply.mockResolvedValue(stale);
+
+    expect(await runClaimDelete(remove)).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Stale",
+          message:
+            "The CamundaClusterClaim orders kept changing during the delete. Delete it again.",
+          ref,
+        },
+      ],
+    });
+    expect(fake.apply).toHaveBeenCalledTimes(CLAIM_DELETE_ATTEMPTS);
+  });
+
+  it("returns a refusal that is not Stale at once", async () => {
+    reads = [live("45")];
+    const forbidden = {
+      ok: false as const,
+      errors: [{ code: "Forbidden" as const, message: "No.", ref }],
+    };
+    fake.apply.mockResolvedValue(forbidden);
+
+    expect(await runClaimDelete(remove)).toEqual(forbidden);
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("Git mode sends the change once without a resourceVersion, so the Git writer checks the generation", async () => {
+    fake.mode = "git";
+    reads = [live("45")];
+    fake.apply.mockResolvedValue(stale);
+
+    expect(await runClaimDelete(remove)).toEqual(stale);
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+    expect(fake.apply).toHaveBeenCalledWith(remove);
+  });
+
+  it("refuses input that claimDeleteSchema refuses and reads nothing", async () => {
+    const result = await runClaimDelete({ ...remove, generations: undefined });
+
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(readLive).not.toHaveBeenCalled();
+  });
+
+  it("returns Unavailable when the read fails", async () => {
+    readLive.mockRejectedValueOnce(new Error("boom"));
+
+    expect(await runClaimDelete(remove)).toEqual({
+      ok: false,
+      errors: [{ code: "Unavailable", message: "boom" }],
+    });
+  });
+
+  it("the preview checks the claim as the delete does and dry-runs the change", async () => {
+    reads = [live("45")];
+    fake.preview.mockResolvedValue({ objects: [], errors: [] });
+
+    expect(await previewClaimDelete(remove)).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fake.preview).toHaveBeenCalledWith(remove);
+
+    fake.preview.mockClear();
+    reads = [live("46", { generation: 4 })];
+    expect(await previewClaimDelete(remove)).toEqual({
+      objects: [],
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.preview).not.toHaveBeenCalled();
   });
 });
 

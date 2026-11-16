@@ -47,8 +47,8 @@ export const KEEP_REFUSED_ON_DELETE =
 /**
  * DeleteStage is what the delete page shows. choose holds the errors of a
  * delete refused after the policy write, and the policy of the claim after
- * a policy write that no delete followed. waiting: the policy write waits
- * for GitOps, or for the operator to read it. deleting holds the state of
+ * a policy write that no delete followed. waiting: the delete waits until
+ * the claim shows the policy write, which GitOps applies in Git mode. deleting holds the state of
  * each target, whether the delete commit waits for GitOps, the live claim,
  * and what to do when the operator refuses the delete because an option
  * cannot keep. deleted: the claim is gone. replaced: the claim was made
@@ -174,7 +174,7 @@ export function DeleteClusterView({
             text={
               mode === "git"
                 ? "Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
-                : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
+                : "Waiting for the claim to show the deletion policy. The fleet manager then deletes the claim."
             }
             onStopWaiting={onStopWaiting}
           />
@@ -242,7 +242,7 @@ export function DeleteClusterView({
               savedMessage={
                 mode === "direct"
                   ? policyStep
-                    ? `Set the deletion policy of ${name}. The delete follows when the operator reads it.`
+                    ? `Set the deletion policy of ${name}. The delete follows when the claim shows it.`
                     : `The claim ${name} is being deleted.`
                   : policyStep
                     ? `Pushed the deletion policy of ${name}. The delete follows when GitOps applies it.`

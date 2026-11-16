@@ -669,6 +669,92 @@ describe("the Git writer", slow, () => {
     expect(await repo.files()).toEqual(["README.md"]);
   });
 
+  const liveClaim = (
+    generation: number,
+    resourceVersion: string,
+  ): KubeObject => ({
+    ...claim("team-a", "orders"),
+    metadata: {
+      name: "orders",
+      namespace: "team-a",
+      uid: "same",
+      generation,
+      resourceVersion,
+    },
+  });
+  const removeAt = (generation: number) => ({
+    intent: "Delete the claim orders",
+    apply: [],
+    delete: [claimRef("team-a", "orders")],
+    uids: { "CamundaClusterClaim/team-a/orders": "same" },
+    generations: { "CamundaClusterClaim/team-a/orders": generation },
+  });
+
+  it("a delete with the generation of the live object removes the file, also after a status write", async () => {
+    repo = await serveBareRepository();
+    const created = ok(
+      await writerFor().apply({
+        intent: "Create",
+        apply: [claim("team-a", "orders")],
+      }),
+    );
+    const applied = liveClaim(3, "99");
+    applied.metadata = {
+      ...applied.metadata,
+      annotations: {
+        [REVISION_ANNOTATION]:
+          created.revisions["CamundaClusterClaim/team-a/orders"],
+      },
+    };
+    live.set("CamundaClusterClaim/team-a/orders", applied);
+
+    ok(await writerFor().apply(removeAt(3)));
+
+    expect(await repo.files()).toEqual(["README.md"]);
+  });
+
+  it("a delete whose generation is not the generation of the live object makes no commit and returns Stale", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+    live.set("CamundaClusterClaim/team-a/orders", liveClaim(4, "99"));
+
+    const result = await writerFor().apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
+  it("a delete with a generation fails with Conflict while GitOps has not applied a save of the claim", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", liveClaim(3, "7"));
+    ok(
+      await writerFor().apply({
+        intent: "First",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+
+    const result = await writerFor().apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["First", "Initial commit"]);
+  });
+
   it("a change that writes and deletes returns the revision of the written object and the file of the deleted one", async () => {
     repo = await serveBareRepository();
     await writerFor().apply({

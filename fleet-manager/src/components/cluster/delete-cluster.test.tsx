@@ -20,7 +20,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type WatchSpec, watchId } from "@/lib/k8s/shared-watch";
 import { REVISION_ANNOTATION } from "@/lib/labels";
-import type { WriteMode } from "@/lib/write/types";
+import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { DeleteCluster } from "./delete-cluster";
@@ -55,6 +55,7 @@ const claim = (over: ClaimOver = {}) => {
       name: "orders",
       resourceVersion: "41",
       uid: "uid-1",
+      generation: 1,
       ...metadata,
     },
     spec: {
@@ -167,6 +168,7 @@ function page(
   ...mode: [WriteMode | undefined] | []
 ) {
   const writeMode = mode.length === 0 ? "direct" : mode[0];
+  fakeWriter.objects = [initial.claim as unknown as KubeObject];
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
@@ -223,7 +225,9 @@ const claimWatch: WatchSpec = {
 };
 
 // liveClaim sends c as the live claim and waits until the page shows it.
+// The server then has the same claim.
 async function liveClaim(c: Resource<"CamundaClusterClaim">) {
+  fakeWriter.objects = [c as unknown as KubeObject];
   await snapshot(claimWatch, [c]);
 }
 
@@ -295,11 +299,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// remove is the delete of the claim as the direct writer gets it: at the
+// resourceVersion of the claim on the server.
 const remove = (resourceVersion = "41") => ({
   intent: "Delete the cluster orders",
   apply: [],
   delete: [ref],
   uids: { [KEY]: "uid-1" },
+  generations: { [KEY]: 1 },
   preconditions: { [KEY]: resourceVersion },
 });
 
@@ -311,7 +318,7 @@ describe("DeleteCluster", () => {
     await confirm("Delete the cluster");
     expect(
       await screen.findByText(
-        /Waiting for the operator to read the deletion policy\./,
+        /Waiting for the claim to show the deletion policy\./,
       ),
     ).toBeTruthy();
     expect(fakeWriter.applied).toHaveLength(1);
@@ -326,6 +333,7 @@ describe("DeleteCluster", () => {
   });
 
   it("disables the choice while the delete is sent, so that the page cannot show another policy than the write", async () => {
+    fakeWriter.objects = [data().claim as unknown as KubeObject];
     render(
       <QueryClientProvider client={new QueryClient()}>
         <GitPushesProvider>
@@ -423,7 +431,11 @@ describe("DeleteCluster", () => {
       }),
     );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    expect(fakeWriter.applied[1]).toEqual(remove("42"));
+    // The Git writer checks the generation and needs no resourceVersion.
+    expect(fakeWriter.applied[1]).toEqual({
+      ...remove(),
+      preconditions: undefined,
+    });
     expect(
       await screen.findByText("Waiting for GitOps to delete orders"),
     ).toBeTruthy();
@@ -489,7 +501,7 @@ describe("DeleteCluster", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Delete the cluster");
     await screen.findByText(
-      /Waiting for the operator to read the deletion policy\./,
+      /Waiting for the claim to show the deletion policy\./,
     );
     await liveClaim(claim({ deletionPolicy: "Delete", resourceVersion: "42" }));
     expect(

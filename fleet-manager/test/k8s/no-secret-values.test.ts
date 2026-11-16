@@ -363,8 +363,9 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
       }),
   ),
-  // The precondition is older than the live claim, so the dry run and the
-  // delete reach the writer, refuse with Stale, and remove nothing.
+  // The change names the UID of a live claim and a generation that it no
+  // longer has, so the dry run and the delete read the claim, refuse with
+  // Stale, and remove nothing.
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete":
     refused("Stale", async () => previewClaimDelete(await staleClaimDelete())),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": refused(
@@ -605,7 +606,7 @@ function claimChange() {
   };
 }
 // staleClaimDelete makes a claim and returns the change that deletes it,
-// with its UID and a resourceVersion that it no longer has.
+// with its UID and a generation that it does not have.
 async function staleClaimDelete() {
   const name = `delete-${randomUUID().slice(0, 8)}`;
   const live: KubernetesObject = await api.create({
@@ -627,7 +628,7 @@ async function staleClaimDelete() {
       },
     ],
     uids: { [key]: live.metadata?.uid ?? "" },
-    preconditions: { [key]: "1" },
+    generations: { [key]: (live.metadata?.generation ?? 1) + 1 },
   };
 }
 function planeClaimChange() {
