@@ -14,7 +14,7 @@ The page **Setup > Presets** of the fleet manager lists the presets of three kin
 | Elasticsearch | [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md) | `ElasticsearchCluster` |
 | PostgreSQL | [DatabaseServerPreset](../crds/databaseserverpreset.md) | `DatabaseServer` |
 
-The page shows who uses each preset and how each field of it merges. It deletes a preset that nothing uses. It does not create a preset. Apply a new preset with `kubectl` or through your Git repository.
+The page shows who uses each preset and how each field of it merges. It edits a preset, with a preview of the resources whose pods roll. It deletes a preset that nothing uses. It does not create a preset. Apply a new preset with `kubectl` or through your Git repository.
 
 ## The Presets page
 
@@ -45,6 +45,8 @@ spec:
 A preset without the annotation shows no description. Two presets of different kinds can have the same name, for example an Elasticsearch preset and a PostgreSQL preset both named `standard`. The column **Kind** tells them apart, and the path of the preset page holds the kind, for example `/setup/presets/postgresql/standard`.
 
 If the fleet manager cannot read a kind, the page shows `Could not read <kind>: <message>` above the table.
+
+The users of a preset count only for the preset of their kind. A PostgreSQL preset `standard` that is in use does not stop the delete of an unused Elasticsearch preset `standard`.
 
 ## Who uses a preset
 
@@ -79,7 +81,9 @@ The page offers a delete only for a preset that it can delete safely. The check 
 
 - An object uses the preset (see [Who uses a preset](#who-uses-a-preset)).
 - An environment allows the preset.
-- The fleet manager cannot read a list that it needs for this check. These are the environments and the objects that can use a preset of that kind. For an Elasticsearch or PostgreSQL preset, they are also the namespaces and the plugin registrations. The page shows `Could not read <kind>: <message>` for that list.
+- The fleet manager cannot read a list that it needs for this check. The page shows `Could not read <kind>: <message>` for that list. The lists are:
+    - For a cluster preset: `Environment`, `CamundaCluster`, and `CamundaClusterClaim`.
+    - For an Elasticsearch or PostgreSQL preset: `Environment`, `Namespace`, `PluginRegistration`, `ElasticsearchCluster` or `DatabaseServer`, `CamundaClusterClaim`, `CamundaManagementClusterClaim`, and `PluginRequest`.
 - The fleet manager does not have the current version of such a list yet. This occurs just after the page opens and after a lost connection.
 
 To delete presets from the list:
@@ -99,9 +103,57 @@ The operator does not stop a delete of a preset that is in use, for example by `
 
 Select a preset in the list to open its page. The header shows the kind, the description, the key facts, the environments that allow it, and each user as `<namespace>/<name>`. The header shows **Unknown** for the environments or the users in the same cases as the list.
 
+### Change a preset
+
+The page edits the preset. The form starts with the **Description**, which is the annotation `kubernetes.io/description`. A blank description removes the annotation.
+
+A cluster preset has two sections:
+
+- **Settings** has one group of field editors for **General** and one for each process, such as **Brokers** or **Connectors**. A field that the preset sets shows **From preset**. Select **Remove from the preset** to take the field out of the preset. The fields that a preset cannot set have no editor.
+- **Environment variables** has the same groups as a release: **Every workload** and one for each process. See [Environment variables](#environment-variables).
+
+An Elasticsearch preset and a PostgreSQL preset have one YAML editor, labelled `spec.cluster` or `spec.server`. The editor holds the body of the preset. While the YAML does not parse, the editor shows the error and **Review** stays disabled. The review checks each field against the CRD. A misspelled field gets an error from the API server, and the preset does not change.
+
+To change a field of a cluster preset, for example the brokers of `medium`:
+
+1. Open the page of the preset from the list.
+2. In **Settings**, go to the group **Brokers** and type the new value in `replicas`. A field that the preset does not set yet has an empty editor in its group.
+3. Select **Review** in the bar at the bottom of the page. The bar counts the unsaved changes. **Discard** starts again.
+4. Read the diff and the impact on the inheriting resources. See [The impact of a change](#the-impact-of-a-change).
+5. Select **Save**, or **Push to Git** in Git mode.
+
+The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows `Missing in <namespaces>` on its row. Every other key shows `<name>/<key> is missing in <namespaces>.` under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret.
+
+If you clear a field that a tool other than the fleet manager set, for example `kubectl apply`, the field stays. The review names it: `<field> stays, because another field manager set it.` Remove the field with the tool that set it.
+
+### The impact of a change
+
+The review lists each resource that inherits the preset, as `<namespace>/<name>`, with one mark:
+
+| Mark | Meaning |
+| --- | --- |
+| Pods roll | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of **No roll** are the only exception. |
+| No roll | The change reaches the cluster but rolls no pods: a change of `auth.basic.passwordRotation`, `auth.basic.adminEmail`, or a field under `connectors.serviceAccount`. |
+| Unchanged | The change does not reach the resource. For a cluster, this occurs only for a change of the fields of **No roll**. For example, a cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
+| Pods may roll | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
+
+The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field that stays, because another field manager set it, does not count as a change.
+
+Under the marks, the review shows a note for each rule that the change touches:
+
+- `The brokers restart one at a time. The other processes restart.` when a cluster rolls.
+- `Connectors pods restart.` when a new password rotation or a change under `connectors.serviceAccount` reaches a cluster.
+- A note about a smaller storage size, and for a cluster or an Elasticsearch preset a note about a new storage class. A resource that already has larger volumes keeps them, and a resource with existing volumes keeps its storage class.
+
+The rules of each kind are in [CamundaClusterPreset: Changes](../crds/camundaclusterpreset.md#changes), [ElasticsearchClusterPreset: Changes](../crds/elasticsearchclusterpreset.md#changes), and [DatabaseServerPreset: Changes](../crds/databaseserverpreset.md#changes).
+
+The marks need the list of the resources of the preset kind, and for a cluster preset the list of releases. If the fleet manager cannot read one of these lists, the review shows no mark and **Save** stays disabled. The same applies until the fleet manager has the current version of each list. The review names the lists:
+
+> The impact is not known while the fleet manager cannot read CamundaCluster. Save is possible when it can read them.
+
 ### Settings and merge rules
 
-The page shows each field that the preset sets, with its value and its merge rule. The fields are in parts: **General**, one part for each process such as **Brokers** or **Connectors**, **Authentication**, and **Backup**. An Elasticsearch preset and a PostgreSQL preset have the part **General** only.
+Each field that the preset sets has a merge rule. For a cluster preset, the rules show under each group of **Settings**. For an Elasticsearch or a PostgreSQL preset, the page shows each field with its value and its rule under the YAML editor.
 
 | Merge rule | Meaning |
 | --- | --- |
@@ -135,9 +187,32 @@ An own field is a field that the resource sets itself, so its value does not com
 
 The section **Delete the preset** says why a delete is not possible, or offers it. To delete the preset, type its name and select **Review the delete**. Then select **Delete the preset** in the review, or **Push the delete to Git** in Git mode. After the delete, the page goes back to the list.
 
+### Rotate the admin password
+
+The page of a cluster preset has the section **Admin password**. Its button rotates the admin password of each cluster that takes the rotation from the preset, for example **Rotate the admin password of 3 clusters**. A cluster counts when its platform config uses basic authentication and it does not set its own `auth.basic`. A cluster whose platform config uses OIDC does not count.
+
+The rotation writes the UTC date and time to the minute into the preset:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaClusterPreset
+metadata:
+  name: medium
+spec:
+  cluster:
+    auth:
+      basic:
+        passwordRotation: "2026-11-15T10:42Z"
+    # ... the rest of your preset
+```
+
+The review names each cluster whose password changes and says that its Connectors pods restart. Select **Rotate**, or **Push to Git** in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so **Rotate** stays disabled. Each cluster shows the value in `status.adminPassword.rotation` when its rotation is complete. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
+
+The button is disabled while the form has unsaved changes. Save or discard them first. While the fleet manager cannot read the clusters or the platform configs, the section offers no rotation and names those lists.
+
 ## Releases
 
-A release says what a platform runs: the versions, the pinned images, and the environment variables. Clusters, Elasticsearch clusters, and database servers name a release in `spec.releaseRef`. A claim, which asks for a cluster, names one too. These resources are the users of the release. The page **Setup > Releases** of the fleet manager lists the releases and edits each one. The [CamundaRelease](../crds/camundarelease.md) reference lists the fields.
+Clusters, Elasticsearch clusters, and database servers name a release in `spec.releaseRef`. A claim, which asks for a cluster, names one too. These resources are the users of the release. The page **Setup > Releases** of the fleet manager lists the releases and edits each one. The [CamundaRelease](../crds/camundarelease.md) reference lists the fields.
 
 ## The Releases list
 
@@ -149,7 +224,7 @@ Each row states facts only. These are the four facts:
 | --- | --- |
 | `Unused` | No cluster, Elasticsearch cluster, database server, or claim names the release. |
 | `Default in <environments>` | These environments give the release to a new cluster that names no release. |
-| `Allowed in <environments>` | A claim in these environments can name the release. |
+| `Allowed in <environments>` | A claim in these environments can name the release. The default release of an environment is always one of its allowed releases. |
 | `Not offered to new clusters` | No environment allows the release, so no new claim can name it. |
 
 To offer a release to new clusters, add it to the allowed releases of an environment on the [Environments](environments.md) page.
