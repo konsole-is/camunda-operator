@@ -161,7 +161,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: a9dfae2981fcdbcc
+        camunda.io/config-hash: scenario
       labels:
         camunda.io/component: console
         camunda.io/management-cluster: plane-a
@@ -233,7 +233,7 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "plane-a-console-7c7604e3a5" has successfully progressed.
+    message: ReplicaSet "plane-a-console-7e7860b1c0" has successfully progressed.
     reason: NewReplicaSetAvailable
     status: "True"
     type: Progressing
@@ -440,7 +440,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 7987734ad453f152
+        camunda.io/config-hash: scenario
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: plane-a
@@ -544,7 +544,643 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "plane-a-identity-9d79f77506" has successfully progressed.
+    message: ReplicaSet "plane-a-identity-5d59824b59" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: plane-a
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+        f:ownerReferences:
+          k:{"uid":"66f4ff8b-2106-51f3-90c1-fa36cace1eb4"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:strategy: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              f:camunda.io/config-hash: {}
+            f:labels:
+              f:camunda.io/component: {}
+              f:camunda.io/management-cluster: {}
+          f:spec:
+            f:containers:
+              k:{"name":"restapi"}:
+                .: {}
+                f:env:
+                  k:{"name":"CAMUNDA_IDENTITY_BASEURL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_IDENTITY_TYPE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_REST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_VERSION"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_FORCE_TLS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OAUTH2_CLIENT_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_ENABLE_TLS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_FROM_ADDRESS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_APP_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"RESTAPI_PUSHER_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_SECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"RESTAPI_SERVER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SERVER_HTTPS_ONLY"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SERVER_SERVLET_CONTEXTPATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_DATASOURCE_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"SPRING_DATASOURCE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_DATASOURCE_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:name: {}
+                f:ports:
+                  k:{"containerPort":8081,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8091,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+            f:serviceAccountName: {}
+    manager: CamundaManagementCluster/web-modeler/66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-restapi
+  namespace: platform
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaManagementCluster
+    name: plane-a
+    uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+  uid: 892c94e1-e20e-5872-96bf-45583039cc98
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-restapi
+      camunda.io/management-cluster: plane-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/component: web-modeler-restapi
+        camunda.io/management-cluster: plane-a
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://127.0.0.1:1/web_modeler
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: modeler-db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: modeler-db
+        - name: RESTAPI_MAIL_HOST
+          value: smtp.example.com
+        - name: RESTAPI_MAIL_PORT
+          value: "587"
+        - name: RESTAPI_MAIL_ENABLE_TLS
+          value: "true"
+        - name: RESTAPI_MAIL_FROM_ADDRESS
+          value: modeler@example.com
+        - name: RESTAPI_SERVER_URL
+          value: https://management.example.com/modeler
+        - name: SERVER_HTTPS_ONLY
+          value: "true"
+        - name: SERVER_SERVLET_CONTEXTPATH
+          value: /modeler
+        - name: OAUTH2_CLIENT_ID
+          value: web-modeler
+        - name: CAMUNDA_IDENTITY_BASEURL
+          value: http://plane-a-identity.platform.svc:80/identity
+        - name: CAMUNDA_IDENTITY_TYPE
+          value: GENERIC
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API
+          value: web-modeler-api
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API
+          value: web-modeler-public-api
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+          value: https://login.example.com/realms/camunda
+        - name: RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+          value: https://login.example.com/realms/camunda/protocol/openid-connect/certs
+        - name: RESTAPI_PUSHER_HOST
+          value: plane-a-web-modeler-websockets.platform.svc
+        - name: RESTAPI_PUSHER_PORT
+          value: "80"
+        - name: RESTAPI_PUSHER_APP_ID
+          value: web-modeler
+        - name: RESTAPI_PUSHER_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: plane-a-web-modeler-pusher
+        - name: RESTAPI_PUSHER_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: plane-a-web-modeler-pusher
+        - name: CLIENT_PUSHER_HOST
+          value: management.example.com
+        - name: CLIENT_PUSHER_PORT
+          value: "443"
+        - name: CLIENT_PUSHER_PATH
+          value: /modeler-ws
+        - name: CLIENT_PUSHER_FORCE_TLS
+          value: "true"
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: plane-a-management-license
+        - name: CAMUNDA_MODELER_CLUSTERS_0_ID
+          value: 2810522a-07cb-52ab-926e-443b927a774b
+        - name: CAMUNDA_MODELER_CLUSTERS_0_NAME
+          value: team-orders/orders
+        - name: CAMUNDA_MODELER_CLUSTERS_0_VERSION
+          value: 8.9.23
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION
+          value: BEARER_TOKEN
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC
+          value: grpc://orders-zeebe.team-orders.svc:26500
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_REST
+          value: http://orders-zeebe.team-orders.svc:8080
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED
+          value: "true"
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP
+          value: https://orders.example.com
+        image: camunda/web-modeler-restapi:8.9.15
+        imagePullPolicy: IfNotPresent
+        name: restapi
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        - containerPort: 8091
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health/readiness
+            port: management
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /health/readiness
+            port: management
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: plane-a-management
+      serviceAccountName: plane-a-management
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: ReplicaSet "plane-a-web-modeler-restapi-dda2f9797e" has successfully
+      progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: plane-a
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+        f:ownerReferences:
+          k:{"uid":"66f4ff8b-2106-51f3-90c1-fa36cace1eb4"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:strategy: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              f:camunda.io/config-hash: {}
+            f:labels:
+              f:camunda.io/component: {}
+              f:camunda.io/management-cluster: {}
+          f:spec:
+            f:containers:
+              k:{"name":"websockets"}:
+                .: {}
+                f:env:
+                  k:{"name":"PUSHER_APP_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"PUSHER_APP_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"PUSHER_APP_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"PUSHER_APP_SECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                f:image: {}
+                f:name: {}
+                f:ports:
+                  k:{"containerPort":8060,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+            f:serviceAccountName: {}
+    manager: CamundaManagementCluster/web-modeler/66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-websockets
+  namespace: platform
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaManagementCluster
+    name: plane-a
+    uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+  uid: e075453f-7a0d-5d76-85be-4bf28219f052
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-websockets
+      camunda.io/management-cluster: plane-a
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/component: web-modeler-websockets
+        camunda.io/management-cluster: plane-a
+    spec:
+      containers:
+      - env:
+        - name: PUSHER_APP_ID
+          value: web-modeler
+        - name: PUSHER_APP_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: plane-a-web-modeler-pusher
+        - name: PUSHER_APP_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: plane-a-web-modeler-pusher
+        - name: PUSHER_APP_PATH
+          value: /modeler-ws
+        image: camunda/web-modeler-websockets:8.9.15
+        imagePullPolicy: IfNotPresent
+        name: websockets
+        ports:
+        - containerPort: 8060
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /up
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /up
+            port: http
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: plane-a-management
+      serviceAccountName: plane-a-management
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: ReplicaSet "plane-a-web-modeler-websockets-ed3a99ccdf" has successfully
+      progressed.
     reason: NewReplicaSetAvailable
     status: "True"
     type: Progressing
@@ -561,7 +1197,7 @@ metadata:
   labels:
     camunda.io/component: console
     camunda.io/management-cluster: plane-a
-    pod-template-hash: 7c7604e3a5
+    pod-template-hash: 7e7860b1c0
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -692,7 +1328,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: plane-a-console-7c7604e3a5
+  name: plane-a-console-7e7860b1c0
   namespace: platform
   ownerReferences:
   - apiVersion: apps/v1
@@ -701,22 +1337,22 @@ metadata:
     kind: Deployment
     name: plane-a-console
     uid: b12f384a-3584-59fe-8da2-1189345f7a8a
-  uid: af9c1d42-9022-55fb-a22a-bd6c3823b6e3
+  uid: 2d516522-4969-5a4b-bcb3-4fd0d5fdcec8
 spec:
   replicas: 1
   selector:
     matchLabels:
       camunda.io/component: console
       camunda.io/management-cluster: plane-a
-      pod-template-hash: 7c7604e3a5
+      pod-template-hash: 7e7860b1c0
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: a9dfae2981fcdbcc
+        camunda.io/config-hash: scenario
       labels:
         camunda.io/component: console
         camunda.io/management-cluster: plane-a
-        pod-template-hash: 7c7604e3a5
+        pod-template-hash: 7e7860b1c0
     spec:
       containers:
       - env:
@@ -789,7 +1425,7 @@ metadata:
   labels:
     camunda.io/component: management-identity
     camunda.io/management-cluster: plane-a
-    pod-template-hash: 9d79f77506
+    pod-template-hash: 5d59824b59
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -965,7 +1601,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: plane-a-identity-9d79f77506
+  name: plane-a-identity-5d59824b59
   namespace: platform
   ownerReferences:
   - apiVersion: apps/v1
@@ -974,22 +1610,22 @@ metadata:
     kind: Deployment
     name: plane-a-identity
     uid: c0fa6942-5dfb-5892-89aa-f0f21b365a3e
-  uid: e0a47313-2e8c-5cbb-a7fc-db4174040100
+  uid: aae32543-17f9-5dea-ac1b-00c50eaea8aa
 spec:
   replicas: 1
   selector:
     matchLabels:
       camunda.io/component: management-identity
       camunda.io/management-cluster: plane-a
-      pod-template-hash: 9d79f77506
+      pod-template-hash: 5d59824b59
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 7987734ad453f152
+        camunda.io/config-hash: scenario
       labels:
         camunda.io/component: management-identity
         camunda.io/management-cluster: plane-a
-        pod-template-hash: 9d79f77506
+        pod-template-hash: 5d59824b59
     spec:
       containers:
       - env:
@@ -1066,6 +1702,627 @@ spec:
           httpGet:
             path: /actuator/health
             port: management
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: plane-a-management
+      serviceAccountName: plane-a-management
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: plane-a
+    pod-template-hash: dda2f9797e
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"892c94e1-e20e-5872-96bf-45583039cc98"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              .: {}
+              f:camunda.io/config-hash: {}
+            f:labels:
+              .: {}
+              f:camunda.io/component: {}
+              f:camunda.io/management-cluster: {}
+              f:pod-template-hash: {}
+          f:spec:
+            f:containers:
+              k:{"name":"restapi"}:
+                .: {}
+                f:env:
+                  .: {}
+                  k:{"name":"CAMUNDA_IDENTITY_BASEURL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_IDENTITY_TYPE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_REST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_VERSION"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_FORCE_TLS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CLIENT_PUSHER_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OAUTH2_CLIENT_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_ENABLE_TLS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_FROM_ADDRESS"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_MAIL_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_APP_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"RESTAPI_PUSHER_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"RESTAPI_PUSHER_SECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"RESTAPI_SERVER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SERVER_HTTPS_ONLY"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SERVER_SERVLET_CONTEXTPATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_DATASOURCE_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"SPRING_DATASOURCE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_DATASOURCE_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":8081,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8091,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:serviceAccount: {}
+            f:serviceAccountName: {}
+            f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:fullyLabeledReplicas: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-restapi-dda2f9797e
+  namespace: platform
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: plane-a-web-modeler-restapi
+    uid: 892c94e1-e20e-5872-96bf-45583039cc98
+  uid: 84536811-1430-55df-9ab0-1224e98db0fe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-restapi
+      camunda.io/management-cluster: plane-a
+      pod-template-hash: dda2f9797e
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/component: web-modeler-restapi
+        camunda.io/management-cluster: plane-a
+        pod-template-hash: dda2f9797e
+    spec:
+      containers:
+      - env:
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://127.0.0.1:1/web_modeler
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: modeler-db
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: modeler-db
+        - name: RESTAPI_MAIL_HOST
+          value: smtp.example.com
+        - name: RESTAPI_MAIL_PORT
+          value: "587"
+        - name: RESTAPI_MAIL_ENABLE_TLS
+          value: "true"
+        - name: RESTAPI_MAIL_FROM_ADDRESS
+          value: modeler@example.com
+        - name: RESTAPI_SERVER_URL
+          value: https://management.example.com/modeler
+        - name: SERVER_HTTPS_ONLY
+          value: "true"
+        - name: SERVER_SERVLET_CONTEXTPATH
+          value: /modeler
+        - name: OAUTH2_CLIENT_ID
+          value: web-modeler
+        - name: CAMUNDA_IDENTITY_BASEURL
+          value: http://plane-a-identity.platform.svc:80/identity
+        - name: CAMUNDA_IDENTITY_TYPE
+          value: GENERIC
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API
+          value: web-modeler-api
+        - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API
+          value: web-modeler-public-api
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+          value: https://login.example.com/realms/camunda
+        - name: RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+          value: https://login.example.com/realms/camunda/protocol/openid-connect/certs
+        - name: RESTAPI_PUSHER_HOST
+          value: plane-a-web-modeler-websockets.platform.svc
+        - name: RESTAPI_PUSHER_PORT
+          value: "80"
+        - name: RESTAPI_PUSHER_APP_ID
+          value: web-modeler
+        - name: RESTAPI_PUSHER_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: plane-a-web-modeler-pusher
+        - name: RESTAPI_PUSHER_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: plane-a-web-modeler-pusher
+        - name: CLIENT_PUSHER_HOST
+          value: management.example.com
+        - name: CLIENT_PUSHER_PORT
+          value: "443"
+        - name: CLIENT_PUSHER_PATH
+          value: /modeler-ws
+        - name: CLIENT_PUSHER_FORCE_TLS
+          value: "true"
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: plane-a-management-license
+        - name: CAMUNDA_MODELER_CLUSTERS_0_ID
+          value: 2810522a-07cb-52ab-926e-443b927a774b
+        - name: CAMUNDA_MODELER_CLUSTERS_0_NAME
+          value: team-orders/orders
+        - name: CAMUNDA_MODELER_CLUSTERS_0_VERSION
+          value: 8.9.23
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION
+          value: BEARER_TOKEN
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC
+          value: grpc://orders-zeebe.team-orders.svc:26500
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_REST
+          value: http://orders-zeebe.team-orders.svc:8080
+        - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED
+          value: "true"
+        - name: CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP
+          value: https://orders.example.com
+        image: camunda/web-modeler-restapi:8.9.15
+        imagePullPolicy: IfNotPresent
+        name: restapi
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        - containerPort: 8091
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health/readiness
+            port: management
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /health/readiness
+            port: management
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: plane-a-management
+      serviceAccountName: plane-a-management
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: plane-a
+    pod-template-hash: ed3a99ccdf
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"e075453f-7a0d-5d76-85be-4bf28219f052"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              .: {}
+              f:camunda.io/config-hash: {}
+            f:labels:
+              .: {}
+              f:camunda.io/component: {}
+              f:camunda.io/management-cluster: {}
+              f:pod-template-hash: {}
+          f:spec:
+            f:containers:
+              k:{"name":"websockets"}:
+                .: {}
+                f:env:
+                  .: {}
+                  k:{"name":"PUSHER_APP_ID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"PUSHER_APP_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"PUSHER_APP_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"PUSHER_APP_SECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":8060,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:serviceAccount: {}
+            f:serviceAccountName: {}
+            f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:fullyLabeledReplicas: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-websockets-ed3a99ccdf
+  namespace: platform
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: plane-a-web-modeler-websockets
+    uid: e075453f-7a0d-5d76-85be-4bf28219f052
+  uid: 1cc0ce09-d023-58a6-ad22-53e7a02da820
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/component: web-modeler-websockets
+      camunda.io/management-cluster: plane-a
+      pod-template-hash: ed3a99ccdf
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/component: web-modeler-websockets
+        camunda.io/management-cluster: plane-a
+        pod-template-hash: ed3a99ccdf
+    spec:
+      containers:
+      - env:
+        - name: PUSHER_APP_ID
+          value: web-modeler
+        - name: PUSHER_APP_KEY
+          valueFrom:
+            secretKeyRef:
+              key: app-key
+              name: plane-a-web-modeler-pusher
+        - name: PUSHER_APP_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: app-secret
+              name: plane-a-web-modeler-pusher
+        - name: PUSHER_APP_PATH
+          value: /modeler-ws
+        image: camunda/web-modeler-websockets:8.9.15
+        imagePullPolicy: IfNotPresent
+        name: websockets
+        ports:
+        - containerPort: 8060
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /up
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /up
+            port: http
             scheme: HTTP
           periodSeconds: 5
           successThreshold: 1
@@ -1349,7 +2606,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: ddc9fe1dcdefad59
+        camunda.io/config-hash: scenario
       labels:
         camunda.io/cluster: orders
         camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
@@ -1511,11 +2768,11 @@ spec:
 status:
   availableReplicas: 1
   currentReplicas: 1
-  currentRevision: orders-zeebe-4a814cc558
+  currentRevision: orders-zeebe-f4dfd82678
   observedGeneration: 1
   readyReplicas: 1
   replicas: 1
-  updateRevision: orders-zeebe-4a814cc558
+  updateRevision: orders-zeebe-f4dfd82678
   updatedReplicas: 1
 ---
 apiVersion: coordination.k8s.io/v1
@@ -1968,6 +3225,15 @@ metadata:
           f:oidc: {}
         f:namespaceSelector: {}
         f:platformConfigRef: {}
+        f:webModeler:
+          f:databaseConfigRef: {}
+          f:externalUrl: {}
+          f:mail:
+            f:fromAddress: {}
+            f:smtpHost: {}
+            f:smtpPort: {}
+          f:version: {}
+          f:websocketsExternalUrl: {}
     manager: CamundaManagementClusterClaim/managementcluster/174be989-b35a-57da-90c3-0607a676f137
     operation: Apply
     time: "2026-01-01T00:00:00Z"
@@ -2094,6 +3360,20 @@ metadata:
             f:port: {}
             f:protocol: {}
             f:service: {}
+          k:{"name":"web-modeler"}:
+            .: {}
+            f:name: {}
+            f:pathPrefix: {}
+            f:port: {}
+            f:protocol: {}
+            f:service: {}
+          k:{"name":"web-modeler-websockets"}:
+            .: {}
+            f:name: {}
+            f:pathPrefix: {}
+            f:port: {}
+            f:protocol: {}
+            f:service: {}
         f:managementAuthConfig: {}
         f:observedGeneration: {}
         f:serviceAccountName: {}
@@ -2132,6 +3412,15 @@ spec:
       values:
       - platform
   platformConfigRef: oidc-platform
+  webModeler:
+    databaseConfigRef: modeler-db
+    externalUrl: https://management.example.com/modeler
+    mail:
+      fromAddress: modeler@example.com
+      smtpHost: smtp.example.com
+      smtpPort: 587
+    version: 8.9.15
+    websocketsExternalUrl: https://management.example.com/modeler-ws
 status:
   clusters:
   - attached: true
@@ -2175,9 +3464,9 @@ status:
     status: "True"
     type: ConsoleReady
   - lastTransitionTime: "2026-01-01T00:00:00Z"
-    message: Component is disabled.
+    message: Component is healthy.
     observedGeneration: 1
-    reason: Disabled
+    reason: Healthy
     status: "True"
     type: WebModelerReady
   - lastTransitionTime: "2026-01-01T00:00:00Z"
@@ -2210,6 +3499,16 @@ status:
     port: 80
     protocol: HTTP
     service: plane-a-identity
+  - name: web-modeler
+    pathPrefix: /modeler
+    port: 80
+    protocol: HTTP
+    service: plane-a-web-modeler-restapi
+  - name: web-modeler-websockets
+    pathPrefix: /modeler-ws
+    port: 80
+    protocol: HTTP
+    service: plane-a-web-modeler-websockets
   managementAuthConfig: plane-a
   observedGeneration: 1
   serviceAccountName: plane-a-management
@@ -2247,6 +3546,14 @@ metadata:
                     f:name: {}
                     f:namespace: {}
                 f:optimize:
+                  f:clientId: {}
+                  f:clientSecretRef:
+                    f:key: {}
+                    f:name: {}
+                    f:namespace: {}
+                f:webModeler:
+                  f:clientId: {}
+                f:webModelerApi:
                   f:clientId: {}
                   f:clientSecretRef:
                     f:key: {}
@@ -2313,6 +3620,14 @@ spec:
             clientSecretRef:
               key: client-secret
               name: optimize-credentials
+              namespace: camunda-system
+          webModeler:
+            clientId: web-modeler
+          webModelerApi:
+            clientId: web-modeler-api
+            clientSecretRef:
+              key: client-secret
+              name: web-modeler-api-credentials
               namespace: camunda-system
       tokenUrl: https://login.example.com/realms/camunda/protocol/openid-connect/token
   images:
@@ -2399,6 +3714,65 @@ spec:
     passwordKey: password
     usernameKey: username
   databaseName: identity
+  serverRef: postgres
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Ready
+  observedGeneration: 1
+---
+apiVersion: core.camunda.io/v1
+kind: DatabaseConfig
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:credentialsSecretRef:
+          f:name: {}
+          f:passwordKey: {}
+          f:usernameKey: {}
+        f:databaseName: {}
+        f:serverRef: {}
+    manager: kubectl
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: modeler-db
+  namespace: platform
+  uid: 118572a9-2ee7-591d-ae30-aca09feea608
+spec:
+  credentialsSecretRef:
+    name: modeler-db
+    passwordKey: password
+    usernameKey: username
+  databaseName: web_modeler
   serverRef: postgres
 status:
   conditions:
@@ -2668,6 +4042,98 @@ metadata:
     manager: manager
     operation: Update
     time: "2026-01-01T00:00:00Z"
+  name: plane-a.05d19eee1d870466
+  namespace: platform
+  uid: ab5cb6e8-acb7-5377-8132-7353b522cac4
+note: Created Service 'plane-a-web-modeler-websockets'
+reason: CreatedService
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: v1
+  kind: Service
+  name: plane-a-web-modeler-websockets
+  namespace: platform
+  uid: 86c62c72-78e9-53ec-98d0-27eb24363a0b
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.0bd2c34b03efd015
+  namespace: platform
+  uid: 80ce06a4-be04-5e82-97d6-f766722f189f
+note: Created Deployment 'plane-a-web-modeler-websockets'
+reason: CreatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: plane-a-web-modeler-websockets
+  namespace: platform
+  uid: e075453f-7a0d-5d76-85be-4bf28219f052
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
   name: plane-a.1822f9ed7636816c
   namespace: platform
   uid: cff5d9c8-0227-5184-87e7-f44778793cc6
@@ -2685,6 +4151,98 @@ related:
   name: plane-a-console
   namespace: platform
   uid: b12f384a-3584-59fe-8da2-1189345f7a8a
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.1e2fb9fd8b4192e0
+  namespace: platform
+  uid: 290d11f1-c57c-5573-b2e9-16ac9ffe03a0
+note: Created Service 'plane-a-web-modeler-restapi'
+reason: CreatedService
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: v1
+  kind: Service
+  name: plane-a-web-modeler-restapi
+  namespace: platform
+  uid: c89de0f1-2bcd-5bce-bb48-62122f01ae55
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Update
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.1ed299b2ce3606fb
+  namespace: platform
+  uid: e37550a5-e75e-590a-9850-c1eb4f37c3ee
+note: Updated Deployment 'plane-a-web-modeler-websockets'
+reason: UpdatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: plane-a-web-modeler-websockets
+  namespace: platform
+  uid: e075453f-7a0d-5d76-85be-4bf28219f052
 reportingController: camundamanagementcluster
 reportingInstance: camundamanagementcluster-scenario-node
 type: Normal
@@ -2781,6 +4339,98 @@ reportingController: camundamanagementclusterclaim
 reportingInstance: camundamanagementclusterclaim-scenario-node
 type: Normal
 ---
+action: Update
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.6746ee4d30887327
+  namespace: platform
+  uid: 5abbb737-47aa-50bb-831a-eefd6fbd05d5
+note: Updated Deployment 'plane-a-web-modeler-restapi'
+reason: UpdatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: plane-a-web-modeler-restapi
+  namespace: platform
+  uid: 892c94e1-e20e-5872-96bf-45583039cc98
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.86b82ff761e10c66
+  namespace: platform
+  uid: b678dd48-912f-50a8-a40e-c06b423613f8
+note: Created Deployment 'plane-a-web-modeler-restapi'
+reason: CreatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: plane-a-web-modeler-restapi
+  namespace: platform
+  uid: 892c94e1-e20e-5872-96bf-45583039cc98
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
 action: Create
 apiVersion: events.k8s.io/v1
 deprecatedFirstTimestamp: null
@@ -2823,6 +4473,52 @@ related:
   name: plane-a-console
   namespace: platform
   uid: 077381c3-87f5-5235-87f4-b096da752edc
+reportingController: camundamanagementcluster
+reportingInstance: camundamanagementcluster-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a.b5c100b49078e98e
+  namespace: platform
+  uid: af187922-befd-519e-9064-f6b67bc910ea
+note: Created Secret 'plane-a-web-modeler-pusher'
+reason: CreatedSecret
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaManagementCluster
+  name: plane-a
+  namespace: platform
+  uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+related:
+  apiVersion: v1
+  kind: Secret
+  name: plane-a-web-modeler-pusher
+  namespace: platform
+  uid: 6d8920a3-65d5-559c-bbc6-5e2875d3feff
 reportingController: camundamanagementcluster
 reportingInstance: camundamanagementcluster-scenario-node
 type: Normal
@@ -3398,16 +5094,24 @@ metadata:
             f:externalUrl: {}
           f:identityProvider:
             f:oidc: {}
+          f:webModeler:
+            f:externalUrl: {}
+            f:mail:
+              f:fromAddress: {}
+              f:smtpHost: {}
+            f:websocketsExternalUrl: {}
         f:plugins:
           k:{"registration":"existing-database-configs","section":"management-database"}:
             .: {}
             f:parameters:
               f:identity: {}
+              f:webModeler: {}
             f:registration: {}
             f:section: {}
         f:versions:
           f:console: {}
           f:identity: {}
+          f:webModeler: {}
     manager: kubectl
     operation: Apply
     time: "2026-01-01T00:00:00Z"
@@ -3476,6 +5180,9 @@ metadata:
               f:identity:
                 .: {}
                 f:claimEditable: {}
+              f:webModeler:
+                .: {}
+                f:claimEditable: {}
           f:sections:
             .: {}
             f:management-database:
@@ -3506,14 +5213,23 @@ spec:
       externalUrl: https://management.example.com/identity
     identityProvider:
       oidc: {}
+    webModeler:
+      externalUrl: https://management.example.com/modeler
+      mail:
+        fromAddress: modeler@example.com
+        smtpHost: smtp.example.com
+        smtpPort: 587
+      websocketsExternalUrl: https://management.example.com/modeler-ws
   plugins:
   - parameters:
       identity: identity-db
+      webModeler: modeler-db
     registration: existing-database-configs
     section: management-database
   versions:
     console: 8.9.133
     identity: 8.9.14
+    webModeler: 8.9.15
 status:
   conditions:
   - lastTransitionTime: "2026-01-01T00:00:00Z"
@@ -3550,6 +5266,8 @@ status:
       existing-database-configs:
         identity:
           claimEditable: true
+        webModeler:
+          claimEditable: true
     sections:
       management-database:
         allowed:
@@ -3572,6 +5290,9 @@ metadata:
           f:existing-database-configs:
             .: {}
             f:identity:
+              .: {}
+              f:claimEditable: {}
+            f:webModeler:
               .: {}
               f:claimEditable: {}
         f:platformConfigRef: {}
@@ -3614,6 +5335,8 @@ spec:
   parameters:
     existing-database-configs:
       identity:
+        claimEditable: true
+      webModeler:
         claimEditable: true
   platformConfigRef: oidc-platform
   sections:
@@ -4648,6 +6371,7 @@ metadata:
         f:parameters:
           f:databases: {}
           f:identity: {}
+          f:webModeler: {}
         f:registration: {}
         f:section: {}
         f:target:
@@ -4694,6 +6418,7 @@ metadata:
         f:outputs:
           .: {}
           f:identityDatabaseConfig: {}
+          f:webModelerDatabaseConfig: {}
         f:summary: {}
         f:summaryTime: {}
     manager: manager
@@ -4718,7 +6443,9 @@ spec:
   parameters:
     databases:
     - identity
+    - webModeler
     identity: identity-db
+    webModeler: modeler-db
   registration: existing-database-configs
   section: management-database
   target:
@@ -4742,10 +6469,14 @@ status:
   observedGeneration: 1
   outputs:
     identityDatabaseConfig: identity-db
+    webModelerDatabaseConfig: modeler-db
   summary:
   - label: DatabaseConfig
     severity: Info
     value: identity-db, Ready
+  - label: DatabaseConfig
+    severity: Info
+    value: modeler-db, Ready
   summaryTime: "2026-01-01T00:00:00Z"
 ---
 apiVersion: plugins.camunda.io/v1alpha1
@@ -5266,13 +6997,13 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: a9dfae2981fcdbcc
+    camunda.io/config-hash: scenario
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
     camunda.io/component: console
     camunda.io/management-cluster: plane-a
-    pod-template-hash: 7c7604e3a5
+    pod-template-hash: 7e7860b1c0
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5288,7 +7019,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"af9c1d42-9022-55fb-a22a-bd6c3823b6e3"}: {}
+          k:{"uid":"2d516522-4969-5a4b-bcb3-4fd0d5fdcec8"}: {}
       f:spec:
         f:containers:
           k:{"name":"console"}:
@@ -5419,16 +7150,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: plane-a-console-7c7604e3a5-g2f6r
+  name: plane-a-console-7e7860b1c0-lqn8k
   namespace: platform
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: plane-a-console-7c7604e3a5
-    uid: af9c1d42-9022-55fb-a22a-bd6c3823b6e3
-  uid: 58efff38-a57d-5829-aef4-d12ede109ea5
+    name: plane-a-console-7e7860b1c0
+    uid: 2d516522-4969-5a4b-bcb3-4fd0d5fdcec8
+  uid: 6fbad386-5314-566c-8799-6961d70ec743
 spec:
   containers:
   - env:
@@ -5536,13 +7267,13 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 7987734ad453f152
+    camunda.io/config-hash: scenario
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
     camunda.io/component: management-identity
     camunda.io/management-cluster: plane-a
-    pod-template-hash: 9d79f77506
+    pod-template-hash: 5d59824b59
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5558,7 +7289,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"e0a47313-2e8c-5cbb-a7fc-db4174040100"}: {}
+          k:{"uid":"aae32543-17f9-5dea-ac1b-00c50eaea8aa"}: {}
       f:spec:
         f:containers:
           k:{"name":"identity"}:
@@ -5734,16 +7465,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: plane-a-identity-9d79f77506-9qblz
+  name: plane-a-identity-5d59824b59-vrz7c
   namespace: platform
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: plane-a-identity-9d79f77506
-    uid: e0a47313-2e8c-5cbb-a7fc-db4174040100
-  uid: aaec1182-0533-5b13-bb89-a8582dca83e7
+    name: plane-a-identity-5d59824b59
+    uid: aae32543-17f9-5dea-ac1b-00c50eaea8aa
+  uid: a78d7f4e-e872-5100-b5fc-a966a2602c03
 spec:
   containers:
   - env:
@@ -5883,7 +7614,712 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: ddc9fe1dcdefad59
+    camunda.io/config-hash: scenario
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: plane-a
+    pod-template-hash: dda2f9797e
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:camunda.io/config-hash: {}
+        f:labels:
+          .: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"84536811-1430-55df-9ab0-1224e98db0fe"}: {}
+      f:spec:
+        f:containers:
+          k:{"name":"restapi"}:
+            .: {}
+            f:env:
+              .: {}
+              k:{"name":"CAMUNDA_IDENTITY_BASEURL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_IDENTITY_TYPE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_ID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_NAME"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_REST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_CLUSTERS_0_VERSION"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CLIENT_PUSHER_FORCE_TLS"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CLIENT_PUSHER_HOST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CLIENT_PUSHER_PATH"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CLIENT_PUSHER_PORT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"OAUTH2_CLIENT_ID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_MAIL_ENABLE_TLS"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_MAIL_FROM_ADDRESS"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_MAIL_HOST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_MAIL_PORT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_PUSHER_APP_ID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_PUSHER_HOST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_PUSHER_KEY"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"RESTAPI_PUSHER_PORT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"RESTAPI_PUSHER_SECRET"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"RESTAPI_SERVER_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SERVER_HTTPS_ONLY"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SERVER_SERVLET_CONTEXTPATH"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SPRING_DATASOURCE_PASSWORD"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"SPRING_DATASOURCE_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SPRING_DATASOURCE_USERNAME"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8081,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+              k:{"containerPort":8091,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+            f:readinessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:resources: {}
+            f:startupProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:nodeName: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext: {}
+        f:serviceAccount: {}
+        f:serviceAccountName: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          .: {}
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"PodScheduled"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:phase: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-restapi-dda2f9797e-q94q9
+  namespace: platform
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: plane-a-web-modeler-restapi-dda2f9797e
+    uid: 84536811-1430-55df-9ab0-1224e98db0fe
+  uid: 1f472de3-6645-5a4c-ab10-6bcbec79c92d
+spec:
+  containers:
+  - env:
+    - name: SPRING_DATASOURCE_URL
+      value: jdbc:postgresql://127.0.0.1:1/web_modeler
+    - name: SPRING_DATASOURCE_USERNAME
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: modeler-db
+    - name: SPRING_DATASOURCE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: modeler-db
+    - name: RESTAPI_MAIL_HOST
+      value: smtp.example.com
+    - name: RESTAPI_MAIL_PORT
+      value: "587"
+    - name: RESTAPI_MAIL_ENABLE_TLS
+      value: "true"
+    - name: RESTAPI_MAIL_FROM_ADDRESS
+      value: modeler@example.com
+    - name: RESTAPI_SERVER_URL
+      value: https://management.example.com/modeler
+    - name: SERVER_HTTPS_ONLY
+      value: "true"
+    - name: SERVER_SERVLET_CONTEXTPATH
+      value: /modeler
+    - name: OAUTH2_CLIENT_ID
+      value: web-modeler
+    - name: CAMUNDA_IDENTITY_BASEURL
+      value: http://plane-a-identity.platform.svc:80/identity
+    - name: CAMUNDA_IDENTITY_TYPE
+      value: GENERIC
+    - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_INTERNAL_API
+      value: web-modeler-api
+    - name: CAMUNDA_MODELER_SECURITY_JWT_AUDIENCE_PUBLIC_API
+      value: web-modeler-public-api
+    - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+      value: https://login.example.com/realms/camunda
+    - name: RESTAPI_OAUTH2_TOKEN_ISSUER_BACKEND_URL
+      value: https://login.example.com/realms/camunda
+    - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI
+      value: https://login.example.com/realms/camunda/protocol/openid-connect/certs
+    - name: RESTAPI_PUSHER_HOST
+      value: plane-a-web-modeler-websockets.platform.svc
+    - name: RESTAPI_PUSHER_PORT
+      value: "80"
+    - name: RESTAPI_PUSHER_APP_ID
+      value: web-modeler
+    - name: RESTAPI_PUSHER_KEY
+      valueFrom:
+        secretKeyRef:
+          key: app-key
+          name: plane-a-web-modeler-pusher
+    - name: RESTAPI_PUSHER_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: app-secret
+          name: plane-a-web-modeler-pusher
+    - name: CLIENT_PUSHER_HOST
+      value: management.example.com
+    - name: CLIENT_PUSHER_PORT
+      value: "443"
+    - name: CLIENT_PUSHER_PATH
+      value: /modeler-ws
+    - name: CLIENT_PUSHER_FORCE_TLS
+      value: "true"
+    - name: CAMUNDA_LICENSE_KEY
+      valueFrom:
+        secretKeyRef:
+          key: license-key
+          name: plane-a-management-license
+    - name: CAMUNDA_MODELER_CLUSTERS_0_ID
+      value: 2810522a-07cb-52ab-926e-443b927a774b
+    - name: CAMUNDA_MODELER_CLUSTERS_0_NAME
+      value: team-orders/orders
+    - name: CAMUNDA_MODELER_CLUSTERS_0_VERSION
+      value: 8.9.23
+    - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHENTICATION
+      value: BEARER_TOKEN
+    - name: CAMUNDA_MODELER_CLUSTERS_0_URL_GRPC
+      value: grpc://orders-zeebe.team-orders.svc:26500
+    - name: CAMUNDA_MODELER_CLUSTERS_0_URL_REST
+      value: http://orders-zeebe.team-orders.svc:8080
+    - name: CAMUNDA_MODELER_CLUSTERS_0_AUTHORIZATIONS_ENABLED
+      value: "true"
+    - name: CAMUNDA_MODELER_CLUSTERS_0_URL_WEBAPP
+      value: https://orders.example.com
+    image: camunda/web-modeler-restapi:8.9.15
+    imagePullPolicy: IfNotPresent
+    name: restapi
+    ports:
+    - containerPort: 8081
+      name: http
+      protocol: TCP
+    - containerPort: 8091
+      name: management
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /health/readiness
+        port: management
+        scheme: HTTP
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources: {}
+    startupProbe:
+      failureThreshold: 60
+      httpGet:
+        path: /health/readiness
+        port: management
+        scheme: HTTP
+      periodSeconds: 5
+      successThreshold: 1
+      timeoutSeconds: 1
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: scenario-node
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: plane-a-management
+  serviceAccountName: plane-a-management
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: PodScheduled
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Ready
+  containerStatuses:
+  - image: camunda/web-modeler-restapi:8.9.15
+    imageID: ""
+    lastState: {}
+    name: restapi
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-01-01T00:00:00Z"
+  phase: Running
+  qosClass: BestEffort
+  startTime: "2026-01-01T00:00:00Z"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    camunda.io/config-hash: scenario
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: plane-a
+    pod-template-hash: ed3a99ccdf
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:camunda.io/config-hash: {}
+        f:labels:
+          .: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"1cc0ce09-d023-58a6-ad22-53e7a02da820"}: {}
+      f:spec:
+        f:containers:
+          k:{"name":"websockets"}:
+            .: {}
+            f:env:
+              .: {}
+              k:{"name":"PUSHER_APP_ID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"PUSHER_APP_KEY"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"PUSHER_APP_PATH"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"PUSHER_APP_SECRET"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8060,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+            f:readinessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:resources: {}
+            f:startupProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:nodeName: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext: {}
+        f:serviceAccount: {}
+        f:serviceAccountName: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          .: {}
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"PodScheduled"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:phase: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-websockets-ed3a99ccdf-qp4lx
+  namespace: platform
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: plane-a-web-modeler-websockets-ed3a99ccdf
+    uid: 1cc0ce09-d023-58a6-ad22-53e7a02da820
+  uid: 75b21e64-a707-5fea-9f65-9377fda261e9
+spec:
+  containers:
+  - env:
+    - name: PUSHER_APP_ID
+      value: web-modeler
+    - name: PUSHER_APP_KEY
+      valueFrom:
+        secretKeyRef:
+          key: app-key
+          name: plane-a-web-modeler-pusher
+    - name: PUSHER_APP_SECRET
+      valueFrom:
+        secretKeyRef:
+          key: app-secret
+          name: plane-a-web-modeler-pusher
+    - name: PUSHER_APP_PATH
+      value: /modeler-ws
+    image: camunda/web-modeler-websockets:8.9.15
+    imagePullPolicy: IfNotPresent
+    name: websockets
+    ports:
+    - containerPort: 8060
+      name: http
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /up
+        port: http
+        scheme: HTTP
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources: {}
+    startupProbe:
+      failureThreshold: 60
+      httpGet:
+        path: /up
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      successThreshold: 1
+      timeoutSeconds: 1
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: scenario-node
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: plane-a-management
+  serviceAccountName: plane-a-management
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: PodScheduled
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Ready
+  containerStatuses:
+  - image: camunda/web-modeler-websockets:8.9.15
+    imageID: ""
+    lastState: {}
+    name: websockets
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-01-01T00:00:00Z"
+  phase: Running
+  qosClass: BestEffort
+  startTime: "2026-01-01T00:00:00Z"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    camunda.io/config-hash: scenario
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
@@ -5892,7 +8328,7 @@ metadata:
     camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
-    controller-revision-hash: orders-zeebe-4a814cc558
+    controller-revision-hash: orders-zeebe-f4dfd82678
     statefulset.kubernetes.io/pod-name: orders-zeebe-0
   managedFields:
   - apiVersion: v1
@@ -6445,6 +8881,26 @@ type: Opaque
 ---
 apiVersion: v1
 data:
+  client-secret: c2NlbmFyaW8=
+kind: Secret
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:stringData:
+        f:client-secret: {}
+    manager: kubectl
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: web-modeler-api-credentials
+  namespace: camunda-system
+  uid: 2f1998fc-b247-5b1d-9219-fa4f75b5c799
+type: Opaque
+---
+apiVersion: v1
+data:
   password: c2NlbmFyaW8=
   username: c2NlbmFyaW8=
 kind: Secret
@@ -6463,6 +8919,28 @@ metadata:
   name: identity-db
   namespace: platform
   uid: a00b852f-b185-53de-84ce-e7a357b033ee
+type: Opaque
+---
+apiVersion: v1
+data:
+  password: c2NlbmFyaW8=
+  username: c2NlbmFyaW8=
+kind: Secret
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:stringData:
+        f:password: {}
+        f:username: {}
+    manager: kubectl
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: modeler-db
+  namespace: platform
+  uid: 8589e6f9-2e02-53a3-8ce9-c88f46f8ae40
 type: Opaque
 ---
 apiVersion: v1
@@ -6541,6 +9019,47 @@ metadata:
     name: plane-a
     uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
   uid: 0dcdf4ce-1aa0-50f5-963a-75b296715ca5
+type: Opaque
+---
+apiVersion: v1
+data:
+  app-key: c2NlbmFyaW8=
+  app-secret: c2NlbmFyaW8=
+kind: Secret
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler
+    camunda.io/management-cluster: plane-a
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:app-key: {}
+        f:app-secret: {}
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+        f:ownerReferences:
+          k:{"uid":"66f4ff8b-2106-51f3-90c1-fa36cace1eb4"}: {}
+      f:type: {}
+    manager: CamundaManagementCluster/web-modeler/66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-pusher
+  namespace: platform
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaManagementCluster
+    name: plane-a
+    uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+  uid: 6d8920a3-65d5-559c-bbc6-5e2875d3feff
 type: Opaque
 ---
 apiVersion: v1
@@ -6815,6 +9334,140 @@ metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   labels:
     app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: plane-a
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+        f:ownerReferences:
+          k:{"uid":"66f4ff8b-2106-51f3-90c1-fa36cace1eb4"}: {}
+      f:spec:
+        f:ports:
+          k:{"port":80,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+          k:{"port":8091,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+    manager: CamundaManagementCluster/web-modeler/66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-restapi
+  namespace: platform
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaManagementCluster
+    name: plane-a
+    uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+  uid: c89de0f1-2bcd-5bce-bb48-62122f01ae55
+spec:
+  clusterIP: 10.0.0.12
+  clusterIPs:
+  - 10.0.0.12
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8091
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/component: web-modeler-restapi
+    camunda.io/management-cluster: plane-a
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: plane-a
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/component: {}
+          f:camunda.io/management-cluster: {}
+        f:ownerReferences:
+          k:{"uid":"66f4ff8b-2106-51f3-90c1-fa36cace1eb4"}: {}
+      f:spec:
+        f:ports:
+          k:{"port":80,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+    manager: CamundaManagementCluster/web-modeler/66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: plane-a-web-modeler-websockets
+  namespace: platform
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaManagementCluster
+    name: plane-a
+    uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
+  uid: 86c62c72-78e9-53ec-98d0-27eb24363a0b
+spec:
+  clusterIP: 10.0.0.13
+  clusterIPs:
+  - 10.0.0.13
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    camunda.io/component: web-modeler-websockets
+    camunda.io/management-cluster: plane-a
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: orders
     camunda.io/component: zeebe
   managedFields:
@@ -6963,9 +9616,9 @@ metadata:
     uid: 2810522a-07cb-52ab-926e-443b927a774b
   uid: bf31d2d6-042e-5271-b517-fcfb31b7b56f
 spec:
-  clusterIP: 10.0.0.12
+  clusterIP: 10.0.0.14
   clusterIPs:
-  - 10.0.0.12
+  - 10.0.0.14
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4

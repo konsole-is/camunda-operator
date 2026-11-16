@@ -1,19 +1,18 @@
 schemaVersion: 1
 description: >-
-  A CamundaManagementCluster in OIDC mode with Console, made from the
-  CamundaManagementClusterClaim plane-a in the Environment Platform. The
-  claim selects the built-in option for existing DatabaseConfigs. The OIDC
-  platform config and its Secrets are those of claim-ready, under the name
-  oidc-platform. It adds the auth, token, and JWKS URLs and the clients of
-  Management Identity, Optimize, and Console, with the Secrets of the
-  confidential clients, because a plane in OIDC mode needs them. The
-  DatabaseServerConfig and the DatabaseConfig identity-db are those of
-  plane-create. The plane runs no Web Modeler: the pods of Web Modeler roll
-  on the UID of the pusher Secret that the operator generates, and envtest
-  gives that Secret a new UID on each run. The Environment has no access
-  section, so the claim types its URLs. The claim selects every cluster
-  with an empty cluster selector. The first state has no cluster, so the
-  plane serves none.
+  A CamundaManagementCluster in OIDC mode with Console and Web Modeler,
+  made from the CamundaManagementClusterClaim plane-a in the Environment
+  Platform. The claim selects the built-in option for existing
+  DatabaseConfigs. The OIDC platform config and its Secrets are those of
+  claim-ready, under the name oidc-platform. It adds the auth, token,
+  and JWKS URLs and the clients of Management Identity, Optimize,
+  Console, and Web Modeler, with the Secrets of the confidential
+  clients, because a plane in OIDC mode needs them. The
+  DatabaseServerConfig and the DatabaseConfigs are those of plane-
+  create, without keycloak-db, because OIDC mode runs no Keycloak. The
+  Environment has no access section, so the claim types its URLs. The
+  claim selects every cluster with an empty cluster selector. The first
+  state has no cluster, so the plane serves none.
 seed:
   - apiVersion: v1
     kind: Namespace
@@ -46,6 +45,13 @@ seed:
     kind: Secret
     metadata:
       name: optimize-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: web-modeler-api-credentials
       namespace: camunda-system
     stringData:
       client-secret: scenario
@@ -83,6 +89,14 @@ seed:
                   key: "client-secret"
               console:
                 clientId: "console"
+              webModeler:
+                clientId: "web-modeler"
+              webModelerApi:
+                clientId: "web-modeler-api"
+                clientSecretRef:
+                  name: "web-modeler-api-credentials"
+                  namespace: "camunda-system"
+                  key: "client-secret"
       licenseSecretRef:
         name: "camunda-license"
         namespace: "camunda-system"
@@ -105,6 +119,8 @@ seed:
       parameters:
         existing-database-configs:
           identity:
+            claimEditable: true
+          webModeler:
             claimEditable: true
   - apiVersion: v1
     kind: Secret
@@ -150,6 +166,26 @@ seed:
         name: identity-db
         usernameKey: username
         passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: modeler-db
+      namespace: platform
+    stringData:
+      username: modeler
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: modeler-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: web_modeler
+      credentialsSecretRef:
+        name: modeler-db
+        usernameKey: username
+        passwordKey: password
   - apiVersion: fleet.camunda.io/v1alpha1
     kind: CamundaManagementClusterClaim
     metadata:
@@ -168,23 +204,30 @@ seed:
             claimValue: admin@example.com
         console:
           externalUrl: https://management.example.com/console
+        webModeler:
+          externalUrl: https://management.example.com/modeler
+          websocketsExternalUrl: https://management.example.com/modeler-ws
+          mail:
+            fromAddress: modeler@example.com
+            smtpHost: smtp.example.com
       versions:
         identity: "8.9.14"
         console: "8.9.133"
+        webModeler: "8.9.15"
       plugins:
         - section: management-database
           registration: existing-database-configs
           parameters:
             identity: identity-db
+            webModeler: modeler-db
 states:
   - name: serves-a-cluster
     description: >-
       Adds the namespace team-orders of the Environment Platform with the
       CamundaCluster orders, which uses the platform config oidc-platform.
-      The plane lists the cluster. The state has no CamundaOptimize: the
-      pod template of Optimize carries the UID of its CamundaCluster, which
-      does not own the Optimize workloads, and envtest gives the cluster a
-      new UID on each run.
+      The plane lists the cluster. It also adds the CamundaOptimize orders
+      in that namespace, which reads the contract plane-a and sets an
+      external URL, so the plane shows its callbacks and its reader.
     apply:
       - apiVersion: v1
         kind: Namespace

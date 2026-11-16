@@ -3,10 +3,13 @@ import { checkPage } from "./themes";
 
 test.use({ scenarioName: "plane-ready" });
 
-test("the plane page shows the header and the conditions of a ready OIDC plane", async ({
+test("the plane page shows the header and the conditions of a ready OIDC plane with Web Modeler", async ({
   page,
 }) => {
   await page.goto("/fleet/planes");
+  await expect(page.getByRole("row", { name: /plane-a/ })).toContainText(
+    "Identity, Console, Web Modeler",
+  );
   // The link of a plane names the plane and its namespace.
   await page.getByRole("link", { name: "plane-a platform" }).click();
   await expect(page).toHaveURL(/\/fleet\/planes\/platform\/plane-a$/);
@@ -47,9 +50,11 @@ test("the plane page shows the header and the conditions of a ready OIDC plane",
   await expect(
     table.getByRole("row", { name: /OptimizeCallbacksReady/ }),
   ).toContainText("Disabled");
-  await expect(
-    table.getByRole("rowheader", { name: "IdentityReady", exact: true }),
-  ).toHaveCount(0);
+  for (const type of ["IdentityReady", "WebModelerReady"]) {
+    await expect(
+      table.getByRole("rowheader", { name: type, exact: true }),
+    ).toHaveCount(0);
+  }
 
   await checkPage(page, "plane-overview");
 });
