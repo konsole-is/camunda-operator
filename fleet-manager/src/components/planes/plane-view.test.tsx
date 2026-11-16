@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { type PlanePageData, PlaneView } from "./plane-view";
 
 // live holds what the mocked watches report. useResource reports the
@@ -514,6 +515,48 @@ describe("PlaneView", () => {
           "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
+    });
+  });
+
+  describe("Claim tab", () => {
+    it("shows the claim of the plane, read only without claim actions", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      render(<PlaneView data={data()} writeMode="direct" />);
+      const basics = screen.getByRole("region", { name: "Basics" });
+      expect(within(basics).getByText("plane-a")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+    });
+
+    it("offers an Edit button on each panel with claim actions", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      const actions = {
+        preview: vi.fn(),
+        apply: vi.fn(),
+      };
+      render(
+        <GitPushesProvider>
+          <PlaneView data={data()} writeMode="direct" claimActions={actions} />
+        </GitPushesProvider>,
+      );
+      expect(
+        screen.getByRole("button", { name: "Edit Identity" }),
+      ).toBeTruthy();
+      expect(actions.preview).not.toHaveBeenCalled();
+    });
+
+    it("offers no edit while the read of the plane failed", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      live.errors.set("CamundaManagementCluster", "forbidden");
+      render(
+        <GitPushesProvider>
+          <PlaneView
+            data={data()}
+            writeMode="direct"
+            claimActions={{ preview: vi.fn(), apply: vi.fn() }}
+          />
+        </GitPushesProvider>,
+      );
+      expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
     });
   });
 });

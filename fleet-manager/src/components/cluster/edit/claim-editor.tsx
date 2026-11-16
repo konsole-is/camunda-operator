@@ -183,14 +183,19 @@ function viewOf(
   });
 }
 
-function EditPanel({
+/**
+ * EditPanel is a panel of a Claim tab in edit, with a Done button. It
+ * scrolls into view when scroll is set, takes the focus when focus is set,
+ * and then calls onShown.
+ */
+export function EditPanel({
   def,
   scroll,
   focus,
   onShown,
   onDone,
 }: {
-  def: EditDef;
+  def: Pick<EditDef, "label" | "name" | "render">;
   scroll: boolean;
   focus: boolean;
   onShown: () => void;
@@ -220,7 +225,8 @@ function EditPanel({
   );
 }
 
-function EditButton({
+/** EditButton opens the editor of the panel name. It takes the focus when focus is set, and then calls onFocused. */
+export function EditButton({
   name,
   focus,
   onFocused,

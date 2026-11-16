@@ -18,7 +18,10 @@ import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { environmentNameOf } from "@/lib/policy";
 import type { WriteMode } from "@/lib/write/types";
+import type { ClaimActions } from "@/components/fleet/claim-edit";
 import type { PlaneClaimTabData } from "./claim/data";
+import { PlaneClaimEditProvider } from "./claim/plane-claim-edit";
+import { PlaneClaimEditor } from "./claim/plane-claim-editor";
 import { ContractTab } from "./contract-tab";
 import { OptimizeTab } from "./optimize-tab";
 import { planesOf } from "./plane";
@@ -64,16 +67,20 @@ export type PlanePageData = {
  * its read did not fail, or when the CamundaManagementCluster carries
  * CLAIM_LABEL with the claim name. It selects the tab that the tab query parameter names, and a click
  * on a tab replaces that parameter. writeMode is the write mode of the
- * fleet manager, undefined when the page could not read it. The page
+ * fleet manager, undefined when the page could not read it. claimActions
+ * turn on the claim edit session of the Claim tab. The page
  * names each kind that it could not read. When both objects are gone and
  * neither read failed, the page says that the plane no longer exists and
  * links to all management planes.
  */
 export function PlaneView({
   data,
+  writeMode,
+  claimActions,
 }: {
   data: PlanePageData;
   writeMode?: WriteMode;
+  claimActions?: ClaimActions;
 }) {
   const { namespace, name } = data;
   const params = useSearchParams();
@@ -224,102 +231,117 @@ export function PlaneView({
         platformConfig={platformConfig}
         serves={summary?.serves}
       />
-      <Tabs value={tab} onValueChange={selectTab}>
-        <TabsList>
-          {PLANE_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value="overview">
-          <div className="flex flex-col gap-4">
-            {!plane &&
-              !unread("CamundaManagementCluster") &&
-              !unread("CamundaManagementClusterClaim") && (
+      <PlaneClaimEditProvider
+        data={data}
+        plane={plane}
+        claim={claim}
+        namespaces={namespaces.items}
+        environments={environments.items}
+        pageUnread={unreadKinds(reads)}
+        writeMode={writeMode}
+        actions={claimActions}
+      >
+        <Tabs value={tab} onValueChange={selectTab}>
+          <TabsList>
+            {PLANE_TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id}>
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value="overview">
+            <div className="flex flex-col gap-4">
+              {!plane &&
+                !unread("CamundaManagementCluster") &&
+                !unread("CamundaManagementClusterClaim") && (
+                  <p className="text-sm text-muted">
+                    The claim controller has not created the management plane
+                    yet.
+                  </p>
+                )}
+              {planeUnknown && (
                 <p className="text-sm text-muted">
-                  The claim controller has not created the management plane yet.
+                  The page could not read the management plane, so it cannot
+                  tell if the claim {name} made it.
                 </p>
               )}
-            {planeUnknown && (
-              <p className="text-sm text-muted">
-                The page could not read the management plane, so it cannot tell
-                if the claim {name} made it.
-              </p>
-            )}
-            <PlaneConditions
-              plane={conditionRows(plane?.status?.conditions)}
-              claim={conditionRows(
-                (planeUnknown ? live : claim)?.status?.conditions,
-              )}
-              now={clock}
+              <PlaneConditions
+                plane={conditionRows(plane?.status?.conditions)}
+                claim={conditionRows(
+                  (planeUnknown ? live : claim)?.status?.conditions,
+                )}
+                now={clock}
+              />
+            </div>
+          </TabsContent>
+          <TabsContent value="clusters">
+            <ServedClustersTab
+              rows={servedClusters({
+                plane,
+                namespaces: namespaces.items,
+                environments: environments.items,
+                environmentsUnread:
+                  unreadOf(["Namespace", "Environment"]).length > 0,
+              })}
+              unread={unreadOf([
+                "CamundaManagementCluster",
+                "Namespace",
+                "Environment",
+              ])}
             />
-          </div>
-        </TabsContent>
-        <TabsContent value="clusters">
-          <ServedClustersTab
-            rows={servedClusters({
-              plane,
-              namespaces: namespaces.items,
-              environments: environments.items,
-              environmentsUnread:
-                unreadOf(["Namespace", "Environment"]).length > 0,
-            })}
-            unread={unreadOf([
-              "CamundaManagementCluster",
-              "Namespace",
-              "Environment",
-            ])}
-          />
-        </TabsContent>
-        <TabsContent value="optimize">
-          <OptimizeTab
-            rows={optimizeRows({ plane, optimizes: optimizes.items })}
-            callbacks={
-              plane?.status?.conditions?.find(
-                (c) => c.type === "OptimizeCallbacksReady",
-              ) as ConditionLike | undefined
-            }
-            oidc={oidc}
-            unread={unreadOf(
-              plane && !oidc
-                ? ["CamundaManagementCluster"]
-                : ["CamundaManagementCluster", "CamundaOptimize"],
-            )}
-          />
-        </TabsContent>
-        <TabsContent value="contract">
-          <ContractTab
-            name={contractName}
-            contract={managementAuthConfigs.items.find(
-              (c) => c.metadata?.name === contractName,
-            )}
-            readers={contractReaders(optimizes.items, contractName)}
-            unread={unreadOf([
-              "CamundaManagementCluster",
-              "ManagementAuthConfig",
-              "CamundaOptimize",
-            ])}
-          />
-        </TabsContent>
-        <TabsContent value="endpoints">
-          <div className="flex flex-col gap-2">
-            {endpointRows.length > 0 && endpointsUnread.length > 0 && (
-              <p className="text-sm text-muted">
-                {unreadText(endpointsUnread)}
-              </p>
-            )}
-            <EndpointsTab
-              rows={endpointRows}
-              emptyText={
-                endpointsUnread.length > 0
-                  ? unreadText(endpointsUnread)
-                  : "This plane reports no endpoints yet."
+          </TabsContent>
+          <TabsContent value="optimize">
+            <OptimizeTab
+              rows={optimizeRows({ plane, optimizes: optimizes.items })}
+              callbacks={
+                plane?.status?.conditions?.find(
+                  (c) => c.type === "OptimizeCallbacksReady",
+                ) as ConditionLike | undefined
               }
+              oidc={oidc}
+              unread={unreadOf(
+                plane && !oidc
+                  ? ["CamundaManagementCluster"]
+                  : ["CamundaManagementCluster", "CamundaOptimize"],
+              )}
             />
-          </div>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+          <TabsContent value="contract">
+            <ContractTab
+              name={contractName}
+              contract={managementAuthConfigs.items.find(
+                (c) => c.metadata?.name === contractName,
+              )}
+              readers={contractReaders(optimizes.items, contractName)}
+              unread={unreadOf([
+                "CamundaManagementCluster",
+                "ManagementAuthConfig",
+                "CamundaOptimize",
+              ])}
+            />
+          </TabsContent>
+          <TabsContent value="endpoints">
+            <div className="flex flex-col gap-2">
+              {endpointRows.length > 0 && endpointsUnread.length > 0 && (
+                <p className="text-sm text-muted">
+                  {unreadText(endpointsUnread)}
+                </p>
+              )}
+              <EndpointsTab
+                rows={endpointRows}
+                emptyText={
+                  endpointsUnread.length > 0
+                    ? unreadText(endpointsUnread)
+                    : "This plane reports no endpoints yet."
+                }
+              />
+            </div>
+          </TabsContent>
+          <TabsContent value="claim">
+            <PlaneClaimEditor />
+          </TabsContent>
+        </Tabs>
+      </PlaneClaimEditProvider>
     </div>
   );
 }
