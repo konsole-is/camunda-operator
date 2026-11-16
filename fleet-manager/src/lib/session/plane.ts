@@ -15,6 +15,7 @@ import {
   type PlaneManagement,
 } from "@/lib/planes/identity";
 import {
+  databaseApps,
   databaseConfigErrors,
   databaseSection,
   planeControllerParameters,
@@ -288,10 +289,14 @@ function urlErrorsOf(
     ? []
     : planeUrlFields(runningOfClaim(claim.spec?.management));
   return planeUrlFields(runningOfClaim(management)).flatMap((field) => {
-    const value = stringAt(management, field.names);
+    const steps = field.names.map((name) => ({ field: name }));
+    const text = (at: unknown) => {
+      const found = valueAt(at, steps);
+      return typeof found === "string" ? found : "";
+    };
+    const value = text(management);
     const needed = before.some((f) => f.id === field.id);
-    if (needed && value === stringAt(claim.spec?.management, field.names))
-      return [];
+    if (needed && value === text(claim.spec?.management)) return [];
     const path = ["spec", "management", ...field.names].join(".");
     return urlErrors({ [field.id]: value }, [field]).map((message) => ({
       path,
@@ -322,7 +327,10 @@ function databaseErrorsOf(
   const running = runningOfClaim(after.spec?.management);
   if (
     equalJSON(valueAt(claim, steps), selections[i].parameters) &&
-    equalJSON(runningOfClaim(claim.spec?.management), running)
+    equalJSON(
+      databaseApps(runningOfClaim(claim.spec?.management)),
+      databaseApps(running),
+    )
   )
     return [];
   const parameters = requestsOf(selections, {
@@ -341,17 +349,6 @@ function hasAccess(claim: PlaneClaim, ctx: PlaneClaimContext): boolean {
       ctx.sections.find((s) => s.metadata?.name === p.section)?.spec.slot ===
       "externalAccess",
   );
-}
-
-function stringAt(value: unknown, names: readonly string[]): string {
-  const found = names.reduce<unknown>(
-    (at, name) =>
-      typeof at === "object" && at !== null
-        ? (at as Record<string, unknown>)[name]
-        : undefined,
-    value,
-  );
-  return typeof found === "string" ? found : "";
 }
 
 // A version that the change leaves as it is stays unchecked: the floor of

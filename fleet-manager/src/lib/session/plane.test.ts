@@ -697,6 +697,16 @@ describe("validatePlaneClaim", () => {
     expect(validatePlaneClaim(s, configsCtx)).toEqual([]);
   });
 
+  it("a Console change passes while two apps share a DatabaseConfig", () => {
+    const live = configsClaim({ keycloak: "shared", identity: "shared" });
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", true).map(asEdit),
+      [at("spec", "versions", "console"), "8.9.133"],
+    );
+    expect(validatePlaneClaim(s, configsCtx)).toEqual([]);
+  });
+
   it("refuses a database list of the claim controller that the registration schema refuses", () => {
     const live = planeClaim({
       plugins: [

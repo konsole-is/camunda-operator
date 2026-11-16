@@ -428,7 +428,10 @@ export function planeControllerParameters(
 ): ControllerParameters {
   const databases = databaseSection(sections)?.metadata.name;
   return (request) =>
-    request.section === databases
-      ? { databases: DATABASE_APPS.filter((app) => runs(app, running)) }
-      : {};
+    request.section === databases ? { databases: databaseApps(running) } : {};
+}
+
+/** databaseApps returns the apps of a plane that runs running that get a database, as Databases of camundamanagementclusterclaim does. */
+export function databaseApps(running: Running): string[] {
+  return DATABASE_APPS.filter((app) => runs(app, running));
 }
