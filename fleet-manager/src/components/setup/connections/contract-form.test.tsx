@@ -231,6 +231,14 @@ describe("ContractForm", () => {
     expect(Object.hasOwn(last().elasticsearch, "caSecretRef")).toBe(false);
   });
 
+  it("keeps a new CA certificate Secret in the draft before its key is picked", () => {
+    const { last } = setup(find(sources.secondaryStorageConfigs, "shared-es"));
+    pick("CA certificate", "Secret", "shared-es-user");
+    expect(
+      (last().elasticsearch as { caSecretRef: object }).caSecretRef,
+    ).toEqual({ name: "shared-es-user" });
+  });
+
   it("picks the database config of an RDBMS contract", () => {
     const rdbms = {
       ...find(sources.secondaryStorageConfigs, "shared-es"),

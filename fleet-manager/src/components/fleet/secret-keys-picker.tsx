@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useContext, useId, useRef, useState } from "react";
+import { type ReactNode, useContext, useId, useState } from "react";
 import { SecretRefsReaderContext } from "@/components/fleet/namespaced-secret-ref-picker";
 import { SecretNameSelect } from "@/components/setup/secret-name-select";
 import {
@@ -39,9 +39,8 @@ export const KEY_SLOT: readonly SecretKeySlot[] = [
  * Secret or key does not exist stays picked, so a save keeps it, and is
  * marked as not found; while the Secrets cannot be read, nothing is marked.
  * onChange runs only on a pick of the user: it gets the Secret name and the
- * key of each picked slot once the Secret and each slot without a fallback
- * are picked, and undefined when a pick clears a reference that it reported
- * before or that value gave.
+ * key of each picked slot, also while a slot without a fallback is not
+ * picked, and undefined when the Secret is cleared.
  */
 export function SecretKeysPicker({
   label,
@@ -63,17 +62,13 @@ export function SecretKeysPicker({
     name: "",
     ...value,
   }));
-  const reported = useRef(complete(picked, slots));
   const read = useContext(SecretRefsReaderContext);
   const { secrets: listed, error } = read(namespace);
   const secrets = error ? undefined : listed;
   const keys = secrets?.find((s) => s.name === picked.name)?.keys;
   const pick = (next: PickedKeys) => {
     setPicked(next);
-    const ref = complete(next, slots);
-    if (ref === undefined && reported.current === undefined) return;
-    reported.current = ref;
-    onChange(ref);
+    onChange(next.name === "" ? undefined : next);
   };
   return (
     <div
@@ -159,18 +154,4 @@ function withKey(picked: PickedKeys, field: string, key: string): PickedKeys {
   if (key === "") delete next[field];
   else next[field] = key;
   return next;
-}
-
-function complete(
-  picked: PickedKeys,
-  slots: readonly SecretKeySlot[],
-): PickedKeys | undefined {
-  if (picked.name === "") return undefined;
-  const ref = { name: picked.name } as PickedKeys;
-  for (const slot of slots) {
-    const key = picked[slot.field];
-    if (key) ref[slot.field] = key;
-    else if (!slot.fallback) return undefined;
-  }
-  return ref;
 }

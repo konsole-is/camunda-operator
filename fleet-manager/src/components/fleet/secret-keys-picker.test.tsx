@@ -91,11 +91,24 @@ describe("SecretKeysPicker", () => {
     });
   });
 
-  it("reports nothing until each slot without fallback is picked", () => {
+  it("reports a Secret whose keys are not all picked yet", () => {
     const { pick, onChange } = setup({ slots: S3_CREDENTIALS_SLOTS });
     pick("Secret", "s3");
+    expect(onChange).toHaveBeenLastCalledWith({ name: "s3" });
     pick("Access key ID key", "id");
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith({
+      name: "s3",
+      accessKeyIdKey: "id",
+    });
+  });
+
+  it("reports another Secret without the keys of the Secret before", () => {
+    const { pick, onChange } = setup({
+      slots: S3_CREDENTIALS_SLOTS,
+      value: { name: "s3", accessKeyIdKey: "id", secretAccessKeyKey: "secret" },
+    });
+    pick("Secret", "es-user");
+    expect(onChange).toHaveBeenLastCalledWith({ name: "es-user" });
   });
 
   it("reports undefined when a pick clears a complete reference", () => {
