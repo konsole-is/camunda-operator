@@ -7,32 +7,40 @@ test.afterEach(({ scenario }) => scenario.prometheus.respond());
 const BROKERS =
   "/fleet/clusters/team-a/camundacluster-sample?tab=overview&component=zeebe";
 
+// Fixed times, so the axis labels of the chart are the same on each run.
+const RANGE_START = Date.parse("2026-10-30T11:00:00Z") / 1000;
+
+function brokersRange(url: URL): unknown {
+  if (
+    url.pathname !== "/api/v1/query_range" ||
+    !url.searchParams
+      .get("query")
+      ?.includes("zeebe_element_instance_events_total")
+  ) {
+    return undefined;
+  }
+  return {
+    status: "success",
+    data: {
+      resultType: "matrix",
+      result: [
+        {
+          metric: { pod: "camundacluster-sample-zeebe-0" },
+          values: Array.from({ length: 30 }, (_, i) => [
+            RANGE_START + i * 120,
+            String(400 + Math.round(120 * Math.sin(i / 4))),
+          ]),
+        },
+      ],
+    },
+  };
+}
+
 test("the Metrics tab of the brokers shows the live usage and a chart that the server rendered", async ({
   page,
   scenario,
 }) => {
-  scenario.prometheus.respond((url) =>
-    url.pathname === "/api/v1/query_range" &&
-    url.searchParams
-      .get("query")
-      ?.includes("zeebe_element_instance_events_total")
-      ? {
-          status: "success",
-          data: {
-            resultType: "matrix",
-            result: [
-              {
-                metric: { pod: "camundacluster-sample-zeebe-0" },
-                values: [
-                  [Date.now() / 1000 - 60, "2"],
-                  [Date.now() / 1000, "3"],
-                ],
-              },
-            ],
-          },
-        }
-      : undefined,
-  );
+  scenario.prometheus.respond(brokersRange);
   const metricsCalls: URL[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -68,6 +76,66 @@ test("the Metrics tab of the brokers shows the live usage and a chart that the s
     expect(url.searchParams.get("component")).toBe("zeebe");
   }
   await checkPage(page, "component-metrics");
+});
+
+test("the chart of the brokers shows the same time labels when the font arrives after the data", async ({
+  page,
+  scenario,
+}) => {
+  scenario.prometheus.respond(brokersRange);
+  let hold: Promise<void> | undefined;
+  let held = 0;
+  await page.route("**/ibm-plex-sans-*-400-*.woff2", async (route) => {
+    if (hold) {
+      held++;
+      await hold;
+    }
+    await route.continue();
+  });
+
+  const fontLoaded = () =>
+    page.waitForFunction(() =>
+      document.fonts.check('400 11px "IBM Plex Sans"'),
+    );
+  // A held font holds back the load event, so that load waits only for the
+  // DOM and clicks the tab again until the page has hydrated.
+  const timeLabels = async (release?: () => void): Promise<string[]> => {
+    await page.goto(BROKERS, {
+      waitUntil: release ? "domcontentloaded" : "load",
+    });
+    if (!release) await fontLoaded();
+    const tab = page.getByRole("tab", { name: "Metrics" });
+    await expect(async () => {
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true", {
+        timeout: 1000,
+      });
+    }).toPass();
+    const figure = page.getByRole("figure", {
+      name: /Process instances activated/,
+    });
+    await expect(figure).toBeVisible();
+    release?.();
+    await fontLoaded();
+    const ticks = figure.locator(
+      ".recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value",
+    );
+    await expect(ticks.first()).toBeVisible();
+    return ticks.allTextContents();
+  };
+
+  const present = await timeLabels();
+
+  let releaseFont = () => {};
+  hold = new Promise((resolve) => {
+    releaseFont = resolve;
+  });
+  const late = await timeLabels(releaseFont);
+  hold = undefined;
+
+  expect(held).toBeGreaterThan(0);
+  expect(late.length).toBeGreaterThan(1);
+  expect(late).toEqual(present);
 });
 
 test("the Logs tab of the brokers shows a line of each broker pod", async ({

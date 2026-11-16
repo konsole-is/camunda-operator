@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
 import {
   allowedErrors,
@@ -65,6 +66,7 @@ describe("optionSettings", () => {
         "connectors-permissions": ["aws-connectors-role"],
         "backup-storage": ["s3", "gone"],
       }),
+      [],
     );
     expect(settings.map((s) => [s.registration, s.label])).toEqual([
       ["aws-connectors-role", "Label of aws-connectors-role"],
@@ -82,6 +84,7 @@ describe("optionSettings", () => {
         { "connectors-permissions": ["aws-connectors-role"] },
         { "aws-connectors-role": { zone: { value: "a" }, extra: {} } },
       ),
+      [],
     );
     expect(settings.parameters.map((p) => p.name)).toEqual([
       "replicas",
@@ -96,6 +99,7 @@ describe("optionSettings", () => {
     const [settings] = optionSettings(
       [role],
       allowing({ "connectors-permissions": ["aws-connectors-role"] }),
+      [],
     );
     expect(settings.parameters[0]).toMatchObject({
       label: "Replicas",
@@ -122,6 +126,7 @@ describe("optionSettings", () => {
           },
         },
       ),
+      [],
     );
     expect(settings.parameters[0]).toMatchObject({
       registrationSummary: "3",
@@ -153,6 +158,7 @@ describe("optionSettings", () => {
     const [settings] = optionSettings(
       [elasticsearch],
       allowing({ "secondary-storage": ["elasticsearch"] }),
+      [],
     );
     expect(settings.parameters.map((p) => p.name)).toEqual(["preset"]);
   });
@@ -168,6 +174,7 @@ describe("optionSettings", () => {
     const [settings] = optionSettings(
       [database],
       allowing({ "secondary-storage": ["database-server"] }),
+      [],
     );
     expect(settings.parameters[0].presetKind).toBe("DatabaseServerPreset");
   });
@@ -188,6 +195,7 @@ describe("optionSettings", () => {
         access: ["gateway-public"],
         "connectors-permissions": ["aws-connectors-role"],
       }),
+      [],
     );
     const flags = settings.flatMap((s) =>
       s.parameters.map((p) => [p.name, p.hostPattern, p.template]),
@@ -199,6 +207,122 @@ describe("optionSettings", () => {
       ["hostnamePattern", true, false],
       ["other", false, false],
     ]);
+  });
+
+  const store = registration("store", ["backup-storage"], {
+    parameters: {
+      type: "object",
+      required: ["bucket", "endpoint"],
+      properties: {
+        bucket: { type: "string", title: "Bucket" },
+        region: { type: "string" },
+      },
+      additionalProperties: { type: "string" },
+    },
+    parameterValues: { region: null },
+  });
+
+  it("marks a required parameter that no claim can get a value for", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+      [],
+    );
+    expect(
+      settings.parameters.find((p) => p.name === "bucket")?.needsValue,
+    ).toBe(true);
+    expect(
+      settings.parameters.find((p) => p.name === "region")?.needsValue,
+    ).toBe(false);
+  });
+
+  it("does not mark a required parameter that the environment gives a value or a claim can change", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing(
+        { "backup-storage": ["store"] },
+        {
+          store: {
+            bucket: { value: "b" },
+            endpoint: { claimEditable: true },
+          },
+        },
+      ),
+      [],
+    );
+    expect(settings.parameters.map((p) => [p.name, p.needsValue])).toEqual([
+      ["bucket", false],
+      ["region", false],
+      ["endpoint", false],
+    ]);
+  });
+
+  it("lists a required parameter that is not a property and needs a value", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+      [],
+    );
+    expect(settings.parameters.map((p) => p.name)).toEqual([
+      "bucket",
+      "region",
+      "endpoint",
+    ]);
+    expect(settings.parameters[2]).toMatchObject({
+      label: "endpoint",
+      schema: { type: "string" },
+      needsValue: true,
+    });
+  });
+
+  it("counts a null value of the registration as not set", () => {
+    const [settings] = optionSettings(
+      [store],
+      allowing({ "backup-storage": ["store"] }),
+      [],
+    );
+    expect(settings.parameters[1]).toMatchObject({
+      registrationSet: false,
+      registrationSummary: "Not set",
+    });
+  });
+
+  it("names the picks without a value when other picks of the option get one", () => {
+    const release = registration("release-tool", ["clusters", "planes"], {
+      parameters: {
+        type: "object",
+        required: ["releaseRef"],
+        properties: { releaseRef: { type: "string" } },
+      },
+    });
+    const kinds = [
+      { name: "clusters", appliesTo: ["CamundaClusterClaim"] },
+      { name: "planes", appliesTo: ["CamundaManagementClusterClaim"] },
+    ].map(
+      ({ name, appliesTo }) =>
+        ({
+          metadata: { name },
+          spec: { label: name, appliesTo, selection: "One" },
+        }) as PluginSection,
+    );
+    const [both] = optionSettings(
+      [release],
+      allowing({ clusters: ["release-tool"], planes: ["release-tool"] }),
+      kinds,
+    );
+    expect(both.parameters[0]).toMatchObject({
+      needsValue: true,
+      needsValueFor: [
+        { section: "planes", kind: "CamundaManagementClusterClaim" },
+      ],
+    });
+    const [planes] = optionSettings(
+      [release],
+      allowing({ planes: ["release-tool"] }),
+      kinds,
+    );
+    expect(planes.parameters[0].needsValue).toBe(true);
+    expect(planes.parameters[0].needsValueFor).toBeUndefined();
   });
 });
 
@@ -310,6 +434,7 @@ describe("settingErrors", () => {
           },
         },
       ),
+      [],
     );
     expect(settingErrors(settings, {}).map((e) => e.path)).toEqual([
       "spec.parameters.aws-connectors-role.replicas.value",
@@ -342,6 +467,7 @@ describe("settingErrors", () => {
           },
         },
       ),
+      [],
     );
     expect(settingErrors(settings, {}).map((e) => e.path)).toEqual([
       "spec.parameters.lists.arns.allowed.1.value",
@@ -372,6 +498,7 @@ describe("settingErrors of a template parameter", () => {
           },
         },
       ),
+      [],
     );
     expect(settingErrors(settings, {})).toEqual([
       {
@@ -396,6 +523,7 @@ describe("optionSettings of the values of a registration", () => {
     const [settings] = optionSettings(
       [free],
       allowing({ s: ["free"] }, { free: { zone: { claimEditable: true } } }),
+      [],
     );
     expect(
       settings.parameters.map((p) => [p.name, p.registrationSummary, p.schema]),
@@ -433,7 +561,7 @@ describe("settingErrors of a preset parameter", () => {
       ),
       presets: { databaseServer: ["pg-small"] },
     };
-    expect(settingErrors(optionSettings([database], spec), spec)).toEqual([
+    expect(settingErrors(optionSettings([database], spec, []), spec)).toEqual([
       {
         path: "spec.parameters.database-server.preset.value",
         message:
@@ -460,7 +588,9 @@ describe("settingErrors of a preset parameter", () => {
       presets: { databaseServer: ["pg-small"] },
     };
     expect(
-      settingErrors(optionSettings([database], spec), spec).map((e) => e.path),
+      settingErrors(optionSettings([database], spec, []), spec).map(
+        (e) => e.path,
+      ),
     ).toEqual(["spec.parameters.database-server.preset.value"]);
   });
 });
@@ -470,6 +600,7 @@ describe("optionSettings of an option that no section allows", () => {
     const settings = optionSettings(
       [role],
       allowing({}, { "aws-connectors-role": { tier: { value: "gold" } } }),
+      [],
     );
     expect(settings.map((s) => [s.registration, s.allowedBySection])).toEqual([
       ["aws-connectors-role", false],
@@ -481,6 +612,7 @@ describe("optionSettings of an option that no section allows", () => {
       optionSettings(
         [role],
         allowing({ "connectors-permissions": ["aws-connectors-role"] }),
+        [],
       )[0].allowedBySection,
     ).toBe(true);
   });

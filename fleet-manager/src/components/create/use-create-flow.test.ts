@@ -96,6 +96,17 @@ describe("useCreateFlow", () => {
     expect(result.current.errors.a).toEqual(["Taken"]);
   });
 
+  it("refuses next while an earlier step has errors", () => {
+    const { result, rerender } = setup({ name: "orders" });
+    act(() => result.current.next());
+    rerender({ s: steps(() => ["Taken"]) });
+    act(() => result.current.next());
+    expect(result.current.current).toBe("b");
+    rerender({ s: steps() });
+    act(() => result.current.next());
+    expect(result.current.current).toBe("c");
+  });
+
   it("goes back with back and with go to an earlier step only", () => {
     const { result } = setup({ name: "orders" });
     act(() => result.current.next());

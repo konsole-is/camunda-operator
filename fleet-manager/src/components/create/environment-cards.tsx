@@ -56,9 +56,9 @@ export function EnvironmentCards(props: EnvironmentCardsProps) {
   };
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <h2 id={`${id}-label`} className="font-heading text-base font-semibold">
+      <h3 id={`${id}-label`} className="font-heading text-base font-semibold">
         {props.multiple ? "Environments" : "Environment"}
-      </h2>
+      </h3>
       <div
         role={props.multiple ? "group" : "radiogroup"}
         aria-labelledby={`${id}-label`}
