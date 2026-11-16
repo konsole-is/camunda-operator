@@ -113,6 +113,34 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
   { message: "The change must apply one claim and nothing else." },
 );
 
+/**
+ * claimDeleteSchema accepts a Change that deletes exactly one claim of a
+ * cluster or a management plane and nothing else: an empty apply, one
+ * delete ref with the kind and apiVersion of a claim and a namespace,
+ * optional uids and resourceVersion precondition for that ref, and no
+ * create, force, or directOnly.
+ */
+export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
+  (c) => {
+    const ref = c.delete?.[0];
+    return (
+      c.apply.length === 0 &&
+      c.delete?.length === 1 &&
+      ref !== undefined &&
+      CLAIM_KINDS.includes(ref.kind) &&
+      // The direct writer reports a delete that answers 404 as done, so a
+      // wrong apiVersion would report a delete that never happened.
+      ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
+      ref.namespace !== undefined &&
+      Object.keys(c.preconditions ?? {}).every((key) => key === refKey(ref)) &&
+      c.create === undefined &&
+      c.force === undefined &&
+      c.directOnly === undefined
+    );
+  },
+  { message: "The change must delete one claim and nothing else." },
+);
+
 const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
 
 /**
