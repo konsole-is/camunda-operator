@@ -674,6 +674,8 @@ The `ManagementAuthConfig`, the annotations on the orchestration clusters, the c
 
 Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is suspended, because all three authenticate through Management Identity. The orchestration clusters continue to run.
 
+In the `keycloak` mode, an orchestration cluster that uses OIDC signs in at the Keycloak of the management plane. See [An OIDC cluster must name the same issuer](#an-oidc-cluster-must-name-the-same-issuer). Its users and API clients cannot sign in or get tokens until the management plane resumes.
+
 ## Deletion
 
 Deleting the `CamundaManagementCluster` removes:
@@ -693,6 +695,8 @@ Deletion keeps:
 - Every user, group, and client in Keycloak.
 - The Secrets that you referenced.
 - The orchestration clusters.
+
+In the `keycloak` mode, an orchestration cluster that uses OIDC signs in at the Keycloak of the management plane. After the deletion, its users and API clients cannot sign in or get tokens. Set `spec.auth.oidc.issuerUrl` of its platform config to another issuer.
 
 The resource stays in `Terminating` while the Kubernetes API refuses a call, or while a Deployment named `my-management-identity` of another owner exists in this namespace. The operator log names the cause. Delete or rename that Deployment.
 

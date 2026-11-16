@@ -84,6 +84,47 @@ describe("PlaneActions", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("in the keycloak mode the confirm says that the served OIDC clusters cannot sign in or get tokens", async () => {
+    actions({ ownKeycloak: true });
+    await userEvent.click(button("Suspend"));
+    expect(
+      screen.getByRole("group", { name: "Suspend" }).textContent,
+    ).toContain(
+      "The served clusters that use OIDC sign in at the Keycloak of this plane. Their users and API clients cannot sign in or get tokens until the plane resumes.",
+    );
+  });
+
+  it("states nothing about the Keycloak of the plane without one or without a served cluster", async () => {
+    actions({ ownKeycloak: false });
+    await userEvent.click(button("Suspend"));
+    expect(
+      screen.getByRole("group", { name: "Suspend" }).textContent,
+    ).not.toContain("Keycloak");
+    cleanup();
+    actions({ ownKeycloak: true, served: 0 });
+    await userEvent.click(button("Suspend"));
+    expect(
+      screen.getByRole("group", { name: "Suspend" }).textContent,
+    ).not.toContain("Keycloak");
+  });
+
+  it("offers no Suspend and no Resume while the claim is being deleted, and says why", () => {
+    const deleting = (spec: Record<string, unknown>) => {
+      const claim = claimOf(spec);
+      claim.metadata!.deletionTimestamp = now;
+      return claim;
+    };
+    const { rerender } = actions({ claim: deleting({}) });
+    expect(button("Suspend")).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(
+        "Suspend and Resume are off while the claim is being deleted.",
+      ),
+    ).toBeTruthy();
+    rerender({ claim: deleting({ suspend: true }) });
+    expect(button("Resume")).toHaveProperty("disabled", true);
+  });
+
   it("the confirm writes spec.suspend true through apply, with the resourceVersion that the page read", async () => {
     const { apply } = actions();
     await userEvent.click(button("Suspend"));

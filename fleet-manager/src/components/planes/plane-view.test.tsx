@@ -698,6 +698,27 @@ describe("PlaneView", () => {
       ).toBeTruthy();
     });
 
+    it("the Suspend confirm of a plane with its own Keycloak names the served OIDC clusters", async () => {
+      const plane = planeOf();
+      plane.spec.identityProvider = { keycloak: {} } as never;
+      plane.status!.clusters = [
+        { namespace: "team-orders", name: "orders", attached: true },
+      ] as never;
+      render(
+        withProviders(
+          <PlaneView data={data({ plane })} claimActions={claimActions} />,
+        ),
+      );
+      await userEvent.click(
+        within(header()).getByRole("button", { name: "Suspend" }),
+      );
+      expect(
+        screen.getByRole("group", { name: "Suspend" }).textContent,
+      ).toContain(
+        "The served clusters that use OIDC sign in at the Keycloak of this plane.",
+      );
+    });
+
     it("turns Suspend and Delete off while the plane read fails", () => {
       live.errors.set("CamundaManagementCluster", "connection lost");
       render(

@@ -276,7 +276,7 @@ A tab needs some lists. When the page fails to read such a list, or its copy of 
 
 Suspend stops the plane and keeps its data. The header of a plane that a claim made has the button **Suspend**.
 
-1. Select **Suspend**. The page asks you to confirm. It says that every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize then stops for every cluster that the plane serves. It also says that the served clusters keep running, and that the databases keep the data of the plane.
+1. Select **Suspend**. The page asks you to confirm. It says that every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize then stops for every cluster that the plane serves. It also says that the served clusters keep running, and that the databases keep the data of the plane. In the `keycloak` mode, it says that the served OIDC clusters sign in at the Keycloak of the plane. Their users and API clients cannot sign in or get tokens until the plane resumes.
 2. Select **Suspend the management plane**.
 
 The page sets `spec.suspend: true` on the claim:
@@ -296,7 +296,7 @@ When every workload is at zero, the header shows `Ready · Suspended`. Select **
 
 The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then.
 
-A plane that no claim made has no Suspend and no Delete.
+A plane that no claim made has no Suspend and no Delete. While the claim is being deleted, **Suspend** and **Resume** are off.
 
 ## Delete a management plane
 
@@ -305,10 +305,11 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
 1. Choose what happens to the resources of the database and access options. **Delete the resources** and **Keep the resources** set `spec.deletionPolicy` of the claim to `Delete` or `Orphan`. The page selects the policy of the claim. Without one, it selects the policy that the claim recorded from its environment, else `Delete`. When an option always deletes what it made, **Keep the resources** is off.
 2. Read what the delete takes. The page lists:
     - The objects that always go: the `CamundaManagementCluster`, with its workloads, Services, and generated Secrets, the requests of the options, and the claim.
-    - The clusters that the plane serves. They stay and keep running. The plane removes its Console settings and its claim from each cluster, and each cluster restarts its pods once. A cluster with basic authentication also loses its `web-modeler` user. Sign-in to Console, Web Modeler, and Optimize stops for these clusters.
+    - The clusters that the plane serves. They stay and keep running. The plane removes its Console settings and its claim from each cluster, and each cluster restarts its pods once. A cluster with basic authentication also loses its `web-modeler` user. Sign-in to Console, Web Modeler, and Optimize stops for these clusters. In the `keycloak` mode, a cluster that uses OIDC signs in at the Keycloak of the plane. Its users and API clients then can no longer sign in or get tokens. When the claim did not make the plane, the page says that the delete does not touch the plane or the clusters that it serves.
     - The contract of the plane, which goes. Each `CamundaOptimize` that reads it then reports `InvalidReference`. The page names each of them.
     - The resources of each option, with `Deleted` or `Kept` for each.
     - With **Delete the resources**: `Deleting a Database keeps its data on its server. Deleting a DatabaseServer erases the server and its data.`
+    - With **Delete the resources**, in the `keycloak` mode and while the plane serves clusters, the review also says: `When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.`
     - With **Keep the resources**, the resources of the options show `Kept`. They stay after the plane is gone.
 3. Type the name of the plane.
 4. Select **Delete the management plane**.

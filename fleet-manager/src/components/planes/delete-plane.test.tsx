@@ -349,6 +349,93 @@ describe("DeletePlane", () => {
     expect(screen.getAllByText("Kept").length).toBeGreaterThan(0);
   });
 
+  const planeWith = (
+    spec: object,
+    clusters: object[] = [
+      { namespace: "team-orders", name: "orders", attached: true },
+    ],
+    meta: object = controlled,
+  ) =>
+    ({
+      ...data(),
+      plane: {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaManagementCluster",
+        metadata: { namespace: "platform", name: "plane-a", ...meta },
+        spec,
+        status: { managementAuthConfig: "plane-a", clusters },
+      },
+    }) as unknown as DeletePlaneData;
+
+  const KEYCLOAK_SIGN_IN =
+    "Those that use OIDC sign in at the Keycloak of this plane, so their users and API clients can no longer sign in or get tokens.";
+  const REALM_ERASED =
+    "When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.";
+
+  it("the review of a plane with its own Keycloak warns that the served OIDC clusters cannot sign in or get tokens", async () => {
+    const initial = planeWith({ identityProvider: { keycloak: {} } });
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the management plane" });
+    const caution = await screen.findByText(
+      /This plane still serves 1 cluster\./,
+    );
+    expect(caution.textContent).toContain(KEYCLOAK_SIGN_IN);
+    expect(caution.textContent).toContain(REALM_ERASED);
+    expect(
+      screen.getByText(
+        /A cluster that uses OIDC signs in at the Keycloak of this plane/,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(radio(/Keep the resources/));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/This plane still serves 1 cluster\./).textContent,
+      ).not.toContain(REALM_ERASED),
+    );
+  });
+
+  it("the review of an OIDC plane warns about Console, Web Modeler, and Optimize only", async () => {
+    const initial = planeWith({ identityProvider: { oidc: {} } });
+    page(initial);
+    await readAll(initial);
+    const caution = await screen.findByText(
+      /This plane still serves 1 cluster\./,
+    );
+    expect(caution.textContent).toBe(
+      "This plane still serves 1 cluster. Sign-in to Console, Web Modeler, and Optimize stops for them.",
+    );
+    expect(screen.queryByText(/Keycloak of this plane/)).toBeNull();
+  });
+
+  it("the review of a plane that serves no cluster has no caution", async () => {
+    const initial = planeWith({ identityProvider: { keycloak: {} } }, []);
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the management plane" });
+    expect(screen.getByText("The plane serves no cluster now.")).toBeTruthy();
+    expect(screen.queryByText(/still serves/)).toBeNull();
+    expect(screen.queryByText(/Keycloak of this plane/)).toBeNull();
+  });
+
+  it("a plane that the claim does not control is not touched, nor are the clusters that it serves", async () => {
+    const initial = planeWith(
+      { identityProvider: { keycloak: {} } },
+      undefined,
+      {},
+    );
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the management plane" });
+    expect(
+      screen.getByText(
+        "This delete does not touch the plane or the clusters that it serves.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("The plane serves no cluster now.")).toBeNull();
+    expect(screen.queryByText(/still serves/)).toBeNull();
+  });
+
   it("a failed watch of the plane closes the review, names the kind, and states nothing about the served clusters", async () => {
     page();
     await readAll();
@@ -373,6 +460,7 @@ describe("DeletePlane", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/These clusters stay/)).toBeNull();
+    expect(screen.queryByText(/still serves/)).toBeNull();
   });
 
   it("a failed watch of the requests leaves the fates not known", async () => {

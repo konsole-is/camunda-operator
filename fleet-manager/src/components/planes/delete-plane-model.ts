@@ -52,9 +52,10 @@ export type ObjectRef = { namespace: string; name: string };
  * plane that goes serves, contract its ManagementAuthConfig, and readers
  * the CamundaOptimize objects that read it. served and contract are unset
  * while the page cannot read the plane, and readers while it cannot read
- * the CamundaOptimize objects. unread are
- * the kinds that the page could not read; fatesKnown is false when the
- * fates of groups depend on one.
+ * the CamundaOptimize objects. ownKeycloak says that a plane that goes
+ * runs its own Keycloak, in the keycloak mode of spec.identityProvider.
+ * unread are the kinds that the page could not read; fatesKnown is false
+ * when the fates of groups depend on one.
  */
 export type DeletePlaneModel = {
   name: string;
@@ -67,6 +68,7 @@ export type DeletePlaneModel = {
   served?: ObjectRef[];
   contract?: string;
   readers?: ObjectRef[];
+  ownKeycloak: boolean;
   unread: string[];
   fatesKnown: boolean;
 };
@@ -200,6 +202,7 @@ export function deletePlaneModel(
           name: o.metadata?.name ?? "",
         })),
       }),
+    ownKeycloak: plane?.spec?.identityProvider?.keycloak != null,
     unread: [...unread],
     fatesKnown: !unread.some((k) => FATE_KINDS.includes(k)),
   };

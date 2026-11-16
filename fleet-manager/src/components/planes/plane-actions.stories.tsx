@@ -47,3 +47,28 @@ export const NotRead: Story = {
   name: "Plane not read",
   args: { unread: ["CamundaManagementCluster"] },
 };
+
+export const KeycloakSuspendOpen: Story = {
+  name: "Suspend open, own Keycloak",
+  args: { ownKeycloak: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Suspend" }));
+    await expect(
+      canvas.getByText(/sign in at the Keycloak of this plane/),
+    ).toBeVisible();
+  },
+};
+
+export const ClaimDeleting: Story = {
+  name: "Claim being deleted",
+  args: {
+    claim: {
+      ...claim(),
+      metadata: {
+        ...claim().metadata,
+        deletionTimestamp: "2026-11-15T11:00:00Z",
+      },
+    } as Resource<"CamundaManagementClusterClaim">,
+  },
+};

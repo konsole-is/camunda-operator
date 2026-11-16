@@ -220,7 +220,7 @@ export function DeletePlaneView({
               mode={mode}
               diffLabel="The claim that the delete removes"
               effects={effects}
-              caution={servedCaution(model.served)}
+              caution={servedCaution(model)}
               confirm={{
                 label: "Delete the management plane",
                 gitLabel: "Push the delete to Git",
@@ -255,11 +255,25 @@ const PRUNE_NOTE =
 // servedCaution warns that the delete changes the clusters that the plane
 // serves. The finalizer of the CamundaManagementCluster withdraws the Console
 // settings and the claim of the plane from each served cluster, which rolls
-// its pods, and removes the web-modeler user of a basic-auth cluster.
-function servedCaution(served: readonly ObjectRef[] | undefined) {
+// its pods, and removes the web-modeler user of a basic-auth cluster. An OIDC
+// cluster attaches to a plane in the keycloak mode only while it trusts the
+// Keycloak of the plane, which the delete removes.
+function servedCaution(model: DeletePlaneModel) {
+  const { served } = model;
   if (!served || served.length === 0) return undefined;
-  return `This plane still serves ${served.length === 1 ? "1 cluster" : `${served.length} clusters`}. Sign-in to Console, Web Modeler, and Optimize stops for them.`;
+  return [
+    `This plane still serves ${served.length === 1 ? "1 cluster" : `${served.length} clusters`}. Sign-in to Console, Web Modeler, and Optimize stops for them.`,
+    ...(model.ownKeycloak
+      ? [
+          "Those that use OIDC sign in at the Keycloak of this plane, so their users and API clients can no longer sign in or get tokens.",
+          ...(model.choice.policy === "Delete" ? [REALM_ERASED] : []),
+        ]
+      : []),
+  ].join(" ");
 }
+
+const REALM_ERASED =
+  "When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.";
 
 function refText({ namespace, name }: ObjectRef) {
   return `${namespace}/${name}`;
@@ -303,6 +317,10 @@ function effectsOf(model: DeletePlaneModel, twoCommits: boolean): ReactNode[] {
         <span>
           Not known: the page could not read CamundaManagementCluster.
         </span>
+      ) : model.kept.length > 0 ? (
+        <span>
+          This delete does not touch the plane or the clusters that it serves.
+        </span>
       ) : served.length === 0 ? (
         <span>The plane serves no cluster now.</span>
       ) : (
@@ -311,6 +329,8 @@ function effectsOf(model: DeletePlaneModel, twoCommits: boolean): ReactNode[] {
             These clusters stay and keep running. The plane removes its Console
             settings and its claim from each, and each rolls its pods once. A
             cluster with basic authentication also loses its web-modeler user.
+            {model.ownKeycloak &&
+              " A cluster that uses OIDC signs in at the Keycloak of this plane, so its users and API clients can no longer sign in or get tokens."}
           </span>
           <ul className="flex flex-col gap-0.5">
             {served.map((c) => (

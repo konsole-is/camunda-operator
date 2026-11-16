@@ -131,6 +131,30 @@ describe("deletePlaneModel", () => {
     ]);
   });
 
+  it("says whether the plane that goes runs its own Keycloak", () => {
+    const withProvider = (identityProvider: object) => {
+      const p = plane() as { spec: object };
+      p.spec = { identityProvider };
+      return p as Resource<"CamundaManagementCluster">;
+    };
+    expect(
+      deletePlaneModel(
+        data({ plane: withProvider({ keycloak: {} }) }),
+        "Delete",
+      ).ownKeycloak,
+    ).toBe(true);
+    expect(
+      deletePlaneModel(data({ plane: withProvider({ oidc: {} }) }), "Delete")
+        .ownKeycloak,
+    ).toBe(false);
+    expect(
+      deletePlaneModel(
+        data({ plane: withProvider({ externalKeycloak: {} }) }),
+        "Delete",
+      ).ownKeycloak,
+    ).toBe(false);
+  });
+
   it("names the contract that goes and each CamundaOptimize that reads it", () => {
     const model = deletePlaneModel(data(), "Delete");
     expect(model.contract).toBe("plane-a");

@@ -341,6 +341,7 @@ export function PlaneView({
             <PlaneActions
               claim={claim}
               served={summary?.attached ?? 0}
+              ownKeycloak={summary?.mode === "Keycloak"}
               apply={claimActions.apply}
               deleteHref={`/fleet/planes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/delete`}
               unread={actionsUnread}

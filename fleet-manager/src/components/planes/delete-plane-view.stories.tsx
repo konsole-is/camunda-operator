@@ -224,3 +224,30 @@ export const Deleting: Story = {
     },
   },
 };
+
+export const OwnKeycloak: Story = {
+  name: "Plane with its own Keycloak",
+  args: {
+    model: deletePlaneModel(
+      data({
+        plane: object({
+          metadata: { namespace: "platform", name: "plane-a", ...controlled },
+          spec: { identityProvider: { keycloak: {} } },
+          status: {
+            managementAuthConfig: "plane-a",
+            clusters: [
+              { namespace: "team-orders", name: "orders", attached: true },
+            ],
+          },
+        }),
+      }),
+      "Delete",
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(/This plane still serves 1 cluster\./),
+    ).toBeVisible();
+  },
+};
