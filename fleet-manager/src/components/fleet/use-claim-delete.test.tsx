@@ -38,11 +38,21 @@ type Claim = {
     uid: string;
     [key: string]: unknown;
   };
-  spec: { releaseRef: string; deletionPolicy?: DeletionPolicy };
+  spec: {
+    releaseRef: string;
+    deletionPolicy?: DeletionPolicy;
+    plugins?: { section: string; registration: string }[];
+  };
   status: { resolvedPolicy: { deletionPolicy: DeletionPolicy } };
 };
 const claim = (
-  over: { metadata?: object; spec?: { deletionPolicy?: DeletionPolicy } } = {},
+  over: {
+    metadata?: object;
+    spec?: {
+      deletionPolicy?: DeletionPolicy;
+      plugins?: { section: string; registration: string }[];
+    };
+  } = {},
 ): Claim => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
   kind: KIND,
@@ -91,12 +101,17 @@ const read = (resourceVersion: string, policy: DeletionPolicy = "Orphan") => {
   } as unknown as Claim;
 };
 
+type Registration = Parameters<
+  typeof useClaimDelete
+>[0]["registrations"][number];
+
 function mount(
   initial: Claim,
   props: {
     policy?: DeletionPolicy;
     mode?: WriteMode;
     actions?: Partial<ClaimDeleteActions>;
+    registrations?: Registration[];
   } = {},
 ) {
   const shown: [WriteResult, string][] = [];
@@ -107,20 +122,45 @@ function mount(
     </QueryClientProvider>
   );
   const hook = renderHook(
-    (p: { policy: DeletionPolicy }) =>
+    (p: { policy: DeletionPolicy; registrations?: Registration[] }) =>
       useClaimDelete({
         initial,
         policy: p.policy,
+        registrations: p.registrations ?? props.registrations ?? [],
         mode: props.mode ?? "direct",
         intent: "Delete the plane plane-a",
         pushedMessage: "Pushed the delete of plane-a.",
         actions: { ...actions, ...props.actions },
         show: (result, message) => shown.push([result, message]),
       }),
-    { wrapper, initialProps: { policy: props.policy ?? "Delete" } },
+    {
+      wrapper,
+      initialProps: {
+        policy: props.policy ?? "Delete",
+        registrations: props.registrations,
+      } as { policy: DeletionPolicy; registrations?: Registration[] },
+    },
   );
   return { hook, shown };
 }
+
+// selecting gives c the plain EBS option, whose registration plainEbs
+// gives the deletion policies.
+const selecting = (c: Claim = claim()): Claim => ({
+  ...c,
+  spec: {
+    ...c.spec,
+    plugins: [{ section: "volume-encryption", registration: "ebs-plain" }],
+  },
+});
+const plainEbs = (deletionPolicies: DeletionPolicy[]): Registration => ({
+  metadata: { name: "ebs-plain" },
+  spec: { deletionPolicies },
+});
+const KEEP_REFUSED_MESSAGE =
+  'PluginRegistration "ebs-plain" of section "volume-encryption" cannot keep the resources. Choose Delete the resources.';
+const KEEP_REFUSED_DELETING =
+  'The delete waits, because PluginRegistration "ebs-plain" of section "volume-encryption" cannot keep the resources. Set the deletion policy of the claim to Delete, or add Orphan back to the deletion policies of the registration.';
 
 const watch = watchId({ kind: KIND, namespace: "platform", name: "plane-a" });
 
@@ -187,7 +227,7 @@ describe("useClaimDelete", () => {
     expect(fakeWriter.applied).toEqual([removeOf("42")]);
   });
 
-  it("a refused delete gives a new remove once the watch shows a newer version", async () => {
+  it("a refused delete gives one new remove once the watch shows a newer version, and none for the versions after it", async () => {
     fakeWriter.results = [
       { ok: false, errors: [{ code: "Stale", message: "Changed." }] },
     ];
@@ -197,6 +237,16 @@ describe("useClaimDelete", () => {
     expect(hook.result.current.remove).toBe(first);
     await live(claim({ metadata: { resourceVersion: "42" } }));
     await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+    const retried = hook.result.current.remove;
+    for (const resourceVersion of ["43", "44"]) {
+      await live(claim({ metadata: { resourceVersion } }));
+      await waitFor(() =>
+        expect(hook.result.current.claim?.metadata.resourceVersion).toBe(
+          resourceVersion,
+        ),
+      );
+      expect(hook.result.current.remove).toBe(retried);
+    }
   });
 
   it("reads holds the claim kind while its watch has no snapshot, and the error of a failed watch", async () => {
@@ -573,6 +623,89 @@ describe("useClaimDelete", () => {
         gitWaiting: false,
       }),
     );
+  });
+
+  it("refuses Keep without a write while a registration of the claim cannot keep, and names it", async () => {
+    const { hook } = mount(selecting(), {
+      policy: "Orphan",
+      registrations: [plainEbs(["Delete"])],
+    });
+    expect(hook.result.current.keepRefused).toBe(KEEP_REFUSED_MESSAGE);
+    expect(await confirm(hook)).toEqual({
+      ok: false,
+      errors: [{ code: "Invalid", message: KEEP_REFUSED_MESSAGE }],
+    });
+    expect(fakeWriter.previewed).toEqual([]);
+    expect(fakeWriter.applied).toEqual([]);
+    hook.rerender({ policy: "Delete" });
+    expect(hook.result.current.keepRefused).toBeUndefined();
+  });
+
+  it("sends no delete when a registration drops Orphan during the wait for the policy", async () => {
+    const { hook } = mount(selecting(), {
+      policy: "Orphan",
+      registrations: [plainEbs(["Delete", "Orphan"])],
+    });
+    expect(hook.result.current.keepRefused).toBeUndefined();
+    await confirm(hook);
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    hook.rerender({ policy: "Orphan", registrations: [plainEbs(["Delete"])] });
+    await live(selecting(read("42")));
+    await waitFor(() =>
+      expect(hook.result.current.stage).toEqual({
+        kind: "choose",
+        errors: [{ code: "Invalid", message: KEEP_REFUSED_MESSAGE }],
+        afterPolicyWrite: { held: "Orphan" },
+      }),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("a claim whose delete the claim controller refuses for a registration that cannot keep says what to do", async () => {
+    const refusedClaim = (reason: string) => {
+      const c = selecting(
+        claim({
+          metadata: {
+            deletionTimestamp: "2026-11-15T10:00:00Z",
+            generation: 2,
+          },
+          spec: { deletionPolicy: "Orphan" },
+        }),
+      );
+      return {
+        ...c,
+        status: {
+          ...c.status,
+          observedGeneration: 2,
+          conditions: [
+            {
+              type: "Ready",
+              status: "False",
+              reason,
+              message: "the deletion policy is Orphan",
+              observedGeneration: 2,
+            },
+          ],
+        },
+      } as unknown as Claim;
+    };
+    const { hook } = mount(refusedClaim("NotAllowed"), {
+      registrations: [plainEbs(["Delete"])],
+    });
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+      keepRefused: KEEP_REFUSED_DELETING,
+    });
+    hook.unmount();
+    FakeEventSource.instances = [];
+    const other = mount(refusedClaim("SlotConflict"), {
+      registrations: [plainEbs(["Delete"])],
+    });
+    expect(other.hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+    });
   });
 
   it("a claim that is gone is deleted, and a claim made again under its name is replaced", async () => {

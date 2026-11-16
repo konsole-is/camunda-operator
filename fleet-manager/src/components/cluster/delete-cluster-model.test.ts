@@ -64,16 +64,45 @@ const claim = (spec: object = {}, status: object = {}) =>
     },
   });
 
-const retaining = object("CamundaCluster", "orders", {
-  metadata: made("orders").metadata,
-  spec: {
-    zeebe: { persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" } },
+// applied gives a cluster the status of a pass of the operator that
+// applied its generation 3.
+const applied = (
+  rest: { metadata?: object; spec?: object } = {},
+  reasons: { ready?: string; zeebe?: string } = {},
+  observed = 3,
+) => ({
+  ...rest,
+  metadata: { ...made("orders").metadata, ...rest.metadata, generation: 3 },
+  status: {
+    observedGeneration: observed,
+    conditions: [
+      {
+        type: "Ready",
+        status: "True",
+        reason: reasons.ready ?? "Healthy",
+        observedGeneration: observed,
+      },
+      {
+        type: "ZeebeReady",
+        status: "True",
+        reason: reasons.zeebe ?? "Healthy",
+        observedGeneration: observed,
+      },
+    ],
   },
 });
+const retainSpec = {
+  zeebe: { persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" } },
+};
+const retaining = object(
+  "CamundaCluster",
+  "orders",
+  applied({ spec: retainSpec }),
+);
 
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
-  cluster: object("CamundaCluster", "orders", made("orders")),
+  cluster: object("CamundaCluster", "orders", applied()),
   environments: [],
   sections: [
     cast("PluginSection", {
@@ -152,10 +181,11 @@ describe("deleteClusterModel", () => {
     expect(
       note(
         data({
-          cluster: object("CamundaCluster", "orders", {
-            metadata: made("orders").metadata,
-            spec: { presetRef: "retaining" },
-          }),
+          cluster: object(
+            "CamundaCluster",
+            "orders",
+            applied({ spec: { presetRef: "retaining" } }),
+          ),
           presets: [
             {
               metadata: { name: "retaining" },
@@ -166,6 +196,44 @@ describe("deleteClusterModel", () => {
       ),
     ).toBe("Volumes kept for a cluster of the same name");
     expect(note(data())).toBe("Volumes deleted");
+  });
+
+  it("says the volumes are not known until the operator applied the current spec of the cluster", () => {
+    const note = (cluster: object) =>
+      deleteClusterModel(
+        data({ cluster: object("CamundaCluster", "orders", cluster) }),
+        "Delete",
+      ).targets.find((t) => t.kind === "CamundaCluster")?.note;
+    const pending =
+      "Volumes not known: the operator has not applied the current spec of the cluster yet";
+    const refused =
+      "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec";
+    expect(note(applied({ spec: retainSpec }, {}, 2))).toBe(pending);
+    expect(note(applied({}, {}, 2))).toBe(pending);
+    expect(
+      note({
+        metadata: { ...made("orders").metadata, generation: 1 },
+        spec: retainSpec,
+      }),
+    ).toBe(pending);
+    for (const ready of [
+      "InvalidReference",
+      "MissingSecret",
+      "VersionDowngradeRefused",
+      "VersionSkipRefused",
+    ])
+      expect(note(applied({ spec: retainSpec }, { ready }))).toBe(refused);
+    expect(note(applied({ spec: retainSpec }, { zeebe: "Error" }))).toBe(
+      refused,
+    );
+    expect(
+      note(
+        applied(
+          { spec: retainSpec },
+          { ready: "SuspensionHeld", zeebe: "Suspended" },
+        ),
+      ),
+    ).toBe("Volumes kept for a cluster of the same name");
   });
 
   it("leaves out an Optimize and a schedule that the cluster does not have", () => {
@@ -259,7 +327,7 @@ describe("deleteClusterModel", () => {
       "CamundaCluster",
     ]);
     expect(model.targets.find((t) => t.kind === "CamundaCluster")?.note).toBe(
-      "Volumes not known",
+      "Volumes not known: the page could not read what decides them",
     );
   });
 
@@ -288,6 +356,24 @@ describe("deleteClusterModel", () => {
     expect(
       deleteClusterModel(data(), "Delete").targets.map((t) => t.kind),
     ).toContain("PluginRequest");
+  });
+
+  it("labels a request that the claim status does not name yet by the section of its spec", () => {
+    const model = deleteClusterModel(
+      data({
+        claim: claim({}, { requests: [] }),
+        requests: [
+          object("PluginRequest", "orders-backup-storage", {
+            ...made("orders-backup-storage"),
+            spec: { section: "backup-storage", registration: "aws-s3" },
+          }),
+        ],
+      }),
+      "Delete",
+    );
+    expect(model.targets.find((t) => t.kind === "PluginRequest")?.label).toBe(
+      "Backup storage request orders-backup-storage",
+    );
   });
 
   it("counts the backups of this cluster only", () => {

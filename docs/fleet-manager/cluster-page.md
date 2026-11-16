@@ -116,7 +116,9 @@ The page asks what happens to the resources of the storage and access options wh
 
 The choice starts at the deletion policy of the claim. A claim without a deletion policy starts at the policy that it recorded when it was made. Without that, the choice starts at **Delete the resources**. The label **Default** marks the policy that the claim recorded, or **Delete the resources** when it recorded none.
 
-Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. Choose **Delete the resources** to delete the cluster.
+Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. It names the registration of the option, for example `PluginRegistration "gateway" of section "access" cannot keep the resources. Choose Delete the resources.` Choose **Delete the resources** to delete the cluster.
+
+The page checks this again before it sends the delete, and again after the wait for the deletion policy. If a registration stops supporting Keep before that check, the page sends no delete and shows the same message. If a registration stops supporting Keep after the page sent the delete, the operator refuses the delete, and the claim stays. The page then says what to do. Set the deletion policy of the claim to Delete. Or add `Orphan`, the policy of Keep, back to the deletion policies of the registration.
 
 ### The resources of each option
 
@@ -148,7 +150,11 @@ spec:
   # ... the rest of your claim
 ```
 
-The page then says "Volumes kept for a cluster of the same name" next to the `CamundaCluster`.
+The page then says "Volumes kept for a cluster of the same name" next to the `CamundaCluster`. It says this, or "Volumes deleted", only after the operator applied the current spec of the `CamundaCluster`. Until then, the volumes keep the earlier setting of the cluster. If that setting is Delete, a delete now removes the volumes. In that time, the page says one of these:
+
+- "Volumes not known: the operator has not applied the current spec of the cluster yet". Wait until the note changes before you delete the cluster.
+- "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec". Correct the cause that the `Ready` condition of the `CamundaCluster` names, for example a missing `CamundaRelease` or preset.
+- "Volumes not known: the page could not read what decides them". A read of the `CamundaCluster`, its preset, or its release failed.
 
 ### Backups
 
@@ -169,7 +175,7 @@ If the claim changed after the page read it, the delete fails, and the page show
 
 The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The page reads each list again by itself, and the review comes back when the fleet manager can read every list.
 
-When the page cannot read the `CamundaOptimize` or the `BackupSchedule` objects, it lists each of them under **Not known**. This includes an object that the claim did not make.
+When the page cannot read the `CamundaCluster`, the `CamundaOptimize`, or the `BackupSchedule` objects, it lists each of them under **Not known**. This includes an object that the claim did not make.
 
 While the delete runs, an object of a kind that the page cannot read shows **Not known** in place of **Waiting**, **Deleting**, or **Deleted**.
 

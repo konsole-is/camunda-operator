@@ -87,21 +87,30 @@ export type DeletionGroup = {
 
 /**
  * deletionGroups returns one group for each selection of claim, in the
- * order of sectionComponents, with the fate of each row under policy. The
- * request of a selection is the one that the claim status names, else the
- * request of requests with the section and the registration of the
- * selection. A selection without a request, or whose request reports no
- * resources, has no rows. A registration that is not found counts as one
- * that keeps.
+ * order of sectionComponents, with the fate of each row under policy. Only
+ * the requests that claim controls by its UID count, so requests can hold
+ * those of other claims. The request of a selection is the one that the
+ * claim status names, else the request with the section and the
+ * registration of the selection. A selection without a request, or whose
+ * request reports no resources, has no rows. A registration that is not
+ * found counts as one that keeps.
  */
 export function deletionGroups(input: {
-  claim: SectionClaim;
+  claim: SectionClaim & { metadata?: { uid?: string } };
   sections: readonly Resource<"PluginSection">[];
   registrations: readonly Resource<"PluginRegistration">[];
   requests: readonly Resource<"PluginRequest">[];
   policy: DeletionPolicy;
 }): DeletionGroup[] {
-  const { claim, sections, registrations, requests, policy } = input;
+  const { claim, sections, registrations, policy } = input;
+  const uid = claim.metadata?.uid;
+  const requests = input.requests.filter(
+    (r) =>
+      uid !== undefined &&
+      (r.metadata?.ownerReferences ?? []).some(
+        (o) => o.controller === true && o.uid === uid,
+      ),
+  );
   return sectionComponents({ claim, sections, requests }).map((component) => {
     const { registration } = component.selection;
     const request =

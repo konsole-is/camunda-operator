@@ -62,9 +62,10 @@ export type DeleteTarget = {
  * targets are the objects that always go, in the order in which they go,
  * the requests included. kept are the CamundaCluster, CamundaOptimize, and
  * BackupSchedule objects of the cluster that stay, each with the reason in
- * note. backups counts the backups of the cluster of both kinds. warning is the backupWarning of groups, unset while
- * fatesKnown is false. unread are the kinds that the page could not read;
- * fatesKnown is false when the fates of groups depend on one.
+ * note. backups counts the backups of the cluster of both kinds. warning is
+ * the backupWarning of groups, unset while fatesKnown is false. unread are
+ * the kinds that the page could not read; fatesKnown is false when the
+ * fates of groups depend on one.
  */
 export type DeleteClusterModel = {
   name: string;
@@ -163,8 +164,6 @@ export function deleteClusterModel(
     label: `${kind} ${objectName}`,
     ...(note && { note }),
   });
-  const sectionOf = (request: string) =>
-    claim.status?.requests?.find((r) => r.name === request)?.section;
   const attachments = (
     kind: "CamundaOptimize" | "BackupSchedule",
     objects: readonly Attachment[],
@@ -215,18 +214,16 @@ export function deleteClusterModel(
             "CamundaCluster",
             name,
             !volumesKnown
-              ? "Volumes not known"
-              : !data.cluster
-                ? undefined
-                : volumesOf(data) === "Retain"
-                  ? "Volumes kept for a cluster of the same name"
-                  : "Volumes deleted",
+              ? "Volumes not known: the page could not read what decides them"
+              : data.cluster && volumeNote(data.cluster, data),
           ),
         ]
       : []),
     ...requests.map((r) => {
       const requestName = r.metadata?.name ?? "";
-      const section = sectionOf(requestName);
+      const section =
+        claim.status?.requests?.find((s) => s.name === requestName)?.section ??
+        r.spec?.section;
       const label = groups.find((g) => g.section === section)?.label;
       return {
         ...target("PluginRequest", requestName),
@@ -253,18 +250,64 @@ export function deleteClusterModel(
   };
 }
 
-// volumesOf returns whenDeleted of the retention of the broker volumes in
-// the merged spec of the cluster of data, Delete without one.
-function volumesOf(data: DeleteClusterData): string {
-  const spec = data.cluster?.spec;
-  if (!spec) return "Delete";
-  return (
+// The broker StatefulSet carries whenDeleted, which the operator sets from
+// the merged spec only when it applies the StatefulSet. Stage of
+// pkg/conditions sets Ready and records the generation as
+// status.observedGeneration. A pass that fails its precheck, or refuses a
+// version change, stages one of these reasons on Ready and applies nothing
+// (Reconcile of internal/controller/camundacluster). A failed admin
+// rotation can stage InvalidReference or ConnectionFailed after an apply too.
+// A ZeebeReady with one of these reasons does not show an applied
+// StatefulSet.
+const UNAPPLIED_READY: readonly string[] = [
+  "InvalidReference",
+  "MissingSecret",
+  "ConnectionFailed",
+  "VersionDowngradeRefused",
+  "VersionSkipRefused",
+];
+const UNAPPLIED_ZEEBE: readonly string[] = [
+  "Unknown",
+  "Error",
+  "FeatureGateError",
+  "PrerequisiteNotMet",
+  "Blocked",
+];
+
+function volumeNote(
+  cluster: Resource<"CamundaCluster">,
+  data: DeleteClusterData,
+): string {
+  const generation = cluster.metadata?.generation;
+  const current = (type: string) =>
+    cluster.status?.conditions?.find(
+      (c) => c.type === type && c.observedGeneration === generation,
+    );
+  const ready = current("Ready");
+  const zeebe = current("ZeebeReady");
+  if (
+    generation === undefined ||
+    cluster.status?.observedGeneration !== generation ||
+    !ready ||
+    !zeebe
+  )
+    return "Volumes not known: the operator has not applied the current spec of the cluster yet";
+  if (
+    UNAPPLIED_READY.includes(ready.reason) ||
+    UNAPPLIED_ZEEBE.includes(zeebe.reason)
+  )
+    return "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec";
+  const { spec } = cluster;
+  const whenDeleted =
+    spec &&
     mergeCluster(
       data.presets.find((p) => p.metadata?.name === spec.presetRef)?.spec,
       data.releases.find((r) => r.metadata?.name === spec.releaseRef)?.spec,
       spec,
-    ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted ?? "Delete"
-  );
+    ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted;
+  return whenDeleted === "Retain"
+    ? "Volumes kept for a cluster of the same name"
+    : "Volumes deleted";
 }
 
 // Owned is the part of an object that names its controller.

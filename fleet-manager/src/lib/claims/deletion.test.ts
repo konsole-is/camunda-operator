@@ -123,11 +123,19 @@ const registration = (name: string, deletionPolicies: string[]) =>
     spec: { label: name, deletionPolicies },
   }) as unknown as Resource<"PluginRegistration">;
 
-const request = (name: string, resources?: ResourceRow[]) =>
+const request = (
+  name: string,
+  resources?: ResourceRow[],
+  controller = "claim-uid",
+) =>
   ({
     apiVersion: "plugins.camunda.io/v1alpha1",
     kind: "PluginRequest",
-    metadata: { namespace: "team-a", name },
+    metadata: {
+      namespace: "team-a",
+      name,
+      ownerReferences: [{ controller: true, uid: controller }],
+    },
     status: resources ? { resources } : {},
   }) as unknown as Resource<"PluginRequest">;
 
@@ -165,7 +173,7 @@ const claimOf = (
   plugins: { section: string; registration: string }[],
   names: Record<string, string> = {},
 ) => ({
-  metadata: { namespace: "team-a" },
+  metadata: { namespace: "team-a", uid: "claim-uid" },
   spec: { plugins },
   status: {
     requests: plugins.flatMap((p) =>
@@ -279,6 +287,30 @@ describe("deletionGroups", () => {
     const groups = groupsOf("Delete", [backup], c);
     expect(groups[0].rows).toEqual([{ ...bucket(), fate: "Deleted" }]);
     expect(backupWarning("orders", groups)).toBeDefined();
+  });
+
+  it("takes no request that the claim does not control, also of the same section and registration", () => {
+    const c = claimOf([{ section: "backup-storage", registration: "aws-s3" }], {
+      "backup-storage": "orders-backup-storage",
+    });
+    const other = (name: string) =>
+      ({
+        ...request(name, [bucket()], "other-claim-uid"),
+        spec: { section: "backup-storage", registration: "aws-s3" },
+      }) as unknown as Resource<"PluginRequest">;
+    expect(
+      groupsOf("Delete", [other("orders-backup-storage")], c)[0].rows,
+    ).toEqual([]);
+    const unnamed = claimOf([
+      { section: "backup-storage", registration: "aws-s3" },
+    ]);
+    const groups = groupsOf(
+      "Delete",
+      [other("billing-backup-storage")],
+      unnamed,
+    );
+    expect(groups[0].rows).toEqual([]);
+    expect(backupWarning("orders", groups)).toBeUndefined();
   });
 });
 

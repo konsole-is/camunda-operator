@@ -43,12 +43,19 @@ export function DeleteCluster({
   const namespace = initial.claim.metadata?.namespace ?? "";
   const name = initial.claim.metadata?.name ?? "";
   const { toast, show, dismiss } = useWriteToast();
+  const all = {};
   const [picked, setPicked] = useState(() =>
     initialPolicy(clusterDeletionChoice(initial)),
+  );
+  const registrations = useResources(
+    "PluginRegistration",
+    all,
+    initial.registrations,
   );
   const run = useClaimDelete({
     initial: initial.claim,
     policy: picked,
+    registrations: registrations.items,
     mode: writeMode,
     intent: `Delete the cluster ${name}`,
     pushedMessage: `Pushed the delete of ${name}.`,
@@ -56,7 +63,6 @@ export function DeleteCluster({
     show,
   });
   const inNamespace = { namespace };
-  const all = {};
   const cluster = useResource(
     "CamundaCluster",
     { namespace, name },
@@ -80,11 +86,6 @@ export function DeleteCluster({
   );
   const environments = useResources("Environment", all, initial.environments);
   const sections = useResources("PluginSection", all, initial.sections);
-  const registrations = useResources(
-    "PluginRegistration",
-    all,
-    initial.registrations,
-  );
   const presets = useResources("CamundaClusterPreset", all, initial.presets);
   const releases = useResources("CamundaRelease", all, initial.releases);
   const backupsES = useResources(
@@ -176,6 +177,7 @@ export function DeleteCluster({
       ),
       gitWaiting: run.stage.gitWaiting,
       ...(run.claim && { claim: run.claim }),
+      ...(run.stage.keepRefused && { keepRefused: run.stage.keepRefused }),
     };
   } else stage = run.stage;
 
@@ -188,6 +190,7 @@ export function DeleteCluster({
         errors={errors}
         remove={run.remove}
         policyStep={run.policyStep}
+        keepRefused={run.keepRefused}
         onPick={setPicked}
         preview={actions.preview}
         apply={run.apply}

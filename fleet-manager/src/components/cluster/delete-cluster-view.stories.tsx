@@ -86,16 +86,39 @@ const request = (name: string, resources: object[]) =>
 
 const of = (cluster: string) => ({ spec: { clusterRef: { name: cluster } } });
 
-const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
-  claim: claim(),
-  cluster: object("CamundaCluster", {
-    metadata: { namespace: "team-orders", name: "orders", ...controlled },
+// reconciled is the status of a cluster whose generation 4 the operator
+// applied.
+const reconciled = (status = "True", reason = "Healthy") => ({
+  observedGeneration: 4,
+  conditions: [
+    { type: "Ready", status, reason, observedGeneration: 4 },
+    {
+      type: "ZeebeReady",
+      status: "True",
+      reason: "Healthy",
+      observedGeneration: 4,
+    },
+  ],
+});
+const retaining = (status: object) =>
+  object("CamundaCluster", {
+    metadata: {
+      namespace: "team-orders",
+      name: "orders",
+      generation: 4,
+      ...controlled,
+    },
     spec: {
       zeebe: {
         persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
       },
     },
-  }),
+    status,
+  });
+
+const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
+  claim: claim(),
+  cluster: retaining(reconciled()),
   environments: [],
   sections: [
     section("access", "Access", 10, "externalAccess"),
@@ -293,7 +316,23 @@ export const PolicyWritten: Story = {
 
 export const KeepPickRefused: Story = {
   name: "Keep picked, and an option cannot keep",
-  args: { model: deleteClusterModel(refused, "Orphan") },
+  args: {
+    model: deleteClusterModel(refused, "Orphan"),
+    keepRefused:
+      'PluginRegistration "gateway" of section "access" cannot keep the resources. Choose Delete the resources.',
+  },
+};
+
+export const VolumesNotApplied: Story = {
+  name: "The Ready condition of the cluster reports a problem",
+  args: {
+    model: deleteClusterModel(
+      data({
+        cluster: retaining(reconciled("False", "InvalidReference")),
+      }),
+      "Orphan",
+    ),
+  },
 };
 
 export const AttachmentsNotRead: Story = {
@@ -337,6 +376,19 @@ export const DirectPolicyWait: Story = {
 export const DirectProgress: Story = {
   name: "The cluster and its requests going",
   args: { stage: { kind: "deleting", progress, gitWaiting: false } },
+};
+
+export const DeleteKeepRefused: Story = {
+  name: "The operator refuses the delete, because an option cannot keep",
+  args: {
+    stage: {
+      kind: "deleting",
+      progress,
+      gitWaiting: false,
+      keepRefused:
+        'The delete waits, because PluginRegistration "gateway" of section "access" cannot keep the resources. Set the deletion policy of the claim to Delete, or add Orphan back to the deletion policies of the registration.',
+    },
+  },
 };
 
 export const GitPolicyWait: Story = {

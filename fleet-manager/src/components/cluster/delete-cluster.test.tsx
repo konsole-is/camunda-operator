@@ -80,6 +80,20 @@ const claim = (over: ClaimOver = {}) => {
 const controlled = {
   ownerReferences: [{ controller: true, uid: "uid-1" }],
 };
+// applied is the status of a cluster whose generation 1 the operator
+// applied.
+const applied = {
+  observedGeneration: 1,
+  conditions: [
+    { type: "Ready", status: "True", reason: "Healthy", observedGeneration: 1 },
+    {
+      type: "ZeebeReady",
+      status: "True",
+      reason: "Healthy",
+      observedGeneration: 1,
+    },
+  ],
+};
 
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
   ({
@@ -87,7 +101,13 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
     cluster: {
       apiVersion: "core.camunda.io/v1",
       kind: "CamundaCluster",
-      metadata: { namespace: "team-a", name: "orders", ...controlled },
+      metadata: {
+        namespace: "team-a",
+        name: "orders",
+        generation: 1,
+        ...controlled,
+      },
+      status: applied,
     },
     environments: [],
     sections: [
@@ -574,7 +594,7 @@ describe("DeleteCluster", () => {
     ]);
     expect(
       await screen.findByText(
-        "An option below cannot keep its resources. Choose Delete the resources to delete the cluster.",
+        'PluginRegistration "aws-s3" of section "backup-storage" cannot keep the resources. Choose Delete the resources.',
       ),
     ).toBeTruthy();
     expect(
@@ -672,24 +692,37 @@ describe("DeleteCluster", () => {
     ).toBeNull();
   });
 
-  it("the volumes follow the live cluster", async () => {
-    const retaining = {
-      apiVersion: "core.camunda.io/v1",
-      kind: "CamundaCluster",
-      metadata: { namespace: "team-a", name: "orders", ...controlled },
-      spec: {
-        zeebe: {
-          persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
+  it("the volumes follow the live cluster once the operator applied its spec", async () => {
+    const retaining = (generation: number) =>
+      ({
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaCluster",
+        metadata: {
+          namespace: "team-a",
+          name: "orders",
+          generation,
+          ...controlled,
         },
-      },
-    } as unknown as Resource<"CamundaCluster">;
-    page(data({ cluster: retaining }));
+        spec: {
+          zeebe: {
+            persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
+          },
+        },
+        status: applied,
+      }) as unknown as Resource<"CamundaCluster">;
+    page(data({ cluster: retaining(1) }));
     expect(
       screen.getByText(/^CamundaCluster orders/).closest("li")!.textContent,
     ).toBe("CamundaCluster orders: not known");
-    await readAll(data({ cluster: retaining }));
+    await readAll(data({ cluster: retaining(1) }));
     expect(
       await screen.findByText(/Volumes kept for a cluster of the same name/),
+    ).toBeTruthy();
+    await snapshot(clusterWatch, [retaining(2)]);
+    expect(
+      await screen.findByText(
+        /Volumes not known: the operator has not applied the current spec of the cluster yet/,
+      ),
     ).toBeTruthy();
     await snapshot(clusterWatch, [data().cluster!]);
     expect(await screen.findByText(/Volumes deleted/)).toBeTruthy();

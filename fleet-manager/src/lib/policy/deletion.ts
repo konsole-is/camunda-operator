@@ -38,28 +38,44 @@ export function checkDeletionPolicy(
 ): PolicyResult<Record<string, never>> {
   if (policy !== "Orphan") return { value: {} };
 
-  const unsupported = selections.filter((s) => {
-    const registration = registrations.find(
-      (r) => r.metadata.name === s.registration,
-    );
-    return (
-      registration !== undefined &&
-      !registration.spec.deletionPolicies.includes(policy)
-    );
-  });
+  const unsupported = orphanRefusedBy(selections, registrations);
   if (unsupported.length === 0) return { value: {} };
 
-  const names = unsupported
-    .map(
-      (s) => `PluginRegistration "${s.registration}" of section "${s.section}"`,
-    )
-    .join(", ");
   return {
     refusal: {
       reason: "NotAllowed",
-      message: `the deletion policy is Orphan, and these registrations do not support it: ${names}`,
+      message: `the deletion policy is Orphan, and these registrations do not support it: ${unsupported.join(", ")}`,
     },
   };
+}
+
+/**
+ * orphanRefusedBy returns each selection whose registration does not list
+ * Orphan in spec.deletionPolicies, as PluginRegistration "<registration>"
+ * of section "<section>", the names that CheckDeletionPolicy of
+ * pkg/claimpolicy gives. A selection whose registration is not in
+ * registrations passes. It is empty when the claim can keep.
+ */
+export function orphanRefusedBy(
+  selections: readonly { section: string; registration: string }[],
+  registrations: readonly {
+    metadata?: { name?: string };
+    spec: { deletionPolicies: readonly string[] };
+  }[],
+): string[] {
+  return selections
+    .filter((s) => {
+      const registration = registrations.find(
+        (r) => r.metadata?.name === s.registration,
+      );
+      return (
+        registration !== undefined &&
+        !registration.spec.deletionPolicies.includes("Orphan")
+      );
+    })
+    .map(
+      (s) => `PluginRegistration "${s.registration}" of section "${s.section}"`,
+    );
 }
 
 /**
@@ -126,7 +142,7 @@ export function deletionChoice(
 /**
  * DeletableClaim is the part of a live claim of either kind that a delete
  * reads: its reference, its resourceVersion and UID, its own deletion
- * policy, and the policy that it recorded when it was made.
+ * policy, its selections, and the policy that it recorded when it was made.
  */
 export type DeletableClaim = {
   apiVersion: string;
@@ -137,7 +153,10 @@ export type DeletableClaim = {
     resourceVersion?: string;
     uid?: string;
   };
-  spec?: { deletionPolicy?: DeletionPolicy | "" };
+  spec?: {
+    deletionPolicy?: DeletionPolicy | "";
+    plugins?: readonly { section: string; registration: string }[];
+  };
   status?: { resolvedPolicy?: ResolvedPolicy };
 };
 

@@ -49,9 +49,10 @@ export const KEEP_REFUSED_ON_DELETE =
  * delete refused after the policy write, and the policy of the claim after
  * a policy write that no delete followed. waiting: the policy write waits
  * for GitOps, or for the operator to read it. deleting holds the state of
- * each target, whether the delete commit waits for GitOps, and the live
- * claim. deleted: the claim is gone. replaced: the claim was made again
- * under its name.
+ * each target, whether the delete commit waits for GitOps, the live claim,
+ * and what to do when the operator refuses the delete because an option
+ * cannot keep. deleted: the claim is gone. replaced: the claim was made
+ * again under its name.
  */
 export type DeleteStage =
   | {
@@ -65,12 +66,10 @@ export type DeleteStage =
       progress: { target: DeleteTarget; state: DeleteState }[];
       gitWaiting: boolean;
       claim?: Resource<"CamundaClusterClaim">;
+      keepRefused?: string;
     }
   | { kind: "deleted" }
   | { kind: "replaced" };
-
-const KEEP_REFUSED_PICK =
-  "An option below cannot keep its resources. Choose Delete the resources to delete the cluster.";
 
 const PRUNE_NOTE =
   "Your GitOps tool must prune: the fleet manager removes the claim file, and GitOps deletes the claim.";
@@ -81,6 +80,8 @@ const PRUNE_NOTE =
  * remove once for each remove object. Without a mode it shows CHANGES_OFF
  * and what the delete takes, and no review. While model.unread has a kind
  * it shows what the delete takes, and no review, unless a write runs.
+ * While keepRefused is set, a mode is set, and model.unread is empty, it
+ * shows keepRefused in place of the review, unless a write runs.
  * policyStep says that the delete writes the deletion policy first.
  */
 export function DeleteClusterView({
@@ -90,6 +91,7 @@ export function DeleteClusterView({
   errors,
   remove,
   policyStep,
+  keepRefused,
   onPick,
   preview,
   apply,
@@ -103,6 +105,7 @@ export function DeleteClusterView({
   errors: readonly ReadError[];
   remove: Change;
   policyStep: boolean;
+  keepRefused?: string;
   onPick(policy: DeletionPolicy): void;
   preview(change: Change): Promise<Preview>;
   apply(change: Change): Promise<WriteResult>;
@@ -114,10 +117,6 @@ export function DeleteClusterView({
   const clusterHref = `/fleet/clusters/${namespace}/${name}`;
   const effects = effectsOf(model, mode === "git" && policyStep);
   const clusterKept = model.kept.some((t) => t.kind === "CamundaCluster");
-  // The claim finalizer refuses a policy that a registration does not
-  // support, and the claim then stays in its delete.
-  const keepRefusedPick =
-    model.choice.policy === "Orphan" && !model.choice.keepAllowed;
   const [writing, setWriting] = useState(false);
   const takes = (
     <section aria-label="What the delete takes">
@@ -221,9 +220,9 @@ export function DeleteClusterView({
               </p>
               {takes}
             </>
-          ) : keepRefusedPick && !writing ? (
+          ) : keepRefused && !writing ? (
             <>
-              <p className="text-sm text-warn">{KEEP_REFUSED_PICK}</p>
+              <p className="text-sm text-warn">{keepRefused}</p>
               {takes}
             </>
           ) : (
@@ -427,6 +426,9 @@ function Progress({
         </div>
       )}
       {stage.claim && <PrecheckLine claim={stage.claim} />}
+      {stage.keepRefused && (
+        <p className="text-sm text-warn">{stage.keepRefused}</p>
+      )}
       <ol className="flex flex-col divide-y divide-divider rounded-md border border-border">
         {stage.progress.map(({ target, state }) => (
           <li
