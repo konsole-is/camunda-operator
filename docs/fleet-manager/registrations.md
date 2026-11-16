@@ -47,7 +47,7 @@ A reason of `Ready` comes from the controller of the option. Read its message, a
 
 ## The page of an option
 
-The page of an option shows the label of the registration as its title, and its name under the title. The page has six tabs: **About**, **Contract**, **Parameters**, **Grants**, **Health**, and **Used by**. The address keeps the open tab, for example `/setup/plugins/elasticsearch?tab=usedBy`. If the registration is removed while the page is open, the page shows `This registration no longer exists.`
+The page of an option shows the label of the registration as its title, and its name under the title. The page has six tabs: **About**, **Contract**, **Parameters**, **Grants**, **Health**, and **Used by**. The address keeps the open tab, for example `/setup/plugins/elasticsearch?tab=usedBy`. If the registration is removed while the page is open, the page says `This registration no longer exists`. It keeps saying so when it cannot read the registrations after that, and then adds `It was gone when the page last read it`.
 
 ### About
 
@@ -83,7 +83,7 @@ Each Grant shows its namespace and name, its cluster, its request, and three con
 | `OverCeiling` | The Grant asks for more than the ceiling of the identity allows. | Ask the admin of the identity extension to raise the ceiling, or change the parameters of the request. |
 | `OverSizeLimit` | The Grant makes the policy of the identity larger than the cloud allows. | Pick fewer options that ask for permissions for this cluster. |
 | `Rejected` | The identity or the cloud refused the Grant. The message says why. | Read the message. |
-| `TemplateChanged` | The template changed in the registration, for example after a chart upgrade. The identity still has the statement of the old template, so the Grant is applied. This is a reason of `MatchesTemplate`. The `Ready` of the Grant is `False`, so it is not ready, and it counts as on an old template, not as refused. | Wait for the controller of the option to write the Grant again from the new template. |
+| `TemplateChanged` | The statement of the Grant is not the template of the registration now. The role still has the statement that the Grant holds, so the Grant is applied. This is a reason of `MatchesTemplate`. The `Ready` of the Grant is `False`, so it counts as on an old template, not as refused. | After a chart upgrade, wait. The controller of the option writes the Grant from its own template at its next reconcile. If the reason stays, the registration was changed outside its controller. The controller keeps its own template, and the old statement stays. |
 
 The [Grant](../crds/grant.md#status) reference lists every condition of a Grant. An option without grant templates shows this line:
 
@@ -91,7 +91,7 @@ The [Grant](../crds/grant.md#status) reference lists every condition of a Grant.
 This option has no grant template, so it writes no Grant.
 ```
 
-A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**. A grant template that the page cannot read shows an error, with the Grants of that template under it.
+A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**. The role keeps the statement of each of these Grants until the controller of the option deletes that Grant. A grant template that the page cannot read shows an error, with the Grants of that template under it.
 
 ### Health
 

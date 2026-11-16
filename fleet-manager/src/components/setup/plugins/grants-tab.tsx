@@ -15,6 +15,8 @@ import {
 import { NotKnown, ValueError } from "./tab-parts";
 
 const WITHOUT_TEMPLATE = "Grants of a template the registration no longer has";
+const TEMPLATE_GONE =
+  "The role keeps the statement of each of these Grants until the controller of this registration deletes that Grant.";
 const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
 
 /**
@@ -73,7 +75,13 @@ export function GrantsTab({
       )}
       {withoutTemplate.length > 0 && (
         <Panel label={WITHOUT_TEMPLATE}>
-          <Grants grants={withoutTemplate} unread={grantsUnread} now={now} />
+          <p className="text-sm text-text-2">{TEMPLATE_GONE}</p>
+          <Grants
+            grants={withoutTemplate}
+            unread={grantsUnread}
+            templateGone
+            now={now}
+          />
         </Panel>
       )}
     </div>
@@ -157,10 +165,12 @@ function InvalidTemplatePanel({
 function Grants({
   grants,
   unread,
+  templateGone = false,
   now,
 }: {
   grants: readonly GrantView[];
   unread: boolean;
+  templateGone?: boolean;
   now: string;
 }) {
   return (
@@ -194,7 +204,7 @@ function Grants({
                 conditions={conditionsOf(grant)}
                 now={now}
               />
-              {grant.state === "oldTemplate" && (
+              {grant.state === "oldTemplate" && !templateGone && (
                 <p className="text-sm text-text-2">
                   {GRANT_REASON_TEXT.TemplateChanged}
                 </p>

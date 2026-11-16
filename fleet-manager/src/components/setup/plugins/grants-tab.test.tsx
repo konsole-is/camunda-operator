@@ -116,7 +116,11 @@ describe("GrantsTab", () => {
     expect(
       within(panel).getByText("0 ready, 0 refused, 1 on an old template"),
     ).toBeTruthy();
-    expect(screen.getByText(GRANT_REASON_TEXT.TemplateChanged)).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "The role still has the statement that this Grant holds. The controller of this registration writes the Grant from its own template at its next reconcile. If this state stays, the registration was changed outside its controller, and the old statement stays.",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows no condition of a Grant while Grant is not read", () => {
@@ -171,12 +175,24 @@ describe("GrantsTab", () => {
 
   it("lists a Grant of a template that the registration no longer has", () => {
     tab([
-      grant("old", "gone", [condition("Ready", "False", "TemplateChanged")]),
+      grant("old", "gone", [
+        condition("Applied", "True", "Healthy"),
+        condition("MatchesTemplate", "False", "TemplateChanged"),
+        condition("Ready", "False", "TemplateChanged"),
+      ]),
     ]);
     const panel = screen.getByRole("region", {
       name: "Grants of a template the registration no longer has",
     });
     expect(within(panel).getByText("team-orders/old")).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        "The role keeps the statement of each of these Grants until the controller of this registration deletes that Grant.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(panel).queryByText(/writes the Grant from its own template/),
+    ).toBeNull();
   });
 
   it("shows no counts and no empty list while Grant is not read", () => {

@@ -28,7 +28,7 @@ export const GRANT_REASON_TEXT: Readonly<
     "Makes the policy of the identity larger than the cloud allows.",
   Rejected: "The identity or the cloud refused it. The message says why.",
   TemplateChanged:
-    "The identity still has the statement of the old template. The controller of the option writes the Grant again from the new template.",
+    "The role still has the statement that this Grant holds. The controller of this registration writes the Grant from its own template at its next reconcile. If this state stays, the registration was changed outside its controller, and the old statement stays.",
 };
 
 /**
