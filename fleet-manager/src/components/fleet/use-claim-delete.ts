@@ -80,6 +80,9 @@ type Sent =
       before: unknown;
       spec: unknown;
       seen: boolean;
+      // refusedAt is the resourceVersion of a delete that was refused as
+      // Stale after the wait.
+      refusedAt?: string;
     })
   | { kind: "deleting" };
 
@@ -90,7 +93,10 @@ type Sent =
  * resourceVersion, and apply sends the delete at the newest one. apply
  * refuses without a write when the preview of the delete fails. After a
  * policy write it returns that result, and the hook sends the delete once
- * the claim controller read the policy. It sends nothing for a claim with
+ * the claim controller read the policy. When that delete is refused as
+ * Stale, the hook sends it again at the next version of the claim that
+ * still carries the policy write, and shows the delete meanwhile. It sends
+ * nothing for a claim with
  * another UID, and refuses with Stale when another spec change came in.
  * keepRefused names the registrations of the claim that cannot keep while
  * policy is Orphan. apply then refuses with Invalid and writes nothing, and
@@ -280,7 +286,8 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     sent.kind === "waiting" &&
     live !== undefined &&
     (sent.revision === undefined || sync === "applied") &&
-    observed(live);
+    observed(live) &&
+    live.metadata.resourceVersion !== sent.refusedAt;
   if (changedSince && live !== undefined && isOriginal(live))
     setSent({
       kind: "choose",
@@ -304,13 +311,22 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       return;
     }
     setSent({ kind: "deleting" });
+    const at = live.metadata.resourceVersion;
     void actions
       .remove(deleteClaimSteps(live, sent.policy, intent).remove)
       .catch(unavailable)
       .then((result) => {
         if (result.ok) {
           if (result.mode === "git") show(result, pushedMessage);
-        } else
+        } else if (
+          result.errors.length > 0 &&
+          result.errors.every((e) => e.code === "Stale")
+        )
+          // The claim controller writes the status again once the plugins
+          // read the new policy from the requests, so the delete can race
+          // a newer version of the claim.
+          setSent({ ...sent, refusedAt: at });
+        else
           setSent({
             kind: "choose",
             errors: result.errors,
@@ -326,7 +342,11 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   let stage: ClaimDeleteStage;
   if (!live) stage = { kind: "deleted" };
   else if (!isOriginal(live)) stage = { kind: "replaced" };
-  else if (sent.kind === "deleting" || deleting) {
+  else if (
+    sent.kind === "deleting" ||
+    deleting ||
+    (sent.kind === "waiting" && sent.refusedAt !== undefined)
+  ) {
     const stuck = deleting ? deleteRefusal(live, registrations) : undefined;
     stage = {
       kind: "deleting",
