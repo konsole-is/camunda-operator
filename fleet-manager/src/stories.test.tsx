@@ -113,6 +113,11 @@ describe("the Storybook stories", () => {
       "PlatformDetail",
       "ImagesSection",
       "UsersSection",
+      "PresetList",
+      "PresetSettings",
+      "InheritingTable",
+      "PresetDetail",
+      "FactsList",
     ]) {
       expect(components).toContain(name);
     }

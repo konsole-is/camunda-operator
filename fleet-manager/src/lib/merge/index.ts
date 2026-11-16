@@ -1,7 +1,12 @@
-export type { FieldSourceMap, Layer, Merged } from "./engine";
+export type { FieldSourceMap, Layer, Merged, Rule, Rules } from "./engine";
 export { child, indexItem, keyedItem, valueItem, type FieldPath } from "./path";
-export { mergeDatabaseServer, mergeElasticsearch } from "./storage";
-export { mergeCluster } from "./cluster";
+export {
+  databaseServerRules,
+  elasticsearchRules,
+  mergeDatabaseServer,
+  mergeElasticsearch,
+} from "./storage";
+export { authRules, clusterRules, mergeCluster } from "./cluster";
 export {
   byMinor,
   defaultImages,
@@ -21,6 +26,7 @@ export {
   fieldManagers,
   wholeFieldManagers,
   isClaimManager,
+  lastChanged,
   type ManagedFieldsEntry,
   type ManagedObject,
 } from "./managers";
