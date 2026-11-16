@@ -434,13 +434,7 @@ describe("PlatformDetail", () => {
       sources: {
         ...base,
         clusters: base.clusters.map((c) => ({ ...c, status: undefined })),
-        planes: base.planes.map(
-          (p) =>
-            ({
-              ...p,
-              spec: { platformConfigRef: "oidc-prod" },
-            }) as unknown as typeof p,
-        ),
+        planes: [],
       },
     });
 
@@ -472,6 +466,21 @@ describe("PlatformDetail", () => {
         .getAllByRole("listitem")
         .map((li) => li.textContent),
     ).toEqual(["camunda/web-modeler-restapi"]);
+  });
+
+  it("calls the config unused while only a preset or a release cannot be read", () => {
+    setup({
+      name: "basic-lab",
+      errors: [{ kind: "CamundaRelease", message: "forbidden" }],
+      stale: ["CamundaClusterPreset"],
+    });
+
+    expect(
+      screen.getByText(
+        "No cluster or management plane uses this config. The defaults are those of Camunda 8.10, the newest in the images table.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/can be incomplete/)).toBeNull();
   });
 
   it("does not say that the minors can be incomplete while every kind that feeds them is read", () => {

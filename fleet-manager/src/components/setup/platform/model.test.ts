@@ -79,16 +79,37 @@ describe("platformRows", () => {
 });
 
 describe("unreadMinorKinds", () => {
+  const reads = {
+    errors: [
+      { kind: "CamundaRelease", message: "forbidden" },
+      { kind: "DatabaseServer", message: "forbidden" },
+      { kind: "CamundaManagementCluster", message: "forbidden" },
+    ],
+    stale: ["CamundaRelease", "CamundaClusterPreset", "Environment"],
+  };
+  const noUsers = {
+    clusters: [],
+    planes: [],
+    databaseServers: [],
+    clusterClaims: [],
+    planeClaims: [],
+    environments: [],
+  };
+
   it("gives each kind that feeds the minors of the users and is failed or stale, once", () => {
     expect(
-      unreadMinorKinds({
-        errors: [
-          { kind: "CamundaRelease", message: "forbidden" },
-          { kind: "DatabaseServer", message: "forbidden" },
-        ],
-        stale: ["CamundaRelease", "CamundaClusterPreset", "Environment"],
-      }),
-    ).toEqual(["CamundaRelease", "CamundaClusterPreset"]);
+      unreadMinorKinds(reads, { ...noUsers, clusters: [cluster("a", {})] }),
+    ).toEqual([
+      "CamundaRelease",
+      "CamundaManagementCluster",
+      "CamundaClusterPreset",
+    ]);
+  });
+
+  it("leaves out the presets and releases when no cluster uses the config", () => {
+    expect(
+      unreadMinorKinds(reads, { ...noUsers, planes: [plane("p", {})] }),
+    ).toEqual(["CamundaManagementCluster"]);
   });
 });
 

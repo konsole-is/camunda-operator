@@ -174,7 +174,7 @@ export function PlatformDetail({
           )}
           errors={errors}
           usersKnown={unread.length === 0}
-          unreadMinorKinds={unreadMinorKinds(sources)}
+          unreadMinorKinds={unreadMinorKinds(sources, users)}
           versionsUnresolved={users.clusters.length + users.planes.length > 0}
           onChange={(images) => setDraft({ ...draft, images })}
         />

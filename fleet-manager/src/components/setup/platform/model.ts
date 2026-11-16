@@ -67,10 +67,24 @@ export function unreadUserKinds(reads: SourceReads): string[] {
   );
 }
 
-/** unreadMinorKinds returns each kind of MINOR_KINDS that reads holds as failed or stale, once. */
-export function unreadMinorKinds(reads: SourceReads): string[] {
-  return unreadKinds(reads).filter((kind) =>
-    (MINOR_KINDS as readonly string[]).includes(kind),
+// CLUSTER_MINOR_KINDS feed only the minors of clusters.
+const CLUSTER_MINOR_KINDS: readonly string[] = [
+  "CamundaClusterPreset",
+  "CamundaRelease",
+];
+
+/**
+ * unreadMinorKinds returns each kind of MINOR_KINDS that reads holds as
+ * failed or stale and that can hide a Camunda minor of users, once.
+ */
+export function unreadMinorKinds(
+  reads: SourceReads,
+  users: PlatformUsers,
+): string[] {
+  return unreadKinds(reads).filter(
+    (kind) =>
+      (MINOR_KINDS as readonly string[]).includes(kind) &&
+      (users.clusters.length > 0 || !CLUSTER_MINOR_KINDS.includes(kind)),
   );
 }
 

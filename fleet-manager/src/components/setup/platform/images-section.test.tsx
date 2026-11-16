@@ -131,19 +131,6 @@ describe("ImagesSection", () => {
     ]);
   });
 
-  it("does not call the config unused when no minor comes from users and a kind that feeds the minors is unread", () => {
-    setup([], {}, [], true, ["CamundaRelease"]);
-
-    expect(
-      screen.queryByText(/^No cluster or management plane uses/),
-    ).toBeNull();
-    expect(
-      screen.getByText(
-        "The defaults are those of Camunda 8.10, the newest in the images table.",
-      ),
-    ).toBeDefined();
-  });
-
   it("says when a field has no default", () => {
     setup(["8.8"]);
 

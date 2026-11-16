@@ -29,8 +29,8 @@ export const IMAGE_LABELS: Readonly<Record<ImageField, string>> = {
  * each field it lists the default repository of defaults, with the range of
  * Camunda minors of each default when defaults hold more than one minor.
  * usersKnown is false while the users of the config are not known.
- * unreadMinorKinds names the kinds that feed the minors of defaults and
- * cannot be read.
+ * unreadMinorKinds names the unread kinds that can hide a minor of the
+ * users.
  */
 export function ImagesSection({
   images,
@@ -74,9 +74,7 @@ export function ImagesSection({
             ? "The users of this config are not known. "
             : versionsUnresolved
               ? "No Camunda version is known for the clusters and management planes that use this config. "
-              : unreadMinorKinds.length === 0
-                ? "No cluster or management plane uses this config. "
-                : ""}
+              : "No cluster or management plane uses this config. "}
           The defaults are those of Camunda {defaults.minors[0]}, the newest in
           the images table.
         </p>
