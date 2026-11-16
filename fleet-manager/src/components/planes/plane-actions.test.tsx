@@ -42,7 +42,7 @@ function actions(
   props: Partial<Parameters<typeof PlaneActions>[0]> = {},
   pushed?: WriteResult,
 ) {
-  const apply = vi.fn(async (_change: Change): Promise<WriteResult> => ({
+  const apply = vi.fn<(change: Change) => Promise<WriteResult>>(async () => ({
     ok: true,
     mode: "direct",
   }));

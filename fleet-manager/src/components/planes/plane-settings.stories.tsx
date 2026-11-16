@@ -33,9 +33,14 @@ export const IdentityOidc: Story = {
       field("admin.claimName", "Administrator claim name", "email", {
         lock: { reason: "immutableAfterStart" },
       }),
-      field("admin.claimValue", "Administrator claim value", "admin@example.com", {
-        lock: { reason: "immutableAfterStart" },
-      }),
+      field(
+        "admin.claimValue",
+        "Administrator claim value",
+        "admin@example.com",
+        {
+          lock: { reason: "immutableAfterStart" },
+        },
+      ),
       field("versions.identity", "Management Identity version", "8.9.14"),
       field(
         "url.identity",

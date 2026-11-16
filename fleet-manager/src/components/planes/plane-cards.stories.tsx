@@ -4,11 +4,7 @@ import { ComponentCards } from "@/components/cluster/component-card";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
-import {
-  type PlaneCardId,
-  planeCardHref,
-  planeCards,
-} from "./plane-cards";
+import { type PlaneCardId, planeCardHref, planeCards } from "./plane-cards";
 
 const condition = (type: string, status = "True", reason = "Healthy") => ({
   type,
