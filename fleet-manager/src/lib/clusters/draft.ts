@@ -3,24 +3,23 @@ import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
-import type { PluginSection } from "@/generated/crds/pluginsection";
 import type {
   NamespaceChoice,
   PickerEnvironment,
 } from "@/components/fleet/namespace-picker";
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
-import type { Step } from "@/lib/fields";
+import { type ClusterField, lockLabel, type Step } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster, type Merged } from "@/lib/merge";
 import {
   byCodeUnit,
-  checkSlotConflicts,
   type DeletionChoice,
   type PluginSelection,
   releaseAllowed,
 } from "@/lib/policy";
+import { filledClaimSteps } from "@/lib/session/locks";
 import { valueAt, without, withValue } from "@/lib/session/steps";
 import {
   MANAGEMENT_AUTH_CONFIGS_UNREAD,
@@ -355,13 +354,14 @@ export function draftOptimize(
 
 /**
  * SettingsData is the live data that step 3 checks a draft against.
- * unread are the kinds that could not be read.
+ * fields are clusterFields of the draft cluster. unread are the kinds that
+ * could not be read.
  */
 export type SettingsData = {
   environment: Environment | undefined;
   releases: readonly Resource<"CamundaRelease">[];
   platformConfigs: readonly Resource<"CamundaPlatformConfig">[];
-  sections: readonly PluginSection[];
+  fields: readonly ClusterField[];
   unread?: readonly KindName[];
 };
 
@@ -409,10 +409,19 @@ export function settingsErrors(
         : `Platform config ${platform} of the environment does not exist. Pick another one.`,
     );
   }
-  const conflict = checkSlotConflicts(data.sections, draftSelections(draft), {
-    cluster: spec.cluster,
-  });
-  if ("refusal" in conflict) errors.push(conflict.refusal.message);
+  // The claim controller refuses a claim value that a section fills.
+  for (const field of data.fields) {
+    const [steps] = filledClaimSteps([field]);
+    if (
+      field.target.kind === "CamundaCluster" &&
+      field.lock &&
+      steps &&
+      valueAt(draft.claim, steps) !== undefined
+    )
+      errors.push(
+        `${field.label}: ${lockLabel(field.lock)}, so the claim cannot set it.`,
+      );
+  }
   return errors;
 }
 
@@ -447,15 +456,14 @@ export function attachmentsErrors(
       data.managementAuthConfigs,
       authsUnread,
     );
-    if (blocked === MANAGEMENT_AUTH_CONFIGS_UNREAD) {
-      // The flow reports the failed read.
-    } else if (blocked) errors.push(blocked);
-    else if (
-      !data.managementAuthConfigs.includes(optimize.managementAuthConfigRef)
-    )
-      errors.push(
-        `ManagementAuthConfig ${optimize.managementAuthConfigRef} does not exist. Pick another one.`,
-      );
+    if (blocked === undefined) {
+      if (
+        !data.managementAuthConfigs.includes(optimize.managementAuthConfigRef)
+      )
+        errors.push(
+          `ManagementAuthConfig ${optimize.managementAuthConfigRef} does not exist. Pick another one.`,
+        );
+    } else if (blocked !== MANAGEMENT_AUTH_CONFIGS_UNREAD) errors.push(blocked);
   }
   if (backupSchedule) {
     if (scheduleBlocked(data.summary.backupStorage !== undefined))

@@ -17,18 +17,22 @@ const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   errors: {} as Record<string, string>,
   asked: new Set<string>(),
+  fresh: new Set<string>(),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
     live.asked.add(kind);
     return { items: live.objects[kind] ?? initial, error: live.errors[kind] };
   },
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map((l) => live.fresh.has(l.kind)),
 }));
 
 beforeEach(() => {
   live.objects = {};
   live.errors = {};
   live.asked = new Set();
+  live.fresh = new Set();
 });
 afterEach(cleanup);
 
@@ -212,6 +216,7 @@ function data(over: Partial<ClusterCreateData> = {}): ClusterCreateData {
     ],
     platformConfigs: [platformConfig("basic"), platformConfig("oidc")],
     managementAuthConfigs: [managementAuthConfig("central")],
+    readErrors: [],
     ...over,
   };
 }
@@ -744,6 +749,82 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).not.toContain("Cluster settings:");
     expect(screen.queryByText(NO_MANAGEMENT_AUTH_CONFIG)).toBeNull();
     expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
+  });
+
+  it("blocks step 3 on a failed server read of the releases while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          accessRequests: [],
+          releases: [],
+          readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
+        })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+    expect(
+      screen.getByRole("option", { name: "Could not read the releases" }),
+    ).toBeTruthy();
+  });
+
+  it("blocks step 3 on a failed server read of the platform configs while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          accessRequests: [],
+          platformConfigs: [],
+          readErrors: [{ kind: "CamundaPlatformConfig", message: "forbidden" }],
+        })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+  });
+
+  it("blocks step 4 on a failed server read of the ManagementAuthConfigs while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={{
+          ...attachmentData(),
+          managementAuthConfigs: [],
+          readErrors: [{ kind: "ManagementAuthConfig", message: "forbidden" }],
+        }}
+      />,
+    );
+    await toStep("Attachments");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
+    );
+    expect(screen.queryByText(NO_MANAGEMENT_AUTH_CONFIG)).toBeNull();
+    expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
+  });
+
+  it("forgets a failed server read once the watch sends the releases", async () => {
+    const initial = data({
+      accessRequests: [],
+      releases: [],
+      readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
+    });
+    const { rerender } = render(<ClusterCreateFlow initial={initial} />);
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+
+    live.objects.CamundaRelease = [release("camunda-8-9", "8.9.9")];
+    live.fresh.add("CamundaRelease");
+    rerender(<ClusterCreateFlow initial={initial} />);
+
+    expect(footer()).not.toContain("could not read");
+    expect(next().disabled).toBe(false);
   });
 
   it("keeps the step 3 and 4 picks after Back and Next", async () => {

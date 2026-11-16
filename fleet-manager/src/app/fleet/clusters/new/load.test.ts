@@ -57,6 +57,25 @@ describe("loadCreateCluster", () => {
     expect(data.claims).toHaveLength(1);
   });
 
+  it("gives no read errors when every list reads", async () => {
+    const data = await loadCreateCluster();
+    expect(data.readErrors).toEqual([]);
+  });
+
+  it("gives the read error of each list that steps 3 and 4 check against", async () => {
+    for (const kind of [
+      "CamundaRelease",
+      "CamundaPlatformConfig",
+      "ManagementAuthConfig",
+    ]) {
+      k8s.failing = kind;
+      const data = await loadCreateCluster();
+      expect(data.readErrors).toEqual([
+        { kind, message: `${kind} is forbidden` },
+      ]);
+    }
+  });
+
   it("gives the presets and storage configs that step 2 lists", async () => {
     const data = await loadCreateCluster();
     expect([

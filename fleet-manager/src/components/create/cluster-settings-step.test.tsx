@@ -210,6 +210,29 @@ describe("ClusterSettingsStep", () => {
     expect(screen.queryByText(/Volumes cannot shrink/)).toBeNull();
   });
 
+  it("keeps a storage size that the preset gives as a number a number", async () => {
+    const numeric = {
+      ...preset,
+      spec: { cluster: { zeebe: { storageSize: 10737418240 } } },
+    } as unknown as Resource<"CamundaClusterPreset">;
+    const { set } = renderStep({}, prod(), [numeric]);
+    const brokers = screen.getByRole("region", { name: "Brokers settings" });
+    const amount = within(
+      within(brokers).getAllByRole("group", { name: "storageSize" })[0],
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "21474836480");
+    expect(set).toHaveBeenLastCalledWith(
+      [
+        { field: "spec" },
+        { field: "cluster" },
+        { field: "zeebe" },
+        { field: "storageSize" },
+      ],
+      21474836480,
+    );
+  });
+
   it("keeps the Connectors settings while the draft turns them off", () => {
     const connectors = {
       ...preset,

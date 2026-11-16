@@ -12,6 +12,8 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
+import type { ReadError } from "@/components/planes/planes-table";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
@@ -59,7 +61,8 @@ import { type CreateStep, useCreateFlow } from "./use-create-flow";
  * ClusterCreateData is the first snapshot of the create cluster page, from
  * every namespace. accessRequests are the requests of the access section.
  * Step 3 lists releases and platformConfigs, and step 4 lists
- * managementAuthConfigs.
+ * managementAuthConfigs. readErrors are the failed reads of those three
+ * kinds.
  */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
@@ -77,10 +80,17 @@ export type ClusterCreateData = {
   releases: Resource<"CamundaRelease">[];
   platformConfigs: Resource<"CamundaPlatformConfig">[];
   managementAuthConfigs: Resource<"ManagementAuthConfig">[];
+  readErrors: ReadError[];
 };
 
 const EVERYWHERE = {};
 const ACCESS_REQUESTS = { labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` };
+
+const SETTINGS_KINDS: readonly KindName[] = [
+  "CamundaRelease",
+  "CamundaPlatformConfig",
+  "ManagementAuthConfig",
+];
 
 const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
@@ -112,17 +122,29 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       initial.accessRequests,
     ),
   };
+  const answered = useAnswered(SETTINGS_KINDS);
+  const readError = (kind: KindName) =>
+    answered.has(kind)
+      ? undefined
+      : initial.readErrors.find((e) => e.kind === kind)?.message;
   const settingsLive = {
-    releases: useLive("CamundaRelease", EVERYWHERE, initial.releases),
+    releases: useLive(
+      "CamundaRelease",
+      EVERYWHERE,
+      initial.releases,
+      readError("CamundaRelease"),
+    ),
     platformConfigs: useLive(
       "CamundaPlatformConfig",
       EVERYWHERE,
       initial.platformConfigs,
+      readError("CamundaPlatformConfig"),
     ),
     managementAuthConfigs: useLive(
       "ManagementAuthConfig",
       EVERYWHERE,
       initial.managementAuthConfigs,
+      readError("ManagementAuthConfig"),
     ),
   };
   const sources = {
@@ -287,17 +309,20 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
         ...storageErrors(draft, data, cardErrors, conflicts),
       ];
     },
-    settings: (draft) => [
-      ...settingsFailures,
-      ...settingsErrors(draft, {
-        environment: derive(draft).environment,
-        releases,
-        platformConfigs,
-        sections,
-        unread,
-      }),
-      ...editor.shown("spec.cluster"),
-    ],
+    settings: (draft) => {
+      const { environment, fields } = derive(draft);
+      return [
+        ...settingsFailures,
+        ...settingsErrors(draft, {
+          environment,
+          releases,
+          platformConfigs,
+          fields,
+          unread,
+        }),
+        ...editor.shown("spec.cluster"),
+      ];
+    },
     attachments: (draft) => [
       ...attachmentsFailures,
       ...attachmentsErrors(draft, {
@@ -497,8 +522,10 @@ function useLive<K extends KindName>(
   kind: K,
   opts: ListOptions,
   initial: Resource<K>[],
+  readError?: string,
 ): { kind: K; items: Resource<K>[]; failure?: string } {
-  const { items, error } = useResources(kind, opts, initial);
+  const { items, error: watchError } = useResources(kind, opts, initial);
+  const error = watchError ?? readError;
   return error === undefined
     ? { kind, items }
     : {

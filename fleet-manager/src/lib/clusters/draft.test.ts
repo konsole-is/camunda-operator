@@ -3,6 +3,7 @@ import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import {
@@ -712,7 +713,7 @@ describe("settingsErrors", () => {
     environment: withReleases(),
     releases,
     platformConfigs: [platformConfig("basic"), platformConfig("oidc")],
-    sections: [],
+    fields: [],
     ...over,
   });
   const draft = (spec: ClusterDraft["claim"]["spec"] = {}) =>
@@ -817,7 +818,18 @@ describe("settingsErrors", () => {
     ]);
   });
 
-  it("refuses a cluster value that a selected section fills", () => {
+  const fieldsOf = (d: ClusterDraft) => {
+    const drafted = draftCluster(d, [], releases, withReleases());
+    return clusterFields({
+      cluster: drafted.cluster,
+      merged: drafted.merged,
+      claim: drafted.claim as unknown as Resource<"CamundaClusterClaim">,
+      sections: [access as unknown as Resource<"PluginSection">],
+      registrations: [],
+    });
+  };
+
+  it("refuses a cluster value that a selected section fills, by the label of its field", () => {
     const filled = draftWith(
       {
         presetRef: "small",
@@ -825,9 +837,19 @@ describe("settingsErrors", () => {
       },
       { access: [{ section: "access", registration: "gateway" }] },
     );
-    expect(settingsErrors(filled, data({ sections: [access] }))).toEqual([
-      'spec.cluster.externalUrl is filled by section "access", so the claim cannot set it',
+    expect(settingsErrors(filled, data({ fields: fieldsOf(filled) }))).toEqual([
+      "externalUrl: Filled by Access, so the claim cannot set it.",
     ]);
+  });
+
+  it("allows a field that a selected section fills while the claim leaves it unset", () => {
+    const unset = draftWith(
+      { presetRef: "small" },
+      { access: [{ section: "access", registration: "gateway" }] },
+    );
+    expect(settingsErrors(unset, data({ fields: fieldsOf(unset) }))).toEqual(
+      [],
+    );
   });
 });
 
