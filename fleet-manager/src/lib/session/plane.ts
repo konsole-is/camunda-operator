@@ -270,9 +270,7 @@ function adminErrors(
 function externalErrors(management: PlaneManagement | undefined): FieldError[] {
   const spec = management?.identityProvider?.externalKeycloak;
   const typed = spec === undefined || typeof spec.url === "string";
-  return externalKeycloakErrors(
-    externalKeycloakDraftOf(typed ? spec : { ...spec, url: "" }),
-  )
+  return externalKeycloakErrors(externalKeycloakDraftOf(spec))
     .filter((e) => typed || e.path !== "url")
     .map((e) => ({
       path: EXTERNAL_PATHS[e.path] ?? EXTERNAL,

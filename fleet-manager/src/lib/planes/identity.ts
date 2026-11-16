@@ -72,13 +72,13 @@ export function sameFamily(a: IdentityModeId, b: IdentityModeId): boolean {
   return (a === "oidc") === (b === "oidc");
 }
 
-/** externalKeycloakDraftOf returns the draft of spec, with empty fields for what spec lacks. */
+/** externalKeycloakDraftOf returns the draft of spec, with empty fields for what spec lacks. A url that is not a string is empty too. */
 export function externalKeycloakDraftOf(
   spec: ExternalKeycloakSpec | undefined,
 ): ExternalKeycloakDraft {
   const ca = spec?.caBundleSecretRef;
   return {
-    url: spec?.url ?? "",
+    url: typeof spec?.url === "string" ? spec.url : "",
     realm: spec?.realm ?? "",
     adminSecret: spec?.adminCredentialsSecretRef?.name ?? "",
     ...(ca && { caBundle: { name: ca.name, key: ca.key } }),

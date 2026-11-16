@@ -619,6 +619,15 @@ describe("planeImpacts", () => {
     expect(planeImpacts(input(s))).toEqual([]);
   });
 
+  it("lists the effects of a change to an External Keycloak URL that is not a string", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      123,
+    ]);
+    expect(() => planeImpacts(input(s))).not.toThrow();
+    expect(() => servedChanges(input(s))).not.toThrow();
+  });
+
   it("adds no minor warning for a move into the keycloak mode", () => {
     const live = externalClaim({
       management: {
