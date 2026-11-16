@@ -13,6 +13,13 @@ describe("UnmanagedBanner", () => {
       "Not managed by the fleet manager. You can read this cluster but not change it here.",
     );
   });
+
+  it("the plane banner says the management plane cannot change here", () => {
+    render(<UnmanagedBanner subject="management plane" />);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Not managed by the fleet manager. You can read this management plane but not change it here.",
+    );
+  });
 });
 
 describe("ActivityBanner", () => {

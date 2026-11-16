@@ -1,4 +1,10 @@
-import type { ClusterField, FieldLock, FieldTarget, Step } from "@/lib/fields";
+import type {
+  ClusterField,
+  FieldLock,
+  FieldTarget,
+  PlaneField,
+  Step,
+} from "@/lib/fields";
 import { child, type FieldPath } from "@/lib/merge";
 
 /** LockProvider returns the lock of a claim path, or undefined when the claim can change it. */
@@ -29,6 +35,19 @@ export function clusterLocks(fields: readonly ClusterField[]): LockProvider {
         : slotPath(field);
     if (path !== undefined) locks.set(path, field.lock);
   }
+  return (claimPath) => locks.get(claimPath);
+}
+
+/**
+ * planeLocks is the LockProvider of a plane claim, over planeFields. It
+ * returns the lock of each locked field at its claim path. The lock of an
+ * option sits on its registration, so the parameters of the selection stay
+ * open unless their own field is locked.
+ */
+export function planeLocks(fields: readonly PlaneField[]): LockProvider {
+  const locks = new Map<FieldPath, FieldLock>();
+  for (const field of fields)
+    if (field.lock !== undefined) locks.set(field.claimPath, field.lock);
   return (claimPath) => locks.get(claimPath);
 }
 

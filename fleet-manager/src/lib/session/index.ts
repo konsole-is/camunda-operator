@@ -3,7 +3,12 @@ export {
   type ClusterClaimContext,
   type FieldError,
 } from "./cluster";
-export { clusterLocks, filledClaimSteps, type LockProvider } from "./locks";
+export {
+  clusterLocks,
+  filledClaimSteps,
+  planeLocks,
+  type LockProvider,
+} from "./locks";
 export {
   validatePlaneClaim,
   type PlaneClaim,
