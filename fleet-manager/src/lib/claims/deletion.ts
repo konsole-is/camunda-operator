@@ -87,9 +87,12 @@ export type DeletionGroup = {
 
 /**
  * deletionGroups returns one group for each selection of claim, in the
- * order of sectionComponents, with the fate of each row under policy. A
- * selection without a request, or whose request reports no resources, has
- * no rows. A registration that is not found counts as one that keeps.
+ * order of sectionComponents, with the fate of each row under policy. The
+ * request of a selection is the one that the claim status names, else the
+ * request of requests with the section and the registration of the
+ * selection. A selection without a request, or whose request reports no
+ * resources, has no rows. A registration that is not found counts as one
+ * that keeps.
  */
 export function deletionGroups(input: {
   claim: SectionClaim;
@@ -101,6 +104,13 @@ export function deletionGroups(input: {
   const { claim, sections, registrations, requests, policy } = input;
   return sectionComponents({ claim, sections, requests }).map((component) => {
     const { registration } = component.selection;
+    const request =
+      component.request ??
+      requests.find(
+        (r) =>
+          r.spec?.section === component.section &&
+          r.spec?.registration === registration,
+      );
     const found = sections.find((s) => s.metadata?.name === component.section);
     // The cache object differs from the generated type only in its
     // timestamps, which slotOf does not read.
@@ -116,7 +126,7 @@ export function deletionGroups(input: {
       ...(slot && { slot }),
       alwaysDeletes:
         deletionPolicies !== undefined && !deletionPolicies.includes("Orphan"),
-      rows: (component.request?.status?.resources ?? []).map((row) => ({
+      rows: (request?.status?.resources ?? []).map((row) => ({
         ...row,
         fate: resourceFate(row, policy),
       })),

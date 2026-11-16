@@ -269,6 +269,17 @@ describe("deletionGroups", () => {
     const groups = groupsOf("Delete", [request("orders-backup-storage")], c);
     expect(groups.map((g) => g.rows)).toEqual([[], []]);
   });
+
+  it("takes the request of a selection by its section and registration while the claim status does not name it", () => {
+    const c = claimOf([{ section: "backup-storage", registration: "aws-s3" }]);
+    const backup = {
+      ...request("orders-backup-storage", [bucket()]),
+      spec: { section: "backup-storage", registration: "aws-s3" },
+    } as unknown as Resource<"PluginRequest">;
+    const groups = groupsOf("Delete", [backup], c);
+    expect(groups[0].rows).toEqual([{ ...bucket(), fate: "Deleted" }]);
+    expect(backupWarning("orders", groups)).toBeDefined();
+  });
 });
 
 describe("backupWarning", () => {
