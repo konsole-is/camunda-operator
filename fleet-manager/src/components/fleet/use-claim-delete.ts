@@ -237,12 +237,9 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     [],
   );
   const apply = useCallback(async (): Promise<WriteResult> => {
+    const at = latest.current.live?.metadata.resourceVersion ?? "";
     const result = await send();
-    if (!result.ok)
-      setRefusal((r) => ({
-        ...r,
-        at: latest.current.live?.metadata.resourceVersion ?? "",
-      }));
+    if (!result.ok) setRefusal((r) => ({ ...r, at }));
     return result;
   }, [send]);
   const onWritten = useCallback(

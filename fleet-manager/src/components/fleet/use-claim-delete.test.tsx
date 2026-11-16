@@ -249,6 +249,36 @@ describe("useClaimDelete", () => {
     }
   });
 
+  it("a delete refused after the watch showed a newer version during the write gives a new remove at once", async () => {
+    let settle: (result: WriteResult) => void = () => {};
+    const { hook } = mount(claim(), {
+      actions: {
+        remove: () =>
+          new Promise<WriteResult>((resolve) => {
+            settle = resolve;
+          }),
+      },
+    });
+    const first = hook.result.current.remove;
+    const { apply } = hook.result.current;
+    let pending: Promise<WriteResult> = Promise.resolve({
+      ok: true,
+      mode: "direct",
+    });
+    act(() => {
+      pending = apply(first);
+    });
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    await act(async () => {
+      settle({ ok: false, errors: [{ code: "Stale", message: "Changed." }] });
+      await pending;
+    });
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+  });
+
   it("reads holds the claim kind while its watch has no snapshot, and the error of a failed watch", async () => {
     const { hook } = mount(claim());
     expect(hook.result.current.reads).toEqual({ errors: [], stale: [KIND] });
