@@ -28,7 +28,9 @@ import {
 } from "@/app/setup/environments/actions";
 import {
   applyReleaseChange,
+  applyReleaseMove,
   previewReleaseChange,
+  previewReleaseMove,
 } from "@/app/setup/releases/actions";
 import {
   saveSettings,
@@ -332,6 +334,18 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
     applyReleaseChange({
       ...releaseChange(),
       preconditions: { [`CamundaRelease//${namespace}`]: "1" },
+    }),
+  "app/setup/releases/actions.ts#previewReleaseMove": () =>
+    previewReleaseMove({
+      ...claimChange(),
+      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
+    }),
+  // The precondition names a claim that does not exist, so the write
+  // refuses with Stale and leaves nothing behind.
+  "app/setup/releases/actions.ts#applyReleaseMove": () =>
+    applyReleaseMove({
+      ...claimChange(),
+      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
   "app/setup/settings/actions.ts#saveSettings": async () =>
     saveSettings(
