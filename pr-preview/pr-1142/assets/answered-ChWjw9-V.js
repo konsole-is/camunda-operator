@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";import{o as n,t as r}from"./hooks-BZtkPEQF.js";function i(e){let t=n(e.map(e=>({kind:e,opts:{}}))),[r,i]=(0,a.useState)(new Set),o=e.filter((e,n)=>t[n]&&!r.has(e));return o.length>0&&i(new Set([...r,...o])),r}var a;function o(){return(o=e((()=>{a=t(),r()})))()}export{i as n,o as t};
