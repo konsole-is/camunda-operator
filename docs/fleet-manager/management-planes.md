@@ -222,13 +222,13 @@ The tab shows `This plane lists no clusters yet.` when the cluster selector of t
 
 The **Optimize** tab lists each Optimize that signs in through this plane, with its external URL and its callback URL. The callback URL is the external URL followed by `/api/authentication/callback`. For example, an Optimize at `https://orders.example.com/optimize` has the callback URL `https://orders.example.com/optimize/api/authentication/callback`. **Callbacks** above the table shows the state of `OptimizeCallbacksReady` once for the plane. A row has no state of its own.
 
-In the two Keycloak modes, the plane registers each callback URL in the realm. In OIDC mode, the plane registers nothing, and the tab shows `Add the callbacks to your identity provider.` Add each callback URL of the table to the Optimize application of your identity provider. The [Optimize](../crds/camundamanagementcluster.md#optimize) section of the `CamundaManagementCluster` explains the callbacks.
+In the two Keycloak modes, the plane registers each callback URL in the realm. In OIDC mode, the plane registers nothing. The tab then shows `Add the callbacks to your identity provider.` Add each callback URL of the table to the Optimize application of your identity provider. The [Optimize](../crds/camundamanagementcluster.md#optimize) section of the `CamundaManagementCluster` explains the callbacks.
 
 An Optimize without `spec.externalUrl` gets no callback, so it does not show on this tab. It shows on the **Contract** tab.
 
 ### Contract
 
-The **Contract** tab shows the [ManagementAuthConfig](../crds/managementauthconfig.md) that the plane writes and that Optimize reads. It shows the base URL of Management Identity, the issuer URL, the issuer URL inside the cluster, the authorization, token, and JWKS URLs, the client ID, and the audience. When the issuer URL inside the cluster is not set, the tab shows `Not set`, and Optimize uses the issuer URL.
+The **Contract** tab shows the [ManagementAuthConfig](../crds/managementauthconfig.md) that the plane writes and that Optimize reads. It shows the base URL of Management Identity and the issuer URL, also the one for use inside the cluster. It also shows the authorization, token, and JWKS URLs, the client ID, and the audience. When the issuer URL inside the cluster is not set, the tab shows `Not set`, and Optimize uses the issuer URL.
 
 The client secret shows as the namespace, the name, and the key of its Secret. The page does not read the Secret, so it never shows the value.
 
@@ -240,6 +240,6 @@ The **Endpoints** tab lists the routes of the plane. Each row shows the name, th
 
 The public URL comes from the URL of the app on the plane. It is the scheme and the host of that URL, followed by the path of the route. For example, Management Identity at `https://camunda.example.com/identity/` gives the route `identity` the public URL `https://camunda.example.com/identity`. A URL of an app that is not valid shows `Not a valid URL`.
 
-### A tab that the page could not read
+### A tab with a list that the page did not read
 
-When the page cannot read a list that a tab needs, or its copy of the list is not current, the tab shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab then does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
+A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
