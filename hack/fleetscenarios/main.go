@@ -88,8 +88,14 @@ limitations under the License.
 // The outputs are normalized, so the same input always writes the same
 // bytes: UIDs come from the kind, namespace, and name of an object, there is
 // no resource version, every timestamp is 2026-01-01T00:00:00Z, every value
-// of a Secret is "scenario", and each Event is written once, named after
-// the object it is about, its reason, and its note, with no count.
+// of a Secret is "scenario", the camunda.io/config-hash annotation of each
+// object and of its spec.template is "scenario", and each Event is written
+// once, named after the object it is about, its reason, and its note, with
+// no count.
+//
+// A state that changes only the camunda.io/config-hash annotation of a pod
+// template, or only a label or annotation of it that is a UID, makes no new
+// ReplicaSet, StatefulSet revision, or Pod in the simulation.
 //
 // # Writers
 //
