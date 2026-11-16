@@ -51,6 +51,9 @@ export function podRestarts(pod: PodLike): number {
 export const USAGE_UNAVAILABLE =
   "Usage is not available. The cluster has no metrics server, or the app could not read the usage.";
 
+/** NO_PODS says that a component without a pod selector has no pods to show. */
+export const NO_PODS = "This component runs no pods.";
+
 /** USAGE_FOOTNOTE says what the CPU and memory of PodTable are. */
 export const USAGE_FOOTNOTE =
   "CPU and memory show the use now, against the limit of the pod, or its request without a limit. They come from the metrics API of Kubernetes, so they need no Prometheus.";

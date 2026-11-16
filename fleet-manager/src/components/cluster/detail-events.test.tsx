@@ -152,6 +152,38 @@ describe("DetailEvents", () => {
     ).toBeTruthy();
   });
 
+  it("watches no Service and no PVC without a selector", () => {
+    live.items = {
+      Event: [
+        event("CreatedStatefulSet", "CamundaCluster", "orders", "u-1"),
+        event("Synced", "Service", "orders-zeebe"),
+      ],
+    };
+
+    render(
+      <DetailEvents
+        namespace="team-a"
+        pods={[]}
+        refs={[
+          {
+            kind: "CamundaCluster",
+            name: "orders",
+            namespace: "team-a",
+            uid: "u-1",
+          },
+        ]}
+        now={NOW}
+      />,
+    );
+
+    expect(live.calls).toEqual([
+      { kind: "Event", opts: { namespace: "team-a" } },
+    ]);
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toContain("CamundaCluster/orders");
+  });
+
   it("says so when the component has no events", () => {
     show();
 
