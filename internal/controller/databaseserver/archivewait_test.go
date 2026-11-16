@@ -219,7 +219,18 @@ func TestAwaitArchivedTargetQueriesOnlyThePrimaryOfItsOwnCluster(t *testing.T) {
 			cluster: new(unownedClusterMeta(server)),
 		},
 		{
+			name:     "a cluster nothing controls after the segment closed",
+			cluster:  new(unownedClusterMeta(server)),
+			segment:  countingWALSegment,
+			recorded: countingWALSegment,
+		},
+		{
 			name: "no cluster",
+		},
+		{
+			name:     "no cluster after the segment closed",
+			segment:  countingWALSegment,
+			recorded: countingWALSegment,
 		},
 	}
 
