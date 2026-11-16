@@ -363,9 +363,8 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
       }),
   ),
-  // The change names the UID of a live claim and a generation that it no
-  // longer has, so the dry run and the delete read the claim, refuse with
-  // Stale, and remove nothing.
+  // The change passes the schema, so the dry run and the delete read the
+  // claim, refuse with Stale, and remove nothing.
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete":
     refused("Stale", async () => previewClaimDelete(await staleClaimDelete())),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": refused(

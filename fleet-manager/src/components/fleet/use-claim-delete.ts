@@ -87,14 +87,12 @@ type Sent =
  * useClaimDelete runs the delete of a claim of either kind with the steps
  * of deleteClaimSteps, on the claim that it follows live from initial.
  * Give remove, apply, and onWritten to a ChangeReview. remove names the UID
- * and the generation of the claim: the server refuses its delete with
- * Stale after a spec change, but not after a status write. Without a
- * policy step, apply sends the change that it gets. With one, apply
- * refuses without a write when the preview of the delete fails, and
- * returns the result of the policy write. The hook then sends the delete
- * once the live claim carries the policy. It sends nothing for a claim
- * with another UID, and refuses with Stale when another spec change came
- * in. keepRefused names the registrations of the claim that cannot keep
+ * and the generation of the claim, so the server refuses its delete with
+ * Stale after a spec change. Without a policy step, apply sends the change
+ * that it gets. With one, apply refuses without a write when the preview
+ * of the delete fails, and returns the result of the policy write. The
+ * hook then sends the delete itself. It sends nothing for a claim with
+ * another UID, and refuses with Stale when another spec change came in. keepRefused names the registrations of the claim that cannot keep
  * while policy is Orphan. apply then refuses with Invalid and writes
  * nothing, and the delete after the policy write does too. registrations
  * are the live PluginRegistrations. reads holds the failed or stale watch
