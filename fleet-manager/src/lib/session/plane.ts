@@ -17,7 +17,7 @@ import {
 import {
   databaseApps,
   databaseConfigErrors,
-  databaseSection,
+  isDatabaseSection,
   planeControllerParameters,
 } from "@/lib/planes/storage";
 import { planeUrlFields, urlErrors } from "@/lib/planes/urls";
@@ -83,10 +83,10 @@ const EXTERNAL_PATHS: Record<string, string> = {
  * validatePlaneClaim returns the errors of the plane claim after the change
  * of s. An Environment name, an app URL that the claim already needed, a set
  * version of an app that already ran, the mail, the DatabaseConfigs while
- * the running apps stay, and the schema check of a section parameter skip a
- * value that s does not change, so that a claim that already breaks one of
- * those rules does not block another change. Types and ranges of the CRD are
- * left to the dry run.
+ * the apps with a database stay, and the schema check of a section
+ * parameter skip a value that s does not change, so that a claim that
+ * already breaks one of those rules does not block another change. Types
+ * and ranges of the CRD are left to the dry run.
  */
 export function validatePlaneClaim(
   s: Session<PlaneClaim>,
@@ -222,7 +222,7 @@ function adminErrors(
   if (mode === "oidc") {
     return [
       ...(admin.claimName ? [] : [error("claimName", "Enter the claim name.")]),
-      ...(admin.claimName?.includes("=")
+      ...(typeof admin.claimName === "string" && admin.claimName.includes("=")
         ? [error("claimName", "The claim name cannot hold an equals sign.")]
         : []),
       ...(admin.claimValue
@@ -268,12 +268,16 @@ function adminErrors(
 }
 
 function externalErrors(management: PlaneManagement | undefined): FieldError[] {
+  const spec = management?.identityProvider?.externalKeycloak;
+  const typed = spec === undefined || typeof spec.url === "string";
   return externalKeycloakErrors(
-    externalKeycloakDraftOf(management?.identityProvider?.externalKeycloak),
-  ).map((e) => ({
-    path: EXTERNAL_PATHS[e.path] ?? EXTERNAL,
-    message: e.message,
-  }));
+    externalKeycloakDraftOf(typed ? spec : { ...spec, url: "" }),
+  )
+    .filter((e) => typed || e.path !== "url")
+    .map((e) => ({
+      path: EXTERNAL_PATHS[e.path] ?? EXTERNAL,
+      message: e.message,
+    }));
 }
 
 // The claim controller refuses a claim without an access selection that
@@ -313,34 +317,34 @@ function databaseErrorsOf(
   ctx: PlaneClaimContext,
   policy: ResolvedPolicy | undefined,
 ): FieldError[] {
-  const section = databaseSection(generated<PluginSection[]>(ctx.sections));
+  const sections = generated<PluginSection[]>(ctx.sections);
   const selections = selectionsOf(after);
-  const i = selections.findIndex((p) => p.section === section?.metadata.name);
-  if (i < 0) return [];
-  const { section: name, registration } = selections[i];
-  const steps: Step[] = [
-    { field: "spec" },
-    { field: "plugins" },
-    { item: { section: name, registration } },
-    { field: "parameters" },
-  ];
   const running = runningOfClaim(after.spec?.management);
-  if (
-    equalJSON(valueAt(claim, steps), selections[i].parameters) &&
-    equalJSON(
-      databaseApps(runningOfClaim(claim.spec?.management)),
-      databaseApps(running),
-    )
-  )
-    return [];
-  const parameters = requestsOf(selections, {
+  const appsMoved = !equalJSON(
+    databaseApps(runningOfClaim(claim.spec?.management)),
+    databaseApps(running),
+  );
+  const requests = requestsOf(selections, {
     environment: ctx.environment,
     registrations: ctx.registrations,
     policy,
-  })[i];
-  return databaseConfigErrors({ ...selections[i], parameters }, running).map(
-    (message) => ({ path: pathFrom("", steps), message }),
-  );
+  });
+  return selections.flatMap((selection, i) => {
+    if (!isDatabaseSection(sections, selection.section)) return [];
+    const { section, registration } = selection;
+    const steps: Step[] = [
+      { field: "spec" },
+      { field: "plugins" },
+      { item: { section, registration } },
+      { field: "parameters" },
+    ];
+    if (!appsMoved && equalJSON(valueAt(claim, steps), selection.parameters))
+      return [];
+    return databaseConfigErrors(
+      { ...selection, parameters: requests[i] },
+      running,
+    ).map((message) => ({ path: pathFrom("", steps), message }));
+  });
 }
 
 function hasAccess(claim: PlaneClaim, ctx: PlaneClaimContext): boolean {

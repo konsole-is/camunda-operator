@@ -289,6 +289,29 @@ describe("validatePlaneClaim", () => {
     ]);
   });
 
+  it("leaves a claim name that is not a string to the dry run", () => {
+    const s = changed(oidcClaim(), [at(...ADMIN, "claimName"), 123]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
+  it("leaves an External Keycloak URL that is not a string to the dry run", () => {
+    const live = planeClaim();
+    const external = {
+      url: "https://kc.example.com",
+      realm: "",
+      adminSecret: "kc",
+    };
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "externalKeycloak", external).map(asEdit),
+      [
+        at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+        123,
+      ],
+    );
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
   it("asks to remove the Keycloak admin fields in OIDC mode", () => {
     const s = changed(
       oidcClaim(),
@@ -705,6 +728,38 @@ describe("validatePlaneClaim", () => {
       [at("spec", "versions", "console"), "8.9.133"],
     );
     expect(validatePlaneClaim(s, configsCtx)).toEqual([]);
+  });
+
+  it("refuses one DatabaseConfig for two apps in a second database section", () => {
+    const keys = {
+      section: "databases-b",
+      registration: "existing-database-configs",
+    };
+    const live = planeClaim({
+      plugins: [
+        { section: "access", registration: "gateway" },
+        { ...keys, parameters: { keycloak: "kc-db", identity: "id-db" } },
+      ],
+    });
+    const steps: Step[] = [
+      ...at("spec", "plugins"),
+      { item: keys },
+      ...at("parameters", "identity"),
+    ];
+    const s = changed(live, [steps, "kc-db"]);
+    const second = { ...databaseSection, metadata: { name: "databases-b" } };
+    expect(
+      validatePlaneClaim(s, {
+        ...configsCtx,
+        sections: [...configsCtx.sections, second],
+      } as unknown as PlaneClaimContext),
+    ).toEqual([
+      {
+        path: pathFrom("", steps.slice(0, -1)),
+        message:
+          "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use kc-db.",
+      },
+    ]);
   });
 
   it("refuses a database list of the claim controller that the registration schema refuses", () => {

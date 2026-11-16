@@ -426,9 +426,21 @@ export function planeControllerParameters(
   sections: readonly PluginSection[],
   running: Running,
 ): ControllerParameters {
-  const databases = databaseSection(sections)?.metadata.name;
   return (request) =>
-    request.section === databases ? { databases: databaseApps(running) } : {};
+    isDatabaseSection(sections, request.section)
+      ? { databases: databaseApps(running) }
+      : {};
+}
+
+/** isDatabaseSection reports whether the section named name has the slot managementDatabases. */
+export function isDatabaseSection(
+  sections: readonly PluginSection[],
+  name: string,
+): boolean {
+  return (
+    sections.find((s) => s.metadata.name === name)?.spec.slot ===
+    "managementDatabases"
+  );
 }
 
 /** databaseApps returns the apps of a plane that runs running that get a database, as Databases of camundamanagementclusterclaim does. */
