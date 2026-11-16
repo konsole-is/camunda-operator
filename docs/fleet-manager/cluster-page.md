@@ -65,13 +65,13 @@ Below the conditions, the **Overview** tab of a section shows a box for each par
 | **Links** | The links of the request, for example to an app of the cluster. |
 | **Resources** | Each resource that the plugin made: its kind, name, ID, location, and role. The last column shows what happens to it when the claim is deleted. |
 
-The column **After the claim is deleted** shows **Kept** or **Deleted**. The line above the table names the deletion policy of the claim. With **Delete the resources**, each resource shows **Deleted**. With **Keep the resources**, each resource shows what its plugin reports, because a plugin can delete a resource in both cases, for example a route. After the delete of the claim starts, a request keeps the policy that it had then. A request that the claim does not control shows "Not controlled by this claim" in this column, for example a request that an older claim of the same name made. [Keep or delete the resources](#keep-or-delete-the-resources) shows how to choose the policy.
+The column **After the claim is deleted** shows **Kept** or **Deleted**. The line above the table names the deletion policy of the claim. With **Delete the resources**, each resource shows **Deleted**. With **Keep the resources**, each resource shows what its plugin reports, because a plugin can delete a resource in both cases, for example a route. After the delete of the claim starts, a request keeps the policy that it had then. A request that the claim does not control shows "Not controlled by this claim" in this column. For example, an older claim of the same name made it. [Keep or delete the resources](#keep-or-delete-the-resources) shows how to choose the policy.
 
-A value of the wrong type in the status of a request shows as an error on its row, for example "Summary item 2 is not a valid summary item." The other rows still show.
+A value of the wrong type in the status of a request shows as an error on its row. For example: "Summary item 2 is not a valid summary item." The other rows still show.
 
 ### Grants
 
-A Grant asks the cloud identity of the cluster for one permission. The **Grants** box shows each Grant of the request with its template, its statement as JSON, and the conditions `Applied`, `MatchesTemplate`, and `Ready` with their reasons. The section **Cloud identity** shows every Grant of the cluster, with the request that asked for each.
+A Grant asks the cloud identity of the cluster for one permission. The **Grants** box shows each Grant of the request with its template and its statement as JSON. It also shows the conditions `Applied`, `MatchesTemplate`, and `Ready` with their reasons. The section **Cloud identity** shows every Grant of the cluster, with the request that asked for each.
 
 A line under the name of a Grant says what its conditions mean:
 
@@ -93,13 +93,13 @@ An option that connects a contract that you made makes no resources. The options
 The options **New Elasticsearch cluster** and **New PostgreSQL server** of **Secondary storage** make an `ElasticsearchCluster` or a `DatabaseServer`. The detail of the section shows that object in a box of its own, with what its status holds:
 
 - For an `ElasticsearchCluster`: the version, the snapshot repository, the volumes with their capacity, and the conditions.
-- For a `DatabaseServer`: the version, the start of the archive, the archive boundary, the recovery request with its target and start, the volumes, and the conditions.
+- For a `DatabaseServer`: the version, the start of the archive, and the archive boundary. Then the recovery request with its target and start, the volumes, and the conditions.
 
 A field that the status does not hold shows **Not reported yet**. The box shows no health, node, disk, or connection numbers. The pods of the storage show in the **Pods** table, and their CPU and memory on the **Metrics** tab.
 
 ### The Settings tab of a section
 
-The **Settings** tab of a section lists the parameters of the selection, with their values and where each value comes from. On a cluster that a claim made, select **Edit settings** to open the same editor as the section on the **Claim** tab. You can change the parameters that the claim may set. The option is locked: it stays as you chose it when you made the cluster. [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) shows how to write the change.
+The **Settings** tab of a section lists the parameters of the selection, with their values and where each value comes from. On a cluster that a claim made, select **Edit settings** to open the same editor as the section on the **Claim** tab. You can change the parameters that the claim can set. The option is locked: it stays as you chose it when you made the cluster. [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) shows how to write the change.
 
 ### The Logs tab of a section
 
@@ -107,7 +107,7 @@ The **Logs** tab of a section shows the lines of its controller about its reques
 
 ### When the page cannot read a list
 
-While the page cannot read a list, or its list is out of date, for example after the page lost its connection, the boxes that need it show "Not known: the page could not read" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page could not read Grant." and the conditions of each Grant show **Not known**. Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
+Sometimes the page cannot read a list, or its list is out of date, for example after the page lost its connection. Then the boxes that need the list show "Not known: the page could not read" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page could not read Grant." and the conditions of each Grant show **Not known**. Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
 
 ## Logs
 
