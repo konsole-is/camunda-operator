@@ -1,22 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { Environment } from "@/generated/crds/environment";
-import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { environmentFixtures, sectionFixtures } from "./fixtures";
+import { sectionFixtures } from "./fixtures";
 import {
   emptyPreviewText,
   previewClaims,
   previewSection,
-  templateData,
   templateErrors,
 } from "./preview";
 
 const sources = sectionFixtures();
-const production = sources.environments[0];
 const registration = (name: string) =>
   sources.registrations.find((r) => r.metadata.name === name)!;
-const section = (name: string) =>
-  sources.sections.find((s) => s.metadata.name === name)!;
 
 const orders = {
   kind: "CamundaClusterClaim" as const,
@@ -85,112 +79,6 @@ describe("emptyPreviewText", () => {
     expect(emptyPreviewText(s, "production")).toBe(
       "No section of this option applies to a claim, so the preview has no claim to render for.",
     );
-  });
-});
-
-describe("templateData", () => {
-  const input = {
-    claim: orders,
-    section: section("connectors-permissions"),
-    registration: registration("aws-connectors-role"),
-    environment: production,
-    registrations: sources.registrations,
-    requests: [] as PluginRequest[],
-  };
-
-  it("computes the request name and the account of a cluster claim without a request", () => {
-    expect(templateData(input)).toMatchObject({
-      namespace: "team-a",
-      claim: "orders",
-      request: "orders-connectors-permissions",
-      serviceAccount: "orders-connectors",
-      outputs: {},
-    });
-  });
-
-  it("takes the request name and the account of the live request", () => {
-    const request = {
-      apiVersion: "plugins.camunda.io/v1alpha1",
-      kind: "PluginRequest",
-      metadata: { namespace: "team-a", name: "orders-perms-1" },
-      spec: {
-        claimRef: { kind: "CamundaClusterClaim", name: "orders" },
-        section: "connectors-permissions",
-        registration: "aws-connectors-role",
-        deletionPolicy: "Delete",
-        target: {
-          kind: "CamundaCluster",
-          name: "orders",
-          serviceAccountName: "orders-custom",
-        },
-      },
-    } as PluginRequest;
-    const other = {
-      ...request,
-      metadata: { namespace: "team-b", name: "elsewhere" },
-    } as PluginRequest;
-    expect(
-      templateData({ ...input, requests: [other, request] }),
-    ).toMatchObject({
-      request: "orders-perms-1",
-      serviceAccount: "orders-custom",
-    });
-  });
-
-  it("gives a plane claim the account of the plane", () => {
-    const env = environmentFixtures();
-    expect(
-      templateData({
-        ...input,
-        claim: {
-          kind: "CamundaManagementClusterClaim",
-          namespace: "platform",
-          name: "plane-a",
-          plugins: [],
-        },
-        section: section("access"),
-        registration: registration("gateway-public"),
-        environment: env.environments[2],
-      }),
-    ).toMatchObject({
-      request: "plane-a-access",
-      serviceAccount: "plane-a-management",
-    });
-  });
-
-  it("takes the parameters that the edited environment gives the request", () => {
-    const edited: Environment = {
-      ...production,
-      spec: {
-        ...production.spec,
-        parameters: {
-          "aws-connectors-role": { managedPolicyArns: { value: ["arn:a"] } },
-        },
-      },
-    };
-    expect(templateData({ ...input, environment: edited }).parameters).toEqual({
-      managedPolicyArns: ["arn:a"],
-    });
-  });
-
-  it("takes the parameters of the selection of the claim", () => {
-    expect(
-      templateData({
-        ...input,
-        claim: {
-          ...orders,
-          plugins: [
-            {
-              section: "connectors-permissions",
-              registration: "aws-connectors-role",
-              parameters: { extraPolicyArns: ["sqs"] },
-            },
-          ],
-        },
-      }).parameters,
-    ).toMatchObject({
-      extraPolicyArns: ["arn:aws:iam::aws:policy/AmazonSQSFullAccess"],
-    });
   });
 });
 

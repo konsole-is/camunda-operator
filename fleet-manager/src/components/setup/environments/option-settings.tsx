@@ -7,16 +7,12 @@ import { Button } from "@/components/ui/button";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { accessPatterns, renderHosts } from "@/lib/claims/hosts";
+import { templateData } from "@/lib/claims/templates";
 import { renderJSON } from "@/lib/gotemplate";
 import type { OptionPick } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { AllowedEditor } from "./allowed-editor";
-import {
-  emptyPreviewText,
-  previewClaims,
-  previewSection,
-  templateData,
-} from "./preview";
+import { emptyPreviewText, previewClaims, previewSection } from "./preview";
 import {
   type NamedValue,
   type OptionSettings,
