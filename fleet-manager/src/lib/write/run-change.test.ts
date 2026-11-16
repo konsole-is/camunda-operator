@@ -280,6 +280,24 @@ describe("claimDeleteSchema", () => {
       { ...remove, delete: [{ ...ref, apiVersion: "core.camunda.io/v1" }] },
     ],
     ["no namespace", { ...remove, delete: [{ ...ref, namespace: undefined }] }],
+    [
+      "the name ..",
+      {
+        ...remove,
+        delete: [{ ...ref, name: ".." }],
+        uids: { "CamundaClusterClaim/team-a/..": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/..": 3 },
+      },
+    ],
+    [
+      "the namespace .",
+      {
+        ...remove,
+        delete: [{ ...ref, namespace: "." }],
+        uids: { "CamundaClusterClaim/./orders": "uid-1" },
+        generations: { "CamundaClusterClaim/./orders": 3 },
+      },
+    ],
     ["two deletes", { ...remove, delete: [ref, { ...ref, name: "payments" }] }],
     [
       "an apply",
@@ -468,11 +486,24 @@ describe("runClaimDelete and previewClaimDelete", () => {
     expect(fake.apply).toHaveBeenCalledWith(remove);
   });
 
-  it("refuses input that claimDeleteSchema refuses and reads nothing", async () => {
-    const result = await runClaimDelete({ ...remove, generations: undefined });
-
-    expect(result).toMatchObject({
+  it.each([
+    ["no generation", { ...remove, generations: undefined }],
+    [
+      "a name that is not a path segment",
+      {
+        ...remove,
+        delete: [{ ...ref, name: ".." }],
+        uids: { "CamundaClusterClaim/team-a/..": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/..": 3 },
+      },
+    ],
+  ])("refuses input with %s as Invalid and reads nothing", async (_, input) => {
+    expect(await runClaimDelete(input)).toMatchObject({
       ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(await previewClaimDelete(input)).toMatchObject({
+      objects: [],
       errors: [expect.objectContaining({ code: "Invalid" })],
     });
     expect(readLive).not.toHaveBeenCalled();

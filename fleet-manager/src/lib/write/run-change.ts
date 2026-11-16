@@ -129,9 +129,10 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
 /**
  * claimDeleteSchema accepts a Change that deletes exactly one claim of a
  * cluster or a management plane and nothing else: an empty apply, one
- * delete ref with the kind and apiVersion of a claim and a namespace, the
- * UID and the generation of that claim in uids and generations, and no
- * preconditions, create, force, or directOnly.
+ * delete ref with the kind and apiVersion of a claim, a namespace, and a
+ * name and namespace other than "." and "..", the UID and the generation
+ * of that claim in uids and generations, and no preconditions, create,
+ * force, or directOnly.
  */
 export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -145,6 +146,12 @@ export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
       // wrong apiVersion would report a delete that never happened.
       ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
       ref.namespace !== undefined &&
+      // runClaimDelete and previewClaimDelete read the claim by its path
+      // before the writer checks the ref, and pathSegment throws for "."
+      // and "..".
+      ![ref.name, ref.namespace].some(
+        (part) => part === "." || part === "..",
+      ) &&
       c.uids?.[refKey(ref)] !== undefined &&
       c.generations?.[refKey(ref)] !== undefined &&
       c.preconditions === undefined &&
