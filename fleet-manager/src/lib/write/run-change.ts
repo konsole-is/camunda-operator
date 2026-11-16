@@ -2,8 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { apiVersionOf, KindMap, type KindName } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { equalJSON } from "@/lib/policy";
-import { existsError } from "./errors";
+import { type BackupLike, equalJSON, runningBackup } from "@/lib/policy";
+import { existsError, staleError } from "./errors";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -141,6 +141,134 @@ export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
   },
   { message: "The change must apply cluster claims and nothing else." },
 );
+
+/**
+ * runClaimMove is runChange with claimBatchChangeSchema, for a move of
+ * cluster claims to a release. It refuses the whole change and writes
+ * nothing when a claim does not exist (Stale), changed since the page read
+ * it (Stale), differs from the live claim outside spec.releaseRef,
+ * spec.allowVersionDowngrade, status, and the metadata that the API server
+ * sets (Invalid), or has a cluster with a backup of either kind that has
+ * not ended (Stale, naming the backup). Each such error names the claim in
+ * ref. When these checks
+ * cannot read the claims or the backups, it gives Unavailable.
+ */
+export async function runClaimMove(input: unknown): Promise<WriteResult> {
+  const parsed = claimBatchChangeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  try {
+    const refusals = await moveRefusalsOf(parsed.data);
+    if (refusals.length > 0) return { ok: false, errors: refusals };
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
+  }
+  return runChange(parsed.data, claimBatchChangeSchema);
+}
+
+/**
+ * previewClaimMove is runPreview with claimBatchChangeSchema. It gives no
+ * objects and the errors of runClaimMove when that refuses the change.
+ */
+export async function previewClaimMove(input: unknown): Promise<Preview> {
+  const parsed = claimBatchChangeSchema.safeParse(input);
+  if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
+  try {
+    const refusals = await moveRefusalsOf(parsed.data);
+    if (refusals.length > 0) return { objects: [], errors: refusals };
+  } catch (error) {
+    return { objects: [], errors: [unavailable(error)] };
+  }
+  return runPreview(parsed.data, claimBatchChangeSchema);
+}
+
+const MOVE_FIELDS = ["releaseRef", "allowVersionDowngrade"];
+
+async function moveRefusalsOf(change: Change): Promise<ApiError[]> {
+  const listed = new Map<string, Promise<KubeObject[]>>();
+  const list = (kind: KindName, namespace: string) => {
+    const key = `${kind}/${namespace}`;
+    if (!listed.has(key)) listed.set(key, listObjects(kind, namespace));
+    return listed.get(key)!;
+  };
+  const errors: ApiError[] = [];
+  for (const claim of change.apply) {
+    const ref = refOf(claim);
+    const namespace = ref.namespace!;
+    const live = (await list("CamundaClusterClaim", namespace)).find(
+      (c) => c.metadata.name === ref.name,
+    );
+    if (live === undefined) {
+      errors.push({
+        code: "Stale",
+        message: `The ${ref.kind} ${ref.name} does not exist.`,
+        ref,
+      });
+      continue;
+    }
+    if (live.metadata.resourceVersion !== change.preconditions?.[refKey(ref)]) {
+      errors.push(staleError(ref));
+      continue;
+    }
+    if (!movesOnly(claim, live)) {
+      errors.push({
+        code: "Invalid",
+        message:
+          "A move can change only spec.releaseRef and spec.allowVersionDowngrade of a claim.",
+        ref,
+      });
+      continue;
+    }
+    const backups = (
+      await Promise.all(
+        (BACKUP_KINDS as KindName[]).map((kind) => list(kind, namespace)),
+      )
+    ).flat() as unknown as BackupLike[];
+    const backup = runningBackup(
+      { metadata: { namespace, name: ref.name } },
+      backups,
+    );
+    if (backup !== undefined) {
+      const phase = backups.find(
+        (b) => b.kind === backup.kind && b.metadata?.name === backup.name,
+      )?.status?.phase;
+      errors.push({
+        code: "Stale",
+        message: `Backup ${backup.name} of the cluster is ${phase === "Running" ? "running" : "pending"}. Move the cluster after it ends.`,
+        ref,
+      });
+    }
+  }
+  return errors;
+}
+
+function movesOnly(claim: KubeObject, live: KubeObject): boolean {
+  const spec = (claim.spec ?? {}) as Record<string, unknown>;
+  const liveSpec = (live.spec ?? {}) as Record<string, unknown>;
+  const downgrade = spec.allowVersionDowngrade;
+  return (
+    typeof spec.releaseRef === "string" &&
+    spec.releaseRef !== "" &&
+    (equalJSON(downgrade, liveSpec.allowVersionDowngrade) ||
+      typeof downgrade === "string") &&
+    equalJSON(outsideMove(claim), outsideMove(live))
+  );
+}
+
+function outsideMove(claim: KubeObject): unknown {
+  const metadata = { ...claim.metadata };
+  for (const key of SERVER_METADATA) delete metadata[key];
+  const spec = { ...((claim.spec ?? {}) as Record<string, unknown>) };
+  for (const field of MOVE_FIELDS) delete spec[field];
+  return { ...claim, status: undefined, metadata, spec };
+}
+
+const SERVER_METADATA = [
+  "managedFields",
+  "resourceVersion",
+  "uid",
+  "creationTimestamp",
+  "generation",
+];
 
 const BACKUP_KINDS: readonly string[] = [
   "LogicalBackupElasticsearch",

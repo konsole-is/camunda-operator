@@ -2,8 +2,9 @@
 
 import {
   adminChangeSchema,
-  claimBatchChangeSchema,
+  previewClaimMove,
   runChange,
+  runClaimMove,
   runPreview,
 } from "@/lib/write/run-change";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
@@ -20,12 +21,15 @@ export async function applyReleaseChange(change: Change): Promise<WriteResult> {
   return runChange(change, releaseSchema);
 }
 
-/** previewReleaseMove is the dry run of a move of cluster claims to a release. */
+/** previewReleaseMove is the dry run of a move of cluster claims to a release, with the checks of runClaimMove. */
 export async function previewReleaseMove(change: Change): Promise<Preview> {
-  return runPreview(change, claimBatchChangeSchema);
+  return previewClaimMove(change);
 }
 
-/** applyReleaseMove writes a move of cluster claims to a release with the writer of the settings, as one change. */
+/**
+ * applyReleaseMove writes a move of cluster claims to a release with the
+ * writer of the settings, as one change. runClaimMove says what it refuses.
+ */
 export async function applyReleaseMove(change: Change): Promise<WriteResult> {
-  return runChange(change, claimBatchChangeSchema);
+  return runClaimMove(change);
 }
