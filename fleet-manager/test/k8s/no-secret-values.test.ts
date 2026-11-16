@@ -33,6 +33,10 @@ import {
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
 import {
+  applyPlatformConfigChange,
+  previewPlatformConfigChange,
+} from "@/app/setup/platform/actions";
+import {
   applyPresetChange,
   previewPresetChange,
 } from "@/app/setup/presets/actions";
@@ -59,6 +63,7 @@ import { get } from "@/lib/k8s/read";
 import * as secrets from "@/lib/secrets";
 import * as settings from "@/lib/settings";
 import { createChangeOf } from "@/lib/write/create";
+import type { ApiErrorCode, Preview, WriteResult } from "@/lib/write/types";
 import { kubeRequest } from "../scenarios/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
@@ -282,98 +287,200 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
   },
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
+
+// A change that the schema of its action refuses never reaches the writer,
+// so its answer holds no Secret value only because nothing ran. previewed,
+// written, and refused fail on such an answer.
+function previewed(call: () => Promise<Preview>): () => Promise<Preview> {
+  return async () => {
+    const preview = await call();
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects).not.toEqual([]);
+    return preview;
+  };
+}
+
+function written(call: () => Promise<WriteResult>): () => Promise<WriteResult> {
+  return async () => {
+    const result = await call();
+    expect(result).toMatchObject({ ok: true });
+    return result;
+  };
+}
+
+function refused(
+  code: ApiErrorCode,
+  call: () => Promise<WriteResult>,
+): () => Promise<WriteResult> {
+  return async () => {
+    const result = await call();
+    const errors = result.ok ? [] : result.errors;
+    expect(errors).not.toEqual([]);
+    for (const error of errors) {
+      // A refusal of the schema of an action names no object.
+      expect(error).toMatchObject({ code, ref: expect.anything() });
+    }
+    return result;
+  };
+}
+
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
-  // The backup does not exist, so the delete refuses and writes nothing.
-  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyBackupChange": () =>
-    applyBackupChange(
-      { namespace, name: "leak" },
-      {
-        intent: "Delete backup leak",
-        apply: [],
-        delete: [
-          {
-            apiVersion: "core.camunda.io/v1",
-            kind: "LogicalBackupElasticsearch",
-            namespace,
-            name: "leak",
-          },
-        ],
-        directOnly: true,
-      },
-    ),
-  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
-    previewClaimChange(claimChange()),
+  // The backup does not exist, so the delete removes nothing.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyBackupChange": written(
+    () =>
+      applyBackupChange(
+        { namespace, name: "leak" },
+        {
+          intent: "Delete backup leak",
+          apply: [],
+          delete: [
+            {
+              apiVersion: "core.camunda.io/v1",
+              kind: "LogicalBackupElasticsearch",
+              namespace,
+              name: "leak",
+            },
+          ],
+          directOnly: true,
+        },
+      ),
+  ),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange":
+    previewed(() => previewClaimChange(claimChange())),
   // The precondition names a claim that does not exist, so the write
   // refuses with Stale and leaves nothing behind.
-  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimChange": () =>
-    applyClaimChange({
-      ...claimChange(),
-      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
-    }),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimChange": refused(
+    "Stale",
+    () =>
+      applyClaimChange({
+        ...claimChange(),
+        preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
+      }),
+  ),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete": () =>
     previewClaimDelete(claimDelete()),
   // The claim does not exist, so the delete has nothing to remove.
   "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": () =>
     applyClaimDelete(claimDelete()),
   "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimChange":
-    () => previewPlaneClaimChange(planeClaimChange()),
+    previewed(() => previewPlaneClaimChange(planeClaimChange())),
   // The precondition names a claim that does not exist, so the write
   // refuses with Stale and leaves nothing behind.
-  "app/fleet/planes/[namespace]/[name]/actions.ts#applyPlaneClaimChange": () =>
-    applyPlaneClaimChange({
-      ...planeClaimChange(),
-      preconditions: {
-        [`CamundaManagementClusterClaim/${namespace}/leak`]: "1",
-      },
-    }),
-  "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
-    previewPlaneCreate(planeCreate()),
+  "app/fleet/planes/[namespace]/[name]/actions.ts#applyPlaneClaimChange":
+    refused("Stale", () =>
+      applyPlaneClaimChange({
+        ...planeClaimChange(),
+        preconditions: {
+          [`CamundaManagementClusterClaim/${namespace}/leak`]: "1",
+        },
+      }),
+    ),
+  "app/fleet/planes/new/actions.ts#previewPlaneCreate": previewed(() =>
+    previewPlaneCreate(planeCreate(planeSpec())),
+  ),
   // The claim has no spec that the API server accepts, so the write
-  // refuses it and leaves nothing behind.
-  "app/fleet/planes/new/actions.ts#createPlane": () =>
-    createPlane(planeCreate()),
-  "app/setup/environments/actions.ts#previewEnvironmentChange": () =>
-    previewEnvironmentChange(environmentChange()),
+  // refuses it with Invalid and leaves nothing behind.
+  "app/fleet/planes/new/actions.ts#createPlane": refused("Invalid", () =>
+    createPlane(planeCreate({})),
+  ),
+  "app/setup/environments/actions.ts#previewEnvironmentChange": previewed(() =>
+    previewEnvironmentChange({
+      ...environmentChange(),
+      create: [`Environment//${namespace}`],
+    }),
+  ),
   // A precondition for an object that does not exist refuses with Stale,
   // so these writes leave nothing behind.
-  "app/setup/environments/actions.ts#applyEnvironmentChange": () =>
-    applyEnvironmentChange({
-      ...environmentChange(),
-      preconditions: { [`Environment//${namespace}`]: "1" },
+  "app/setup/environments/actions.ts#applyEnvironmentChange": refused(
+    "Stale",
+    () =>
+      applyEnvironmentChange({
+        ...environmentChange(),
+        preconditions: { [`Environment//${namespace}`]: "1" },
+      }),
+  ),
+  "app/setup/environments/actions.ts#previewNamespaceLabel": previewed(
+    async () => {
+      const live = await api.read({
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: namespace },
+      });
+      return previewNamespaceLabel({
+        ...labelChange(namespace),
+        preconditions: {
+          [`Namespace//${namespace}`]: live.metadata!.resourceVersion!,
+        },
+      });
+    },
+  ),
+  "app/setup/environments/actions.ts#applyNamespaceLabel": refused(
+    "Stale",
+    () =>
+      applyNamespaceLabel({
+        ...labelChange(`${namespace}-gone`),
+        preconditions: { [`Namespace//${namespace}-gone`]: "1" },
+      }),
+  ),
+  "app/setup/platform/actions.ts#previewPlatformConfigChange": previewed(() =>
+    previewPlatformConfigChange({
+      ...platformConfigChange(),
+      create: [`CamundaPlatformConfig//${namespace}`],
     }),
-  "app/setup/environments/actions.ts#previewNamespaceLabel": () =>
-    previewNamespaceLabel(labelChange()),
-  "app/setup/environments/actions.ts#applyNamespaceLabel": () =>
-    applyNamespaceLabel({
-      ...labelChange(),
-      preconditions: { [`Namespace//${namespace}-gone`]: "1" },
-    }),
-  "app/setup/presets/actions.ts#previewPresetChange": () =>
-    previewPresetChange(presetDelete()),
-  // The preset does not exist, so the delete refuses with Stale and
-  // removes nothing.
-  "app/setup/presets/actions.ts#applyPresetChange": () =>
-    applyPresetChange(presetDelete()),
-  "app/setup/releases/actions.ts#previewReleaseChange": () =>
-    previewReleaseChange(releaseChange()),
+  ),
   // A precondition for an object that does not exist refuses with Stale,
   // so this write leaves nothing behind.
-  "app/setup/releases/actions.ts#applyReleaseChange": () =>
+  "app/setup/platform/actions.ts#applyPlatformConfigChange": refused(
+    "Stale",
+    () =>
+      applyPlatformConfigChange({
+        ...platformConfigChange(),
+        preconditions: { [`CamundaPlatformConfig//${namespace}`]: "1" },
+      }),
+  ),
+  "app/setup/presets/actions.ts#previewPresetChange": previewed(() =>
+    previewPresetChange(presetCreate()),
+  ),
+  // The preset does not exist, so the delete refuses with Stale and
+  // removes nothing.
+  "app/setup/presets/actions.ts#applyPresetChange": refused("Stale", () =>
+    applyPresetChange(presetDelete()),
+  ),
+  "app/setup/releases/actions.ts#previewReleaseChange": previewed(() =>
+    previewReleaseChange({
+      ...releaseChange(),
+      create: [`CamundaRelease//${namespace}`],
+    }),
+  ),
+  // A precondition for an object that does not exist refuses with Stale,
+  // so this write leaves nothing behind.
+  "app/setup/releases/actions.ts#applyReleaseChange": refused("Stale", () =>
     applyReleaseChange({
       ...releaseChange(),
       preconditions: { [`CamundaRelease//${namespace}`]: "1" },
     }),
-  "app/setup/settings/actions.ts#saveSettings": async () =>
+  ),
+  "app/setup/settings/actions.ts#saveSettings": written(async () =>
     saveSettings(
       { "git.path": "y" },
       (await settings.readSettings()).resourceVersion,
     ),
+  ),
   "app/setup/settings/actions.ts#testGitConnection": () => testGitConnection(),
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function presetCreate() {
+  return createChangeOf("Create the preset leak", {
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaClusterPreset",
+    metadata: { name: namespace },
+    spec: { cluster: {} },
+  });
+}
 
 function presetDelete() {
   return {
@@ -404,6 +511,20 @@ function environmentChange() {
   };
 }
 
+function platformConfigChange() {
+  return {
+    intent: "Change the platform config leak",
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaPlatformConfig",
+        metadata: { name: namespace },
+        spec: { auth: { method: "basic" } },
+      },
+    ],
+  };
+}
+
 function releaseChange() {
   return {
     intent: "Create the release leak",
@@ -418,7 +539,7 @@ function releaseChange() {
   };
 }
 
-function labelChange() {
+function labelChange(name: string) {
   return {
     intent: "Add the namespace leak to the environment leak",
     apply: [
@@ -426,7 +547,7 @@ function labelChange() {
         apiVersion: "v1",
         kind: "Namespace",
         metadata: {
-          name: `${namespace}-gone`,
+          name,
           labels: { "fleet.camunda.io/environment": namespace },
         },
       },
@@ -470,18 +591,31 @@ function planeClaimChange() {
         apiVersion: "fleet.camunda.io/v1alpha1",
         kind: "CamundaManagementClusterClaim",
         metadata: { name: "leak", namespace },
-        spec: { suspend: true },
+        spec: planeSpec(),
       },
     ],
   };
 }
-function planeCreate() {
+function planeCreate(spec: object) {
   return createChangeOf("Create the management plane leak", {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaManagementClusterClaim",
     metadata: { name: "leak", namespace },
-    spec: {},
+    spec,
   });
+}
+function planeSpec() {
+  return {
+    environments: [namespace],
+    management: {
+      identityProvider: { oidc: {} },
+      identity: {
+        externalUrl: "https://management.example.com/identity",
+        admin: { claimName: "sub", claimValue: "42" },
+      },
+    },
+    versions: { identity: "8.9.14" },
+  };
 }
 
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
@@ -565,11 +699,12 @@ describe("no response holds a Secret value", () => {
     },
   );
 
-  it("no server action returns a Secret value", async () => {
-    for (const call of Object.values(ACTION_CALLS)) {
-      assertNoValue(JSON.stringify(await call()));
-    }
-  });
+  it.each(Object.keys(ACTION_CALLS))(
+    "server action %s returns no Secret value",
+    async (action) => {
+      assertNoValue(JSON.stringify(await ACTION_CALLS[action]()));
+    },
+  );
 
   it.each(Object.keys(LIBRARY_CALLS))(
     "%s returns no Secret value",
