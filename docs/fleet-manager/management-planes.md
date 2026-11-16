@@ -294,7 +294,7 @@ spec:
 
 When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
 
-The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then.
+The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the header shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled.
 
 A plane that no claim made has no Suspend and no Delete. While the claim is being deleted, **Suspend** and **Resume** are off.
 

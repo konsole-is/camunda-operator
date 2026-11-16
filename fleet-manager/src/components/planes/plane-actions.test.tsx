@@ -217,6 +217,28 @@ describe("PlaneActions", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("in Git mode keeps Suspend, Resume, and Delete off while a pushed delete of the claim waits for GitOps", async () => {
+    const key = "CamundaManagementClusterClaim/platform/plane-a";
+    await act(async () => {
+      actions(
+        {},
+        {
+          ok: true,
+          mode: "git",
+          commit: "a".repeat(40),
+          revisions: {},
+          paths: {},
+          deleted: { [key]: "planes/plane-a.yaml" },
+        },
+      );
+    });
+    expect(screen.getByRole("status").textContent).toContain(
+      "1 delete waiting for GitOps",
+    );
+    expect(button("Suspend")).toHaveProperty("disabled", true);
+    expect(button("Delete")).toHaveProperty("disabled", true);
+  });
+
   it("in Git mode shows the waiting line of a pushed claim and keeps the actions off", async () => {
     const key = "CamundaManagementClusterClaim/platform/plane-a";
     await act(async () => {

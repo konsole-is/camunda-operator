@@ -2,13 +2,9 @@
 
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
-import type { ClaimActions } from "@/components/fleet/claim-edit";
-import { type PendingPush, useGitPushes } from "@/components/fleet/git-pushes";
-import {
-  GitWaitingLine,
-  type PushedObject,
-} from "@/components/fleet/git-waiting-line";
-import { CHANGES_OFF } from "@/components/fleet/claim-edit";
+import { CHANGES_OFF, type ClaimActions } from "@/components/fleet/claim-edit";
+import { useGitPushes } from "@/components/fleet/git-pushes";
+import { GitWaitingLine } from "@/components/fleet/git-waiting-line";
 import { InlineConfirm } from "@/components/fleet/inline-confirm";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -27,10 +23,10 @@ import { refKey } from "@/lib/write/refs";
  * the resourceVersion of claim as its precondition. Delete links to
  * deleteHref. Both stay off while unread names a kind that the page could
  * not read, while a write runs, until the claim shows a newer version after
- * a write, and while a pushed change of the claim waits for GitOps; an open
- * confirm then closes. Suspend and Resume are off while the claim is being
- * deleted, and while writeMode is undefined. It needs a GitPushesProvider
- * and a QueryClientProvider above it.
+ * a write succeeds, and while a pushed change or delete of the claim waits
+ * for GitOps; an open confirm then closes. Suspend and Resume are off while
+ * the claim is being deleted, and while writeMode is undefined. It needs a
+ * GitPushesProvider and a QueryClientProvider above it.
  */
 export function PlaneActions({
   claim,
@@ -59,11 +55,11 @@ export function PlaneActions({
     namespace,
     name,
   });
-  const pushed = pushes.find(
-    (p): p is PendingPush & PushedObject => p.key === key && !("deleted" in p),
-  );
+  const pushed = pushes.find((p) => p.key === key);
   const liveRevision = claim.metadata?.annotations?.[REVISION_ANNOTATION];
-  const gitWaiting = pushed !== undefined && pushed.revision !== liveRevision;
+  const gitWaiting =
+    pushed !== undefined &&
+    ("deleted" in pushed || pushed.revision !== liveRevision);
   const [running, setRunning] = useState(false);
   // The version of the claim that a successful write read. The claim with
   // that version does not show the write yet.
