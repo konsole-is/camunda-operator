@@ -197,6 +197,25 @@ describe("UsedByTab", () => {
     ).toBeNull();
   });
 
+  it("shows the error of a request whose target is not valid", () => {
+    const rows = usedByRows(
+      "aws-s3",
+      registrationSources({
+        requests: [
+          pluginRequest("team-orders", "bad", {
+            registration: "aws-s3",
+            target: undefined,
+          } as never),
+        ],
+      }),
+      [],
+    );
+    render(<UsedByTab rows={rows} unread={[]} />);
+    expect(termOf("team-orders/bad", "Claim").textContent).toBe(
+      "The claim or the target of the request is not valid.",
+    );
+  });
+
   it("shows the error of a request whose conditions are not valid", () => {
     const rows = usedByRows(
       "aws-s3",

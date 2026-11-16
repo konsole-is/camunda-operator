@@ -46,7 +46,17 @@ export function UsedByTab({
             label={`${row.namespace}/${row.name}`}
           >
             <Terms>
-              <ClaimTerm row={row} />
+              {row.claim && row.target ? (
+                <ClaimTerm
+                  namespace={row.namespace}
+                  claim={row.claim}
+                  target={row.target}
+                />
+              ) : (
+                <Term label="Claim">
+                  <ValueError text={row.refError ?? ""} />
+                </Term>
+              )}
               <Term label="Environment">
                 {row.environment ?? <NotKnown kinds={environmentKinds} />}
               </Term>
@@ -160,13 +170,21 @@ export function UsedByTab({
   );
 }
 
-function ClaimTerm({ row }: { row: UsedByRow }) {
-  const plane = row.claim.kind === "CamundaManagementClusterClaim";
-  const href = `/fleet/${plane ? "planes" : "clusters"}/${encodeURIComponent(row.namespace)}/${encodeURIComponent(row.target.name)}`;
+function ClaimTerm({
+  namespace,
+  claim,
+  target,
+}: {
+  namespace: string;
+  claim: NonNullable<UsedByRow["claim"]>;
+  target: NonNullable<UsedByRow["target"]>;
+}) {
+  const plane = claim.kind === "CamundaManagementClusterClaim";
+  const href = `/fleet/${plane ? "planes" : "clusters"}/${encodeURIComponent(namespace)}/${encodeURIComponent(target.name)}`;
   return (
     <Term label={plane ? "Management plane" : "Cluster"}>
       <Link href={href} className={`${LINK} font-mono`}>
-        {row.claim.name}
+        {claim.name}
       </Link>
     </Term>
   );

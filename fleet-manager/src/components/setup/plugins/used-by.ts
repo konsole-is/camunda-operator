@@ -29,11 +29,13 @@ export type SummaryItem = NonNullable<
 export type UsedByRow = {
   namespace: string;
   name: string;
-  claim: {
+  /** claim and target are unset, with refError, when the request names no valid claim or target. */
+  claim?: {
     kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
     name: string;
   };
-  target: { kind: string; name: string };
+  target?: { kind: string; name: string };
+  refError?: string;
   /**
    * environment is the display name, else the name, of the Environment of
    * the namespace, or "No environment". It is unset while Namespace or
@@ -103,14 +105,19 @@ export function usedByRows(
         "Summary item",
         "summary items",
       );
+      const claimRef: unknown = request.spec.claimRef;
+      const target: unknown = request.spec.target;
       return {
         namespace,
         name: requestName,
-        claim: request.spec.claimRef,
-        target: {
-          kind: request.spec.target.kind,
-          name: request.spec.target.name,
-        },
+        ...(isRef(claimRef) && isRef(target)
+          ? {
+              claim: claimRef as NonNullable<UsedByRow["claim"]>,
+              target: { kind: target.kind, name: target.name },
+            }
+          : {
+              refError: "The claim or the target of the request is not valid.",
+            }),
         ...(!environmentsUnread && {
           environment: environmentName(namespace, sources),
         }),
@@ -152,6 +159,10 @@ function environmentName(
 }
 
 const SEVERITIES: readonly unknown[] = [undefined, "Info", "Warning", "Error"];
+
+function isRef(item: unknown): item is { kind: string; name: string } {
+  return isRecord(item) && isText(item.kind) && isText(item.name);
+}
 
 function isSummaryItem(item: unknown): item is SummaryItem {
   return (

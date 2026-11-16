@@ -170,6 +170,26 @@ describe("usedByRows", () => {
     }
   });
 
+  it("gives an error for a request whose claim or target is not valid", () => {
+    for (const spec of [{ target: undefined }, { claimRef: "orders" }]) {
+      const sources = registrationSources({
+        requests: [
+          pluginRequest("team-orders", "bad", {
+            registration: "aws-s3",
+            ...spec,
+          } as never),
+        ],
+      });
+      const [row] = usedByRows("aws-s3", sources, []);
+      expect(row).toMatchObject({
+        name: "bad",
+        refError: "The claim or the target of the request is not valid.",
+      });
+      expect(row.claim).toBeUndefined();
+      expect(row.target).toBeUndefined();
+    }
+  });
+
   it("knows no Grant while Grant is not read", () => {
     const sources = registrationSources({ requests: [s3Request] });
     const [row] = usedByRows(
