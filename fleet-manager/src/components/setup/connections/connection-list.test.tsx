@@ -189,6 +189,22 @@ describe("ConnectionList", () => {
     );
     expect(screen.getByText("No databases contract yet.")).toBeTruthy();
   });
+
+  it("does not say that a tab has no contract while its kind is not read", () => {
+    render(
+      <ConnectionList
+        tab="object-storage"
+        rows={{ ...rowsOf(), "object-storage": [] }}
+        errors={[{ kind: "ObjectStorageConfig", message: "forbidden" }]}
+        onTab={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read ObjectStorageConfig: forbidden",
+    );
+    expect(screen.queryByText(/contract yet/)).toBeNull();
+    expect(screen.queryByText(/No rows match/)).toBeNull();
+  });
 });
 
 describe("contractRows", () => {

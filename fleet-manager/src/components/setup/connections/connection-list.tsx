@@ -126,6 +126,7 @@ export function ConnectionList({
   errors: ReadError[];
   onTab: (tab: ConnectionTab) => void;
 }): ReactNode {
+  const unread = unreadKinds({ errors });
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
@@ -153,7 +154,12 @@ export function ConnectionList({
         </TabsList>
         {CONNECTION_TABS.map((t) => (
           <TabsContent key={t.value} value={t.value}>
-            <ContractTable label={t.label} kind={t.kind} rows={rows[t.value]} />
+            <ContractTable
+              label={t.label}
+              kind={t.kind}
+              rows={rows[t.value]}
+              read={!unread.includes(t.kind)}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -165,10 +171,12 @@ function ContractTable({
   label,
   kind,
   rows,
+  read,
 }: {
   label: string;
   kind: ContractKind;
   rows: ContractRow[];
+  read: boolean;
 }) {
   const namespaced = kind !== "ManagementAuthConfig";
   const factLabels = KEY_FACT_LABELS[kind];
@@ -180,7 +188,7 @@ function ContractTable({
     <DataTable
       label={`${label} contracts`}
       filters={[WRITER_FILTER]}
-      emptyText={rows.length === 0 ? empty : undefined}
+      emptyText={rows.length === 0 ? (read ? empty : "") : undefined}
       columns={[
         { key: "name", label: "Name", sortable: true },
         ...(namespaced
