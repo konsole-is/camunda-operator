@@ -76,6 +76,24 @@ test.beforeAll(async () => {
     .toBe("True");
 });
 
+// TEMPORARY diagnostics, reverted before merge.
+test.afterEach(async ({ page }) => {
+  const info = test.info();
+  if (info.status === info.expectedStatus) return;
+  process.stdout.write(
+    `=== page ${page.url()}\n${await page.locator("body").innerText()}\n`,
+  );
+  for (const kind of ["camundaclusterclaim", "camundacluster"]) {
+    try {
+      process.stdout.write(
+        kubectl("get", kind, name, "-n", namespace, "-o", "yaml"),
+      );
+    } catch (error) {
+      process.stdout.write(`could not read ${kind}: ${error}\n`);
+    }
+  }
+});
+
 // The resources that Keep leaves behind carry the request label.
 test.afterAll(() => {
   kubectl(
