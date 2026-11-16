@@ -75,20 +75,41 @@ describe("usedByRows", () => {
           },
         ],
         deletionPolicy: "Orphan",
-        refusedGrants: [],
+        grantsNotReady: [],
         grants: [],
       }),
     ]);
   });
 
-  it("names the refused Grants of a request whose Ready is GrantRejected", () => {
+  it("names the Grants with Ready False of a request whose Ready is GrantRejected", () => {
     const sources = registrationSources({ requests: [s3Request] });
     const [row] = usedByRows("aws-s3", sources, [
       refusedGrant("team-orders", "orders-bucket-access"),
       refusedGrant("team-other", "other-bucket-access"),
     ]);
-    expect(row.refusedGrants).toEqual(["orders-bucket-access"]);
+    expect(row.grantsNotReady).toEqual(["orders-bucket-access"]);
     expect(row.grants?.map((g) => g.name)).toEqual(["orders-bucket-access"]);
+  });
+
+  it("names a Grant of an old template of a request whose Ready is GrantRejected", () => {
+    const sources = registrationSources({ requests: [s3Request] });
+    const [row] = usedByRows("aws-s3", sources, [
+      pluginGrant(
+        "team-orders",
+        "orders-bucket-access",
+        { template: "bucket-access" },
+        {
+          "plugins.camunda.io/registration": "aws-s3",
+          "plugins.camunda.io/request": "orders-backup-storage",
+        },
+        [
+          condition("Applied", "True", "Healthy"),
+          condition("MatchesTemplate", "False", "TemplateChanged"),
+          condition("Ready", "False", "TemplateChanged"),
+        ],
+      ),
+    ]);
+    expect(row.grantsNotReady).toEqual(["orders-bucket-access"]);
   });
 
   it("leaves out the requests of other registrations", () => {
@@ -157,7 +178,7 @@ describe("usedByRows", () => {
       [refusedGrant("team-orders", "orders-bucket-access")],
     );
     expect(row.grants).toBeUndefined();
-    expect(row.refusedGrants).toBeUndefined();
+    expect(row.grantsNotReady).toBeUndefined();
   });
 
   it("gives an error for a summary, a resource, or conditions that are not valid", () => {

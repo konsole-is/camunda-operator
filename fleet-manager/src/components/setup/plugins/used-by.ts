@@ -47,10 +47,11 @@ export type UsedByRow = {
   /** error says why the conditions cannot be read. */
   error?: string;
   /**
-   * refusedGrants names the refused Grants of the request while Ready has
-   * the reason GrantRejected. It is unset while Grant is not read.
+   * grantsNotReady names the Grants of the request whose Ready is False,
+   * while the Ready of the request has the reason GrantRejected. It is unset
+   * while Grant is not read.
    */
-  refusedGrants?: string[];
+  grantsNotReady?: string[];
   /** headline is the first item of status.summary. */
   headline?: SummaryItem | Invalid;
   resources: (ResourceRef | Invalid)[];
@@ -118,9 +119,11 @@ export function usedByRows(
         ...(!healthUnknown && ready && { ready }),
         ...("error" in read && { error: read.error }),
         ...(!grantsUnread && {
-          refusedGrants:
+          grantsNotReady:
             ready?.reason === "GrantRejected"
-              ? own.filter((g) => g.state === "refused").map((g) => g.name)
+              ? own
+                  .filter((g) => g.ready?.status === "False")
+                  .map((g) => g.name)
               : [],
           grants: own,
         }),

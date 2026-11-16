@@ -115,3 +115,8 @@ export const RemovedTemplate: Story = {
     ],
   },
 };
+
+export const GrantNotRead: Story = {
+  name: "Grant not read",
+  args: { unread: ["Grant"] },
+};

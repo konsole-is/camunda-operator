@@ -8,6 +8,7 @@ import {
   isRecord,
   isText,
   itemsOf,
+  listOf,
 } from "./values";
 
 /**
@@ -26,13 +27,16 @@ export const GRANT_REASON_TEXT: Readonly<
   OverSizeLimit:
     "Makes the policy of the identity larger than the cloud allows.",
   Rejected: "The identity or the cloud refused it. The message says why.",
-  TemplateChanged: "No longer matches its template in the registration.",
+  TemplateChanged:
+    "The identity still has the statement of the old template. The controller of the option writes the Grant again from the new template.",
 };
 
 /**
- * GrantView is one Grant. state is ready while Ready is True, refused while
- * Ready is False, and waiting without Ready. error says why its conditions
- * cannot be read, and its state is then waiting.
+ * GrantView is one Grant. state is ready while Ready is True, oldTemplate
+ * while Ready is False with Applied True and MatchesTemplate False, refused
+ * while Ready is otherwise False, and waiting while Ready is neither True
+ * nor False. error says why its conditions cannot be read, and its state is
+ * then waiting.
  */
 export type GrantView = {
   namespace: string;
@@ -43,7 +47,7 @@ export type GrantView = {
   applied?: ConditionRow;
   matchesTemplate?: ConditionRow;
   ready?: ConditionRow;
-  state: "ready" | "refused" | "waiting";
+  state: "ready" | "oldTemplate" | "refused" | "waiting";
   error?: string;
 };
 
@@ -57,8 +61,12 @@ export type GrantTemplateView = {
   requiresInputs: readonly string[];
   ready: number;
   refused: number;
+  oldTemplate: number;
   grants: GrantView[];
 };
+
+/** InvalidTemplate is an error of the grant templates, with the Grants of its name when it has one. */
+export type InvalidTemplate = Invalid & { name?: string; grants: GrantView[] };
 
 /** grantView returns the view of grant. */
 export function grantView(grant: Grant): GrantView {
@@ -83,9 +91,11 @@ export function grantView(grant: Grant): GrantView {
     state:
       ready?.status === "True"
         ? "ready"
-        : ready?.status === "False"
-          ? "refused"
-          : "waiting",
+        : ready?.status !== "False"
+          ? "waiting"
+          : applied?.status === "True" && matchesTemplate?.status === "False"
+            ? "oldTemplate"
+            : "refused",
     ...("error" in read && { error: read.error }),
   };
 }
@@ -93,29 +103,45 @@ export function grantView(grant: Grant): GrantView {
 /**
  * grantTemplates gives each grant template of registration with its Grants
  * (by spec.template), in template order, and the Grants whose template the
- * registration no longer has. A template that is not valid is an Invalid.
+ * registration no longer has. A template that is not valid is an
+ * InvalidTemplate.
  */
 export function grantTemplates(
   registration: PluginRegistration,
   grants: readonly Grant[],
 ): {
-  templates: (GrantTemplateView | Invalid)[];
+  templates: (GrantTemplateView | InvalidTemplate)[];
   withoutTemplate: GrantView[];
 } {
+  const raw = listOf(registration.spec.grantTemplates) ?? [];
   const templates = itemsOf(
     registration.spec.grantTemplates,
     isTemplate,
     "Grant template",
     "grant templates",
   );
+  const nameOf = (i: number) => {
+    const item = raw[i];
+    return isRecord(item) && typeof item.name === "string"
+      ? item.name
+      : undefined;
+  };
   const names = new Set(
-    templates.flatMap((t) => ("error" in t ? [] : [t.name])),
+    templates.flatMap((t, i) => {
+      const name = "error" in t ? nameOf(i) : t.name;
+      return name === undefined ? [] : [name];
+    }),
   );
   const ofTemplate = (name: string) =>
     grants.filter((g) => g.spec.template === name).map(grantView);
   return {
-    templates: templates.map((t) => {
-      if ("error" in t) return t;
+    templates: templates.map((t, i) => {
+      if ("error" in t) {
+        const name = nameOf(i);
+        return name === undefined
+          ? { ...t, grants: [] }
+          : { ...t, name, grants: ofTemplate(name) };
+      }
       const views = ofTemplate(t.name);
       return {
         name: t.name,
@@ -125,6 +151,7 @@ export function grantTemplates(
         requiresInputs: t.requiresInputs ?? [],
         ready: views.filter((g) => g.state === "ready").length,
         refused: views.filter((g) => g.state === "refused").length,
+        oldTemplate: views.filter((g) => g.state === "oldTemplate").length,
         grants: views,
       };
     }),

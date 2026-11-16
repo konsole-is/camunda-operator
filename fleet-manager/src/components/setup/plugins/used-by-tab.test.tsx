@@ -99,7 +99,7 @@ describe("UsedByTab", () => {
     expect(termOf(panel, "Deletion policy").textContent).toBe("Orphan");
   });
 
-  it("names the refused Grant of a request whose Ready is GrantRejected", () => {
+  it("names the Grant with Ready False of a request whose Ready is GrantRejected", () => {
     const rows = usedByRows(
       "aws-s3",
       registrationSources({ requests: [s3Request] }),
@@ -114,7 +114,7 @@ describe("UsedByTab", () => {
       within(ready).getByText("A Grant of the request is refused"),
     ).toBeTruthy();
     expect(
-      within(ready).getByText("Refused Grants: orders-bucket-access"),
+      within(ready).getByText("Grants with Ready False: orders-bucket-access"),
     ).toBeTruthy();
   });
 
@@ -165,6 +165,9 @@ describe("UsedByTab", () => {
       termOf("team-orders/orders-secondary-storage", "Ready").textContent,
     ).toBe("Ready: Not known");
     expect(
+      termOf("team-orders/orders-secondary-storage", "Headline").textContent,
+    ).toBe("Not known: PluginRequest is not read.");
+    expect(
       screen.getByText(
         "The list can miss requests: PluginRequest is not read.",
       ),
@@ -187,7 +190,7 @@ describe("UsedByTab", () => {
       "Not known: Environment is not read.",
     );
     expect(
-      within(termOf(panel, "Ready")).queryByText(/Refused Grants/),
+      within(termOf(panel, "Ready")).queryByText(/Grants with Ready False/),
     ).toBeNull();
   });
 

@@ -51,7 +51,7 @@ describe("GrantsTab", () => {
     );
     expect(
       screen.getByText(
-        "This option owns the policies of its role and writes no Grant.",
+        "This option has no grant template, so it writes no Grant.",
       ),
     ).toBeTruthy();
   });
@@ -104,7 +104,7 @@ describe("GrantsTab", () => {
     },
   );
 
-  it("shows TemplateChanged of MatchesTemplate", () => {
+  it("shows a Grant of an old template as applied, not as refused", () => {
     tab([
       grant("c", "bucket-access", [
         condition("Applied", "True", "Healthy"),
@@ -112,7 +112,61 @@ describe("GrantsTab", () => {
         condition("Ready", "False", "TemplateChanged"),
       ]),
     ]);
+    const panel = screen.getByRole("region", { name: "bucket-access" });
+    expect(
+      within(panel).getByText("0 ready, 0 refused, 1 on an old template"),
+    ).toBeTruthy();
     expect(screen.getByText(GRANT_REASON_TEXT.TemplateChanged)).toBeTruthy();
+  });
+
+  it("shows no condition of a Grant while Grant is not read", () => {
+    tab(
+      [
+        grant("a", "bucket-access", [
+          condition("Applied", "True", "Healthy"),
+          condition("MatchesTemplate", "True", "Healthy"),
+          condition("Ready", "True", "Healthy"),
+        ]),
+        grant("old", "gone", [
+          condition("Applied", "False", "Rejected"),
+          condition("Ready", "False", "Rejected"),
+        ]),
+      ],
+      ["Grant"],
+    );
+    expect(screen.queryByRole("list", { name: /Conditions of/ })).toBeNull();
+    expect(screen.queryByText(GRANT_REASON_TEXT.Rejected)).toBeNull();
+    for (const type of ["Applied", "MatchesTemplate", "Ready"]) {
+      expect(screen.getAllByText(`${type}: Not known`)).toHaveLength(2);
+    }
+    expect(
+      screen.getByText("The lists can miss Grants: Grant is not read."),
+    ).toBeTruthy();
+  });
+
+  it("lists a Grant of a template that is not valid under that template", () => {
+    render(
+      <GrantsTab
+        registration={pluginRegistration("bad", {
+          grantTemplates: [
+            { name: "x", format: "aws-iam-statement", template: "Allow" },
+          ] as never,
+        })}
+        grants={[grant("a", "x", [])]}
+        unread={[]}
+        now={NOW}
+      />,
+    );
+    const panel = screen.getByRole("region", { name: "x" });
+    expect(within(panel).getByRole("alert").textContent).toBe(
+      "Grant template 1 is not a valid grant template.",
+    );
+    expect(within(panel).getByText("team-orders/a")).toBeTruthy();
+    expect(
+      screen.queryByRole("region", {
+        name: "Grants of a template the registration no longer has",
+      }),
+    ).toBeNull();
   });
 
   it("lists a Grant of a template that the registration no longer has", () => {
@@ -148,7 +202,7 @@ describe("GrantsTab", () => {
     );
     expect(
       screen.queryByText(
-        "This option owns the policies of its role and writes no Grant.",
+        "This option has no grant template, so it writes no Grant.",
       ),
     ).toBeNull();
     expect(screen.getByText("This option has no grant template.")).toBeTruthy();

@@ -13,7 +13,7 @@ const MUTED = "block text-xs text-muted";
  * environment, OutputsReady and Ready, its headline, its resources, its
  * Grants, and its deletion policy. unread holds the kinds that are not
  * read: with PluginRequest in it, the tab never says that no claim uses the
- * option.
+ * option, and shows no condition and no headline of a request.
  */
 export function UsedByTab({
   rows,
@@ -70,10 +70,10 @@ export function UsedByTab({
                       unknown={row.healthUnknown}
                     />
                     {row.ready?.reason === "GrantRejected" &&
-                      (row.refusedGrants ? (
-                        row.refusedGrants.length > 0 && (
+                      (row.grantsNotReady ? (
+                        row.grantsNotReady.length > 0 && (
                           <span className="block text-xs text-warn">
-                            {`Refused Grants: ${row.refusedGrants.join(", ")}`}
+                            {`Grants with Ready False: ${row.grantsNotReady.join(", ")}`}
                           </span>
                         )
                       ) : (
@@ -83,7 +83,9 @@ export function UsedByTab({
                 </>
               )}
               <Term label="Headline">
-                {!row.headline ? (
+                {row.healthUnknown ? (
+                  <NotKnown kinds={["PluginRequest"]} />
+                ) : !row.headline ? (
                   <span className="text-muted">None</span>
                 ) : "error" in row.headline ? (
                   <ValueError text={row.headline.error} />

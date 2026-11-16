@@ -84,8 +84,6 @@ test("a registration opens with its tabs and the claims that use it", async ({
   await checkPage(page, "registration-used-by");
   await page.getByRole("tab", { name: "Grants" }).click();
   await expect(
-    page.getByText(
-      "This option owns the policies of its role and writes no Grant.",
-    ),
+    page.getByText("This option has no grant template, so it writes no Grant."),
   ).toBeVisible();
 });

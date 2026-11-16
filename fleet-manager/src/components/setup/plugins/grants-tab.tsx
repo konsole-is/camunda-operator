@@ -4,21 +4,24 @@ import { ConditionList } from "@/components/fleet/condition-list";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { ConditionBadge } from "./condition-badge";
 import {
   GRANT_REASON_TEXT,
   type GrantTemplateView,
   type GrantView,
+  type InvalidTemplate,
   grantTemplates,
 } from "./grants";
 import { NotKnown, ValueError } from "./tab-parts";
 
 const WITHOUT_TEMPLATE = "Grants of a template the registration no longer has";
+const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
 
 /**
  * GrantsTab shows each grant template of registration with its Grants of
  * grants, and the Grants of a template that the registration no longer has.
- * While Grant is in unread, it shows no counts and says that the Grants are
- * not known. now is the time that the ages count to.
+ * While Grant is in unread, it shows no counts and no condition of a Grant,
+ * and names the kind. now is the time that the ages count to.
  */
 export function GrantsTab({
   registration,
@@ -41,7 +44,7 @@ export function GrantsTab({
       </div>
     ) : (
       <p className="text-sm text-muted">
-        This option owns the policies of its role and writes no Grant.
+        This option has no grant template, so it writes no Grant.
       </p>
     );
   return (
@@ -53,7 +56,12 @@ export function GrantsTab({
       )}
       {templates.map((template, i) =>
         "error" in template ? (
-          <ValueError key={i} text={template.error} />
+          <InvalidTemplatePanel
+            key={i}
+            template={template}
+            unread={grantsUnread}
+            now={now}
+          />
         ) : (
           <TemplatePanel
             key={template.name}
@@ -65,7 +73,7 @@ export function GrantsTab({
       )}
       {withoutTemplate.length > 0 && (
         <Panel label={WITHOUT_TEMPLATE}>
-          <Grants grants={withoutTemplate} now={now} />
+          <Grants grants={withoutTemplate} unread={grantsUnread} now={now} />
         </Panel>
       )}
     </div>
@@ -103,7 +111,7 @@ function TemplatePanel({
           {unread ? (
             <NotKnown kinds={["Grant"]} />
           ) : (
-            `${template.ready} ready, ${template.refused} refused`
+            `${template.ready} ready, ${template.refused} refused${template.oldTemplate > 0 ? `, ${template.oldTemplate} on an old template` : ""}`
           )}
         </Term>
       </Terms>
@@ -116,7 +124,7 @@ function TemplatePanel({
         <code>{template.template}</code>
       </pre>
       {template.grants.length > 0 ? (
-        <Grants grants={template.grants} now={now} />
+        <Grants grants={template.grants} unread={unread} now={now} />
       ) : (
         !unread && (
           <p className="text-sm text-muted">No Grant of this template yet.</p>
@@ -126,14 +134,35 @@ function TemplatePanel({
   );
 }
 
-/** Grants lists grants, each with its cluster, its request, and its conditions. */
-export function Grants({
+function InvalidTemplatePanel({
+  template,
+  unread,
+  now,
+}: {
+  template: InvalidTemplate;
+  unread: boolean;
+  now: string;
+}) {
+  if (template.name === undefined) return <ValueError text={template.error} />;
+  return (
+    <Panel label={template.name}>
+      <ValueError text={template.error} />
+      {template.grants.length > 0 && (
+        <Grants grants={template.grants} unread={unread} now={now} />
+      )}
+    </Panel>
+  );
+}
+
+function Grants({
   grants,
+  unread,
   now,
 }: {
   grants: readonly GrantView[];
+  unread: boolean;
   now: string;
-}): ReactNode {
+}) {
   return (
     <ul className="flex flex-col divide-y divide-divider">
       {grants.map((grant) => (
@@ -150,7 +179,13 @@ export function Grants({
               </span>
             </Term>
           </Terms>
-          {grant.error ? (
+          {unread ? (
+            <span className="flex flex-wrap gap-1.5">
+              {GRANT_CONDITIONS.map((type) => (
+                <ConditionBadge key={type} type={type} unknown />
+              ))}
+            </span>
+          ) : grant.error ? (
             <ValueError text={grant.error} />
           ) : (
             <>
@@ -159,6 +194,11 @@ export function Grants({
                 conditions={conditionsOf(grant)}
                 now={now}
               />
+              {grant.state === "oldTemplate" && (
+                <p className="text-sm text-text-2">
+                  {GRANT_REASON_TEXT.TemplateChanged}
+                </p>
+              )}
               {refusal(grant) && (
                 <p className="text-sm text-warn">{refusal(grant)}</p>
               )}
