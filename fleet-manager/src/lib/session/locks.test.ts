@@ -13,13 +13,13 @@ import { LOCK_FIELDS } from "@/lib/fields/locks";
 import { SLOT_FIELDS } from "@/lib/fields/slots";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import { clusterLocks, planeLocks } from "./locks";
+import { clusterLocks, filledClaimSteps, planeLocks } from "./locks";
 import { openSession, setValue } from "./session";
 
 const SELECTION =
   "spec.plugins[section=volume-encryption,registration=aws-ebs-kms]";
 
-function locks() {
+function fields() {
   const spec = {
     version: "8.9.4",
     serviceAccount: { name: "orders" },
@@ -69,17 +69,17 @@ function locks() {
       },
     },
   } as unknown as ResolvedPolicy;
-  return clusterLocks(
-    clusterFields({
-      cluster,
-      merged: mergeCluster(undefined, undefined, spec as CamundaClusterSpec),
-      claim,
-      policy,
-      sections: [section],
-      registrations: [],
-    }),
-  );
+  return clusterFields({
+    cluster,
+    merged: mergeCluster(undefined, undefined, spec as CamundaClusterSpec),
+    claim,
+    policy,
+    sections: [section],
+    registrations: [],
+  });
 }
+
+const locks = () => clusterLocks(fields());
 
 describe("clusterLocks", () => {
   it("locks spec.cluster.version by the release", () => {
@@ -130,6 +130,16 @@ describe("clusterLocks", () => {
     ];
     for (const row of names)
       for (const name of row) expect(name).toMatch(/^[A-Za-z][A-Za-z0-9]*$/);
+  });
+});
+
+describe("filledClaimSteps", () => {
+  it("gives the claim steps of each field that a section fills", () => {
+    expect(filledClaimSteps(fields())).toEqual([
+      ["spec", "cluster", "zeebe", "storageClassName"].map((field) => ({
+        field,
+      })),
+    ]);
   });
 });
 

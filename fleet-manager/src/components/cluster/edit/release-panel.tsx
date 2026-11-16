@@ -15,7 +15,7 @@ import { claimAfter, fieldLock } from "@/lib/session";
 import type { ClusterSlotContext } from "../slots";
 import { useClusterEdit } from "./cluster-edit";
 import { downgradeDone } from "./downgrade";
-import { type ReleaseOption, releaseChoices } from "./release-options";
+import { releaseChoices, releaseLabel } from "./release-options";
 
 const RELEASE: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
 const PRESET: Step[] = [{ field: "spec" }, { field: "presetRef" }];
@@ -96,7 +96,7 @@ export function ReleasePanel({ context }: { context: ClusterSlotContext }) {
             value={o.name}
             disabled={o.disabled !== undefined && !o.isCurrent}
           >
-            {releaseLabel(o)}
+            {releaseLabel(o, o.isDefault)}
           </NativeSelectOption>
         ))}
       </Choice>
@@ -149,15 +149,6 @@ export function ReleasePanel({ context }: { context: ClusterSlotContext }) {
       </Choice>
     </div>
   );
-}
-
-function releaseLabel(o: ReleaseOption): string {
-  const label = `${o.version} (${o.name})`;
-  if (o.disabled) return `${label}: ${o.disabled}`;
-  const marks = [o.isDefault && "Default", o.downgrade && "downgrade"].filter(
-    Boolean,
-  );
-  return marks.length > 0 ? `${label}, ${marks.join(", ")}` : label;
 }
 
 // presetNames returns the names of the presets that the Environment
