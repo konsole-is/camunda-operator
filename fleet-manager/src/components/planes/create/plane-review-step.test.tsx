@@ -25,7 +25,7 @@ import type {
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
-import { PlaneReviewStep } from "./plane-review-step";
+import { ATTACH_CAUTION, PlaneReviewStep } from "./plane-review-step";
 
 afterEach(cleanup);
 
@@ -95,11 +95,13 @@ function review(
       mode: "direct" as const,
     })),
     onWritten = vi.fn(),
+    onBack,
   }: {
     mode?: WriteMode;
     preview?: () => Promise<Preview>;
     create?: (change: Change) => Promise<WriteResult>;
     onWritten?: (result: WriteResult) => void;
+    onBack?: () => void;
   } = {},
 ) {
   const change = planeCreateChange(d, ctx);
@@ -113,6 +115,7 @@ function review(
       preview={preview}
       create={create}
       onWritten={onWritten}
+      onBack={onBack}
     />,
   );
   return { change, create, onWritten };
@@ -137,12 +140,17 @@ describe("PlaneReviewStep", () => {
       "Creates the CamundaManagementCluster plane-a.",
       "The plane writes the contract plane-a.",
     ]);
+    expect(screen.queryByText(ATTACH_CAUTION)).toBeNull();
+    await waitFor(() => expect(confirm().disabled).toBe(false));
+  });
+
+  it("says that an attaching cluster restarts only when the plane runs Console", () => {
+    review({ ...draft, console: true });
     expect(
       screen.getByText(
         "Each cluster that attaches restarts its pods once, because it gets the Console settings.",
       ),
     ).toBeTruthy();
-    await waitFor(() => expect(confirm().disabled).toBe(false));
   });
 
   it("names the new namespace and the access option when the draft has them", () => {
@@ -189,6 +197,17 @@ describe("PlaneReviewStep", () => {
     expect(confirm().disabled).toBe(true);
     await userEvent.click(confirm());
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("puts Back beside Create and calls onBack", async () => {
+    const onBack = vi.fn();
+    review(draft, { onBack });
+    const back = within(
+      screen.getByRole("region", { name: "Review" }),
+    ).getByRole("button", { name: "Back" });
+    expect(back.parentElement).toBe(confirm().parentElement);
+    await userEvent.click(back);
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("Create sends the change once and gives the result to onWritten", async () => {

@@ -16,9 +16,9 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
-import { useAnswered } from "@/lib/k8s/use-answered";
 import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
 import type { PodWarnings, Warning } from "@/lib/warnings";

@@ -111,6 +111,11 @@ describe("the Storybook stories", () => {
       "ConnectionList",
       "UsersTable",
       "ConnectionDetail",
+      "PresetList",
+      "PresetSettings",
+      "InheritingTable",
+      "PresetDetail",
+      "FactsList",
     ]) {
       expect(components).toContain(name);
     }

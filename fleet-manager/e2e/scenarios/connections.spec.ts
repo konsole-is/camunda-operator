@@ -20,6 +20,10 @@ test("lists a contract created by hand with its user", async ({ page }) => {
   await expect(page).toHaveURL(
     /\/setup\/connections\/object-storage\/team-a\/backups$/,
   );
+  const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
+  await expect(crumbs.locator('[aria-current="page"]')).toHaveText(
+    "team-a/backups",
+  );
   const users = page.getByRole("region", { name: "Used by" });
   const user = users
     .getByRole("row")

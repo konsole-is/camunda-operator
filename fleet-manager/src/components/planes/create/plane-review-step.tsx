@@ -5,8 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { ReviewPanel } from "@/components/fleet/review-panel";
 import { objectDiff } from "@/lib/diff";
 import {
-  type PlaneClaim,
   type PlaneContext,
+  type PlaneCreateClaim,
   type PlaneDraft,
 } from "@/lib/planes/draft";
 import {
@@ -31,7 +31,8 @@ export const ATTACH_CAUTION =
  * what change creates, and the confirm. It previews change once for each
  * change, and Create stays disabled until that preview is clean and while
  * a write runs or while blocked. Create sends change to create once and
- * gives the result to onWritten, also when the write is refused.
+ * gives the result to onWritten, also when the write is refused. With
+ * onBack, Back sits beside Create.
  */
 export function PlaneReviewStep({
   change,
@@ -43,9 +44,10 @@ export function PlaneReviewStep({
   create,
   onWritten,
   blocked: held = false,
+  onBack,
 }: {
   change: Change;
-  claim: PlaneClaim;
+  claim: PlaneCreateClaim;
   draft: PlaneDraft;
   ctx: PlaneContext;
   mode: WriteMode;
@@ -53,6 +55,7 @@ export function PlaneReviewStep({
   create: (change: Change) => Promise<WriteResult>;
   onWritten: (result: WriteResult) => void;
   blocked?: boolean;
+  onBack?: () => void;
 }) {
   const key = JSON.stringify(change);
   const [previewed, setPreviewed] = useState<{
@@ -110,7 +113,7 @@ export function PlaneReviewStep({
       diffLabel="The claim"
       lines={objectDiff(undefined, claim)}
       effects={effectsOf(draft, ctx, claim)}
-      caution={ATTACH_CAUTION}
+      caution={draft.console ? ATTACH_CAUTION : undefined}
       notices={
         refusals.length > 0 && (
           <div
@@ -133,6 +136,7 @@ export function PlaneReviewStep({
       confirmLabel="Create"
       pending={writing || blocked}
       onConfirm={confirm}
+      onCancel={onBack}
     />
   );
 }
@@ -140,7 +144,7 @@ export function PlaneReviewStep({
 function effectsOf(
   draft: PlaneDraft,
   ctx: PlaneContext,
-  claim: PlaneClaim,
+  claim: PlaneCreateClaim,
 ): string[] {
   const { name, namespace } = claim.metadata;
   const label = (registration: string | undefined) =>

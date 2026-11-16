@@ -5,9 +5,9 @@ import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { useAnswered } from "@/lib/k8s/use-answered";
 import type { ContractUserSources } from "@/lib/usage";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
 

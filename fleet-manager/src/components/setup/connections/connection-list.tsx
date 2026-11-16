@@ -6,6 +6,7 @@ import { DataTable } from "@/components/fleet/data-table";
 import { type ConditionLike, describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import type { ReadError } from "@/components/planes/planes-table";
+import { unreadKinds } from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { byCodeUnit } from "@/lib/policy";
 import {
@@ -58,10 +59,7 @@ export function contractRows(
   usage = contractUsage(sources),
 ): ContractRow[] {
   const requests = requestsOf(sources);
-  const unread = unreadUserKinds(
-    kind,
-    (sources.errors ?? []).map((e) => e.kind),
-  );
+  const unread = unreadUserKinds(kind, unreadKinds(sources));
   return contractsOf(sources, kind)
     .map((contract) => {
       const ref: ContractRef = {

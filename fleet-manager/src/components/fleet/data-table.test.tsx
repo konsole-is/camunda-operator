@@ -256,4 +256,43 @@ describe("DataTable", () => {
     expect(screen.getByRole("table").contains(text)).toBe(false);
     expect(screen.getAllByRole("row")).toHaveLength(1);
   });
+
+  it("matches a row whose filter value is a list when the list holds the picked value", async () => {
+    const listRow = (id: string, environment: string | string[]) => ({
+      id,
+      cells: { name: id, version: "" },
+      filters: { environment },
+    });
+    render(
+      <DataTable
+        label="Releases"
+        columns={columns}
+        rows={[
+          listRow("a", ["prod", "staging"]),
+          listRow("b", "staging"),
+          listRow("c", []),
+        ]}
+        filters={[
+          {
+            key: "environment",
+            label: "Environment",
+            options: [
+              { value: "prod", label: "Production" },
+              { value: "staging", label: "Staging" },
+            ],
+          },
+        ]}
+      />,
+    );
+    const names = () =>
+      screen
+        .getAllByRole("row")
+        .slice(1)
+        .map((r) => r.querySelector("td")?.textContent);
+    const environment = screen.getByRole("combobox", { name: "Environment" });
+    await userEvent.selectOptions(environment, "prod");
+    expect(names()).toEqual(["a"]);
+    await userEvent.selectOptions(environment, "staging");
+    expect(names()).toEqual(["a", "b"]);
+  });
 });

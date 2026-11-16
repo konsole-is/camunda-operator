@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import { StatusChip } from "@/components/fleet/status-chip";
 import type { ReadError } from "@/components/planes/planes-table";
+import { unreadKinds } from "@/components/setup/releases/rows";
 import {
   type ContractRef,
   contractKey,
@@ -61,10 +62,7 @@ export function ConnectionDetail({
   const ready = readyOf(contract);
   const writer = contractWriter(contract, requestsOf(sources), sources.planes);
   const users = contractUsage(sources).get(contractKey(target)) ?? [];
-  const unread = unreadUserKinds(
-    target.kind,
-    sources.errors.map((e) => e.kind),
-  );
+  const unread = unreadUserKinds(target.kind, unreadKinds(sources));
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">

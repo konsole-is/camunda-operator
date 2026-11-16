@@ -142,9 +142,9 @@ export function ServedStep({
 export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
   return (
     <section className="flex min-w-0 flex-col gap-2">
-      <h2 className="font-heading text-base font-semibold">
+      <h3 className="font-heading text-base font-semibold">
         Expected clusters
-      </h2>
+      </h3>
       <p className="text-sm text-muted">
         Expected results. The operator decides when the plane runs, and the
         plane then reports the result for each cluster.

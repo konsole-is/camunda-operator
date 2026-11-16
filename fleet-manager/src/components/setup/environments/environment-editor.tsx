@@ -105,7 +105,11 @@ export function EnvironmentEditor({
   const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
 
-  const settings = optionSettings(sources.registrations, draft.spec);
+  const settings = optionSettings(
+    sources.registrations,
+    draft.spec,
+    sources.sections,
+  );
   const errors = [
     ...draftErrors(draft, {
       isNew,
