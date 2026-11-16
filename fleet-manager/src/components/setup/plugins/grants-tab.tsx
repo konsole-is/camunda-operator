@@ -10,13 +10,12 @@ import {
   type GrantTemplateView,
   type GrantView,
   type InvalidTemplate,
+  TEMPLATE_GONE,
+  WITHOUT_TEMPLATE,
   grantTemplates,
 } from "./grants";
 import { NotKnown, ValueError } from "./tab-parts";
 
-const WITHOUT_TEMPLATE = "Grants of a template the registration no longer has";
-const TEMPLATE_GONE =
-  "The role keeps the statement of each of these Grants until the controller of this registration deletes that Grant.";
 const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
 
 /**

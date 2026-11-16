@@ -99,15 +99,29 @@ function registration(
 
 const keyInput = { name: "keyRef", from: "encryption-key/keyRef" };
 
+// readObjects is the grant template of the Grants of fixtureGrant.
+const readObjects = {
+  name: "read-objects",
+  format: "aws-iam-statement" as const,
+  template: {
+    Effect: "Allow",
+    Action: ["s3:GetObject"],
+    Resource: "arn:aws:s3:::{{ .Inputs.bucket }}/*",
+  },
+};
+
 /** fixtureRegistrations are the registrations of the selections of the fixture claim. */
 export const fixtureRegistrations: Resource<"PluginRegistration">[] = [
   registration("aws-iam-role", "AWS IAM role", ["cloud-identity"]),
-  registration("aws-kms-key", "AWS KMS key", ["encryption-key"]),
+  registration("aws-kms-key", "AWS KMS key", ["encryption-key"], {
+    grantTemplates: [readObjects],
+  }),
   registration("aws-ebs", "Amazon EBS", ["volume-encryption"], {
     inputs: [{ ...keyInput, required: true }],
   }),
   registration("aws-s3", "Amazon S3", ["backup-storage"], {
     inputs: [keyInput],
+    grantTemplates: [readObjects],
   }),
   registration(
     "existing-secondary-storage",
@@ -347,9 +361,9 @@ export const fixtureRequests: Resource<"PluginRequest">[] = [
 ];
 
 /**
- * fixtureGrant returns a Grant of the fixture cluster that the request of
- * section owns, with conditions as its status. Without conditions it has
- * no status.
+ * fixtureGrant returns a Grant of the fixture cluster and of the template
+ * read-objects that the request of section owns, with conditions as its
+ * status. Without conditions it has no status.
  */
 export function fixtureGrant(
   name: string,
@@ -362,7 +376,12 @@ export function fixtureGrant(
     metadata: {
       namespace: NAMESPACE,
       name,
-      labels: { [REQUEST_LABEL]: requestNameOf(section) },
+      labels: {
+        [REQUEST_LABEL]: requestNameOf(section),
+        [REGISTRATION_LABEL]:
+          fixtureSelections.find((s) => s.section === section)?.registration ??
+          "",
+      },
       ownerReferences: [
         {
           apiVersion: PLUGINS,

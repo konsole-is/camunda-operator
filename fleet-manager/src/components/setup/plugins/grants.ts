@@ -31,6 +31,14 @@ export const GRANT_REASON_TEXT: Readonly<
     "The role still has the statement that this Grant holds. The controller of this registration writes the Grant from its own template at its next reconcile. If this state stays, the registration was changed outside its controller, and the old statement stays.",
 };
 
+/** WITHOUT_TEMPLATE is the title of the Grants of a template that their registration no longer has. */
+export const WITHOUT_TEMPLATE =
+  "Grants of a template the registration no longer has";
+
+/** TEMPLATE_GONE says what happens to the Grants of WITHOUT_TEMPLATE. */
+export const TEMPLATE_GONE =
+  "The role keeps the statement of each of these Grants until the controller of this registration deletes that Grant.";
+
 /**
  * GrantView is one Grant. state is ready while Ready is True, oldTemplate
  * while Ready is False with Applied True and MatchesTemplate False, refused

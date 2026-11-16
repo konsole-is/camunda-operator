@@ -5,6 +5,12 @@ import { DELETION_LABELS } from "@/components/fleet/deletion-choice";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import {
+  GRANT_REASON_TEXT,
+  TEMPLATE_GONE,
+  WITHOUT_TEMPLATE,
+} from "@/components/setup/plugins/grants";
+import type { Invalid } from "@/components/setup/plugins/values";
+import {
   TableBody,
   TableCell,
   TableHead,
@@ -19,7 +25,6 @@ import { NotRead } from "./not-read";
 import type {
   ConnectedRef,
   GrantRow,
-  Invalid,
   RequestDetail,
   SummaryRow,
 } from "./requests";
@@ -92,11 +97,25 @@ export function RequestOverview({
         >
           {grantsUnread && <NotRead kinds={["Grant"]} />}
           <Grants
-            grants={detail.grants}
+            grants={detail.grants.filter((g) => !g.templateGone)}
             withRequest={detail.clusterGrants}
             unread={grantsUnread}
             now={now}
           />
+          {detail.grants.some((g) => g.templateGone) && (
+            <div className="flex flex-col gap-2 border-t border-border pt-3">
+              <p className="text-sm font-medium text-text">
+                {WITHOUT_TEMPLATE}
+              </p>
+              <p className="text-sm text-text-2">{TEMPLATE_GONE}</p>
+              <Grants
+                grants={detail.grants.filter((g) => g.templateGone)}
+                withRequest={detail.clusterGrants}
+                unread={grantsUnread}
+                now={now}
+              />
+            </div>
+          )}
         </DetailSection>
       )}
       {detail.outputs.length > 0 && (
@@ -301,14 +320,14 @@ function Grants({
 
 // GrantStateLine says in words what the conditions of a Grant that is not
 // Ready mean. A Grant whose template changed still holds the permission of
-// the old template, so it is not refused.
+// the old template, so it is not refused. TEMPLATE_GONE above the Grants of
+// a template that is gone says what happens to them.
 function GrantStateLine({ grant }: { grant: GrantRow }) {
   switch (grant.state) {
     case "oldTemplate":
-      return (
+      return grant.templateGone ? null : (
         <p className="text-sm text-text-2">
-          Applied with the old template. The controller of the option writes the
-          Grant again from the new template.
+          {GRANT_REASON_TEXT.TemplateChanged}
         </p>
       );
     case "refused":

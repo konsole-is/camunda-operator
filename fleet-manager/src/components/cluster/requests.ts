@@ -1,5 +1,20 @@
 // This module runs in the browser and on the server.
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import {
+  type GrantView,
+  grantTemplates,
+  grantView,
+} from "@/components/setup/plugins/grants";
+import {
+  type Invalid,
+  conditionsOf,
+  isInvalid,
+  isRecord,
+  isText,
+  itemsOf,
+} from "@/components/setup/plugins/values";
+import type { Grant } from "@/generated/crds/grant";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { controlledBy, requestPolicy } from "@/lib/claims/deletion";
 import { resourceFate, type ResourceRow } from "@/lib/claims/resources";
@@ -11,15 +26,11 @@ import {
   byCodeUnit,
   deletionPolicyOf,
   type DeletionPolicy,
-  isObject,
   own,
   splitFrom,
   targetServiceAccount,
 } from "@/lib/policy";
-import { REQUEST_LABEL } from "@/lib/labels";
-
-/** Invalid stands for a row of a live object that has a value of the wrong type, with the reason. */
-export type Invalid = { error: string };
+import { REGISTRATION_LABEL } from "@/lib/labels";
 
 /** SummaryRow is one summary item of a request. A missing severity is Info. */
 export type SummaryRow = {
@@ -51,27 +62,17 @@ export type LinkRow = { name: string; url: string };
 export type ResourceFateRow = ResourceRow & { fate?: "Kept" | "Deleted" };
 
 /**
- * GrantState is ready while Ready is True, oldTemplate while Ready is False
- * with Applied True and MatchesTemplate False, refused while Ready is
- * otherwise False, and waiting while Ready is neither, or its conditions
- * cannot be read.
+ * GrantRow is the view of one Grant with all its conditions. statement is
+ * spec.fragment as indented JSON. request is set only in the grants of the
+ * cloud identity. templateGone is true when the registration of the Grant
+ * is in the page data and no longer has its template. errors name each
+ * value of the wrong type, and a value that has one is absent.
  */
-export type GrantState = "ready" | "oldTemplate" | "refused" | "waiting";
-
-/**
- * GrantRow is one Grant. statement is spec.fragment as indented JSON.
- * request is the request that asked for it, set only in the grants of the
- * cloud identity. errors name each value of the wrong type, and a value
- * that has one is absent.
- */
-export type GrantRow = {
-  name: string;
+export type GrantRow = Omit<GrantView, "error"> & {
   template: string;
   statement?: string;
-  request?: string;
   conditions: ConditionRow[];
-  ready?: ConditionRow;
-  state: GrantState;
+  templateGone: boolean;
   errors: string[];
 };
 
@@ -183,14 +184,27 @@ export function requestDetail(input: {
   const outputs = status?.outputs;
 
   return {
-    summary: itemsOf(status?.summary, summaryRow, "Summary item", "summary"),
+    summary: itemsOf(
+      status?.summary,
+      isSummaryItem,
+      "Summary item",
+      "summary",
+    ).map((item) =>
+      isInvalid(item)
+        ? item
+        : {
+            label: item.label,
+            value: item.value,
+            severity: item.severity ?? "Info",
+          },
+    ),
     ...(typeof status?.summaryTime === "string" && {
       summaryTime: status.summaryTime,
     }),
     outputs: outputRows(outputs, slot),
     inputs: (registration?.spec.inputs ?? []).map((i) => {
       const from = splitFrom(i.from);
-      const value = isObject(request.spec.inputs)
+      const value = isRecord(request.spec.inputs)
         ? request.spec.inputs[i.name]
         : undefined;
       return {
@@ -201,23 +215,31 @@ export function requestDetail(input: {
         ...(typeof value === "string" && { value }),
       };
     }),
-    links: itemsOf(status?.links, linkRow, "Link", "links"),
+    links: itemsOf(status?.links, isLink, "Link", "links").map((item) =>
+      isInvalid(item) ? item : { name: item.name, url: item.url },
+    ),
     resources: connected
       ? []
-      : itemsOf(status?.resources, resourceRow, "Resource", "resources").map(
+      : itemsOf(status?.resources, isResource, "Resource", "resources").map(
           (row) =>
-            "error" in row || !controlled
+            isInvalid(row) || !controlled
               ? row
               : { ...row, fate: resourceFate(row, policy) },
         ),
     controlled,
     policy,
-    grants: grantRows(input.grants, request, slot, input.cluster),
+    grants: grantRows(
+      input.grants,
+      request,
+      slot,
+      input.cluster,
+      registrations,
+    ),
     clusterGrants: slot === "workloadIdentity",
     ...(connected && { connected }),
     ...(slot === "connectorsIdentity" && {
       connectors: {
-        ...(isObject(outputs) &&
+        ...(isRecord(outputs) &&
           typeof outputs.principal === "string" && {
             principal: outputs.principal,
           }),
@@ -247,7 +269,7 @@ export function builtinStorageOf(
 ): BuiltinStorage | undefined {
   const rows = itemsOf(
     request.status?.resources,
-    resourceRow,
+    isResource,
     "Resource",
     "resources",
   );
@@ -298,7 +320,7 @@ export type StorageFacts = {
 /** storageFacts returns the facts of the status of the object of storage, which must be set. */
 export function storageFacts(storage: BuiltinStorage): StorageFacts {
   const status: unknown = storage.object?.status;
-  const read = isObject(status) ? status : {};
+  const read = isRecord(status) ? status : {};
   const errors: string[] = [];
   const text = (
     record: Record<string, unknown>,
@@ -322,7 +344,7 @@ export function storageFacts(storage: BuiltinStorage): StorageFacts {
     const repository = text(read, "snapshotRepository", "snapshot repository");
     if (repository !== undefined) facts.snapshotRepository = repository;
   } else {
-    if (isObject(read.archive)) {
+    if (isRecord(read.archive)) {
       const reachableFrom = text(
         read.archive,
         "reachableFrom",
@@ -331,14 +353,14 @@ export function storageFacts(storage: BuiltinStorage): StorageFacts {
       const boundary = read.archive.boundary;
       facts.archive = {
         ...(reachableFrom !== undefined && { reachableFrom }),
-        ...(isObject(boundary) &&
+        ...(isRecord(boundary) &&
           typeof boundary.at === "string" &&
           typeof boundary.location === "string" && {
             boundary: `${boundary.at}, ${boundary.location}`,
           }),
       };
     }
-    if (isObject(read.recovery)) {
+    if (isRecord(read.recovery)) {
       const requestID = text(read.recovery, "requestID", "recovery request");
       const targetTime = text(read.recovery, "targetTime", "recovery target");
       const startedAt = text(read.recovery, "startedAt", "recovery start");
@@ -349,45 +371,26 @@ export function storageFacts(storage: BuiltinStorage): StorageFacts {
       };
     }
   }
-  facts.volumes = itemsOf(read.volumes, volumeRow, "Volume", "volumes");
+  facts.volumes = itemsOf(read.volumes, isVolume, "Volume", "volumes").map(
+    (item) =>
+      isInvalid(item)
+        ? item
+        : { name: item.name, capacity: String(item.capacity) },
+  );
   const conditions = conditionsOf(read.conditions);
   if ("error" in conditions) errors.push(conditions.error);
   else facts.conditions = conditions.conditions;
   return facts;
 }
 
-function volumeRow(item: unknown): VolumeRow | undefined {
-  return isObject(item) &&
-    typeof item.name === "string" &&
+function isVolume(
+  item: unknown,
+): item is { name: string; capacity: string | number } {
+  return (
+    isRecord(item) &&
+    isText(item.name) &&
     (typeof item.capacity === "string" || typeof item.capacity === "number")
-    ? { name: item.name, capacity: String(item.capacity) }
-    : undefined;
-}
-
-const STATUSES: readonly unknown[] = ["True", "False", "Unknown"];
-
-/**
- * conditionsOf returns the conditions of a status, or an error that names
- * the first item that is not a valid condition. No value gives no
- * conditions.
- */
-export function conditionsOf(
-  value: unknown,
-): { conditions: ConditionRow[] } | { error: string } {
-  if (value === undefined || value === null) return { conditions: [] };
-  if (!Array.isArray(value)) return { error: "The conditions are not a list." };
-  const bad = value.findIndex(
-    (c) =>
-      !isObject(c) ||
-      typeof c.type !== "string" ||
-      !STATUSES.includes(c.status) ||
-      !optionalText(c.reason) ||
-      !optionalText(c.message) ||
-      !optionalText(c.lastTransitionTime),
   );
-  if (bad >= 0)
-    return { error: `Condition ${bad + 1} is not a valid condition.` };
-  return { conditions: value as ConditionRow[] };
 }
 
 /** readyOf returns the valid Ready condition of a status, if it has one. */
@@ -398,62 +401,35 @@ export function readyOf(conditions: unknown): ConditionRow | undefined {
     : undefined;
 }
 
-function optionalText(value: unknown): boolean {
-  return value === undefined || typeof value === "string";
-}
+const SEVERITIES: readonly unknown[] = ["Info", "Warning", "Error", null];
 
-// itemsOf checks each item of a status list before a block renders it, so
-// that one item of the wrong type shows as an error of its row.
-function itemsOf<T>(
-  value: unknown,
-  valid: (item: unknown) => T | undefined,
-  noun: string,
-  plural: string,
-): (T | Invalid)[] {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value))
-    return [{ error: `The ${plural} are not a list.` }];
-  return value.map(
-    (item, i) =>
-      valid(item) ?? {
-        error: `${noun} ${i + 1} is not a valid ${noun.toLowerCase()}.`,
-      },
+function isSummaryItem(item: unknown): item is {
+  label: string;
+  value: string;
+  severity?: SummaryRow["severity"] | null;
+} {
+  return (
+    isRecord(item) &&
+    isText(item.label) &&
+    isText(item.value) &&
+    (item.severity === undefined || SEVERITIES.includes(item.severity))
   );
 }
 
-function summaryRow(item: unknown): SummaryRow | undefined {
-  if (
-    !isObject(item) ||
-    typeof item.label !== "string" ||
-    typeof item.value !== "string"
-  )
-    return undefined;
-  const severity = item.severity ?? "Info";
-  if (severity !== "Info" && severity !== "Warning" && severity !== "Error")
-    return undefined;
-  return { label: item.label, value: item.value, severity };
+function isLink(item: unknown): item is LinkRow {
+  return isRecord(item) && isText(item.name) && isText(item.url);
 }
 
-function linkRow(item: unknown): LinkRow | undefined {
-  return isObject(item) &&
-    typeof item.name === "string" &&
-    typeof item.url === "string"
-    ? { name: item.name, url: item.url }
-    : undefined;
-}
-
-function resourceRow(item: unknown): ResourceRow | undefined {
-  if (
-    !isObject(item) ||
-    typeof item.kind !== "string" ||
-    typeof item.name !== "string" ||
-    (item.onOrphan !== "Kept" && item.onOrphan !== "Deleted") ||
-    !optionalText(item.id) ||
-    !optionalText(item.location) ||
-    !optionalText(item.role)
-  )
-    return undefined;
-  return item as ResourceRow;
+function isResource(item: unknown): item is ResourceRow {
+  return (
+    isRecord(item) &&
+    isText(item.kind) &&
+    isText(item.name) &&
+    (item.onOrphan === "Kept" || item.onOrphan === "Deleted") &&
+    isText(item.id, true) &&
+    isText(item.location, true) &&
+    isText(item.role, true)
+  );
 }
 
 function outputRows(
@@ -461,7 +437,7 @@ function outputRows(
   slot: string | undefined,
 ): (OutputRow | Invalid)[] {
   if (outputs === undefined || outputs === null) return [];
-  if (!isObject(outputs)) return [{ error: "The outputs are not an object." }];
+  if (!isRecord(outputs)) return [{ error: "The outputs are not an object." }];
   return Object.keys(outputs)
     .sort(byCodeUnit)
     .map((key) => {
@@ -486,50 +462,54 @@ function grantRows(
   request: Resource<"PluginRequest">,
   slot: string | undefined,
   cluster: string,
+  registrations: readonly Resource<"PluginRegistration">[],
 ): GrantRow[] {
   const ofCluster = slot === "workloadIdentity";
   const uid = request.metadata?.uid;
   return grants
     .filter((g) =>
       ofCluster
-        ? isObject(g.spec?.cluster) && g.spec.cluster.name === cluster
+        ? isRecord(g.spec?.cluster) && g.spec.cluster.name === cluster
         : uid !== undefined &&
           (g.metadata?.ownerReferences ?? []).some((o) => o.uid === uid),
     )
-    .map((g) => grantRow(g, ofCluster))
+    .map((g) => grantRow(g, ofCluster, registrations))
     .sort((a, b) => byCodeUnit(a.name, b.name));
 }
 
-function grantRow(grant: Resource<"Grant">, withRequest: boolean): GrantRow {
-  const errors: string[] = [];
+function grantRow(
+  grant: Resource<"Grant">,
+  withRequest: boolean,
+  registrations: readonly Resource<"PluginRegistration">[],
+): GrantRow {
+  // The cache objects differ from the generated types only in their
+  // timestamps, which grantView and grantTemplates do not read.
+  const generated = grant as unknown as Grant;
+  const { error, request, ...view } = grantView(generated);
   const fragment: unknown = grant.spec?.fragment;
-  if (!isObject(fragment)) errors.push("The statement is not a JSON object.");
-  const read = conditionsOf(grant.status?.conditions);
-  if ("error" in read) errors.push(read.error);
-  const conditions = "conditions" in read ? read.conditions : [];
-  const find = (type: string) => conditions.find((c) => c.type === type);
-  const ready = find("Ready");
-  const request = grant.metadata?.labels?.[REQUEST_LABEL];
   const template: unknown = grant.spec?.template;
+  const read = conditionsOf(grant.status?.conditions);
+  const registrationName = grant.metadata?.labels?.[REGISTRATION_LABEL];
+  const registration =
+    registrationName === undefined
+      ? undefined
+      : registrations.find((r) => r.metadata?.name === registrationName);
   return {
-    name: grant.metadata?.name ?? "",
+    ...view,
+    ...(withRequest && request && { request }),
     template: typeof template === "string" ? template : "",
-    ...(isObject(fragment) && {
+    ...(isRecord(fragment) && {
       statement: JSON.stringify(fragment, null, 2),
     }),
-    ...(withRequest && request && { request }),
-    conditions,
-    ...(ready && { ready }),
-    state:
-      ready?.status === "True"
-        ? "ready"
-        : ready?.status !== "False"
-          ? "waiting"
-          : find("Applied")?.status === "True" &&
-              find("MatchesTemplate")?.status === "False"
-            ? "oldTemplate"
-            : "refused",
-    errors,
+    conditions: "conditions" in read ? read.conditions : [],
+    templateGone:
+      registration !== undefined &&
+      grantTemplates(registration as unknown as PluginRegistration, [generated])
+        .withoutTemplate.length > 0,
+    errors: [
+      ...(isRecord(fragment) ? [] : ["The statement is not a JSON object."]),
+      ...(error ? [error] : []),
+    ],
   };
 }
 
@@ -543,7 +523,7 @@ function connectedRefs(
   const lists = own(BUILTIN_OPTIONS, registration)?.lists ?? {};
   const namespace = claim.metadata?.namespace;
   return Object.entries(lists).flatMap(([parameter, kind]) => {
-    const name = isObject(parameters) ? parameters[parameter] : undefined;
+    const name = isRecord(parameters) ? parameters[parameter] : undefined;
     if (typeof name !== "string") return [];
     const contractKind = kind as ContractKind;
     const object = (contracts[contractKind] ?? []).find(

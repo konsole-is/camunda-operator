@@ -216,9 +216,36 @@ describe("RequestOverview", () => {
     expect(ready.textContent).toContain("Ready");
     expect(ready.textContent).toContain("TemplateChanged");
     expect(
-      within(grants).getByText(/^Applied with the old template/),
+      within(grants).getByText(
+        "The role still has the statement that this Grant holds. The controller of this registration writes the Grant from its own template at its next reconcile. If this state stays, the registration was changed outside its controller, and the old statement stays.",
+      ),
     ).toBeTruthy();
     expect(within(grants).queryByText(/Refused/)).toBeNull();
+  });
+
+  it("lists a grant whose template is gone under its own title, without the line of a changed template", () => {
+    const grant = fixtureGrant("orders-write", "backup-storage", [
+      fixtureCondition("Applied", "True", "Healthy"),
+      fixtureCondition("MatchesTemplate", "False", "TemplateChanged"),
+      fixtureCondition("Ready", "False", "TemplateChanged"),
+    ]);
+    grant.spec.template = "write-objects";
+    show("backup-storage", {
+      grants: [grant, fixtureGrant("orders-read", "backup-storage")],
+    });
+    const grants = region("Grants");
+    const gone = within(grants).getByText(
+      "Grants of a template the registration no longer has",
+    ).parentElement!;
+    expect(
+      within(gone).getByText(
+        "The role keeps the statement of each of these Grants until the controller of this registration deletes that Grant.",
+      ),
+    ).toBeTruthy();
+    expect(within(gone).getByText("orders-write")).toBeTruthy();
+    expect(within(gone).queryByText("orders-read")).toBeNull();
+    expect(within(grants).getByText("orders-read")).toBeTruthy();
+    expect(within(grants).queryByText(/^The role still has/)).toBeNull();
   });
 
   it("shows a grant without a status with its statement and no conditions", () => {

@@ -79,8 +79,10 @@ A line under the name of a Grant says what its conditions mean:
 | --- | --- | --- |
 | None | `Ready` is `True`: the identity has the permission. | Nothing. |
 | **Refused. The conditions say why.** | `Applied` is `False`, for example with the reason `OverCeiling`, `OverSizeLimit`, or `Rejected`. The identity does not have the permission. | Read the message of `Applied`. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. For `Rejected`, the message says what the cloud refused. |
-| **Applied with the old template.** | `MatchesTemplate` is `False` with the reason `TemplateChanged`. The identity still has the permission of the old template. | Wait. The controller of the option writes the Grant again from the new template. |
+| **The role still has the statement that this Grant holds.** | `MatchesTemplate` is `False` with the reason `TemplateChanged`. The identity still has the permission of the old template, so the Grant is applied, not refused. | After a chart upgrade, wait. The controller of the option writes the Grant from its own template at its next reconcile. If the line stays, the registration was changed outside its controller, and the old statement stays. |
 | **Not applied yet.** | `Ready` has no value yet. | Wait for the identity to apply the Grant. |
+
+At the end of the box, the title **Grants of a template the registration no longer has** lists the Grants whose template is gone. The role keeps the statement of each of these Grants until the controller of the option deletes that Grant.
 
 While a Grant of the request has `Ready` `False`, the request shows `Ready` `False` with the reason `GrantRejected`, and its card shows **Not ready (GrantRejected)**. This includes a Grant that is applied with the old template. Open the section: the **Grants** box of its **Overview** tab shows which Grant and why.
 

@@ -14,7 +14,6 @@ import {
 } from "./request-fixtures";
 import {
   builtinStorageOf,
-  conditionsOf,
   readyOf,
   requestDetail,
   storageFacts,
@@ -306,6 +305,23 @@ describe("requestDetail", () => {
     expect(grant.state).toBe("oldTemplate");
   });
 
+  it("marks a grant whose template its registration no longer has", () => {
+    const kept = fixtureGrant("orders-read", "backup-storage");
+    const gone = fixtureGrant("orders-write", "backup-storage");
+    gone.spec.template = "write-objects";
+    const unknown = fixtureGrant("orders-list", "backup-storage");
+    unknown.metadata!.labels!["plugins.camunda.io/registration"] = "aws-s3-old";
+    expect(
+      detail("backup-storage", { grants: [kept, gone, unknown] }).grants.map(
+        (g) => [g.name, g.templateGone],
+      ),
+    ).toEqual([
+      ["orders-list", false],
+      ["orders-read", false],
+      ["orders-write", true],
+    ]);
+  });
+
   it("calls a grant refused while it is not Ready for any other reason", () => {
     const [grant] = detail("backup-storage", {
       grants: [fixtureGrant("orders-read", "backup-storage", rejected)],
@@ -480,27 +496,6 @@ describe("builtinStorageOf", () => {
     expect(
       builtinStorageOf(fixtureRequest("backup-storage", {}), [], []),
     ).toBeUndefined();
-  });
-});
-
-describe("conditionsOf", () => {
-  it("gives no conditions for no value", () => {
-    expect(conditionsOf(undefined)).toEqual({ conditions: [] });
-  });
-
-  it("names a value that is not a list", () => {
-    expect(conditionsOf({ type: "Ready" })).toEqual({
-      error: "The conditions are not a list.",
-    });
-  });
-
-  it("names the first item that is not a valid condition", () => {
-    expect(
-      conditionsOf([
-        fixtureCondition("Ready", "True", "Healthy"),
-        { type: "Applied", status: "True", reason: 4 },
-      ]),
-    ).toEqual({ error: "Condition 2 is not a valid condition." });
   });
 });
 
