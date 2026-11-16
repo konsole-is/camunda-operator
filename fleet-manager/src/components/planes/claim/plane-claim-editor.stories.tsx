@@ -79,6 +79,10 @@ const keycloakClaim = {
   },
   status: {
     resolvedPolicy: {
+      sections: {
+        databases: { allowed: ["postgres"] },
+        access: { allowed: ["gateway"] },
+      },
       parameters: {
         postgres: {
           storageSize: { claimEditable: true, value: "5Gi" },
