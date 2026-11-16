@@ -48,5 +48,7 @@ export function lockLabel(lock: FieldLock): string {
       return "Set at creation";
     case "chosenAtCreation":
       return "Chosen at creation";
+    case "immutableAfterStart":
+      return "Fixed after Identity started";
   }
 }

@@ -17,6 +17,12 @@ export {
 } from "./editor";
 export { lockLabel, stateLabel, stateNote } from "./labels";
 export { parameterFields } from "./parameters";
+export {
+  IDENTITY_INITIAL_CLAIM_ANNOTATION,
+  planeFields,
+  type PlaneField,
+  type PlaneFieldGroup,
+} from "./plane";
 export type {
   ClusterField,
   FieldGroup,
