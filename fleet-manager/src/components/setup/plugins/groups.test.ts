@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   condition,
+  fleetEnvironment,
   labelledNamespace,
   pluginRegistration,
   pluginRequest,
@@ -245,6 +246,38 @@ describe("registrationRow", () => {
     );
     expect(row.requests?.byEnvironment).toEqual([
       { environment: "No environment", count: 1 },
+    ]);
+  });
+
+  it("counts two Environments with one display name apart, by their names", () => {
+    const sources = registrationSources({
+      environments: [
+        fleetEnvironment("prod-eu", { displayName: "Production" }),
+        fleetEnvironment("prod-us", { displayName: "Production" }),
+        fleetEnvironment("unset", { displayName: "No environment" }),
+      ],
+      namespaces: [
+        labelledNamespace("orders-eu", "prod-eu"),
+        labelledNamespace("orders-us", "prod-us"),
+        labelledNamespace("billing", "unset"),
+      ],
+      requests: [
+        pluginRequest("orders-eu", "x", { registration: "elasticsearch" }),
+        pluginRequest("orders-us", "x", { registration: "elasticsearch" }),
+        pluginRequest("orders-us", "y", { registration: "elasticsearch" }),
+        pluginRequest("billing", "x", { registration: "elasticsearch" }),
+        pluginRequest("gone", "x", { registration: "elasticsearch" }),
+      ],
+    });
+    const row = registrationRow(
+      sources.registrations.find((r) => r.metadata.name === "elasticsearch")!,
+      sources,
+    );
+    expect(row.requests?.byEnvironment).toEqual([
+      { environment: "No environment", count: 1 },
+      { environment: "No environment (unset)", count: 1 },
+      { environment: "Production (prod-eu)", count: 1 },
+      { environment: "Production (prod-us)", count: 2 },
     ]);
   });
 

@@ -1,5 +1,6 @@
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ReadError } from "@/components/planes/planes-table";
+import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SLOT_FIELDS, type SlotField } from "@/lib/fields/slots";
@@ -84,9 +85,10 @@ export function sectionFields(section: PluginSection): SlotField[] {
 
 /**
  * registrationRow returns the row of registration. The requests count by
- * the display name of the Environment of their namespace, else its name,
- * and "No environment" for a namespace without one or not in sources, in
- * the order of the names.
+ * the Environment of their namespace, named by its display name, else its
+ * name, and "No environment" for a namespace without one or not in sources,
+ * in the order of the names. Two of these names that are the same get the
+ * name of the Environment in brackets.
  */
 export function registrationRow(
   registration: PluginRegistration,
@@ -201,18 +203,28 @@ function requestCounts(
   );
   if (unread.includes("Namespace") || unread.includes("Environment"))
     return { total: requests.length };
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { label: string; count: number }>();
   for (const request of requests) {
-    const environment = environmentLabel(
+    const environment = environmentOfNamespace(
       request.metadata.namespace ?? "",
       sources,
     );
-    counts.set(environment, (counts.get(environment) ?? 0) + 1);
+    const key = environment?.metadata.name ?? "";
+    const label = environment
+      ? environment.spec.displayName || key
+      : NO_ENVIRONMENT;
+    counts.set(key, { label, count: (counts.get(key)?.count ?? 0) + 1 });
   }
+  const entries = [...counts];
+  const shared = (label: string) =>
+    entries.filter(([, e]) => e.label === label).length > 1;
   return {
     total: requests.length,
-    byEnvironment: [...counts]
-      .map(([environment, count]) => ({ environment, count }))
+    byEnvironment: entries
+      .map(([key, { label, count }]) => ({
+        environment: key && shared(label) ? `${label} (${key})` : label,
+        count,
+      }))
       .sort((a, b) => compare(a.environment, b.environment)),
   };
 }
@@ -224,15 +236,13 @@ function conditionOf(
   return registration.status?.conditions?.find((c) => c.type === type);
 }
 
-function environmentLabel(
+function environmentOfNamespace(
   namespace: string,
   sources: RegistrationSources,
-): string {
+): Environment | undefined {
   const object = sources.namespaces.find((n) => n.metadata?.name === namespace);
-  if (!object) return NO_ENVIRONMENT;
-  const { environment } = environmentOf(object, sources.environments);
-  if (!environment) return NO_ENVIRONMENT;
-  return environment.spec.displayName || (environment.metadata.name ?? "");
+  if (!object) return undefined;
+  return environmentOf(object, sources.environments).environment;
 }
 
 // Sorting by code unit gives the same order in every locale.
