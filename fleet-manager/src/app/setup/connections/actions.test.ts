@@ -290,7 +290,9 @@ describe("applyContractChange", () => {
     "refuses with Stale a %s whose precondition is not the copy that the server read",
     async (_, change) => {
       const cached = (
-        cache.lists.ObjectStorageConfig as { metadata: { name: string } }[]
+        cache.lists.ObjectStorageConfig as {
+          metadata: { name: string; resourceVersion?: string };
+        }[]
       ).find((c) => c.metadata.name === "old-backup")!;
       cached.metadata = { ...cached.metadata, resourceVersion: "40" };
       const messages = await refusedWith(change, "Stale");

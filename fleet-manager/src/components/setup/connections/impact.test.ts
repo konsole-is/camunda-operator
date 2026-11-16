@@ -12,10 +12,10 @@ const user = (kind: string, name = "orders"): ContractUser => ({
 describe("saveEffects", () => {
   it("names each user and what it does on the change", () => {
     expect(
-      saveEffects(
-        "ObjectStorageConfig",
-        [user("CamundaCluster"), user("DatabaseServer", "orders-pg")],
-      ),
+      saveEffects("ObjectStorageConfig", [
+        user("CamundaCluster"),
+        user("DatabaseServer", "orders-pg"),
+      ]),
     ).toEqual([
       "CamundaCluster team-a/orders restarts its pods, all but Connectors.",
       "DatabaseServer team-a/orders-pg applies its archive again. A new bucket, base path, region, or endpoint moves the archive: a backup from before the move no longer counts for a rollback.",
@@ -51,10 +51,9 @@ describe("saveEffects", () => {
 
   it("names a user of a Management Identity contract with its namespace", () => {
     expect(
-      saveEffects(
-        "ManagementAuthConfig",
-        [user("CamundaOptimize", "optimize")],
-      ),
+      saveEffects("ManagementAuthConfig", [
+        user("CamundaOptimize", "optimize"),
+      ]),
     ).toEqual(["CamundaOptimize team-a/optimize restarts its pods."]);
   });
 });

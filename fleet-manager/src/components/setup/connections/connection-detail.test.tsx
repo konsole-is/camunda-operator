@@ -396,9 +396,10 @@ describe("ConnectionDetail with changes", () => {
       ),
       { target: { value: "shared-es-user" } },
     );
-    expect(
-      screen.getByRole("button", { name: "Review" }),
-    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      true,
+    );
     expect(
       screen.getAllByText("Pick the Secret and the key of the CA certificate.")
         .length,
@@ -419,9 +420,10 @@ describe("ConnectionDetail with changes", () => {
     const region = screen.getByLabelText("Region") as HTMLInputElement;
     expect(region.value).not.toBe("");
     fireEvent.change(region, { target: { value: "eu-central-1" } });
-    expect(
-      screen.getByRole("button", { name: "Review" }),
-    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      true,
+    );
   });
 
   it("closes the save review when a user kind stops being read", async () => {
