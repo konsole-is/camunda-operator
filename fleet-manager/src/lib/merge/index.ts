@@ -7,7 +7,18 @@ export {
   mergeElasticsearch,
 } from "./storage";
 export { authRules, clusterRules, mergeCluster } from "./cluster";
-export { defaultImages, type ImageRef, type ImageSet } from "./images";
+export {
+  byMinor,
+  defaultImages,
+  defaultRepositories,
+  IMAGE_FIELDS,
+  minorOf,
+  type DefaultRepositories,
+  type ImageField,
+  type ImageRef,
+  type ImageSet,
+  type RepositoryDefault,
+} from "./images";
 export {
   APP_FIELD_MANAGER,
   CLUSTER_CLAIM_MANAGER_PREFIX,
