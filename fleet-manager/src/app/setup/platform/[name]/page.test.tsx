@@ -76,7 +76,10 @@ afterEach(() => {
   failing.bundled = false;
 });
 
-const params = (name: string) => ({ params: Promise.resolve({ name }) });
+const params = (name: string) => ({
+  params: Promise.resolve({ name }),
+  searchParams: Promise.resolve({}),
+});
 const show = async (name: string) =>
   render(await PlatformConfigPage(params(name)), {
     wrapper: GitPushesProvider,

@@ -15,7 +15,7 @@ import {
 } from "@/components/fleet/namespaced-secret-ref-picker";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
-import type { Preview, WriteMode } from "@/lib/write/types";
+import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";
 import { type PlatformActions, PlatformDetail } from "./platform-detail";
@@ -348,7 +348,7 @@ describe("PlatformDetail", () => {
   it("warns in the review that a cleared field of another field manager stays", async () => {
     const live = platformFixtures().platformConfigs.find(
       (c) => c.metadata.name === "oidc-prod",
-    )!;
+    ) as unknown as KubeObject;
     setup({
       preview: {
         objects: [
