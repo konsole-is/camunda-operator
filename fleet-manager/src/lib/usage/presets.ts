@@ -1,11 +1,18 @@
 // This module runs in the browser and on the server.
+import type { V1Namespace } from "@kubernetes/client-node";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import {
   BUILTIN_OPTIONS,
   byCodeUnit,
   decodeObject,
+  environmentOf,
   nameOf,
   own,
+  type PluginSelection,
+  type ResolvedPolicy,
+  resolve,
 } from "@/lib/policy";
 
 /**
@@ -54,7 +61,10 @@ export type PresetUser = {
 
 type Named = { metadata: { namespace?: string; name?: string } };
 type Selecting = Named & {
-  spec: { plugins?: { registration: string; parameters?: unknown }[] };
+  spec: {
+    plugins?: { section: string; registration: string; parameters?: unknown }[];
+  };
+  status?: { resolvedPolicy?: ResolvedPolicy };
 };
 type Referring = Named & { spec: { presetRef?: string } };
 
@@ -68,6 +78,9 @@ export type PresetUsageSources = {
   requests: readonly (Named & {
     spec: { registration: string; parameters?: unknown };
   })[];
+  environments?: readonly Environment[];
+  namespaces?: readonly V1Namespace[];
+  registrations?: readonly PluginRegistration[];
 };
 
 const USER_ORDER: readonly PresetUserKind[] = [
@@ -88,7 +101,10 @@ const USER_ORDER: readonly PresetUserKind[] = [
 export function presetResources(
   kind: PresetKind,
   name: string,
-  sources: PresetUsageSources,
+  sources: Pick<
+    PresetUsageSources,
+    "clusters" | "elasticsearchClusters" | "databaseServers"
+  >,
 ): PresetUser[] {
   if (name === "") return [];
   const [userKind, list] = resourcesOf(kind, sources);
@@ -104,10 +120,12 @@ export function presetResources(
  * resources of presetResources; for a cluster preset, the cluster claims
  * whose spec.presetRef is name; each claim of either kind with a selection,
  * and each request, of a built-in registration whose preset parameter lists
- * kind, when that parameter is name. A claim names a preset this way before
- * its resource exists. Each object is in the list once, sorted by kind in
- * the order of PresetUserKind, then namespace, then name, by code unit. An
- * empty name matches nothing.
+ * kind, when that parameter, or the one its request gets from the claim
+ * policy, is name. The policy needs environments, namespaces, and
+ * registrations until status.resolvedPolicy is set. A claim names a preset
+ * this way before its resource exists. Each object is in the list once,
+ * sorted by kind in the order of PresetUserKind, then namespace, then name,
+ * by code unit. An empty name matches nothing.
  */
 export function presetUsers(
   kind: PresetKind,
@@ -119,8 +137,14 @@ export function presetUsers(
   const names = (registration: string, parameters: unknown) =>
     own(BUILTIN_OPTIONS, registration)?.lists.preset === kind &&
     nameOf(decodeObject(parameters)?.preset) === name;
-  const selects = (claim: Selecting) =>
-    (claim.spec.plugins ?? []).some((s) => names(s.registration, s.parameters));
+  const selects = (claim: Selecting) => {
+    const requested = requestedParameters(claim, sources);
+    return (claim.spec.plugins ?? []).some(
+      (s, i) =>
+        names(s.registration, s.parameters) ||
+        names(s.registration, requested[i]),
+    );
+  };
   for (const claim of sources.clusterClaims) {
     const byRef =
       kind === "CamundaClusterPreset" && claim.spec.presetRef === name;
@@ -138,9 +162,33 @@ export function presetUsers(
   return sortUsers(users);
 }
 
+// requestedParameters gives the parameters of the request of each selection
+// of claim, in claim order, or none when the policy cannot be resolved.
+function requestedParameters(
+  claim: Selecting,
+  sources: PresetUsageSources,
+): unknown[] {
+  const namespace = sources.namespaces?.find(
+    (n) => n.metadata?.name === claim.metadata.namespace,
+  );
+  const resolved = resolve({
+    recorded: claim.status?.resolvedPolicy,
+    environment:
+      namespace &&
+      environmentOf(namespace, sources.environments ?? []).environment,
+    registrations: [...(sources.registrations ?? [])],
+    selections: (claim.spec.plugins ?? []) as PluginSelection[],
+  });
+  if (!("value" in resolved)) return [];
+  return resolved.value.requests?.map((r) => r.parameters) ?? [];
+}
+
 function resourcesOf(
   kind: PresetKind,
-  sources: PresetUsageSources,
+  sources: Pick<
+    PresetUsageSources,
+    "clusters" | "elasticsearchClusters" | "databaseServers"
+  >,
 ): [PresetUserKind, readonly Referring[]] {
   switch (kind) {
     case "CamundaClusterPreset":

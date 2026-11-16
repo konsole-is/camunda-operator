@@ -120,9 +120,9 @@ describe("presetRows", () => {
     ["CamundaClusterClaim", ALL],
     ["CamundaManagementClusterClaim", ES_AND_PG],
     ["PluginRequest", ES_AND_PG],
-    ["Namespace", []],
+    ["Namespace", ES_AND_PG],
     ["PluginSection", []],
-    ["PluginRegistration", []],
+    ["PluginRegistration", ES_AND_PG],
   ])(
     "blocks the delete of the presets whose users %s holds while it cannot be read",
     (kind, blocked) => {

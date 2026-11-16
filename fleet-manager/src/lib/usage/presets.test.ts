@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { ResolvedPolicy } from "@/lib/policy";
 import {
   type PresetUsageSources,
   presetResources,
@@ -148,6 +150,58 @@ describe("presetUsers", () => {
     expect(presetUsers("ElasticsearchClusterPreset", "small", sources)).toEqual(
       [],
     );
+  });
+
+  describe("with a preset from the policy of the claim", () => {
+    const defaults = {
+      metadata: { name: "database-server" },
+      spec: {
+        sections: ["storage"],
+        mode: "Default",
+        parameterValues: { preset: "policy-default" },
+      },
+    } as PluginRegistration;
+    const claim = (resolvedPolicy?: ResolvedPolicy) => ({
+      ...named("team-e", "plain", {
+        plugins: [{ section: "storage", registration: "database-server" }],
+      }),
+      ...(resolvedPolicy && { status: { resolvedPolicy } }),
+    });
+    const recorded = (preset: string): ResolvedPolicy => ({
+      deletionPolicy: "Delete",
+      parameters: { "database-server": { preset: { value: preset } } },
+    });
+    const users = (
+      name: string,
+      planeClaims: PresetUsageSources["planeClaims"],
+    ) =>
+      presetUsers("DatabaseServerPreset", name, {
+        ...sources,
+        clusterClaims: [],
+        planeClaims,
+        namespaces: [{ metadata: { name: "team-e" } }],
+        environments: [],
+        registrations: [defaults],
+      });
+    const plain = {
+      kind: "CamundaManagementClusterClaim",
+      namespace: "team-e",
+      name: "plain",
+    };
+
+    it("counts a claim whose recorded policy gives its request the preset", () => {
+      expect(users("recorded", [claim(recorded("recorded"))])).toEqual([plain]);
+    });
+
+    it("counts a claim without a recorded policy whose registration gives the preset", () => {
+      expect(users("policy-default", [claim()])).toEqual([plain]);
+    });
+
+    it("takes the recorded policy over the registration", () => {
+      expect(users("policy-default", [claim(recorded("recorded"))])).toEqual(
+        [],
+      );
+    });
   });
 
   it("lists a user once", () => {

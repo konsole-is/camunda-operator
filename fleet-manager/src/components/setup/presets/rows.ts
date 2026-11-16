@@ -1,5 +1,7 @@
 import type { ReadError } from "@/components/planes/planes-table";
+import type { V1Namespace } from "@kubernetes/client-node";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { KindName } from "@/lib/k8s/kinds";
 import { presetDescription } from "@/lib/labels";
 import { lastChanged } from "@/lib/merge";
@@ -49,6 +51,8 @@ export const GUARD_KINDS: Record<PresetKind, readonly KindName[]> = {
   ],
   ElasticsearchClusterPreset: [
     "Environment",
+    "Namespace",
+    "PluginRegistration",
     "ElasticsearchCluster",
     "CamundaClusterClaim",
     "CamundaManagementClusterClaim",
@@ -56,6 +60,8 @@ export const GUARD_KINDS: Record<PresetKind, readonly KindName[]> = {
   ],
   DatabaseServerPreset: [
     "Environment",
+    "Namespace",
+    "PluginRegistration",
     "DatabaseServer",
     "CamundaClusterClaim",
     "CamundaManagementClusterClaim",
@@ -124,14 +130,20 @@ export function presetRows(
     DatabaseServerPreset: sources.databasePresets,
   };
   // A Resource is plain JSON, so it differs from its model type only in its
-  // timestamps, which allowedIn does not read.
+  // timestamps, which allowedIn and presetUsers do not read.
   const environments = sources.environments as unknown as Environment[];
+  const usage = {
+    ...sources,
+    environments,
+    namespaces: sources.namespaces as unknown as V1Namespace[],
+    registrations: sources.registrations as unknown as PluginRegistration[],
+  };
   return PRESET_KINDS.flatMap(({ kind, slug }) =>
     [...lists[kind]]
       .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
       .map((preset) => {
         const name = preset.metadata.name ?? "";
-        const users = presetUsers(kind, name, sources);
+        const users = presetUsers(kind, name, usage);
         const allowed = allowedIn(environments, kind, name);
         const unread = GUARD_KINDS[kind].filter((k) =>
           errors.some((e) => e.kind === k),
