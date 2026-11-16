@@ -849,6 +849,32 @@ describe("contractUsage", () => {
       ).toEqual(["orders"]);
     });
 
+    it("counts the contract of a named choice, not a contract with the name of the choice", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim(
+            "team-a",
+            "existing-object-storage",
+            { name: "production" },
+            {
+              "existing-object-storage": {
+                name: {
+                  claimEditable: true,
+                  allowed: [{ name: "production", value: "backups" }],
+                },
+              },
+            },
+          ),
+        ],
+      });
+      expect(
+        usersOf(sources, objectStorage("team-a", "backups")).map((u) => u.name),
+      ).toEqual(["orders"]);
+      expect(usersOf(sources, objectStorage("team-a", "production"))).toEqual(
+        [],
+      );
+    });
+
     it("resolves the selection in the namespace of the claim", () => {
       const sources = sourcesWith({
         clusterClaims: [

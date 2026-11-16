@@ -559,7 +559,8 @@ export function contractUsage(
 }
 
 // selectedContracts returns the contracts that the selections of claim
-// name, by the parameters of each selection and of its request.
+// name, by the parameters of the request of each selection, or of the
+// selection itself when the policy cannot be resolved.
 function selectedContracts(
   claim: SelectingClaim,
   sources: ContractUserSources,
@@ -573,10 +574,10 @@ function selectedContracts(
   if (!selects) return [];
   const requested = requestedParameters(claim, sources);
   return selections.flatMap((s, i) =>
-    [
-      ...contractParameters(s.registration, s.parameters),
-      ...contractParameters(s.registration, requested[i]),
-    ].map(([kind, name, parameter]) => ({
+    contractParameters(
+      s.registration,
+      requested ? requested[i] : s.parameters,
+    ).map(([kind, name, parameter]) => ({
       kind,
       name,
       field: `spec.plugins.${s.registration}.parameters.${parameter}`,
@@ -604,11 +605,11 @@ function isContractKind(kind: string): kind is ContractKind {
 }
 
 // requestedParameters gives the parameters of the request of each selection
-// of claim, in claim order, or none when the policy cannot be resolved.
+// of claim, in claim order, or undefined when the policy cannot be resolved.
 function requestedParameters(
   claim: SelectingClaim,
   sources: ContractUserSources,
-): unknown[] {
+): unknown[] | undefined {
   const namespace = sources.namespaces.find(
     (n) => n.metadata?.name === claim.metadata.namespace,
   );
@@ -619,7 +620,7 @@ function requestedParameters(
     registrations: [...sources.registrations],
     selections: (claim.spec.plugins ?? []) as PluginSelection[],
   });
-  if (!("value" in resolved)) return [];
+  if (!("value" in resolved)) return undefined;
   return resolved.value.requests?.map((r) => r.parameters) ?? [];
 }
 
