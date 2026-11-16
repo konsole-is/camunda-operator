@@ -102,9 +102,8 @@ func (s *simulator) recordUIDs(objs []unstructured.Unstructured) {
 }
 
 // pass makes one round over the watched namespaces. It returns the number of
-// writes it made, so a caller knows when the simulator has nothing to do. A
-// write that loses a race with a controller ends the round without an error,
-// and s.conflict holds it.
+// writes it made. A write that loses a race with a controller ends the round
+// without an error, and s.conflict holds it.
 func (s *simulator) pass(ctx context.Context) (int, error) {
 	writes := 0
 	for _, ns := range s.namespaces {
