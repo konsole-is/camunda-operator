@@ -296,8 +296,9 @@ export const OidcWithTheFixedClaimPair: Story = {
   },
 };
 
-export const MoveToOidcWithTheReview: Story = {
-  name: "Move to OIDC with the review",
+// The review dialog of a move shows in the page scenario plane-claim-review.
+export const MoveToOidc: Story = {
+  name: "Move to OIDC",
   args: { requested: "identity" },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -306,14 +307,7 @@ export const MoveToOidcWithTheReview: Story = {
     );
     await userEvent.type(canvas.getByLabelText("Claim name"), "sub");
     await userEvent.type(canvas.getByLabelText("Claim value"), "4f1c");
-    await userEvent.click(canvas.getByRole("button", { name: "Review" }));
-    const dialog = within(document.body).getByRole("dialog", {
-      name: "Review the change",
-    });
-    await expect(
-      within(dialog).getByText("Sign-in moves from Keycloak to OIDC."),
-    ).toBeVisible();
-    await expect(within(dialog).getByLabelText(/to confirm/)).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Review" })).toBeEnabled();
   },
 };
 
