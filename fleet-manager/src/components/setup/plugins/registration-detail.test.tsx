@@ -7,9 +7,18 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { detailData } from "./fixtures";
+import {
+  condition,
+  detailData,
+  fleetEnvironment,
+  pluginGrant,
+  pluginRegistration,
+  pluginRequest,
+  registrationEvent,
+  registrationSources,
+} from "./fixtures";
 import { RegistrationDetail } from "./registration-detail";
-import type { RegistrationTab } from "./registration-tabs";
+import { REGISTRATION_TABS, type RegistrationTab } from "./registration-tabs";
 
 afterEach(() => {
   cleanup();
@@ -116,4 +125,108 @@ describe("RegistrationDetail", () => {
       }),
     ).toBeTruthy();
   });
+});
+
+// fullData is a registration with every part that a tab can show.
+function fullData() {
+  const registration = pluginRegistration(
+    "aws-s3",
+    {
+      label: "New S3 bucket",
+      description: "Makes a bucket for the backups of the cluster.",
+      docsUrl: "https://example.com/docs/aws-s3",
+      sections: ["backup-storage"],
+      controller: { name: "aws-s3", version: "0.4.1" },
+      limits: [{ label: "Regions", value: "eu-west-1" }],
+      inputs: [
+        { name: "principal", from: "cloud-identity/roleArn", required: true },
+      ],
+      outputs: [{ key: "objectStorageConfig" }],
+      parameters: {
+        type: "object",
+        properties: { versioning: { type: "boolean" } },
+      },
+      parameterValues: { versioning: true },
+      grantTemplates: [
+        {
+          name: "bucket-access",
+          format: "aws-iam-statement",
+          template: { Effect: "Allow", Resource: "{{ .outputs.bucket }}" },
+          requiresInputs: ["principal"],
+        },
+      ],
+    },
+    [
+      condition("Accepted", "True", "Healthy"),
+      condition("Ready", "True", "Healthy"),
+    ],
+  );
+  const labels = {
+    "plugins.camunda.io/registration": "aws-s3",
+    "plugins.camunda.io/request": "orders-backup-storage",
+  };
+  const sources = registrationSources({
+    requests: [
+      pluginRequest(
+        "team-orders",
+        "orders-backup-storage",
+        { registration: "aws-s3" },
+        {
+          conditions: [condition("Ready", "False", "GrantRejected")] as never,
+          summary: [{ label: "Bucket", value: "cpo-orders" }],
+          resources: [
+            { kind: "S3Bucket", name: "cpo-orders", onOrphan: "Kept" },
+          ],
+        },
+      ),
+    ],
+    environments: [
+      fleetEnvironment("production", { displayName: "Production" }),
+    ],
+  });
+  return {
+    name: "aws-s3",
+    registration,
+    sources: {
+      ...sources,
+      registrations: [...sources.registrations, registration],
+    },
+    grants: [
+      pluginGrant(
+        "team-orders",
+        "orders-bucket-access",
+        { template: "bucket-access" },
+        labels,
+        [condition("Ready", "False", "OverCeiling")],
+      ),
+    ],
+    events: [registrationEvent("aws-s3", "Normal", "Accepted", "Accepted")],
+  };
+}
+
+describe("RegistrationDetail words", () => {
+  it.each(REGISTRATION_TABS.map((t) => t.value))(
+    "says plugin in no label of the tab %s",
+    (tab) => {
+      render(
+        <RegistrationDetail
+          data={fullData()}
+          errors={[]}
+          stale={[]}
+          tab={tab}
+          now={NOW}
+        />,
+      );
+      const labels = [
+        ...screen.queryAllByRole("heading").filter((h) => h.tagName !== "H1"),
+        ...screen.queryAllByRole("columnheader"),
+        ...screen.queryAllByRole("rowheader"),
+        ...document.querySelectorAll("dt"),
+        ...screen.queryAllByRole("tab"),
+        ...screen.queryAllByRole("button"),
+      ].map((e) => e.textContent ?? "");
+      expect(labels.length).toBeGreaterThan(5);
+      expect(labels.filter((l) => /plugin/i.test(l))).toEqual([]);
+    },
+  );
 });

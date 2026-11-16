@@ -30,6 +30,7 @@ import {
   previewEnvironmentChange,
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
+import * as pluginLoads from "@/app/setup/plugins/load";
 import {
   applyPresetChange,
   previewPresetChange,
@@ -150,6 +151,20 @@ beforeAll(async () => {
     },
     spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
   });
+  // The page of a registration reads the registration, its Grants, and its
+  // events. A Grant needs its cluster and request, so the page has none here.
+  await api.create({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRegistration",
+    metadata: { name: namespace },
+    spec: {
+      label: "Leak",
+      sections: [],
+      mode: "Optional",
+      deletionPolicies: ["Delete"],
+      serviceAccount: { name: "leak", namespace },
+    },
+  });
   process.env.FLEET_NAMESPACE = namespace;
   Object.assign(process.env, {
     FLEET_SETTINGS_GIT_REPOSITORY: `${url}/fleet.git`,
@@ -159,6 +174,13 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
+  // A registration is cluster-scoped, so it outlives the namespace of the
+  // test and other suites of the same API server can list it.
+  await api.delete({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRegistration",
+    metadata: { name: namespace },
+  });
   await defaultCache().stop();
   await new Promise((resolve) => echo.close(resolve));
 });
@@ -463,6 +485,19 @@ function planeCreate() {
   });
 }
 
+// "<file under src>#<export>". The loaders of a page that reads every
+// namespace, so a careless loader would reach the Secret leak.
+const LOADER_CALLS: Record<string, () => Promise<unknown>> = {
+  "app/setup/plugins/load.ts#loadRegistrations": () =>
+    pluginLoads.loadRegistrations(),
+  "app/setup/plugins/load.ts#loadCatalog": () => pluginLoads.loadCatalog(),
+  "app/setup/plugins/load.ts#loadRegistration": async () => {
+    const data = await pluginLoads.loadRegistration(namespace);
+    expect(data?.registration.metadata.name).toBe(namespace);
+    return data;
+  },
+};
+
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),
@@ -532,6 +567,21 @@ describe("no response holds a Secret value", () => {
   it("every server action has a call in this test", async () => {
     expect(Object.keys(ACTION_CALLS).sort()).toEqual(await discoverActions());
   });
+
+  it("every loader of the plugins pages has a call in this test", () => {
+    expect(Object.keys(LOADER_CALLS).sort()).toEqual(
+      Object.keys(pluginLoads)
+        .map((name) => `app/setup/plugins/load.ts#${name}`)
+        .sort(),
+    );
+  });
+
+  it.each(Object.keys(LOADER_CALLS))(
+    "%s returns no Secret value",
+    async (call) => {
+      assertNoValue(JSON.stringify(await LOADER_CALLS[call]()));
+    },
+  );
 
   it("every function of settings and secrets has a call in this test", () => {
     expect(Object.keys(LIBRARY_CALLS).sort()).toEqual(libraryFunctions());
