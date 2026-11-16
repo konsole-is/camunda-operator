@@ -19,10 +19,12 @@ import { PresetListLive } from "./preset-list";
 import type { PresetActions, PresetSources } from "./sources";
 
 const failing = vi.hoisted(() => ({ kind: "" }));
-const watch = vi.hoisted(() => ({ stale: [] as string[] }));
+// cached gives each list as a copy, as the query cache gives a list of an
+// earlier read in place of initial.
+const watch = vi.hoisted(() => ({ stale: [] as string[], cached: false }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: initial,
+    items: watch.cached ? [...initial] : initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
@@ -35,6 +37,7 @@ afterEach(() => {
   cleanup();
   failing.kind = "";
   watch.stale = [];
+  watch.cached = false;
 });
 
 function setup(
@@ -265,8 +268,25 @@ describe("PresetList", () => {
     );
   });
 
+  it("offers no delete on a list of an earlier visit until the watch sends a new one", () => {
+    watch.cached = true;
+    watch.stale = ["CamundaClusterClaim"];
+    const { rerender } = setup();
+    expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    watch.stale = [];
+    rerender(presetFixtures());
+    expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
   it("offers no delete while the watch of a list of users reconnects", () => {
     const { rerender } = setup();
+    watch.cached = true;
     watch.stale = ["CamundaCluster"];
     rerender(presetFixtures());
     expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
