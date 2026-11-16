@@ -21,9 +21,9 @@ const COMPONENTS: readonly {
  * clusterProgressRows returns the progress rows of a cluster claim: one row
  * for each selection of claim, in claim order, then the rows Requests,
  * Cluster, and Attachments of the conditions RequestsReady, ClusterReady,
- * and AttachmentsReady. A selection row shows the option label and, once
- * status.requests names it, the request name, its Outputs and Ready
- * checks, and the first summary item of that request in requests. A
+ * and AttachmentsReady. A selection row shows the option label and its
+ * Outputs and Ready checks and, once status.requests names it, the request
+ * name and the first summary item of that request in requests. A
  * condition row carries the condition and shows its message. Without a
  * status each check is pending.
  */

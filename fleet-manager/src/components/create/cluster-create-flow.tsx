@@ -138,15 +138,15 @@ const ATTACHMENTS = "attachments.";
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 to 4 against the newest data. A list that cannot be
- * read blocks each step that reads it. The picks of a section that goes
- * away leave the draft. Step 3 edits the release, the platform config, and
- * the settings, and step 4 the attachments. A claim value that a step 2
- * option fills leaves the draft. Step 5 reviews the change, previews it
- * with preview, and on Create writes the
- * namespace and the claim once with create in mode. After the write, the
- * flow follows the claim. When a refused write created the new
- * namespace, create must name it in createdNamespace: the draft then moves
- * to that namespace.
+ * read, other than the Secrets, blocks each step that reads it. The picks
+ * of a section that goes away leave the draft. Step 3 edits the release,
+ * the platform config, and the settings, and step 4 the attachments. A
+ * claim value that a step 2 option fills leaves the draft. Step 5 reviews
+ * the change, previews it with preview, and on Create writes it once with
+ * create: the new namespace, when step 1 makes one, then the claim. After
+ * the write, the flow follows the claim. When a refused write created the
+ * new namespace, create must name it in createdNamespace: the draft then
+ * moves to that namespace.
  */
 export function ClusterCreateFlow({
   initial,
@@ -848,7 +848,8 @@ function reviewSummary(
   ];
 }
 
-// leafCount returns the number of values in value that are not objects.
+// leafCount returns the number of values in value that are not plain
+// objects. A list counts as one value, and undefined counts as none.
 function leafCount(value: unknown): number {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return value === undefined ? 0 : 1;
