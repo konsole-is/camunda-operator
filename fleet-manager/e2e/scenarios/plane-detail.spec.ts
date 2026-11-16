@@ -108,7 +108,7 @@ test("a card opens the component detail with its condition and its settings", as
   await detail.getByRole("tab", { name: "Settings" }).click();
   const claimName = detail
     .locator("dt", { hasText: "Administrator claim name" })
-    .locator("xpath=following-sibling::dd");
+    .locator("xpath=following-sibling::dd[1]");
   await expect(claimName).toContainText("email");
   await expect(claimName).toContainText("Fixed after Identity started");
 

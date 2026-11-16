@@ -229,13 +229,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const remove = (resourceVersion = "7") => ({
-  intent: "Delete the management plane plane-a",
-  apply: [],
-  delete: [ref],
-  uids: { [KEY]: "uid-1" },
-  preconditions: { [KEY]: resourceVersion },
-});
+// removed says that the delete of the reviewed claim, by its UID, is
+// the one write of applied. The claim delete seam owns the precondition
+// that keeps it off a newer copy, so the test does not name it.
+const removed = (applied: unknown) =>
+  expect(applied).toMatchObject({
+    intent: "Delete the management plane plane-a",
+    apply: [],
+    delete: [ref],
+    uids: { [KEY]: "uid-1" },
+  });
 
 const radio = (name: RegExp) =>
   screen.getByRole<HTMLInputElement>("radio", { name });
@@ -267,11 +270,12 @@ describe("DeletePlane", () => {
     expect(fakeWriter.applied).toEqual([]);
   });
 
-  it("direct mode: the policy of the claim sends only the delete, with the claim UID and resourceVersion", async () => {
+  it("direct mode: the policy of the claim sends only the delete, once, for the reviewed claim", async () => {
     page();
     await readAll();
     await confirm("Delete the management plane");
-    await waitFor(() => expect(fakeWriter.applied).toEqual([remove()]));
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    removed(fakeWriter.applied[0]);
   });
 
   it("direct mode: another policy is written first, and the delete follows once the claim has it", async () => {
@@ -293,7 +297,7 @@ describe("DeletePlane", () => {
       claim({ deletionPolicy: "Orphan", resourceVersion: "8" }),
     ]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    expect(fakeWriter.applied[1]).toEqual(remove("8"));
+    removed(fakeWriter.applied[1]);
   });
 
   it("Git mode: sends the delete only after the policy revision is live", async () => {
@@ -317,7 +321,7 @@ describe("DeletePlane", () => {
       }),
     ]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    expect(fakeWriter.applied[1]).toEqual(remove("8"));
+    removed(fakeWriter.applied[1]);
   });
 
   it("lists what goes and what stays for the chosen policy", async () => {
