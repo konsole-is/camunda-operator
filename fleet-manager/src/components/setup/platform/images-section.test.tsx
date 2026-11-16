@@ -14,6 +14,7 @@ function setup(
   images: PlatformDraft["images"] = {},
   errors: ValidationError[] = [],
   usersKnown = true,
+  unreadMinorKinds: string[] = [],
 ) {
   const onChange = vi.fn<(images: PlatformDraft["images"]) => void>();
   render(
@@ -22,6 +23,7 @@ function setup(
       defaults={defaultRepositories(twoMinorTable, minors)}
       errors={errors}
       usersKnown={usersKnown}
+      unreadMinorKinds={unreadMinorKinds}
       onChange={onChange}
     />,
   );
@@ -97,6 +99,32 @@ describe("ImagesSection", () => {
     expect(
       screen.getByText(
         "The users of this config are not known. The defaults are those of Camunda 8.10, the newest in the images table.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("names the unread kinds when the minors of the users can be incomplete", () => {
+    setup(["8.9"], {}, [], true, ["CamundaCluster", "CamundaRelease"]);
+
+    expect(
+      screen.getByText(
+        "The Camunda minors of the users can be incomplete while the fleet manager cannot read CamundaCluster, CamundaRelease.",
+      ),
+    ).toBeDefined();
+    expect(defaultsOf("Web Modeler REST API")).toEqual([
+      "camunda/web-modeler-restapi",
+    ]);
+  });
+
+  it("does not call the config unused when no minor comes from users and a kind that feeds the minors is unread", () => {
+    setup([], {}, [], true, ["CamundaRelease"]);
+
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "The defaults are those of Camunda 8.10, the newest in the images table.",
       ),
     ).toBeDefined();
   });

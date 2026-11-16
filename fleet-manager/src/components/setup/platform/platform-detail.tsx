@@ -38,6 +38,7 @@ import { ImagesSection } from "./images-section";
 import {
   DELETE_EFFECT,
   ROLL_NOTICE,
+  unreadMinorKinds,
   unreadUserKinds,
   userMinors,
   usersOf,
@@ -173,6 +174,7 @@ export function PlatformDetail({
           )}
           errors={errors}
           usersKnown={unread.length === 0}
+          unreadMinorKinds={unreadMinorKinds(sources)}
           onChange={(images) => setDraft({ ...draft, images })}
         />
         <UsersSection users={users} unread={unread} />

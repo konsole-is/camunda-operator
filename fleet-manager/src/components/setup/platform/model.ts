@@ -44,9 +44,17 @@ export const USER_KINDS: readonly KindName[] = [
   "Environment",
 ];
 
+/** MINOR_KINDS are the kinds whose failed read can hide a Camunda minor of the users. */
+export const MINOR_KINDS: readonly KindName[] = [
+  "CamundaCluster",
+  "CamundaManagementCluster",
+  "CamundaClusterPreset",
+  "CamundaRelease",
+];
+
 /** ROLL_NOTICE says which users a change of a platform config changes. */
 export const ROLL_NOTICE =
-  "A change rolls the pods of every cluster and management plane that uses this config. A database server changes only when the postgres image changes.";
+  "A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.";
 
 /** DELETE_EFFECT says what a delete does to the users of a platform config. */
 export const DELETE_EFFECT =
@@ -56,6 +64,13 @@ export const DELETE_EFFECT =
 export function unreadUserKinds(reads: SourceReads): string[] {
   return unreadKinds(reads).filter((kind) =>
     (USER_KINDS as readonly string[]).includes(kind),
+  );
+}
+
+/** unreadMinorKinds returns each kind of MINOR_KINDS that reads holds as failed or stale, once. */
+export function unreadMinorKinds(reads: SourceReads): string[] {
+  return unreadKinds(reads).filter((kind) =>
+    (MINOR_KINDS as readonly string[]).includes(kind),
   );
 }
 

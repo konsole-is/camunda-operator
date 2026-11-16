@@ -28,3 +28,8 @@ export const MinorWithoutDefaults: Story = {
   name: "A minor without defaults",
   args: { defaults: defaultRepositories(twoMinorTable, ["8.8", "8.9"]) },
 };
+
+export const MinorsIncomplete: Story = {
+  name: "Minors that can be incomplete",
+  args: { unreadMinorKinds: ["CamundaCluster"] },
+};

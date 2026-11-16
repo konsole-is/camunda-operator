@@ -49,13 +49,13 @@ The section **Used by** of the page lists each user of the platform config. The 
 
 The page edits the authentication method, the OIDC fields, the management plane clients, the license Secret, and the image repositories. The management plane clients are the OIDC clients of Management Identity, Optimize, Web Modeler, and Console, as [The clients of the management plane](../crds/camundaplatformconfig.md#the-clients-of-the-management-plane) describes. The field **PostgreSQL** of the image repositories is the image of the database servers. A note above the form says what a change does:
 
-`A change rolls the pods of every cluster and management plane that uses this config. A database server changes only when the postgres image changes.`
+`A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.`
 
 Each Secret reference names a namespace, a Secret, and a key. The page shows the names only, never a Secret value. A reference can name a Secret in any namespace.
 
 When you change a field, a bar at the bottom of the page offers **Review**. The review shows the change and a dry run of it. Select **Save** to write it. In Git mode, the button reads **Push to Git**, and the page shows `Waiting for GitOps to apply` until your GitOps tool applies the commit. [Fleet manager settings](settings.md#git-mode) says how to turn on Git mode.
 
-To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool, such as `kubectl apply` or your GitOps tool, set the OIDC block, the Kubernetes API keeps that block. A platform config with the basic method and an OIDC block is not valid, so the dry run fails, and the review shows the error. Remove the OIDC block with the tool that set it, then save again.
+To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool, such as `kubectl apply` or your GitOps tool, set the OIDC block, the Kubernetes API keeps that block. A platform config with the basic method and an OIDC block is not valid, so the dry run fails, and the review shows the error. Then use that tool to set the method to basic and to remove the OIDC block.
 
 When a referenced Secret or key is missing, the platform config is not ready, and the page shows the message of its `Ready` condition. The message starts with the spec path of the reference:
 
@@ -81,7 +81,7 @@ camunda/web-modeler-restapi for Camunda 8.9
 camunda/hub for Camunda 8.10
 ```
 
-A database server runs a PostgreSQL version, not a Camunda minor, so it adds no minor. When no cluster or management plane uses the platform config, the page shows the defaults of the newest minor of the images table. When the images table has no defaults for a minor that a user runs, a warning above the fields names that minor. The fields still show the defaults of the other minors.
+A database server runs a PostgreSQL version, not a Camunda minor, so it adds no minor. When no cluster or management plane uses the platform config, the page shows the defaults of the newest minor of the images table. When the fleet manager cannot read a kind that gives the minors, such as `CamundaCluster` or `CamundaRelease`, a warning says that the minors can be incomplete and names that kind. When the images table has no defaults for a minor that a user runs, a warning above the fields names that minor. The fields still show the defaults of the other minors.
 
 ## Delete a platform config
 

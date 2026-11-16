@@ -6,6 +6,7 @@ import { platformFixtures } from "./fixtures";
 import {
   platformRows,
   unknownUsersText,
+  unreadMinorKinds,
   unreadUserKinds,
   userMinors,
   usersOf,
@@ -74,6 +75,20 @@ describe("platformRows", () => {
     });
 
     expect(rows.map((r) => r.users)).toEqual([0, 1, 5]);
+  });
+});
+
+describe("unreadMinorKinds", () => {
+  it("gives each kind that feeds the minors of the users and is failed or stale, once", () => {
+    expect(
+      unreadMinorKinds({
+        errors: [
+          { kind: "CamundaRelease", message: "forbidden" },
+          { kind: "DatabaseServer", message: "forbidden" },
+        ],
+        stale: ["CamundaRelease", "CamundaClusterPreset", "Environment"],
+      }),
+    ).toEqual(["CamundaRelease", "CamundaClusterPreset"]);
   });
 });
 

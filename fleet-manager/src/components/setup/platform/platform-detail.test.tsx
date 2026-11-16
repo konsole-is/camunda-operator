@@ -136,12 +136,12 @@ describe("PlatformDetail", () => {
     ).toBeDefined();
   });
 
-  it("says that a change rolls clusters and management planes and changes a database server only on the postgres image", () => {
+  it("says that a change rolls clusters, their Optimize, and management planes and changes a database server only on the postgres image", () => {
     setup();
 
     expect(screen.getByRole("note").textContent).toBe(ROLL_NOTICE);
     expect(ROLL_NOTICE).toBe(
-      "A change rolls the pods of every cluster and management plane that uses this config. A database server changes only when the postgres image changes.",
+      "A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.",
     );
   });
 
@@ -426,5 +426,31 @@ describe("PlatformDetail", () => {
       "camunda/web-modeler-restapi for Camunda 8.9",
       "camunda/hub for Camunda 8.10",
     ]);
+  });
+
+  it("says that the minors can be incomplete while the clusters cannot be read", () => {
+    setup({
+      sources: { ...platformFixtures(), clusters: [] },
+      errors: [{ kind: "CamundaCluster", message: "forbidden" }],
+    });
+
+    expect(
+      screen.getByText(
+        "The Camunda minors of the users can be incomplete while the fleet manager cannot read CamundaCluster.",
+      ),
+    ).toBeDefined();
+    expect(
+      within(
+        screen.getByRole("list", { name: "Defaults of Web Modeler REST API" }),
+      )
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["camunda/web-modeler-restapi"]);
+  });
+
+  it("does not say that the minors can be incomplete while every kind that feeds them is read", () => {
+    setup({ stale: ["Namespace", "DatabaseServer"] });
+
+    expect(screen.queryByText(/can be incomplete/)).toBeNull();
   });
 });

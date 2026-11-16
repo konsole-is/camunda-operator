@@ -29,18 +29,22 @@ export const IMAGE_LABELS: Readonly<Record<ImageField, string>> = {
  * each field it lists the default repository of defaults, with the range of
  * Camunda minors of each default when defaults hold more than one minor.
  * usersKnown is false while the users of the config are not known.
+ * unreadMinorKinds names the kinds that feed the minors of defaults and
+ * cannot be read, so those minors can be incomplete.
  */
 export function ImagesSection({
   images,
   defaults,
   errors,
   usersKnown = true,
+  unreadMinorKinds = [],
   onChange,
 }: {
   images: PlatformDraft["images"];
   defaults: DefaultRepositories;
   errors: ValidationError[];
   usersKnown?: boolean;
+  unreadMinorKinds?: readonly string[];
   onChange: (images: PlatformDraft["images"]) => void;
 }): ReactNode {
   const ranged = defaults.minors.length > 1;
@@ -56,11 +60,19 @@ export function ImagesSection({
           {defaults.missing.join(", ")}.
         </p>
       )}
+      {unreadMinorKinds.length > 0 && (
+        <p className="text-sm text-warn">
+          The Camunda minors of the users can be incomplete while the fleet
+          manager cannot read {unreadMinorKinds.join(", ")}.
+        </p>
+      )}
       {!defaults.fromUsers && defaults.minors.length > 0 && (
         <p className="text-sm text-muted">
-          {usersKnown
-            ? "No cluster or management plane uses this config."
-            : "The users of this config are not known."}{" "}
+          {!usersKnown
+            ? "The users of this config are not known. "
+            : unreadMinorKinds.length === 0
+              ? "No cluster or management plane uses this config. "
+              : ""}
           The defaults are those of Camunda {defaults.minors[0]}, the newest in
           the images table.
         </p>
