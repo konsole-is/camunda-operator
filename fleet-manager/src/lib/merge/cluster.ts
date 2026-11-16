@@ -42,7 +42,8 @@ const webApp = {
   fields: { ...workload, mode: "value" } satisfies RulesOf<Workload>,
 } as const;
 
-const authRules = {
+/** authRules is the rule of each field of spec.auth of CamundaCluster, by MergeSpec of pkg/components/camundacluster. */
+export const authRules = {
   clientId: "value",
   audience: "value",
   clientSecretRef: "block",
@@ -65,7 +66,8 @@ const mergeAuth: CustomMerge = (target, name, over, path, ctx) => {
   mergeBlock(authRules, target, name, over, path, ctx);
 };
 
-const clusterRules = {
+/** clusterRules is the rule of each field of CamundaCluster, by MergeSpec of pkg/components/camundacluster. */
+export const clusterRules = {
   platformConfigRef: { instance: "value" },
   presetRef: { instance: "value" },
   releaseRef: { instance: "value" },

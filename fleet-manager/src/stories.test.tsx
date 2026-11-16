@@ -111,6 +111,11 @@ describe("the Storybook stories", () => {
       "ConditionBadge",
       "CatalogPanel",
       "RegistrationList",
+      "PresetList",
+      "PresetSettings",
+      "InheritingTable",
+      "PresetDetail",
+      "FactsList",
     ]) {
       expect(components).toContain(name);
     }
