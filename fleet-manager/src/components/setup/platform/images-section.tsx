@@ -28,16 +28,19 @@ export const IMAGE_LABELS: Readonly<Record<ImageField, string>> = {
  * ImagesSection edits the image repositories of a platform config. Under
  * each field it lists the default repository of defaults, with the range of
  * Camunda minors of each default when defaults hold more than one minor.
+ * usersKnown is false while the users of the config are not known.
  */
 export function ImagesSection({
   images,
   defaults,
   errors,
+  usersKnown = true,
   onChange,
 }: {
   images: PlatformDraft["images"];
   defaults: DefaultRepositories;
   errors: ValidationError[];
+  usersKnown?: boolean;
   onChange: (images: PlatformDraft["images"]) => void;
 }): ReactNode {
   const ranged = defaults.minors.length > 1;
@@ -55,8 +58,11 @@ export function ImagesSection({
       )}
       {!defaults.fromUsers && defaults.minors.length > 0 && (
         <p className="text-sm text-muted">
-          No cluster or management plane uses this config. The defaults are
-          those of Camunda {defaults.minors[0]}, the newest in the images table.
+          {usersKnown
+            ? "No cluster or management plane uses this config."
+            : "The users of this config are not known."}{" "}
+          The defaults are those of Camunda {defaults.minors[0]}, the newest in
+          the images table.
         </p>
       )}
       <div className="flex flex-col gap-5">

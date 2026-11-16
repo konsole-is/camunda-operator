@@ -5,22 +5,32 @@ import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import type { ReadError } from "@/components/planes/planes-table";
-import { type PlatformRow, platformRows } from "./model";
+import {
+  type PlatformRow,
+  platformRows,
+  unknownUsersText,
+  unreadUserKinds,
+} from "./model";
 import { type PlatformSources, usePlatformSources } from "./sources";
 
 const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
 
 /**
  * PlatformList is the list page of the platform configs. Each of errors
- * shows above the table, and the rows stay.
+ * shows above the table, and the rows stay. stale holds the kinds whose
+ * watch has no snapshot on its current connection, as usePlatformSources
+ * gives them.
  */
 export function PlatformList({
   rows,
   errors,
+  stale = [],
 }: {
   rows: PlatformRow[];
   errors: ReadError[];
+  stale?: readonly string[];
 }): ReactNode {
+  const unread = unreadUserKinds({ errors, stale });
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
@@ -31,6 +41,9 @@ export function PlatformList({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {unread.length > 0 && (
+        <p className="text-sm text-muted">{unknownUsersText(unread)}</p>
+      )}
       <DataTable
         label="Platform configs"
         emptyText={
@@ -52,13 +65,13 @@ export function PlatformList({
           sort: {
             name: row.name,
             method: METHOD_LABEL[row.method],
-            users: row.users,
+            users: row.users ?? -1,
             status: describeReady(row.ready).label,
           },
           cells: {
             name: <span className="font-mono">{row.name}</span>,
             method: METHOD_LABEL[row.method],
-            users: row.users,
+            users: row.users ?? "Not known",
             status: <StatusChip condition={row.ready} />,
           },
         }))}
@@ -70,5 +83,11 @@ export function PlatformList({
 /** PlatformListLive is PlatformList on the live sources, starting from initial. */
 export function PlatformListLive({ initial }: { initial: PlatformSources }) {
   const sources = usePlatformSources(initial);
-  return <PlatformList rows={platformRows(sources)} errors={sources.errors} />;
+  return (
+    <PlatformList
+      rows={platformRows(sources)}
+      errors={sources.errors}
+      stale={sources.stale}
+    />
+  );
 }

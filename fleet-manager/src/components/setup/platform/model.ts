@@ -1,4 +1,5 @@
 import { clusterVersionOf } from "@/components/cluster/backup-actions";
+import { type SourceReads, unreadKinds } from "@/components/setup/releases/rows";
 import type { KindName } from "@/lib/k8s/kinds";
 import { byMinor, mergeCluster, minorOf } from "@/lib/merge";
 import { authMethod } from "@/lib/planes/identity";
@@ -17,11 +18,15 @@ export type Condition = {
   message?: string;
 };
 
-/** PlatformRow is one platform config of the list. ready is undefined while the config has no Ready condition. */
+/**
+ * PlatformRow is one platform config of the list. users is undefined while
+ * a kind of USER_KINDS is not read. ready is undefined while the config has
+ * no Ready condition.
+ */
 export type PlatformRow = {
   name: string;
   method: "basic" | "oidc";
-  users: number;
+  users?: number;
   ready?: Condition;
 };
 
@@ -44,8 +49,23 @@ export const ROLL_NOTICE =
 export const DELETE_EFFECT =
   "Users of a deleted config report InvalidReference and keep running.";
 
+/** unreadUserKinds returns each kind of USER_KINDS that reads holds as failed or stale, once. */
+export function unreadUserKinds(reads: SourceReads): string[] {
+  return unreadKinds(reads).filter((kind) =>
+    (USER_KINDS as readonly string[]).includes(kind),
+  );
+}
+
+/** unknownUsersText says that the users of a platform config are not known while the lists of kinds are not read. */
+export function unknownUsersText(kinds: readonly string[]): string {
+  return `The users are not known while the fleet manager cannot read ${kinds.join(", ")}.`;
+}
+
 /** platformRows returns one row for each platform config of sources, sorted by name. */
-export function platformRows(sources: PlatformSources): PlatformRow[] {
+export function platformRows(
+  sources: PlatformSources & SourceReads,
+): PlatformRow[] {
+  const known = unreadUserKinds(sources).length === 0;
   return sources.platformConfigs
     .map((config) => {
       const name = config.metadata.name ?? "";
@@ -53,7 +73,7 @@ export function platformRows(sources: PlatformSources): PlatformRow[] {
       return {
         name,
         method: authMethod(config),
-        users: platformUserCount(usersOf(name, sources)),
+        ...(known && { users: platformUserCount(usersOf(name, sources)) }),
         ...(ready && { ready }),
       };
     })

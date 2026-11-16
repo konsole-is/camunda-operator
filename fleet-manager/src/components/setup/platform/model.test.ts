@@ -3,7 +3,13 @@ import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import { platformFixtures } from "./fixtures";
-import { platformRows, userMinors, usersOf } from "./model";
+import {
+  platformRows,
+  unknownUsersText,
+  unreadUserKinds,
+  userMinors,
+  usersOf,
+} from "./model";
 import type { PlatformSources } from "./sources";
 
 function cluster(name: string, spec: object, status?: object) {
@@ -40,6 +46,54 @@ describe("platformRows", () => {
       ["broken", "basic", 1, "MissingSecret"],
       ["oidc-prod", "oidc", 5, "Healthy"],
     ]);
+  });
+
+  it("gives no user count while a kind that can use a config cannot be read", () => {
+    const rows = platformRows({
+      ...platformFixtures(),
+      errors: [{ kind: "Environment", message: "forbidden" }],
+    });
+
+    expect(rows.map((r) => r.users)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("gives no user count while a kind that can use a config has no snapshot", () => {
+    const rows = platformRows({
+      ...platformFixtures(),
+      stale: ["CamundaManagementClusterClaim"],
+    });
+
+    expect(rows.map((r) => r.users)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("counts the users while only a kind that cannot use a config is not read", () => {
+    const rows = platformRows({
+      ...platformFixtures(),
+      errors: [{ kind: "CamundaRelease", message: "forbidden" }],
+      stale: ["Namespace", "CamundaPlatformConfig"],
+    });
+
+    expect(rows.map((r) => r.users)).toEqual([0, 1, 5]);
+  });
+});
+
+describe("unreadUserKinds", () => {
+  it("gives each kind that can use a config and is failed or stale, once", () => {
+    expect(
+      unreadUserKinds({
+        errors: [
+          { kind: "DatabaseServer", message: "forbidden" },
+          { kind: "CamundaRelease", message: "forbidden" },
+        ],
+        stale: ["DatabaseServer", "Environment", "Namespace"],
+      }),
+    ).toEqual(["DatabaseServer", "Environment"]);
+  });
+
+  it("names the kinds that hide the users", () => {
+    expect(unknownUsersText(["DatabaseServer", "Environment"])).toBe(
+      "The users are not known while the fleet manager cannot read DatabaseServer, Environment.",
+    );
   });
 });
 

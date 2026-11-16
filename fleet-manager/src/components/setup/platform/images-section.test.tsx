@@ -13,6 +13,7 @@ function setup(
   minors: string[],
   images: PlatformDraft["images"] = {},
   errors: ValidationError[] = [],
+  usersKnown = true,
 ) {
   const onChange = vi.fn<(images: PlatformDraft["images"]) => void>();
   render(
@@ -20,6 +21,7 @@ function setup(
       images={images}
       defaults={defaultRepositories(twoMinorTable, minors)}
       errors={errors}
+      usersKnown={usersKnown}
       onChange={onChange}
     />,
   );
@@ -82,6 +84,17 @@ describe("ImagesSection", () => {
     expect(
       screen.getByText(
         "No cluster or management plane uses this config. The defaults are those of Camunda 8.10, the newest in the images table.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not call the config unused when its users are not known", () => {
+    setup([], {}, [], false);
+
+    expect(screen.queryByText(/^No cluster or management plane uses/)).toBeNull();
+    expect(
+      screen.getByText(
+        "The users of this config are not known. The defaults are those of Camunda 8.10, the newest in the images table.",
       ),
     ).toBeDefined();
   });

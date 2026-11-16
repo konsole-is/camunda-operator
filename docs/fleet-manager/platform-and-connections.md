@@ -68,7 +68,7 @@ status:
     message: "spec.licenseSecretRef: Secret camunda-system/camunda-license not found"
 ```
 
-The Secret stays picked and shows as `camunda-license (not found)`. A key that the Secret does not hold shows the same way, as `license-key (not found)`. A save keeps the reference. Create the Secret with the named key, or pick another one.
+The Secret stays picked and shows as `camunda-license (not found)`. A key that the Secret does not hold shows the same way, as `license-key (not found)`. A save keeps the reference. Create the Secret with the named key, or pick another one. When the fleet manager cannot read the Secrets of a namespace, the picker shows the read error and marks no Secret or key as not found.
 
 ## Default images
 
@@ -85,8 +85,14 @@ A database server runs a PostgreSQL version, not a Camunda minor, so it adds no 
 
 ## Delete a platform config
 
-The page offers the delete only when nothing uses the platform config. It also offers no delete while the fleet manager cannot read a kind that can use it. For example, it has no permission to list database servers. The page then shows the read error at the top. To delete, type the name of the platform config and select **Review the delete**. The review says:
+The page offers the delete only when nothing uses the platform config. To delete, type the name of the platform config and select **Review the delete**. The review says:
 
 `Users of a deleted config report InvalidReference and keep running.`
 
 Select **Delete the platform config** to delete it. In Git mode, the button reads **Push the delete to Git**, and the commit removes the file of the platform config. Your GitOps tool must prune to delete it from the cluster. Nothing uses the platform config when you delete it. The warning of the review is for a cluster or claim that names it later. For example, someone applies an old manifest after the delete. Such a user reports `InvalidReference`. The [Deletion](../crds/camundaplatformconfig.md#deletion) section of the reference says more.
+
+The fleet manager must read every kind that can use a platform config to know that nothing uses it. For example, it needs permission to list database servers. When it cannot read one of these kinds, the page offers no delete, and an open delete review closes. The section **Used by** and the column **Users** of the list then say that the users are not known. The page names the kinds that it cannot read:
+
+> Delete is possible when the fleet manager can read DatabaseServer.
+
+The page also shows this line for a short time after it opens or connects again.

@@ -4,11 +4,22 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { EditorSection } from "@/components/setup/form-parts";
 import { platformUserCount, type PlatformUsers } from "@/lib/usage";
+import { unknownUsersText } from "./model";
 
 type Item = { key: string; content: ReactNode };
 
-/** UsersSection lists each user of a platform config, grouped by kind. A group without users does not show. */
-export function UsersSection({ users }: { users: PlatformUsers }): ReactNode {
+/**
+ * UsersSection lists each user of a platform config, grouped by kind. A
+ * group without users does not show. While unread names a kind, the users
+ * are not known and none shows.
+ */
+export function UsersSection({
+  users,
+  unread = [],
+}: {
+  users: PlatformUsers;
+  unread?: readonly string[];
+}): ReactNode {
   const groups: { title: string; items: Item[] }[] = [
     {
       title: "Clusters",
@@ -64,7 +75,9 @@ export function UsersSection({ users }: { users: PlatformUsers }): ReactNode {
   ];
   return (
     <EditorSection title="Used by">
-      {platformUserCount(users) === 0 ? (
+      {unread.length > 0 ? (
+        <p className="text-sm text-muted">{unknownUsersText(unread)}</p>
+      ) : platformUserCount(users) === 0 ? (
         <p className="text-sm text-muted">Nothing uses this config.</p>
       ) : (
         groups

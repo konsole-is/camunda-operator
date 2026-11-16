@@ -16,3 +16,14 @@ export const Configs: Story = {
 };
 
 export const NoConfig: Story = { name: "No config", args: { rows: [] } };
+
+const unread = {
+  ...platformFixtures(),
+  errors: [{ kind: "DatabaseServer", message: "forbidden" }],
+  stale: ["Environment"],
+};
+
+export const UsersNotKnown: Story = {
+  name: "A list that cannot be read",
+  args: { rows: platformRows(unread), errors: unread.errors, stale: unread.stale },
+};

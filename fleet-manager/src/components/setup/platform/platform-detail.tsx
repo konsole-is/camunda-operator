@@ -10,6 +10,10 @@ import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
 import { EditorSection } from "@/components/setup/form-parts";
+import {
+  type SourceReads,
+  unreadDeleteText,
+} from "@/components/setup/releases/rows";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import { defaultRepositories } from "@/lib/merge";
 import { equalJSON } from "@/lib/policy";
@@ -34,7 +38,7 @@ import { ImagesSection } from "./images-section";
 import {
   DELETE_EFFECT,
   ROLL_NOTICE,
-  USER_KINDS,
+  unreadUserKinds,
   userMinors,
   usersOf,
 } from "./model";
@@ -56,9 +60,9 @@ function hrefOf(name: string): string {
 /**
  * PlatformDetail edits the platform config name of sources with the form
  * state of useSetupEditor. A save and a delete each show a review with a dry
- * run before the write. The delete is offered only while every kind that can
- * use the config is readable and nothing uses it. Without mode the form is
- * disabled.
+ * run before the write. The delete is offered only while nothing uses the
+ * config and no list of a kind that can use it failed or is stale. Without
+ * mode the form is disabled.
  */
 export function PlatformDetail({
   sources,
@@ -67,7 +71,7 @@ export function PlatformDetail({
   mode,
   actions,
 }: {
-  sources: PlatformSources & { errors: ReadError[] };
+  sources: PlatformSources & { errors: ReadError[] } & SourceReads;
   imagesTable: ImagesTable;
   name: string;
   mode?: WriteMode;
@@ -87,16 +91,15 @@ export function PlatformDetail({
   const { toast, show, dismiss } = useWriteToast();
   const users = usersOf(name, sources);
   const userCount = platformUserCount(users);
-  const usersUnread = sources.errors.some((e) =>
-    (USER_KINDS as readonly string[]).includes(e.kind),
-  );
+  const unread = unreadUserKinds(sources);
   const errors = draftErrors(draft);
   const count = changeCount(specOf(draftOf(base)), specOf(draft));
   const deleting = reviewing?.kind === "delete";
   // A user can appear, or a kind that can use the config can turn
   // unreadable, after the delete review opened. A delete that already runs
   // cannot stop.
-  if (deleting && !writing && (userCount > 0 || usersUnread)) editor.cancel();
+  if (deleting && !writing && (userCount > 0 || unread.length > 0))
+    editor.cancel();
 
   if (!live && !base) {
     return (
@@ -169,16 +172,14 @@ export function PlatformDetail({
             userMinors(users, sources),
           )}
           errors={errors}
+          usersKnown={unread.length === 0}
           onChange={(images) => setDraft({ ...draft, images })}
         />
-        <UsersSection users={users} />
+        <UsersSection users={users} unread={unread} />
         {live && (
           <EditorSection title="Delete the platform config">
-            {usersUnread ? (
-              <p className="text-sm text-muted">
-                Delete is possible when the fleet manager can read every kind
-                that can use this config.
-              </p>
+            {unread.length > 0 ? (
+              <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
             ) : userCount > 0 ? (
               <p className="text-sm text-muted">
                 Delete is possible when no cluster, management plane, database

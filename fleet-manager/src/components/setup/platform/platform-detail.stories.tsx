@@ -69,3 +69,15 @@ export const UnusedReadyToDelete: Story = {
   name: "Unused, ready to delete",
   args: { name: "basic-lab" },
 };
+
+export const UsersNotKnown: Story = {
+  name: "Users not known",
+  args: {
+    name: "basic-lab",
+    sources: {
+      ...platformFixtures(),
+      errors: [{ kind: "DatabaseServer", message: "forbidden" }],
+      stale: ["Environment"],
+    },
+  },
+};

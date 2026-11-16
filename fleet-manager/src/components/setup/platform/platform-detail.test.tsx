@@ -15,7 +15,7 @@ import {
 } from "@/components/fleet/namespaced-secret-ref-picker";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
-import type { WriteMode } from "@/lib/write/types";
+import type { Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";
 import { type PlatformActions, PlatformDetail } from "./platform-detail";
@@ -46,29 +46,32 @@ function setup(
     mode?: WriteMode;
     sources?: PlatformSources;
     errors?: ReadError[];
+    stale?: string[];
+    preview?: Preview;
   } = {},
 ) {
   const {
     name = "oidc-prod",
     sources = platformFixtures(),
     errors = [],
+    stale = [],
+    preview = { objects: [], errors: [] },
   } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
-    previewChange: vi.fn<PlatformActions["previewChange"]>(async () => ({
-      objects: [],
-      errors: [],
-    })),
+    previewChange: vi.fn<PlatformActions["previewChange"]>(
+      async () => preview,
+    ),
     applyChange: vi.fn<PlatformActions["applyChange"]>(async () => ({
       ok: true as const,
       mode: "direct" as const,
     })),
   };
-  const view = (s: PlatformSources, e: ReadError[]) => (
+  const view = (s: PlatformSources, e: ReadError[], st: string[]) => (
     <GitPushesProvider>
       <SecretRefsReaderContext.Provider value={SECRETS}>
         <PlatformDetail
-          sources={{ ...s, errors: e }}
+          sources={{ ...s, errors: e, stale: st }}
           imagesTable={twoMinorTable}
           name={name}
           mode={mode}
@@ -77,11 +80,14 @@ function setup(
       </SecretRefsReaderContext.Provider>
     </GitPushesProvider>
   );
-  const { rerender } = render(view(sources, errors));
+  const { rerender } = render(view(sources, errors, stale));
   return {
     actions,
-    rerender: (s: PlatformSources, e: ReadError[] = errors) =>
-      rerender(view(s, e)),
+    rerender: (
+      s: PlatformSources,
+      e: ReadError[] = errors,
+      st: string[] = stale,
+    ) => rerender(view(s, e, st)),
   };
 }
 
@@ -240,12 +246,53 @@ describe("PlatformDetail", () => {
 
     expect(
       screen.getByText(
-        "Delete is possible when the fleet manager can read every kind that can use this config.",
+        "Delete is possible when the fleet manager can read DatabaseServer.",
       ),
     ).toBeDefined();
     expect(
       screen.queryByRole("button", { name: "Review the delete" }),
     ).toBeNull();
+  });
+
+  it("says that the users are not known while a kind that can use the config cannot be read", () => {
+    setup({
+      name: "basic-lab",
+      errors: [{ kind: "DatabaseServer", message: "forbidden" }],
+    });
+
+    expect(
+      screen.getByText(
+        "The users are not known while the fleet manager cannot read DatabaseServer.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("Nothing uses this config.")).toBeNull();
+    expect(screen.queryByText(/^No cluster or management plane uses/)).toBeNull();
+  });
+
+  it("offers no delete while the watch of a kind that can use the config has not answered", () => {
+    setup({ name: "basic-lab", stale: ["Environment", "Namespace"] });
+
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read Environment.",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "The users are not known while the fleet manager cannot read Environment.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("offers the delete while only a kind that cannot use the config has no snapshot", () => {
+    setup({ name: "basic-lab", stale: ["Namespace", "CamundaRelease"] });
+
+    expect(
+      screen.getByRole("button", { name: "Review the delete" }),
+    ).toBeDefined();
   });
 
   it("closes the delete review when a user appears", async () => {
@@ -285,6 +332,52 @@ describe("PlatformDetail", () => {
     expect(
       screen.queryByRole("region", { name: "Review the delete" }),
     ).toBeNull();
+  });
+
+  it("closes the delete review when the watch of a kind that can use the config loses its snapshot", async () => {
+    const { rerender } = setup({ name: "basic-lab" });
+    await openDelete("basic-lab");
+
+    rerender(platformFixtures(), [], ["DatabaseServerPreset"]);
+
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+  });
+
+  it("warns in the review that a cleared field of another field manager stays", async () => {
+    const live = platformFixtures().platformConfigs.find(
+      (c) => c.metadata.name === "oidc-prod",
+    )!;
+    setup({
+      preview: {
+        objects: [
+          {
+            ref: {
+              apiVersion: "core.camunda.io/v1",
+              kind: "CamundaPlatformConfig",
+              name: "oidc-prod",
+            },
+            before: live,
+            after: live,
+            diff: [],
+          },
+        ],
+        errors: [],
+      },
+    });
+
+    fireEvent.change(input("Orchestration cluster"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = await screen.findByRole("region", {
+      name: "Review the platform config",
+    });
+    expect(
+      await within(review).findByText(
+        "spec.images stays, because another field manager set it.",
+      ),
+    ).toBeDefined();
   });
 
   it("labels the delete Push the delete to Git in Git mode", async () => {

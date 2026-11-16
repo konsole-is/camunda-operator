@@ -67,7 +67,8 @@ export function staticSecretRefs(
  * NamespacedSecretRefPicker picks a namespace, a Secret of it, and a key of
  * that Secret. It shows names only, never a Secret value. A value whose
  * namespace, Secret, or key does not exist stays picked and is marked, so a
- * save keeps it. onChange runs only on a pick of the user: it gets the
+ * save keeps it. While the Secrets of the namespace cannot be read, nothing
+ * is marked. onChange runs only on a pick of the user: it gets the
  * reference when all three are picked, and undefined when a pick clears a
  * reference that it reported before or that value gave.
  */
@@ -160,7 +161,10 @@ function SecretAndKey({
   onPick: (next: NamespacedSecretRef) => void;
 }) {
   const read = useContext(SecretRefsReaderContext);
-  const { secrets, error } = read(picked.namespace);
+  const { secrets: listed, error } = read(picked.namespace);
+  // A list that could not be read is not known, so it marks nothing as not
+  // found.
+  const secrets = error ? undefined : listed;
   const keys = secrets?.find((s) => s.name === picked.name)?.keys;
   const keyMissing =
     keys !== undefined && picked.key !== "" && !keys.includes(picked.key);

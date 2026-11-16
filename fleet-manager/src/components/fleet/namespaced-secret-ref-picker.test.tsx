@@ -193,4 +193,20 @@ describe("NamespacedSecretRefPicker", () => {
     expect(reader).toHaveBeenCalledWith("team-a");
     expect(reader).not.toHaveBeenCalledWith("");
   });
+  it("does not mark a Secret or a key as not found while the Secrets of the namespace cannot be read", () => {
+    const { options, group } = setup({
+      value: {
+        namespace: "camunda-system",
+        name: "camunda-license",
+        key: "license-key",
+      },
+      reader: () => ({ secrets: [], error: "secrets is forbidden" }),
+    });
+
+    expect(options("Secret")).toEqual(["None", "camunda-license"]);
+    expect(options("Key")).toEqual(["Pick a key", "license-key"]);
+    expect(within(group).getByRole("alert").textContent).toBe(
+      "Could not read the Secrets of camunda-system: secrets is forbidden",
+    );
+  });
 });

@@ -12,7 +12,7 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset";
 import type { Environment } from "@/generated/crds/environment";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { PLATFORM_SOURCE_KINDS } from "./source-kinds";
 
@@ -34,11 +34,12 @@ export type PlatformSources = {
 /**
  * usePlatformSources follows each list of initial live. errors holds the
  * error of each failed watch. The lists then keep their last items, which
- * can be out of date.
+ * can be out of date. stale holds the kind of each list whose watch has no
+ * snapshot on its current connection.
  */
 export function usePlatformSources(
   initial: PlatformSources,
-): PlatformSources & { errors: ReadError[] } {
+): PlatformSources & { errors: ReadError[]; stale: string[] } {
   const results = {
     platformConfigs: useLive("CamundaPlatformConfig", initial.platformConfigs),
     environments: useLive("Environment", initial.environments),
@@ -53,6 +54,8 @@ export function usePlatformSources(
     planeClaims: useLive("CamundaManagementClusterClaim", initial.planeClaims),
   };
   const keys = Object.keys(results) as (keyof PlatformSources)[];
+  const kinds = keys.map((key) => PLATFORM_SOURCE_KINDS[key]);
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
   const errors = keys.flatMap((key) => {
     const error = results[key].error;
     return error ? [{ kind: PLATFORM_SOURCE_KINDS[key], message: error }] : [];
@@ -70,6 +73,7 @@ export function usePlatformSources(
     clusterClaims: results.clusterClaims.items,
     planeClaims: results.planeClaims.items,
     errors,
+    stale: kinds.filter((_, i) => !fresh[i]),
   };
 }
 

@@ -47,6 +47,23 @@ describe("UsersSection", () => {
     expect(listText("Environments that default to it")).toEqual(["staging"]);
   });
 
+  it("says that the users are not known and lists none while a kind that can use the config is not read", () => {
+    render(
+      <UsersSection
+        users={usersOf("oidc-prod", platformFixtures())}
+        unread={["CamundaCluster", "Environment"]}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "The users are not known while the fleet manager cannot read CamundaCluster, Environment.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText("Nothing uses this config.")).toBeNull();
+  });
+
   it("says when nothing uses the config", () => {
     renderUsers("basic-lab");
 
