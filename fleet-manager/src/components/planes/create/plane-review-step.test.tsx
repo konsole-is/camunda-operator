@@ -95,11 +95,13 @@ function review(
       mode: "direct" as const,
     })),
     onWritten = vi.fn(),
+    onBack,
   }: {
     mode?: WriteMode;
     preview?: () => Promise<Preview>;
     create?: (change: Change) => Promise<WriteResult>;
     onWritten?: (result: WriteResult) => void;
+    onBack?: () => void;
   } = {},
 ) {
   const change = planeCreateChange(d, ctx);
@@ -113,6 +115,7 @@ function review(
       preview={preview}
       create={create}
       onWritten={onWritten}
+      onBack={onBack}
     />,
   );
   return { change, create, onWritten };
@@ -194,6 +197,17 @@ describe("PlaneReviewStep", () => {
     expect(confirm().disabled).toBe(true);
     await userEvent.click(confirm());
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("puts Back beside Create and calls onBack", async () => {
+    const onBack = vi.fn();
+    review(draft, { onBack });
+    const back = within(
+      screen.getByRole("region", { name: "Review" }),
+    ).getByRole("button", { name: "Back" });
+    expect(back.parentElement).toBe(confirm().parentElement);
+    await userEvent.click(back);
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("Create sends the change once and gives the result to onWritten", async () => {

@@ -16,6 +16,7 @@ import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
+import { Button } from "@/components/ui/button";
 import { hostConflicts, renderHosts, takenHosts } from "@/lib/claims/hosts";
 import { claimNameErrors, namesIn } from "@/lib/claims/names";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
@@ -67,7 +68,7 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 and 2 against the newest data. The picks of a section
  * that goes away leave the draft. Steps 3 to 5 hold no fields yet, and the
- * flow writes nothing.
+ * flow writes nothing. The review step holds the Back of the last step.
  */
 export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const live = {
@@ -281,9 +282,16 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
           }
         />
       ) : (
-        <p className="text-sm text-muted">
-          This step comes in a later version of the fleet manager.
-        </p>
+        <div className="flex flex-col items-start gap-4">
+          <p className="text-sm text-muted">
+            This step comes in a later version of the fleet manager.
+          </p>
+          {flow.current === "review" && (
+            <Button variant="ghost" onClick={flow.back}>
+              Back
+            </Button>
+          )}
+        </div>
       )}
     </WizardStepper>
   );

@@ -135,7 +135,7 @@ export function ClusterBasicsStep({
 function Part({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex min-w-0 flex-col gap-3">
-      <h2 className="font-heading text-base font-semibold">{title}</h2>
+      <h3 className="font-heading text-base font-semibold">{title}</h3>
       {children}
     </section>
   );

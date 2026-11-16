@@ -4,9 +4,9 @@ A management plane runs Management Identity, Console, and Web Modeler for the cl
 
 ## Create a management plane
 
-Open the page **Management planes** at `/fleet/planes` and select **New management plane**. The form has five steps. **Next** stays off while a step has an error, and the errors show under the step. You can go back to an earlier step at any time. The fleet manager keeps what you entered.
+Open the page **Management planes** at `/fleet/planes` and select **New management plane**. The form has five steps. **Next** stays off while this step or an earlier step has an error. The errors show at the bottom of the form, each with the name of its step. You can go back to an earlier step at any time. The fleet manager keeps what you entered.
 
-The form follows the cluster while you fill it in. An Environment, a namespace, or a host that changes shows in the errors of its step at once. A pick that goes away after you made it shows the same way. An example is a deleted `DatabaseConfig`, or a preset that the environment no longer lists. While a step has an error, **Create** stays off.
+The form follows the cluster while you fill it in. An Environment, a namespace, or a host that changes shows in the errors of its step at once. A pick that goes away after you made it shows the same way. An example is a deleted `DatabaseConfig`, or a preset that the environment no longer lists. While a step has an error, **Create** stays off. The review, the last step, lists that error at the bottom of the form in the same way.
 
 ### Basics
 

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { useCreateFlow } from "@/components/create/use-create-flow";
 import { AppShell } from "@/components/fleet/app-shell";
 import { heading } from "@/components/fleet/fixtures";
@@ -486,6 +486,7 @@ const meta = {
     preview: fn(async () => ({ objects: [], errors: [] })),
     create: fn(async () => ({ ok: true as const, mode: "direct" as const })),
     onWritten: fn(),
+    onBack: fn(),
   },
   // useCreateFlow reads initial only when it mounts, so a new initial from
   // the Controls panel remounts the harness.
@@ -669,6 +670,13 @@ export const StorageAndAccessWithADefaultThatKeepsTheResources: Story = {
 export const ReviewInDirectMode: Story = {
   name: "Review in direct mode",
   args: { step: "review", initial: { ...components, storage: reviewStorage } },
+  play: async ({ canvasElement }) => {
+    const review = within(
+      within(canvasElement).getByRole("region", { name: "Review" }),
+    );
+    await expect(review.getByRole("button", { name: "Create" })).toBeVisible();
+    await expect(review.getByRole("button", { name: "Back" })).toBeVisible();
+  },
 };
 
 export const ReviewInGitMode: Story = {
