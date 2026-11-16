@@ -46,8 +46,8 @@ export function failureKey(spec: WatchSpec) {
 
 /**
  * freshKey is the query key that is true once the watch got its snapshot,
- * until an error of the connection, a new connection that sends no
- * snapshot of the watch within SNAPSHOT_WAIT_MS, or the end of the watch.
+ * until an error of the connection, SNAPSHOT_WAIT_MS after the first new
+ * connection that has not sent its snapshot yet, or the end of the watch.
  * A list from before that can be out of date.
  */
 export function freshKey(spec: WatchSpec) {
@@ -62,8 +62,8 @@ export function freshKey(spec: WatchSpec) {
 
 /**
  * overdueKey is the query key that is true while the watch has no snapshot
- * since an error of the connection, or since SNAPSHOT_WAIT_MS after a new
- * connection opened. Until then, a list that never had a snapshot is the
+ * since an error of the connection, or since SNAPSHOT_WAIT_MS after the
+ * first new connection that has not sent its snapshot yet. Until then, a list that never had a snapshot is the
  * initial data of its query.
  */
 export function overdueKey(spec: WatchSpec) {
@@ -113,8 +113,8 @@ export interface SharedWatch {
    * removes the subscriber once, also when it is called again. A change of
    * the set of watches opens a new connection in a microtask, so the
    * subscribes of one render share one connection. A watch that was fresh
-   * stays fresh on that new connection for SNAPSHOT_WAIT_MS, or until its
-   * snapshot. An error of the connection sets freshKey of each watch to
+   * stays fresh until its snapshot on the new connection, but at most
+   * SNAPSHOT_WAIT_MS, also when the set changes again. An error of the connection sets freshKey of each watch to
    * false until its next snapshot. A watch without subscribers leaves its
    * list in the cache, sets its failure to null, and sets freshKey and
    * overdueKey to false.
@@ -142,8 +142,9 @@ class Connection implements SharedWatch {
   private source?: EventSource;
   private openIds: string[] = [];
   private reopen?: ReturnType<typeof setTimeout>;
-  private wait?: ReturnType<typeof setTimeout>;
-  private waiting = new Set<string>();
+  // A deadline stays across later changes of the set of watches, so that
+  // changes in quick succession cannot keep a list current for good.
+  private deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private scheduled = false;
 
   constructor(private readonly client: QueryClient) {}
@@ -186,18 +187,27 @@ class Connection implements SharedWatch {
   private open(ids: string[]) {
     this.source?.close();
     clearTimeout(this.reopen);
-    clearTimeout(this.wait);
+    for (const [id, deadline] of this.deadlines) {
+      if (ids.includes(id)) continue;
+      clearTimeout(deadline);
+      this.deadlines.delete(id);
+    }
     this.openIds = ids;
     this.source = undefined;
     if (ids.length === 0) return;
     const params = new URLSearchParams(ids.map((id) => ["watch", id]));
     const source = new EventSource(`/api/watch?${params}`);
     this.source = source;
-    this.waiting = new Set(ids);
-    this.wait = setTimeout(
-      () => this.markOverdue([...this.waiting]),
-      SNAPSHOT_WAIT_MS,
-    );
+    for (const id of ids) {
+      if (this.deadlines.has(id)) continue;
+      this.deadlines.set(
+        id,
+        setTimeout(() => {
+          this.deadlines.delete(id);
+          this.markOverdue([id]);
+        }, SNAPSHOT_WAIT_MS),
+      );
+    }
     // A closed source can still deliver frames that were in flight. Only the
     // open source writes, so a late frame cannot bring back an old state.
     const on = <T extends { watch: string }>(
@@ -215,8 +225,8 @@ class Connection implements SharedWatch {
       this.client.setQueryData(failureKey(spec), null);
       this.client.setQueryData(freshKey(spec), true);
       this.client.setQueryData(overdueKey(spec), false);
-      this.waiting.delete(frame.watch);
-      if (this.waiting.size === 0) clearTimeout(this.wait);
+      clearTimeout(this.deadlines.get(frame.watch));
+      this.deadlines.delete(frame.watch);
     });
     on<WatchDelta>("delta", (spec, frame) => {
       this.client.setQueryData<NamedObject[]>(watchKey(spec), (list = []) =>
@@ -230,7 +240,8 @@ class Connection implements SharedWatch {
     // body that is not text/event-stream. It then has readyState CLOSED.
     source.addEventListener("error", () => {
       if (this.source !== source) return;
-      clearTimeout(this.wait);
+      this.deadlines.forEach(clearTimeout);
+      this.deadlines.clear();
       this.markOverdue(this.openIds);
       if (source.readyState !== EventSource.CLOSED) return;
       this.reopen = setTimeout(() => this.open(this.openIds), REOPEN_DELAY_MS);

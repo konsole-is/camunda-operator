@@ -2233,6 +2233,44 @@ describe("The detail of a section", () => {
     expect(screen.queryByText("Editor")).toBeNull();
   });
 
+  it("names the backup kind, never that there are no backups, while a backup list is out of date", async () => {
+    renderOutOfDate(view({ initial: withClaim() }), ["LogicalBackupRDBMS"]);
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    const backups = screen.getByRole("region", { name: "Backups" });
+    expect(
+      within(backups).getByText(
+        "Not known: the page has no current list of LogicalBackupRDBMS.",
+      ),
+    ).toBeTruthy();
+    expect(within(backups).queryByText("No backups yet.")).toBeNull();
+  });
+
+  it("shows no claim content and no claim editor while the claim that the page holds is out of date", async () => {
+    renderOutOfDate(
+      view({
+        initial: withClaim(),
+        slots: { "cluster.claim.editor": <p>Claim editor</p> },
+      }),
+      ["CamundaClusterClaim"],
+    );
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(within(card).queryByText("orders-backups")).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Claim editor")).toBeNull();
+  });
+
   it("offers no editor in the Settings tab while the claim is out of date", async () => {
     open("section:secondary-storage");
     renderOutOfDate(

@@ -294,6 +294,24 @@ describe("sharedWatch", () => {
     expect(client.getQueryData(overdueKey(team))).toBe(false);
   });
 
+  it("keeps the deadline of a watch when the set of watches changes again before its snapshot", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    watch.subscribe(other);
+    await flush();
+    vi.advanceTimersByTime(SNAPSHOT_WAIT_MS - 1_000);
+    watch.subscribe({ kind: "Pod", namespace: "third" });
+    await flush();
+    expect(FakeEventSource.instances).toHaveLength(3);
+    vi.advanceTimersByTime(1_000);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    expect(client.getQueryData(overdueKey(team))).toBe(true);
+  });
+
   it("marks every watch not fresh and overdue at once on an error of the connection", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const watch = sharedWatch(client);
