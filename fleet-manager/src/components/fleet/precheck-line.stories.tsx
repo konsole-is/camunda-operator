@@ -26,3 +26,23 @@ export const SlotConflict: Story = {
     },
   },
 };
+
+export const WithClaimTabLink: Story = {
+  name: "With the Claim tab link",
+  args: {
+    claim: {
+      status: {
+        conditions: [
+          {
+            type: "Ready",
+            status: "False",
+            reason: "WiringCycle",
+            message:
+              "the inputs of the sections access and identity wait for each other",
+          },
+        ],
+      },
+    },
+    href: "/fleet/clusters/team-a/orders?tab=claim",
+  },
+};

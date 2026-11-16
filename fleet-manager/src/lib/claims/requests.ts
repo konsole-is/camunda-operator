@@ -25,3 +25,13 @@ export function requestName(
   const hash = bytesToHex(sha256(utf8ToBytes(name))).slice(0, 8);
   return `${name.slice(0, HEAD).replace(/[-.]+$/, "")}-${hash}`;
 }
+
+/** optimizeName returns the name of the CamundaOptimize of claim, as OptimizeName of pkg/components/camundaclusterclaim. */
+export function optimizeName(claim: string): string {
+  return `${claim}-optimize`;
+}
+
+/** backupScheduleName returns the name of the BackupSchedule of claim, as BackupScheduleName of pkg/components/camundaclusterclaim. */
+export function backupScheduleName(claim: string): string {
+  return `${claim}-backups`;
+}

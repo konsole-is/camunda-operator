@@ -16,7 +16,8 @@ import { TypedField } from "./typed-confirm";
  * mode the button reads gitConfirmLabel, "Push to Git" by default,
  * instead of confirmLabel. danger makes it a danger button. pending blocks
  * it while the write runs. With typed, it also stays disabled until the
- * user types that word exactly.
+ * user types that word exactly. describedBy is the id of the element that
+ * says why the confirm is disabled.
  */
 export function ReviewPanel({
   lines,
@@ -33,6 +34,7 @@ export function ReviewPanel({
   onConfirm,
   onCancel,
   diffLabel = "Changes to the claim",
+  describedBy,
 }: {
   lines: DiffLine[];
   effects: ReactNode[];
@@ -48,6 +50,7 @@ export function ReviewPanel({
   onConfirm?: () => void;
   onCancel?: () => void;
   diffLabel?: string;
+  describedBy?: string;
 }) {
   const effectsId = useId();
   const [text, setText] = useState("");
@@ -100,6 +103,7 @@ export function ReviewPanel({
           variant={danger ? "destructive" : "default"}
           className="transition-colors"
           disabled={pending || (typed !== undefined && text !== typed)}
+          aria-describedby={describedBy}
           onClick={() => onConfirm?.()}
         >
           {mode === "git" ? gitConfirmLabel : confirmLabel}
