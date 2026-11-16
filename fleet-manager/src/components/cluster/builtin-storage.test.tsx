@@ -186,6 +186,24 @@ describe("BuiltinStorage", () => {
     expect(within(box).queryByText("Healthy")).toBeNull();
   });
 
+  it("says Not known, never Not reported yet or No volumes, for a missing field while the kind is not read", () => {
+    render(
+      <BuiltinStorage
+        storage={{
+          kind: "ElasticsearchCluster",
+          name: "orders-es",
+          object: elasticsearch({}),
+        }}
+        unread={["ElasticsearchCluster"]}
+        now={requestNow}
+      />,
+    );
+    const box = screen.getByRole("region", { name: "ElasticsearchCluster" });
+    expect(term(box, "Version")).toBe("Not known");
+    expect(within(box).queryByText("Not reported yet")).toBeNull();
+    expect(within(box).queryByText("No volumes reported yet")).toBeNull();
+  });
+
   it("names the kind of an object that is not read yet, and shows nothing for one that is not in the namespace", () => {
     const storage = {
       kind: "ElasticsearchCluster" as const,

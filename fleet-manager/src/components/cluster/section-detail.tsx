@@ -65,6 +65,7 @@ export function SectionComponentDetail({
         eventRefs={[]}
         conditions={[]}
         ready={ready}
+        {...(unread && { unread: "PluginRequest" })}
         settings={settings}
         now={now}
       >

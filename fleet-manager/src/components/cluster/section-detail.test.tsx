@@ -278,6 +278,19 @@ describe("SectionComponentDetail", () => {
     expect(screen.queryByText(/has not made the request/)).toBeNull();
   });
 
+  it("marks the state and the conditions not known for a request that the page does not hold while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage()}
+        registrations={[]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      />,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+  });
+
   it("names conditions of the wrong type and shows none of them", () => {
     render(
       <SectionComponentDetail

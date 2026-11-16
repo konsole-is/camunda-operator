@@ -94,13 +94,19 @@ export function RequestOverview({
           region
         >
           {grantsUnread && <NotRead kinds={["Grant"]} />}
+          {registrationUnread && detail.grants.length > 0 && (
+            <NotRead kinds={["PluginRegistration"]} />
+          )}
           <Grants
-            grants={detail.grants.filter((g) => !g.templateGone)}
+            grants={detail.grants.filter(
+              (g) => registrationUnread || !g.templateGone,
+            )}
             withRequest={detail.clusterGrants}
             unread={grantsUnread}
+            templatesUnread={registrationUnread}
             now={now}
           />
-          {detail.grants.some((g) => g.templateGone) && (
+          {!registrationUnread && detail.grants.some((g) => g.templateGone) && (
             <div className="flex flex-col gap-2 border-t border-border pt-3">
               <p className="text-sm font-medium text-text">
                 {WITHOUT_TEMPLATE}
@@ -110,6 +116,7 @@ export function RequestOverview({
                 grants={detail.grants.filter((g) => g.templateGone)}
                 withRequest={detail.clusterGrants}
                 unread={grantsUnread}
+                templatesUnread={false}
                 now={now}
               />
             </div>
@@ -258,11 +265,13 @@ function Grants({
   grants,
   withRequest,
   unread,
+  templatesUnread,
   now,
 }: {
   grants: readonly GrantRow[];
   withRequest: boolean;
   unread: boolean;
+  templatesUnread: boolean;
   now: string;
 }) {
   if (grants.length === 0) return null;
@@ -286,7 +295,9 @@ function Grants({
               </Term>
             )}
           </Terms>
-          {!unread && !grant.error && <GrantStateLine grant={grant} />}
+          {!unread && !grant.error && (
+            <GrantStateLine grant={grant} templatesUnread={templatesUnread} />
+          )}
           {grant.errors.map((error) => (
             <p key={error} className="text-sm text-bad">
               {error}
@@ -321,11 +332,18 @@ function Grants({
 // GrantStateLine says in words what the conditions of a Grant that is not
 // Ready mean. A Grant whose template changed still holds the permission of
 // the old template, so it is not refused. TEMPLATE_GONE above the Grants of
-// a template that is gone says what happens to them.
-function GrantStateLine({ grant }: { grant: GrantRow }) {
+// a template that is gone says what happens to them. Without the
+// registrations, the page cannot tell the two apart.
+function GrantStateLine({
+  grant,
+  templatesUnread,
+}: {
+  grant: GrantRow;
+  templatesUnread: boolean;
+}) {
   switch (grant.state) {
     case "oldTemplate":
-      return grant.templateGone ? null : (
+      return grant.templateGone || templatesUnread ? null : (
         <p className="text-sm text-text-2">
           {GRANT_REASON_TEXT.TemplateChanged}
         </p>

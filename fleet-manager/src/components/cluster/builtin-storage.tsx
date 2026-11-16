@@ -21,7 +21,8 @@ const NOT_REPORTED = "Not reported yet";
  * and the conditions. A field that the status does not hold says "Not
  * reported yet". unread holds the kinds that the page could not read or
  * that are out of date: while it holds the kind of storage, the box names
- * that kind and shows its conditions as Not known. An object that is not
+ * that kind, shows its conditions and each missing field as Not known,
+ * and says nothing of missing volumes. An object that is not
  * in the namespace shows nothing, unless its kind is unread. now is the
  * time that the ages count to.
  */
@@ -37,6 +38,8 @@ export function BuiltinStorage({
   const kindUnread = unread.includes(storage.kind);
   if (!storage.object && !kindUnread) return null;
   const facts = storage.object && storageFacts(storage);
+  // A list that is not current cannot say that a field is missing.
+  const missing = kindUnread ? "Not known" : NOT_REPORTED;
   return (
     <DetailSection title={storage.kind} note={storage.name} region>
       {kindUnread && <NotRead kinds={[storage.kind]} />}
@@ -48,21 +51,21 @@ export function BuiltinStorage({
             </p>
           ))}
           <Terms>
-            <Term label="Version">{facts.version ?? NOT_REPORTED}</Term>
+            <Term label="Version">{facts.version ?? missing}</Term>
             {storage.kind === "ElasticsearchCluster" ? (
               <Term label="Snapshot repository">
-                {facts.snapshotRepository ?? NOT_REPORTED}
+                {facts.snapshotRepository ?? missing}
               </Term>
             ) : (
               <>
                 <Term label="Archive from">
-                  {facts.archive?.reachableFrom ?? NOT_REPORTED}
+                  {facts.archive?.reachableFrom ?? missing}
                 </Term>
                 {facts.archive?.boundary && (
                   <Term label="Archive boundary">{facts.archive.boundary}</Term>
                 )}
                 <Term label="Recovery request">
-                  {facts.recovery?.requestID ?? NOT_REPORTED}
+                  {facts.recovery?.requestID ?? missing}
                 </Term>
                 {facts.recovery?.targetTime && (
                   <Term label="Recovery target">
@@ -105,7 +108,9 @@ export function BuiltinStorage({
               </TableBody>
             </table>
           ) : (
-            <p className="text-sm text-muted">No volumes reported yet</p>
+            !kindUnread && (
+              <p className="text-sm text-muted">No volumes reported yet</p>
+            )
           )}
           {kindUnread ? (
             <span className="flex flex-wrap gap-1.5">

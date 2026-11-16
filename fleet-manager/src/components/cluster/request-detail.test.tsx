@@ -276,6 +276,33 @@ describe("RequestOverview", () => {
     expect(within(grants).queryByText(/^The role still has/)).toBeNull();
   });
 
+  it("names PluginRegistration and keeps every grant in one list, with no template line, while the registrations are not read", () => {
+    const changed = fixtureGrant("orders-read", "backup-storage", [
+      fixtureCondition("Applied", "True", "Healthy"),
+      fixtureCondition("MatchesTemplate", "False", "TemplateChanged"),
+      fixtureCondition("Ready", "False", "TemplateChanged"),
+    ]);
+    const gone = fixtureGrant("orders-write", "backup-storage");
+    gone.spec.template = "write-objects";
+    show("backup-storage", {
+      grants: [changed, gone],
+      unread: ["PluginRegistration"],
+    });
+    const grants = region("Grants");
+    expect(
+      within(grants).getByText(
+        "Not known: the page has no current list of PluginRegistration.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(grants).queryByText(
+        "Grants of a template the registration no longer has",
+      ),
+    ).toBeNull();
+    expect(within(grants).queryByText(/^The role still has/)).toBeNull();
+    expect(within(grants).getByText("orders-write")).toBeTruthy();
+  });
+
   it("shows a grant without a status with its statement and no conditions", () => {
     show("backup-storage", {
       grants: [fixtureGrant("orders-read", "backup-storage")],
