@@ -6,6 +6,7 @@ import {
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
   isClaimManager,
+  lastChanged,
   wholeFieldManagers,
 } from "./managers";
 
@@ -159,5 +160,51 @@ describe("wholeFieldManagers", () => {
       "spec.podLabels.injected": "label-injector",
     });
     expect(fieldManagers(live)["spec.podLabels"]).toBe("label-injector");
+  });
+});
+
+describe("lastChanged", () => {
+  it("returns the newest time of the managedFields entries", () => {
+    expect(
+      lastChanged({
+        metadata: {
+          managedFields: [
+            { manager: "kubectl", time: "2026-11-01T08:00:00Z" },
+            { manager: "fleet-manager", time: "2026-11-14T09:30:00Z" },
+            { manager: "gitops", time: "2026-11-02T10:00:00Z" },
+          ],
+        },
+      }),
+    ).toBe("2026-11-14T09:30:00.000Z");
+  });
+
+  it("reads a Date time", () => {
+    expect(
+      lastChanged({
+        metadata: {
+          managedFields: [{ time: new Date("2026-11-14T09:30:00Z") }],
+        },
+      }),
+    ).toBe("2026-11-14T09:30:00.000Z");
+  });
+
+  it("skips a time that does not parse", () => {
+    expect(
+      lastChanged({
+        metadata: {
+          managedFields: [
+            { time: "not a time" },
+            { time: "2026-11-02T10:00:00Z" },
+          ],
+        },
+      }),
+    ).toBe("2026-11-02T10:00:00.000Z");
+  });
+
+  it("is undefined without a timed entry", () => {
+    expect(
+      lastChanged({ metadata: { managedFields: [{ manager: "x" }] } }),
+    ).toBeUndefined();
+    expect(lastChanged({})).toBeUndefined();
   });
 });
