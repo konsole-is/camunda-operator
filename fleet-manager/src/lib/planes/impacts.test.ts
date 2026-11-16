@@ -576,6 +576,72 @@ describe("planeImpacts", () => {
     expect(planeImpacts(input(s))).toEqual([]);
   });
 
+  it("shows the callback move when a dot segment enters the External Keycloak URL", () => {
+    const live = externalClaim({
+      management: {
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com/x",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+      },
+    });
+    for (const url of [
+      "https://kc.example.com/auth/../x",
+      "https://kc.example.com/auth/%2e%2e/x",
+    ]) {
+      const s = changed(live, [
+        at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+        url,
+      ]);
+      expect(planeImpacts(input(s))).toEqual([CALLBACKS_MOVE, MOVE_AT_ONCE]);
+    }
+  });
+
+  it("names no callback move when a dot segment of the External Keycloak URL is escaped", () => {
+    const live = externalClaim({
+      management: {
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com/auth/../x",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+      },
+    });
+    const s = changed(live, [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc.example.com/auth/%2E%2e/x",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("adds no minor warning for a move into the keycloak mode", () => {
+    const live = externalClaim({
+      management: {
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+        console: {},
+      },
+      versions: { identity: "8.10.1", console: "8.9.133" },
+    });
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    expect(planeImpacts(input(s))).not.toContain(
+      "Management Identity and Console run on different minors: 8.10, 8.9. Camunda supports them together on one minor only.",
+    );
+  });
+
   it("warns on two minors when the change turns on an app with a version from before", () => {
     const live = planeClaim({
       versions: { identity: "8.10.1", keycloak: "26.6.4", console: "8.9.133" },

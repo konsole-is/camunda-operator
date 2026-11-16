@@ -186,13 +186,31 @@ function realmKey(url: string): string {
   if (!URL.canParse(url)) return url;
   const parsed = new URL(url);
   // An escape of a reserved character, such as %2F, names another path.
-  const path = parsed.pathname.replace(/%([0-9a-f]{2})/gi, (escape, hex) => {
-    const char = String.fromCharCode(parseInt(hex, 16));
-    return /[A-Za-z0-9._~-]/.test(char) ? char : escape.toUpperCase();
-  });
+  const path = rawPath(url, parsed).replace(
+    /%([0-9a-f]{2})/gi,
+    (escape, hex) => {
+      const char = String.fromCharCode(parseInt(hex, 16));
+      return /[A-Za-z0-9._~-]/.test(char) ? char : escape.toUpperCase();
+    },
+  );
   const host = parsed.hostname.replace(/\.$/, "");
   const port = parsed.port ? `:${parsed.port}` : "";
   return `${parsed.protocol}//${host}${port}${path.replace(/\/+$/, "")}`;
+}
+
+// rawPath returns the path of url as URL encodes it, with its dot segments
+// kept: the operator does not remove them.
+function rawPath(url: string, parsed: URL): string {
+  const raw = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(url)?.[1];
+  if (raw === undefined) return parsed.pathname;
+  return raw
+    .split("/")
+    .map((segment) =>
+      /^(\.|%2e){1,2}$/i.test(segment)
+        ? segment
+        : new URL(`http://h/${segment}`).pathname.slice(1),
+    )
+    .join("/");
 }
 
 function servedLines(
@@ -234,9 +252,8 @@ function versionLines(live: Spec, spec: Spec): string[] {
   const set = fields.filter(
     (f) => after[f] !== undefined && after[f] !== before[f],
   );
-  const turnedOn = fields.some(
-    (f) => !runningFields(runningOfClaim(live.management)).includes(f),
-  );
+  const was = runningFields(runningOfClaim(live.management));
+  const turnedOn = fields.some((f) => f !== "keycloak" && !was.includes(f));
   const matrix =
     set.length > 0 || turnedOn
       ? versionMatrixWarning(after, running)
