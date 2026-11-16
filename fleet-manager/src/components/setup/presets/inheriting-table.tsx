@@ -7,13 +7,23 @@ import type { InheritingRow } from "./inheriting";
 /**
  * InheritingTable lists the resources that inherit a preset with their
  * environment, namespace, own fields, and Ready condition. A field that a
- * slot fills names its section.
+ * slot fills names its section. When unread is not empty, it names those
+ * kinds and shows no resource.
  */
 export function InheritingTable({
   rows,
+  unread,
 }: {
   rows: InheritingRow[];
+  unread: readonly string[];
 }): ReactNode {
+  if (unread.length > 0)
+    return (
+      <p role="alert" className="text-sm text-bad">
+        The inheriting resources are not known while the fleet manager cannot
+        read {unread.join(", ")}.
+      </p>
+    );
   return (
     <DataTable
       label="Inheriting resources"

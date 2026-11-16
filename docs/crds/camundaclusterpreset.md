@@ -71,7 +71,15 @@ Each cluster reads the Secret of `auth.clientSecretRef` in its own namespace. Ev
 
 ## Changes
 
-When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change of `auth.basic.adminEmail` rolls no pods, and a change under `connectors.serviceAccount` rolls only the connectors pods. A new `auth.basic.passwordRotation` rotates the admin password of each cluster and rolls only the connectors pods, see [Authentication](camundacluster.md#authentication).
+When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change of `auth.basic.adminEmail` rolls no pods. A change under `connectors.serviceAccount` restarts only the connectors pods, and only in a cluster that runs connectors. The connectors pods restart after one of these changes:
+
+- The preset adds or removes the whole block, and the cluster does not set a block of its own. The connectors then move between the ServiceAccount `default` and an account of their own. See [Connectors](camundacluster.md#connectors).
+- The annotations change on an account that the operator creates. A switch of `create` also restarts the pods when the account has annotations.
+- The annotation `azure.workload.identity/client-id` is added or removed. This also applies to an account with `create: false`.
+
+Other changes to an account with `create: false` restart no pod.
+
+A new value of `auth.basic.passwordRotation` rotates the admin password of each cluster and rolls only the connectors pods, see [Authentication](camundacluster.md#authentication).
 
 A preset can lower `zeebe.storageSize`. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See [Operations: Grow storage](../guides/operations.md#grow-storage).
 

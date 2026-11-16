@@ -34,7 +34,7 @@ describe("usePresetSources", () => {
     expect(result.current.errors).toEqual(initial.readErrors);
 
     await waitFor(() =>
-      expect(FakeEventSource.instances.at(-1)?.ids()).toHaveLength(13),
+      expect(FakeEventSource.instances.at(-1)?.ids()).toHaveLength(15),
     );
     const source = FakeEventSource.instances.at(-1)!;
     for (const watch of source.ids()) {

@@ -15,4 +15,6 @@ export const PRESET_SOURCE_KINDS = {
   requests: "PluginRequest",
   sections: "PluginSection",
   registrations: "PluginRegistration",
+  releases: "CamundaRelease",
+  platformConfigs: "CamundaPlatformConfig",
 } as const satisfies Record<string, KindName>;
