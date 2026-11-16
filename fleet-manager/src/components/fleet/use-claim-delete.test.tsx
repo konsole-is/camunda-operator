@@ -183,10 +183,10 @@ const request = (name: string, policy: DeletionPolicy) => ({
   spec: { deletionPolicy: policy },
 });
 
-// live sends the claim on the watch of the claim as a snapshot, an empty
-// one when it is undefined, and requests on the watch of the requests,
-// none when it is "unread". The server then has server, c by default, and
-// the requests.
+// live shows c on the watch of the claim, and c undefined shows the claim
+// as gone. requests "unread" leaves the list of the requests unread, and
+// the default [] is a read list with no requests. The server then has
+// server, c by default, and the requests.
 async function live(
   c: Claim | undefined,
   server = c,
