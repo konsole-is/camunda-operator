@@ -66,11 +66,15 @@ The panel **Limits set at install** lists each limit of the chart by its label, 
 
 ### Parameters
 
-**Parameters** shows one panel for each parameter: its type, its range or its values, its default, and `A claim can change it`. The default is the value of the chart. Each environment adds a line with its value, or `No value`, and `A claim can change it` when its claims can change the parameter. The tab hides the parameters that the claim controller sets, such as `releaseRef` of the built-in `elasticsearch`. To change a value or `A claim can change it` for an environment, use the [Environments](environments.md) page.
+**Parameters** shows one panel for each parameter: its type, its range or its values, its default, and `A claim can change it`. The default is the value of the chart. The default and `A claim can change it` apply in a namespace without an environment.
+
+Each environment adds a line with its value, or `No value`, and `A claim can change it: Yes` or `A claim can change it: No`. The line shows what a new claim in that environment gets. An environment can set a parameter that the chart does not have. Its panel then says `Only an environment sets this parameter.` A claim that exists keeps the values that it resolved when it was made.
+
+The tab hides the parameters that the claim controller sets, such as `releaseRef` of the built-in `elasticsearch`. To change a value or `A claim can change it` for an environment, use the [Environments](environments.md) page.
 
 ### Grants
 
-A Grant asks the cloud identity of a cluster for one permission, for one request of the option. **Grants** shows each grant template of the option, with its format `aws-iam-statement`, its statement, and the inputs that it needs. The statement keeps its placeholders as written, for example `{{ .outputs.bucket }}`. The controller of the option fills them for each request. The line **Grants** counts the Grants of the template that are ready and refused.
+A Grant asks the cloud identity of a cluster for one permission, for one request of the option. **Grants** shows each grant template of the option, with its format `aws-iam-statement`, its statement, and the inputs that it needs. The statement keeps its placeholders as written, for example `{{ .outputs.bucket }}`. The controller of the option fills them for each request. The line **Grants** counts the Grants of the template that are ready and refused, and the Grants on an old template when there are any.
 
 Each Grant shows its namespace and name, its cluster, its request, and three conditions: `Applied`, `MatchesTemplate`, and `Ready`. A refused Grant also says what its reason means:
 
@@ -79,15 +83,15 @@ Each Grant shows its namespace and name, its cluster, its request, and three con
 | `OverCeiling` | The Grant asks for more than the ceiling of the identity allows. | Ask the admin of the identity extension to raise the ceiling, or change the parameters of the request. |
 | `OverSizeLimit` | The Grant makes the policy of the identity larger than the cloud allows. | Pick fewer options that ask for permissions for this cluster. |
 | `Rejected` | The identity or the cloud refused the Grant. The message says why. | Read the message. |
-| `TemplateChanged` | The statement of the Grant no longer matches its template in the registration. This is a reason of `MatchesTemplate`. | Wait for the controller of the option to write the Grant again from the new template. |
+| `TemplateChanged` | The template changed in the registration, for example after a chart upgrade. The identity still has the statement of the old template, so the Grant is applied. This is a reason of `MatchesTemplate`. The `Ready` of the Grant is `False`, so it is not ready, and it counts as on an old template, not as refused. | Wait for the controller of the option to write the Grant again from the new template. |
 
 The [Grant](../crds/grant.md#status) reference lists every condition of a Grant. An option without grant templates shows this line:
 
 ```text
-This option owns the policies of its role and writes no Grant.
+This option has no grant template, so it writes no Grant.
 ```
 
-A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**.
+A Grant whose template the registration no longer has shows in the last panel, **Grants of a template the registration no longer has**. A grant template that the page cannot read shows an error, with the Grants of that template under it.
 
 ### Health
 
@@ -99,7 +103,7 @@ A Grant whose template the registration no longer has shows in the last panel, *
 
 - **Cluster** or **Management plane**: the claim that wrote the request, with a link to its page.
 - **Environment**: the environment of the namespace, or `No environment`.
-- **Outputs** and **Ready**: the conditions `OutputsReady` and `Ready` of the request. A condition that is not `True` shows its message. When `Ready` has the reason `GrantRejected`, the line `Refused Grants:` names the refused Grants. Open the tab **Grants** to read why each one is refused.
+- **Outputs** and **Ready**: the conditions `OutputsReady` and `Ready` of the request. A condition that is not `True` shows its message. When `Ready` has the reason `GrantRejected`, the line `Grants with Ready False:` names each Grant of the request whose `Ready` is `False`. Open the tab **Grants** to read the reason of each one.
 - **Headline**: the first fact that the controller of the option reports about the request, for example `SecondaryStorageConfig: orders-storage, Ready`.
 - **Resources**: each resource that the controller made for the request, with its role and location. `On Orphan: Kept` says that the resource stays when the request is deleted with the deletion policy `Orphan`. `On Orphan: Deleted` says that it is deleted then too. With `Delete`, every resource is deleted.
 - **Grants**: each Grant of the request, with its `Ready` condition.
@@ -142,16 +146,16 @@ The page does not show an empty or healthy value for a kind that it has not read
 | `PluginRequest` | `Not known` in the column **Requests**. |
 | `Namespace` or `Environment` | The number of requests in the column **Requests**, with `Environments not known` in place of the number in each environment. |
 
-The page of an option also reads `Grant`, and the events. A tab that needs a kind that is not read shows `Not known:` and the kind, for example `Not known: PluginRequest is not read.` It does not show an empty list:
+The page of an option shows the same red line and the same `Not read:` line. It also reads `Grant`, and the events. A tab that needs a kind that is not read shows `Not known:` and the kind, for example `Not known: PluginRequest is not read.` It does not show an empty list:
 
 | Kind that is not read | What the page of an option shows |
 | --- | --- |
-| `PluginRegistration` | `Not known` on the tab **Health** in place of the conditions, and for **Other options of this controller** on the tab **About**. |
+| `PluginRegistration` | `Not known` on the tab **Health** in place of the conditions, and for **Other options of this controller** on the tab **About**. The tabs **About**, **Contract**, **Parameters**, and **Grants** show the registration as the page last read it, with the line `This is the registration as the page last read it. It can be old.` |
 | `PluginSection` | `Not known` in place of `Not a section on this cluster` on the tab **Contract**. |
 | `Environment` | `Values of the environments: Not known` on the tab **Parameters**, with no line for an environment. |
-| `PluginRequest` | `Not known` in place of `No claim uses this option.` on the tab **Used by**. Each request that the page still shows has `Ready: Not known` and `OutputsReady: Not known`. |
+| `PluginRequest` | `Not known` in place of `No claim uses this option.` on the tab **Used by**. Each request that the page still shows has `Ready: Not known`, `OutputsReady: Not known`, and `Not known` for **Headline**. |
 | `Namespace` or `Environment` | `Not known` for **Environment** on the tab **Used by**. |
-| `Grant` | No count of ready and refused Grants on the tab **Grants**, and `Not known` for **Grants** on the tab **Used by**. |
+| `Grant` | No count of ready and refused Grants on the tab **Grants**. Each Grant that the page still shows has `Applied: Not known`, `MatchesTemplate: Not known`, and `Ready: Not known`. `Not known` for **Grants** on the tab **Used by**. |
 | `Event` | `Not known` in place of `No events` on the tab **Health**. Events that the page read before stay, with a line that the list can miss events. |
 
 When the fleet manager can read the kind again, the page shows its values without a reload.
