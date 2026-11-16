@@ -68,8 +68,8 @@ function InstallCommand({ command }: { command: string }) {
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-start gap-2">
-        <pre className="min-w-0 flex-1 rounded-md bg-panel-2 px-3 py-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
+      <div className="flex flex-col items-start gap-2 sm:flex-row">
+        <pre className="w-full min-w-0 rounded-md sm:flex-1 bg-panel-2 px-3 py-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
           <code className="font-mono text-xs text-text">{command}</code>
         </pre>
         <Button variant="outline" size="sm" onClick={onCopy}>
