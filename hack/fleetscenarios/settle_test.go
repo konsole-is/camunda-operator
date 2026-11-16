@@ -169,9 +169,12 @@ func TestSettle(t *testing.T) {
 
 		err = settle(ctx, losingSim, deployments, 3*time.Second, before)
 		require.Error(t, err)
-		assert.ErrorContains(t, err,
+		assert.ErrorContains(
+			t,
+			err,
 			"the last write of the simulator that lost a race: simulating Deployment fight/racing: writing the status: "+
-				`Operation cannot be fulfilled on deployments.apps "racing"`)
+				`Operation cannot be fulfilled on deployments.apps "racing"`,
+		)
 	})
 }
 

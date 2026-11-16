@@ -311,7 +311,11 @@ func TestTemplateHashMapsTheUIDOfAKnownObjectInALabel(t *testing.T) {
 	run2 := map[string]string{"d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605": cluster}
 
 	first := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
-	assert.Equal(t, templateHash(first, run1), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), run2))
+	assert.Equal(
+		t,
+		templateHash(first, run1),
+		templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), run2),
+	)
 	assert.Equal(t, "6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71", first.Labels[operatorlabels.ClusterUIDKey],
 		"the template keeps its own UID")
 
@@ -334,7 +338,9 @@ func TestTemplateHashMapsTheUIDOfAKnownObjectInAnEnvironmentVariable(t *testing.
 	first := withEnvUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
 	assert.Equal(t, templateHash(first, run1), templateHash(withEnvUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), run2))
 
-	otherCluster := map[string]string{"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": scenarioUID("CamundaCluster", "team-b", "billing")}
+	otherCluster := map[string]string{
+		"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": scenarioUID("CamundaCluster", "team-b", "billing"),
+	}
 	assert.NotEqual(t, templateHash(first, run1), templateHash(first, otherCluster),
 		"the env var names another object")
 }
