@@ -5,6 +5,15 @@ describe("PLANE_TABS", () => {
   it("lists Overview as the first tab", () => {
     expect(PLANE_TABS[0]).toEqual({ id: "overview", label: "Overview" });
   });
+
+  it("lists the read tabs after Overview, in their order", () => {
+    expect(PLANE_TABS.slice(1, 5)).toEqual([
+      { id: "clusters", label: "Clusters served" },
+      { id: "optimize", label: "Optimize" },
+      { id: "contract", label: "Contract" },
+      { id: "endpoints", label: "Endpoints" },
+    ]);
+  });
 });
 
 describe("planeTabOf", () => {
@@ -15,6 +24,7 @@ describe("planeTabOf", () => {
     [[], "overview"],
     [["overview", "x"], "overview"],
     [["nope", "overview"], "overview"],
+    ["endpoints", "endpoints"],
   ])(
     "an unknown, missing, or array value gives overview, and the first item of an array counts: %j",
     (value, tab) => {

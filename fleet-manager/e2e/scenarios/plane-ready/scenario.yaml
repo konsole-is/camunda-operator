@@ -4,13 +4,15 @@ description: >-
   made from the CamundaManagementClusterClaim plane-a in the Environment
   Platform. The claim selects the built-in option for existing
   DatabaseConfigs. The OIDC platform config and its Secrets are those of
-  claim-ready, under the name oidc-platform. It adds the auth, token, and
-  JWKS URLs and the clients of Management Identity, Optimize, Console, and
-  Web Modeler, with the Secrets of the confidential clients, because a
-  plane in OIDC mode needs them. The DatabaseServerConfig and the
-  DatabaseConfigs are those of plane-create, without keycloak-db, because
-  OIDC mode runs no Keycloak. The Environment has no access section, so
-  the claim types its URLs.
+  claim-ready, under the name oidc-platform. It adds the auth, token,
+  and JWKS URLs and the clients of Management Identity, Optimize,
+  Console, and Web Modeler, with the Secrets of the confidential
+  clients, because a plane in OIDC mode needs them. The
+  DatabaseServerConfig and the DatabaseConfigs are those of plane-
+  create, without keycloak-db, because OIDC mode runs no Keycloak. The
+  Environment has no access section, so the claim types its URLs. The
+  claim selects every cluster with an empty cluster selector. The first
+  state has no cluster, so the plane serves none.
 seed:
   - apiVersion: v1
     kind: Namespace
@@ -191,6 +193,7 @@ seed:
       namespace: platform
     spec:
       environments: [platform]
+      clusterSelector: {}
       management:
         identityProvider:
           oidc: {}
@@ -217,3 +220,85 @@ seed:
           parameters:
             identity: identity-db
             webModeler: modeler-db
+states:
+  - name: serves-a-cluster
+    description: >-
+      Adds the namespace team-orders of the Environment Platform with the
+      CamundaCluster orders, which uses the platform config oidc-platform.
+      The plane lists the cluster. It also adds the CamundaOptimize orders
+      in that namespace, which reads the contract plane-a and sets an
+      external URL, so the plane shows its callbacks and its reader.
+    apply:
+      - apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: team-orders
+          labels:
+            fleet.camunda.io/environment: platform
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaClusterPreset
+        metadata:
+          name: small
+        spec:
+          cluster:
+            zeebe:
+              replicas: 1
+              partitions: 1
+              replicationFactor: 1
+            gateway:
+              mode: Embedded
+            operate:
+              mode: Embedded
+            tasklist:
+              mode: Embedded
+            admin:
+              mode: Embedded
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaRelease
+        metadata:
+          name: camunda-8-9
+        spec:
+          version: "8.9.23"
+      - apiVersion: v1
+        kind: Secret
+        metadata:
+          name: orders-storage-credentials
+          namespace: team-orders
+        stringData:
+          username: camunda
+          password: scenario
+      - apiVersion: core.camunda.io/v1
+        kind: SecondaryStorageConfig
+        metadata:
+          name: orders-storage
+          namespace: team-orders
+        spec:
+          type: elasticsearch
+          elasticsearch:
+            endpoint: "https://orders-es-http:9200"
+            credentialsSecretRef:
+              name: orders-storage-credentials
+              usernameKey: username
+              passwordKey: password
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaCluster
+        metadata:
+          name: orders
+          namespace: team-orders
+        spec:
+          platformConfigRef: oidc-platform
+          presetRef: small
+          releaseRef: camunda-8-9
+          externalUrl: "https://orders.example.com"
+          storageRef: orders-storage
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaOptimize
+        metadata:
+          name: orders
+          namespace: team-orders
+        spec:
+          version: "8.9.23"
+          managementAuthRef: plane-a
+          clusterRef:
+            name: orders
+          externalUrl: "https://orders.example.com/optimize"

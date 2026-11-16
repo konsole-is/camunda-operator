@@ -13,6 +13,7 @@ const {
   adminChangeSchema,
   backupChangeSchema,
   changeSchema,
+  claimBatchChangeSchema,
   claimChangeSchema,
   claimDeleteSchema,
   createChangeSchema,
@@ -1097,5 +1098,113 @@ describe("namespaceLabelChangeSchema", () => {
         delete: [environmentRef],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("claimBatchChangeSchema", () => {
+  const claim = (
+    name: string,
+    namespace = "team-a",
+    kind = "CamundaClusterClaim",
+  ) => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind,
+    metadata: { name, namespace },
+    spec: { releaseRef: "camunda-8-9-1" },
+  });
+  const batch = (over: Record<string, unknown> = {}) => ({
+    intent: "Move 2 clusters to the release camunda-8-9-1",
+    apply: [claim("orders"), claim("payments", "team-b")],
+    preconditions: {
+      "CamundaClusterClaim/team-a/orders": "4",
+      "CamundaClusterClaim/team-b/payments": "9",
+    },
+    ...over,
+  });
+
+  it("accepts cluster claims in many namespaces, each with its precondition", () => {
+    expect(claimBatchChangeSchema.safeParse(batch()).success).toBe(true);
+  });
+
+  it("accepts one cluster claim", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({
+          apply: [claim("orders")],
+          preconditions: { "CamundaClusterClaim/team-a/orders": "4" },
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("refuses a claim without a precondition", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({ preconditions: { "CamundaClusterClaim/team-a/orders": "4" } }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("refuses the same claim twice", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({ apply: [claim("orders"), claim("orders")] }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "a plane claim",
+      {
+        apply: [claim("plane", "team-a", "CamundaManagementClusterClaim")],
+        preconditions: { "CamundaManagementClusterClaim/team-a/plane": "1" },
+      },
+    ],
+    [
+      "a CamundaCluster",
+      {
+        apply: [
+          {
+            ...claim("orders"),
+            apiVersion: "core.camunda.io/v1",
+            kind: "CamundaCluster",
+          },
+        ],
+        preconditions: { "CamundaCluster/team-a/orders": "1" },
+      },
+    ],
+    [
+      "a claim of another apiVersion",
+      {
+        apply: [{ ...claim("orders"), apiVersion: "fleet.camunda.io/v1" }],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "1" },
+      },
+    ],
+    [
+      "a claim without a namespace",
+      {
+        apply: [{ ...claim("orders"), metadata: { name: "orders" } }],
+        preconditions: { "CamundaClusterClaim//orders": "1" },
+      },
+    ],
+    [
+      "a delete",
+      {
+        delete: [
+          {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            namespace: "team-a",
+            name: "old",
+          },
+        ],
+      },
+    ],
+    ["create", { create: ["CamundaClusterClaim/team-a/orders"] }],
+    ["force", { force: true }],
+    ["directOnly", { directOnly: true }],
+  ])("refuses %s", (_, over) => {
+    expect(claimBatchChangeSchema.safeParse(batch(over)).success).toBe(false);
   });
 });

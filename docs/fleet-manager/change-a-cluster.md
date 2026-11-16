@@ -121,7 +121,7 @@ The fleet manager checks a new release against the version that the cluster runs
 | Skips 8.*n*. Move to an 8.*n* release first. | The release is one minor too far. Move to a release of the minor between them first. |
 | downgrade | The release has a lower version. The review asks you to confirm the downgrade with **Downgrade**, or **Push downgrade** in Git mode. |
 | The version checks run when the cluster resumes. | The cluster is suspended, so it reports no version. No release shows as a downgrade or a skip. |
-| The version checks run when the cluster reports its version. | The cluster reports no version yet. |
+| The version checks run when the cluster reports its version. | The cluster reports no version yet, or a version that is not of the form `8.9.4`. |
 
 A downgrade writes the release and `allowVersionDowngrade` with the target version:
 

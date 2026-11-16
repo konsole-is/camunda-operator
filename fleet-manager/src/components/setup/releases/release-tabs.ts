@@ -4,6 +4,7 @@ export type ReleaseTab = "settings" | "rollout";
 /** RELEASE_TABS are the tabs that the release page shows, in order. */
 export const RELEASE_TABS: readonly { value: ReleaseTab; label: string }[] = [
   { value: "settings", label: "Settings" },
+  { value: "rollout", label: "Rollout" },
 ];
 
 /**

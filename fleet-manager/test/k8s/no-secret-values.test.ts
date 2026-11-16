@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   KubeConfig,
+  type KubernetesObject,
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
@@ -42,7 +43,9 @@ import {
 } from "@/app/setup/presets/actions";
 import {
   applyReleaseChange,
+  applyReleaseMove,
   previewReleaseChange,
+  previewReleaseMove,
 } from "@/app/setup/releases/actions";
 import {
   saveSettings,
@@ -308,13 +311,14 @@ function written(call: () => Promise<WriteResult>): () => Promise<WriteResult> {
   };
 }
 
-function refused(
+function refused<R extends WriteResult | Preview>(
   code: ApiErrorCode,
-  call: () => Promise<WriteResult>,
-): () => Promise<WriteResult> {
+  call: () => Promise<R>,
+): () => Promise<R> {
   return async () => {
-    const result = await call();
-    const errors = result.ok ? [] : result.errors;
+    const result: WriteResult | Preview = await call();
+    const errors =
+      "ok" in result ? (result.ok ? [] : result.errors) : result.errors;
     expect(errors).not.toEqual([]);
     for (const error of errors) {
       // A refusal of the schema of an action names no object.
@@ -359,11 +363,14 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
       }),
   ),
-  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete": () =>
-    previewClaimDelete(claimDelete()),
-  // The claim does not exist, so the delete has nothing to remove.
-  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": () =>
-    applyClaimDelete(claimDelete()),
+  // The precondition is older than the live claim, so the dry run and the
+  // delete reach the writer, refuse with Stale, and remove nothing.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimDelete":
+    refused("Stale", async () => previewClaimDelete(await staleClaimDelete())),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimDelete": refused(
+    "Stale",
+    async () => applyClaimDelete(await staleClaimDelete()),
+  ),
   "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimChange":
     previewed(() => previewPlaneClaimChange(planeClaimChange())),
   // The precondition names a claim that does not exist, so the write
@@ -460,6 +467,34 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
     applyReleaseChange({
       ...releaseChange(),
       preconditions: { [`CamundaRelease//${namespace}`]: "1" },
+    }),
+  ),
+  // A live claim, so the preview passes the checks of the move and reaches
+  // the writer.
+  "app/setup/releases/actions.ts#previewReleaseMove": previewed(async () => {
+    const name = `move-${randomUUID().slice(0, 8)}`;
+    const claim = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name, namespace },
+      spec: { presetRef: "medium" },
+    };
+    const live: KubernetesObject = await api.create(claim);
+    return previewReleaseMove({
+      intent: `Move the cluster ${namespace}/${name} to the release leak`,
+      apply: [{ ...claim, spec: { ...claim.spec, releaseRef: "leak" } }],
+      preconditions: {
+        [`CamundaClusterClaim/${namespace}/${name}`]:
+          live.metadata?.resourceVersion ?? "",
+      },
+    });
+  }),
+  // The precondition names a claim that does not exist, so the write
+  // refuses with Stale and leaves nothing behind.
+  "app/setup/releases/actions.ts#applyReleaseMove": refused("Stale", () =>
+    applyReleaseMove({
+      ...claimChange(),
+      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
   ),
   "app/setup/settings/actions.ts#saveSettings": written(async () =>
@@ -569,18 +604,30 @@ function claimChange() {
     ],
   };
 }
-function claimDelete() {
+// staleClaimDelete makes a claim and returns the change that deletes it,
+// with its UID and a resourceVersion that it no longer has.
+async function staleClaimDelete() {
+  const name = `delete-${randomUUID().slice(0, 8)}`;
+  const live: KubernetesObject = await api.create({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: { name, namespace },
+    spec: { presetRef: "medium" },
+  });
+  const key = `CamundaClusterClaim/${namespace}/${name}`;
   return {
-    intent: "Delete the claim leak",
+    intent: `Delete the claim ${name}`,
     apply: [],
     delete: [
       {
         apiVersion: "fleet.camunda.io/v1alpha1",
         kind: "CamundaClusterClaim",
         namespace,
-        name: "leak",
+        name,
       },
     ],
+    uids: { [key]: live.metadata?.uid ?? "" },
+    preconditions: { [key]: "1" },
   };
 }
 function planeClaimChange() {
