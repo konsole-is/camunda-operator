@@ -53,9 +53,16 @@ export function ComponentsPanel() {
       ...MAIL,
       ...names.map((field) => ({ field })),
     ];
+    // The picker offers only Secrets with the default keys, so a new
+    // Secret drops the keys of the old one.
+    const liveRef = live?.webModeler?.mail?.credentialsSecretRef;
     if (key === "credentialsSecret")
       if (value === "") edit.reset(at("credentialsSecretRef"));
-      else edit.set(at("credentialsSecretRef", "name"), value);
+      else
+        edit.set(
+          at("credentialsSecretRef"),
+          value === liveRef?.name ? liveRef : { name: value },
+        );
     else if (key === "fromName" && value === "") edit.reset(at("fromName"));
     else edit.set(at(key), value);
   };

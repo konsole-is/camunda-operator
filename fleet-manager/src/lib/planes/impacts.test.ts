@@ -947,6 +947,19 @@ describe("planeRestarts", () => {
     ]);
   });
 
+  it("restarts the apps on a new spelling of the External Keycloak URL that keeps the realm", () => {
+    const live = externalClaim();
+    (
+      live.spec.management.identityProvider.externalKeycloak as { url: string }
+    ).url = "https://kc.example.com:443";
+    const s = changed(live, [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc.example.com",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
   it("restarts the Optimize that reads the contract of an OIDC plane, which lists no status.optimize", () => {
     const live = planeClaim({
       platformConfigRef: "sso",

@@ -609,6 +609,21 @@ function restartsOf(
   // (keycloakenv.go, console.go, webmodeler.go).
   if (planeModeMove(input.session) || realmMoves(input.session))
     add("identity", "console", "webModeler", "optimize");
+  // The apps get the URL and the realm as written, less a trailing slash
+  // (realm.go), so another spelling of one realm restarts them too.
+  const written = (s: typeof before) => {
+    const external = s?.identityProvider?.externalKeycloak;
+    return [
+      stringOf(external?.url).replace(/\/+$/, ""),
+      stringOf(external?.realm),
+    ];
+  };
+  if (
+    modeAfter === "externalKeycloak" &&
+    identityModeOf(before?.identityProvider) === "externalKeycloak" &&
+    differs(written(before), written(after))
+  )
+    add("identity", "console", "webModeler");
   if (
     modeAfter === "externalKeycloak" &&
     differs(

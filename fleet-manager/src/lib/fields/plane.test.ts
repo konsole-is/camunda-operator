@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { describe, expect, it } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
@@ -348,6 +349,33 @@ describe("planeFields", () => {
     expect(byKey(fields, `${parameter}.identity`).lock).toEqual({
       reason: "admin",
     });
+  });
+
+  it("finds the access section by its slot when the sections are known", () => {
+    const access = claimOf({
+      plugins: [
+        ...(oidcClaim.spec.plugins ?? []),
+        { section: "public-ingress", registration: "gateway-access" },
+      ],
+    });
+    const sections = [
+      {
+        metadata: { name: "public-ingress" },
+        spec: { slot: "externalAccess" },
+      },
+    ] as unknown as PluginSection[];
+    const fields = planeFields({
+      claim: access,
+      registrations,
+      environment,
+      sections,
+    });
+    expect(
+      byKey(fields, "plugins.public-ingress.gateway-access"),
+    ).toMatchObject({
+      group: "access",
+    });
+    expect(byKey(fields, "url.identity").lock).toEqual({ reason: "section" });
   });
 
   it("locks the typed URLs while the claim has an access selection", () => {

@@ -1,6 +1,7 @@
 // This module runs in the browser and on the server.
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { Resource } from "@/lib/k8s/kinds";
 import { ACCESS_SECTION } from "@/lib/labels";
 import type { FieldPath } from "@/lib/merge";
@@ -90,8 +91,17 @@ export function planeFields(input: {
   plane?: Resource<"CamundaManagementCluster">;
   registrations: readonly PluginRegistration[];
   environment?: Environment;
+  sections?: readonly PluginSection[];
 }): PlaneField[] {
-  const { claim, plane, registrations, environment } = input;
+  const { claim, plane, registrations, environment, sections } = input;
+  // The access section is the one of the externalAccess slot. Without the
+  // sections, only its usual name is known.
+  const isAccess = (s: PluginSelection) => {
+    const section = sections?.find((x) => x.metadata?.name === s.section);
+    return section
+      ? section.spec.slot === "externalAccess"
+      : s.section === ACCESS_SECTION;
+  };
   const spec = claim.spec;
   // Another tool can write null where the CRD expects an object.
   const management: Partial<typeof spec.management> = spec.management ?? {};
@@ -259,10 +269,12 @@ export function planeFields(input: {
   }
 
   for (const s of selections) {
-    fields.push(...selectionFields(s, recorded, registrations, environment));
+    fields.push(
+      ...selectionFields(s, isAccess(s), recorded, registrations, environment),
+    );
   }
 
-  const accessLock = selections.some((s) => s.section === ACCESS_SECTION)
+  const accessLock = selections.some(isAccess)
     ? { lock: { reason: "section" } as const }
     : {};
   for (const row of SLOT_FIELDS) {
@@ -313,12 +325,12 @@ const GROUPS: readonly PlaneFieldGroup[] = [
 
 function selectionFields(
   s: PluginSelection,
+  access: boolean,
   recorded: ResolvedPolicy | undefined,
   registrations: readonly PluginRegistration[],
   environment: Environment | undefined,
 ): PlaneField[] {
-  const group: PlaneFieldGroup =
-    s.section === ACCESS_SECTION ? "access" : "databases";
+  const group: PlaneFieldGroup = access ? "access" : "databases";
   const item: Step[] = [
     { field: "spec" },
     { field: "plugins" },

@@ -623,6 +623,35 @@ describe("PlaneClaimEditor served clusters, components, and versions", () => {
     });
   });
 
+  it("a new mail credentials Secret drops the custom keys of the old one", async () => {
+    const claim = claimOf();
+    claim.spec.management.webModeler = {
+      mail: {
+        smtpHost: "smtp",
+        smtpPort: 587,
+        fromAddress: "a@example.com",
+        credentialsSecretRef: {
+          name: "old-smtp",
+          usernameKey: "user",
+          passwordKey: "pass",
+        },
+      },
+    };
+    claim.spec.management.identity.admin.email = "a@example.com";
+    claim.spec.versions.webModeler = "8.9.15";
+    editor({ claim });
+    open("Components");
+    fireEvent.change(screen.getByLabelText(/credentials/i), {
+      target: { value: "kc-admin" },
+    });
+    fireEvent.click(reviewButton());
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    const sent = fakeWriter.previewed[0].apply[0] as unknown as PlaneClaim;
+    expect(sent.spec.management.webModeler?.mail.credentialsSecretRef).toEqual({
+      name: "kc-admin",
+    });
+  });
+
   it("Console off says that served clusters lose their Console settings and restart once", () => {
     editor();
     open("Components");

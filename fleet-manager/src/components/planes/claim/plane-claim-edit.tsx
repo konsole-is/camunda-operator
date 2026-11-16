@@ -20,6 +20,7 @@ import {
 } from "@/components/fleet/claim-edit";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   type FieldLock,
   IDENTITY_INITIAL_CLAIM_ANNOTATION,
@@ -245,13 +246,14 @@ export function PlaneClaimEditProvider({
   const [locks] = useState<LockProvider>(() => (path: FieldPath) => {
     const after = afterRef.current;
     if (!after) return undefined;
-    const { plane, registrations, environment } = sourcesRef.current;
+    const { plane, registrations, environment, sections } = sourcesRef.current;
     const liveOidc = identityModeOf(liveModeRef.current) === "oidc";
     if (!liveOidc && PAIR_PATHS.includes(path)) return undefined;
     return lockedFields(after, movingRef.current, {
       plane,
       registrations,
       environment,
+      sections,
     })(path);
   });
 
@@ -409,13 +411,17 @@ export function planeChangeInput(
  */
 export function planeFieldsOf(
   claim: PlaneClaim,
-  sources: Pick<PlaneClaimSources, "plane" | "registrations" | "environment">,
+  sources: Pick<
+    PlaneClaimSources,
+    "plane" | "registrations" | "environment" | "sections"
+  >,
 ): PlaneField[] {
   return planeFields({
     claim,
     plane: sources.plane,
     registrations: generated<PluginRegistration[]>(sources.registrations),
     environment: generated<Environment | undefined>(sources.environment),
+    sections: generated<PluginSection[]>(sources.sections),
   });
 }
 
@@ -512,7 +518,10 @@ function recordedPairEdits(
 function lockedFields(
   claim: PlaneClaim,
   moving: IdentityModeId | undefined,
-  sources: Pick<PlaneClaimSources, "plane" | "registrations" | "environment">,
+  sources: Pick<
+    PlaneClaimSources,
+    "plane" | "registrations" | "environment" | "sections"
+  >,
 ): LockProvider {
   const spec = claim.spec;
   const read =
