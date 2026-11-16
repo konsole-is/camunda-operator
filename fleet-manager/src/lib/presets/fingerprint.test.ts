@@ -33,7 +33,9 @@ describe("fingerprintMoved", () => {
 
   it("moves for every other change", () => {
     expect(
-      fingerprintMoved(base, { cluster: { ...base.cluster, version: "8.9.8" } }),
+      fingerprintMoved(base, {
+        cluster: { ...base.cluster, version: "8.9.8" },
+      }),
     ).toBe(true);
   });
 
@@ -43,7 +45,10 @@ describe("fingerprintMoved", () => {
 
   it("ignores the admin email", () => {
     expect(
-      fingerprintMoved(base, withBasic(base, { adminEmail: "team@example.com" })),
+      fingerprintMoved(
+        base,
+        withBasic(base, { adminEmail: "team@example.com" }),
+      ),
     ).toBe(false);
   });
 

@@ -2,17 +2,22 @@
 
 import { type ReactNode, useState } from "react";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
+import { ChangeBar } from "@/components/fleet/change-bar";
 import { ChangeReview } from "@/components/fleet/change-review";
+import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
 import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
-import type { KindName } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
-import type { WriteMode } from "@/lib/write/types";
+import type { Preview, WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
+import { presetChangeCount, presetDraftOf, presetUpdateChange } from "./draft";
 import { FactsList } from "./facts-list";
+import { impactUnread, presetImpact } from "./impact";
+import { ImpactPreview } from "./impact-preview";
 import { inheritingRows } from "./inheriting";
 import { InheritingTable } from "./inheriting-table";
 import {
@@ -22,8 +27,11 @@ import {
   presetHref,
   presetLabel,
 } from "./kinds";
+import { PresetEditor } from "./preset-editor";
 import { GIT_DELETE_EFFECT } from "./preset-list";
-import { PresetSettings } from "./preset-settings";
+import { CannotSetSection, PresetSettings } from "./preset-settings";
+import { RotateAction } from "./rotate-action";
+import { rotationUnread } from "./rotation";
 import { changedLabel, presetRows, usedByLabel } from "./rows";
 import {
   type PresetActions,
@@ -33,47 +41,60 @@ import {
 } from "./sources";
 
 /**
- * PresetDetail shows the preset name of kind: its facts and users, each
- * field that it sets with its merge rule, the fields that it cannot set,
- * and the resources that inherit it. A preset that can be deleted offers
- * a delete after a typed confirm and a review. The review closes before
- * its write starts when the preset can no longer be deleted. Without mode
- * nothing can be deleted.
+ * PresetDetail shows the preset name of kind: its facts and users, an
+ * editor of its fields and description with the merge rule of each field
+ * that it sets, the fields that it cannot set, and the resources that
+ * inherit it. A save shows a review with the dry run and the impact on
+ * each inheriting resource, computed from the spec that the dry run keeps;
+ * the save waits while the users or the releases of the impact cannot be
+ * read. A cluster preset offers the rotation of the admin password of its
+ * clusters while the form has no pending change. A preset that can be
+ * deleted offers a delete after a typed confirm and a review. The delete
+ * review closes before its write starts when the preset can no longer be
+ * deleted. secrets are the Secret refs of each namespace whose Secrets the
+ * body can name. Without mode nothing can change.
  */
 export function PresetDetail({
   sources,
   kind,
   name,
+  secrets,
   mode,
   actions,
 }: {
   sources: PresetSources & { errors: ReadError[]; pending: KindName[] };
   kind: PresetKind;
   name: string;
+  secrets: Readonly<Record<string, SecretRefs>>;
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
   const list = listOf(kind, sources);
   const live = list.find((p) => p.metadata.name === name);
   const [writing, setWriting] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [editorErrors, setEditorErrors] = useState<string[]>([]);
   const editor = useSetupEditor({
     live,
     isNew: false,
     listed: list.map((p) => p.metadata.name ?? ""),
-    draftOf: (preset: PresetObject | undefined) =>
-      preset ? presetBody(preset) : undefined,
+    draftOf: presetDraftOf,
     listHref: PRESETS_HREF,
     hrefOf: (n) => presetHref(kind, n),
+    onReset: () => setEditorErrors([]),
   });
-  const { base, reviewing, locked } = editor;
+  const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
   const row = presetRows(sources, sources.errors, sources.pending).find(
     (r) => r.kind === kind && r.name === name,
   );
   const shown = live ?? base;
+  const count = presetChangeCount(base, draft);
+  const deleting = reviewing?.kind === "delete";
+  const unread = impactUnread(kind, sources.errors, sources.pending);
   // A preset can get a user, or an environment can allow it, after the
-  // review opened. A write that already runs cannot stop.
-  if (reviewing && !writing && !row?.deletable) editor.cancel();
+  // delete review opened. A write that already runs cannot stop.
+  if (deleting && !writing && !row?.deletable) editor.cancel();
 
   if (!shown) {
     return (
@@ -156,12 +177,47 @@ export function PresetDetail({
           The preset {name} was deleted.
         </p>
       )}
-      <PresetSettings kind={kind} body={presetBody(shown)} />
+      <fieldset
+        disabled={locked || rotating || !live || !mode}
+        className="flex min-w-0 flex-col gap-4"
+      >
+        <PresetEditor
+          key={editor.generation}
+          kind={kind}
+          draft={draft}
+          live={presetBody(shown)}
+          secrets={secrets}
+          onDraft={editor.setDraft}
+          onErrors={setEditorErrors}
+        />
+      </fieldset>
+      {kind === "CamundaClusterPreset" ? (
+        <CannotSetSection kind={kind} />
+      ) : (
+        <PresetSettings kind={kind} body={draft.body} />
+      )}
       <EditorSection title="Inheriting resources">
         <InheritingTable rows={inheritingRows(shown, sources)} />
       </EditorSection>
+      {live?.kind === "CamundaClusterPreset" && (
+        <EditorSection title="Admin password">
+          <RotateAction
+            preset={live as Resource<"CamundaClusterPreset">}
+            sources={sources}
+            unread={rotationUnread(sources.errors, sources.pending)}
+            mode={mode}
+            disabled={count > 0 || reviewing !== undefined || locked}
+            actions={actions}
+            show={(result, message) => {
+              show(result, message);
+              editor.written(result, name);
+            }}
+            onReviewing={setRotating}
+          />
+        </EditorSection>
+      )}
       {live && row && (
-        <fieldset disabled={locked || !mode} className="min-w-0">
+        <fieldset disabled={locked || rotating || !mode} className="min-w-0">
           <EditorSection title="Delete the preset">
             {row.deletable ? (
               <TypedConfirm
@@ -183,7 +239,55 @@ export function PresetDetail({
           </EditorSection>
         </fieldset>
       )}
-      {reviewing && mode && (
+      {reviewing && !deleting && mode && base && (
+        <section
+          aria-label="Review the preset"
+          className="rounded-md border border-border bg-panel p-5"
+        >
+          <ChangeReview
+            change={reviewing.change}
+            mode={mode}
+            diffLabel="Changes to the preset"
+            effects={(preview) => [
+              <ImpactPreview
+                key="impact"
+                impact={presetImpact({
+                  kind,
+                  name,
+                  ...specsOf(preview, base, reviewing.change),
+                  sources,
+                  unread,
+                })}
+              />,
+            ]}
+            hold={unread.length > 0}
+            confirm={{ label: "Save" }}
+            savedMessage={`The preset ${name} is saved.`}
+            preview={actions.previewChange}
+            apply={actions.applyChange}
+            show={(result, message) => {
+              show(result, message);
+              editor.written(result, name);
+            }}
+            onCancel={editor.cancel}
+            onWriting={setWriting}
+          />
+        </section>
+      )}
+      {!reviewing && count > 0 && !locked && !rotating && base && (
+        <ChangeBar
+          count={count}
+          blocked={editorErrors[0]}
+          onDiscard={editor.discard}
+          onReview={() =>
+            editor.review({
+              change: presetUpdateChange(base, draft),
+              kind: "save",
+            })
+          }
+        />
+      )}
+      {deleting && mode && (
         <section
           aria-label="Review the delete"
           className="rounded-md border border-border bg-panel p-5"
@@ -222,6 +326,26 @@ export function PresetDetail({
   );
 }
 
+// specsOf returns the spec of the preset before the save and the spec that
+// the dry run of preview keeps. Another field manager can keep a field that
+// the change leaves out, so the impact reads the preview, not the draft.
+// Without a previewed object it falls back to base and the applied spec.
+function specsOf(
+  preview: Preview,
+  base: PresetObject,
+  change: { apply: { spec?: unknown }[] },
+): { before: PresetObject["spec"]; after: PresetObject["spec"] } {
+  const object = preview.objects.find(
+    (o) => o.ref.kind === base.kind && o.ref.name === base.metadata.name,
+  );
+  return {
+    before: (object?.before?.spec ?? base.spec) as PresetObject["spec"],
+    after: (object?.after?.spec ??
+      change.apply[0]?.spec ??
+      base.spec) as PresetObject["spec"],
+  };
+}
+
 function listOf(kind: PresetKind, sources: PresetSources): PresetObject[] {
   switch (kind) {
     case "CamundaClusterPreset":
@@ -238,12 +362,14 @@ export function PresetDetailLive({
   initial,
   kind,
   name,
+  secrets,
   mode,
   actions,
 }: {
   initial: PresetSnapshot;
   kind: PresetKind;
   name: string;
+  secrets: Readonly<Record<string, SecretRefs>>;
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
@@ -253,6 +379,7 @@ export function PresetDetailLive({
       sources={sources}
       kind={kind}
       name={name}
+      secrets={secrets}
       mode={mode}
       actions={actions}
     />

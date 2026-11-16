@@ -57,7 +57,9 @@ const storage = (size: string) =>
     c.zeebe = { ...c.zeebe, storageSize: size };
   });
 const rotated = withCluster((c) => {
-  c.auth = { basic: { ...c.auth?.basic, passwordRotation: "2026-11-15T10:42Z" } };
+  c.auth = {
+    basic: { ...c.auth?.basic, passwordRotation: "2026-11-15T10:42Z" },
+  };
 });
 
 describe("presetImpact of a cluster preset", () => {
@@ -147,7 +149,10 @@ describe("presetImpact of a cluster preset", () => {
 
 describe("presetImpact of an Elasticsearch or PostgreSQL preset", () => {
   const es = fixtures.elasticsearchPresets[0];
-  const esUser = (name: string, spec: object): Resource<"ElasticsearchCluster"> =>
+  const esUser = (
+    name: string,
+    spec: object,
+  ): Resource<"ElasticsearchCluster"> =>
     ({
       apiVersion: "core.camunda.io/v1",
       kind: "ElasticsearchCluster",
@@ -170,7 +175,9 @@ describe("presetImpact of an Elasticsearch or PostgreSQL preset", () => {
       after: { cluster: { ...es.spec.cluster, storageSize: "80Gi" } },
       sources: esSources,
     });
-    expect(impact.rows.map((r) => [r.name, r.mark, r.connectorsRestart])).toEqual([
+    expect(
+      impact.rows.map((r) => [r.name, r.mark, r.connectorsRestart]),
+    ).toEqual([
       ["logs", "Pods may roll", false],
       ["pinned", "Unchanged", false],
     ]);
@@ -248,10 +255,11 @@ describe("impactUnread", () => {
 
   it("names only the users of an Elasticsearch or PostgreSQL preset", () => {
     expect(
-      impactUnread("ElasticsearchClusterPreset", [], [
-        "CamundaRelease",
-        "ElasticsearchCluster",
-      ]),
+      impactUnread(
+        "ElasticsearchClusterPreset",
+        [],
+        ["CamundaRelease", "ElasticsearchCluster"],
+      ),
     ).toEqual(["ElasticsearchCluster"]);
     expect(
       impactUnread(

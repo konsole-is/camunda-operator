@@ -41,7 +41,9 @@ describe("ImpactPreview", () => {
 
   it("shows the notes after the rows", () => {
     render(<ImpactPreview impact={impact} />);
-    const resources = screen.getByRole("list", { name: "Inheriting resources" });
+    const resources = screen.getByRole("list", {
+      name: "Inheriting resources",
+    });
     const notes = screen.getByRole("list", { name: "Notes" });
     expect(notes.textContent).toBe(impact.notes[0]);
     expect(
@@ -58,7 +60,11 @@ describe("ImpactPreview", () => {
   it("names the lists that cannot be read and shows no resource as unaffected", () => {
     render(
       <ImpactPreview
-        impact={{ rows: [], notes: [], unread: ["CamundaCluster", "CamundaRelease"] }}
+        impact={{
+          rows: [],
+          notes: [],
+          unread: ["CamundaCluster", "CamundaRelease"],
+        }}
       />,
     );
     expect(screen.getByRole("alert").textContent).toContain(

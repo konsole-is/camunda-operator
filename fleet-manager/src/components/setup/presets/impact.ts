@@ -4,7 +4,11 @@ import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpr
 import type { DatabaseServerPresetSpec } from "@/generated/crds/databaseserverpreset";
 import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
 import type { KindName } from "@/lib/k8s/kinds";
-import { mergeCluster, mergeDatabaseServer, mergeElasticsearch } from "@/lib/merge";
+import {
+  mergeCluster,
+  mergeDatabaseServer,
+  mergeElasticsearch,
+} from "@/lib/merge";
 import { parseQuantity } from "@/lib/observe/quantity";
 import { equalJSON } from "@/lib/policy";
 import { fingerprintMoved } from "@/lib/presets/fingerprint";
@@ -238,10 +242,17 @@ function bodyOf(kind: PresetKind, spec: PresetObject["spec"]): unknown {
   return kind === "DatabaseServerPreset" ? s.server : s.cluster;
 }
 
-function storageNotes(kind: PresetKind, before: unknown, after: unknown): string[] {
+function storageNotes(
+  kind: PresetKind,
+  before: unknown,
+  after: unknown,
+): string[] {
   const fields = STORAGE_FIELDS[kind];
   const at = (body: unknown, path: string[]) =>
-    valueAt(body, path.map((field) => ({ field })));
+    valueAt(
+      body,
+      path.map((field) => ({ field })),
+    );
   const shrinks = fields.sizes.some((path) =>
     smaller(at(before, path), at(after, path)),
   );

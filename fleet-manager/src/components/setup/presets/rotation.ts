@@ -68,7 +68,8 @@ export function rotationChange(
   now: Date,
 ): Change {
   const draft = presetDraftOf(live);
-  const body = draft.body as Resource<"CamundaClusterPreset">["spec"]["cluster"];
+  const body =
+    draft.body as Resource<"CamundaClusterPreset">["spec"]["cluster"];
   const rotated = {
     ...body,
     auth: {

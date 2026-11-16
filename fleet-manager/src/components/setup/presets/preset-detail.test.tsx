@@ -13,8 +13,9 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
-import type { WriteMode } from "@/lib/write/types";
+import type { Change, Preview, WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
+import { presetDraftOf, presetUpdateChange } from "./draft";
 import { presetFixtures } from "./fixtures";
 import { PresetDetail } from "./preset-detail";
 import type { PresetActions, PresetSources } from "./sources";
@@ -37,6 +38,7 @@ function setup(
     sources?: PresetSources;
     errors?: ReadError[];
     pending?: KindName[];
+    preview?: (change: Change) => Preview;
   } = {},
 ) {
   const {
@@ -48,10 +50,9 @@ function setup(
   } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
-    previewChange: vi.fn<PresetActions["previewChange"]>(async () => ({
-      objects: [],
-      errors: [],
-    })),
+    previewChange: vi.fn<PresetActions["previewChange"]>(async (change) =>
+      opts.preview ? opts.preview(change) : { objects: [], errors: [] },
+    ),
     applyChange: vi.fn<PresetActions["applyChange"]>(async () => ({
       ok: true as const,
       mode: "direct" as const,
@@ -63,6 +64,7 @@ function setup(
         sources={{ ...s, errors: e, pending }}
         kind={kind}
         name={name}
+        secrets={{}}
         mode={mode}
         actions={actions}
       />
@@ -106,7 +108,9 @@ describe("PresetDetail", () => {
 
   it("shows the settings, the fields it cannot set, and the inheriting resources", () => {
     setup();
-    expect(screen.getByRole("region", { name: "Brokers" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Brokers settings" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("list", { name: "Fields a preset cannot set" }),
     ).toBeTruthy();
@@ -280,4 +284,186 @@ describe("PresetDetail", () => {
       screen.getByRole("button", { name: "Review the delete" }),
     ).toHaveProperty("disabled", true);
   });
+
+  it("saves an edit through the writer after the impact preview", async () => {
+    const { actions } = setup({ preview: dryRun() });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    await waitFor(() =>
+      expect(review.textContent).toContain("team-orders/orders"),
+    );
+    expect(review.textContent).toContain("Pods roll");
+    expect(review.textContent).toContain(
+      "The brokers restart one at a time. The other processes restart.",
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(actions.applyChange).toHaveBeenCalledWith(
+        presetUpdateChange(medium, withReplicas(5)),
+      ),
+    );
+  });
+
+  it("reads Push to Git in Git mode", async () => {
+    setup({ mode: "git", preview: dryRun() });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    expect(
+      within(review).getByRole("button", { name: "Push to Git" }),
+    ).toBeTruthy();
+  });
+
+  it("computes the impact from the spec that the dry run keeps", async () => {
+    // Another field manager keeps zeebe.replicas 3, so the save changes
+    // nothing that the clusters inherit.
+    setup({
+      preview: (change) => ({
+        ...dryRun()(change),
+        objects: [
+          {
+            ref: { kind: "CamundaClusterPreset", name: "medium" },
+            before: medium,
+            after: medium,
+            diff: [{ op: "added", text: "x" }],
+          },
+        ],
+      }),
+    });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    await waitFor(() => expect(review.textContent).toContain("Unchanged"));
+    expect(review.textContent).not.toContain("Pods roll");
+  });
+
+  it("holds the save and says why while the users of the impact cannot be read", async () => {
+    setup({ preview: dryRun(), pending: ["CamundaCluster"] });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    await waitFor(() =>
+      expect(review.textContent).toContain(
+        "The impact is not known while the fleet manager cannot read CamundaCluster.",
+      ),
+    );
+    expect(review.textContent).not.toContain("Unchanged");
+    expect(review.textContent).not.toContain(
+      "No resource inherits this preset.",
+    );
+    expect(within(review).getByRole("button", { name: "Save" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("refuses a misspelled field of the YAML in the review and never writes it", async () => {
+    const { actions } = setup({
+      kind: "ElasticsearchClusterPreset",
+      name: "standard",
+      preview: () => ({
+        objects: [],
+        errors: [
+          {
+            code: "Invalid",
+            message:
+              ".spec.cluster.storgeClassName: field not declared in schema",
+          },
+        ],
+      }),
+    });
+    fireEvent.change(screen.getByLabelText("spec.cluster"), {
+      target: { value: "replicas: 3\nstorgeClassName: fast\n" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Review" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    await waitFor(() =>
+      expect(review.textContent).toContain("field not declared in schema"),
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+    fireEvent.click(save);
+    expect(actions.applyChange).not.toHaveBeenCalled();
+  });
+
+  it("disables the rotation while the form has changes", () => {
+    setup();
+    const rotate = screen.getByRole("button", {
+      name: "Rotate the admin password of 1 cluster",
+    });
+    expect(rotate).toHaveProperty("disabled", false);
+    editReplicas("5");
+    expect(rotate).toHaveProperty("disabled", true);
+  });
+
+  it("locks the form while the rotation review is open", async () => {
+    setup();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Rotate the admin password of 1 cluster",
+      }),
+    );
+    await waitFor(() =>
+      expect(replicasInput().matches(":disabled")).toBe(true),
+    );
+  });
+
+  it("offers no rotation for an Elasticsearch preset", () => {
+    setup({ kind: "ElasticsearchClusterPreset", name: "standard" });
+    expect(screen.queryByRole("button", { name: /^Rotate/ })).toBeNull();
+  });
+
+  it("keeps the inheriting resources and the delete section", () => {
+    setup();
+    editReplicas("5");
+    expect(
+      screen.getByRole("region", { name: "Inheriting resources" }).textContent,
+    ).toContain("team-orders");
+    expect(screen.getByText("Delete the preset")).toBeTruthy();
+  });
 });
+
+const medium = presetFixtures().clusterPresets[0];
+
+function withReplicas(n: number) {
+  const draft = presetDraftOf(medium);
+  return {
+    ...draft,
+    body: {
+      ...draft.body,
+      zeebe: { ...(draft.body.zeebe as object), replicas: n },
+    },
+  };
+}
+
+function replicasInput() {
+  const brokers = screen.getByRole("region", { name: "Brokers settings" });
+  return within(
+    within(brokers).getByRole("group", { name: "replicas" }),
+  ).getByRole("spinbutton");
+}
+
+function editReplicas(value: string) {
+  fireEvent.change(replicasInput(), { target: { value } });
+}
+
+// dryRun returns a preview that keeps exactly the applied spec.
+function dryRun(): (change: Change) => Preview {
+  return (change) => ({
+    objects: [
+      {
+        ref: { kind: "CamundaClusterPreset", name: "medium" },
+        before: medium,
+        after: change.apply[0],
+        diff: [{ op: "added", text: "replicas: 5" }],
+      },
+    ],
+    errors: [],
+  });
+}
