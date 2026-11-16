@@ -110,6 +110,16 @@ describe("RegistrationList", () => {
     expect(row.textContent).not.toMatch(/checked/i);
   });
 
+  it("links each option to its detail page", () => {
+    list();
+    const row = rowOf("Secondary storage", "existing-secondary-storage");
+    expect(
+      within(row)
+        .getByRole("link", { name: /existing-secondary-storage/ })
+        .getAttribute("href"),
+    ).toBe("/setup/plugins/existing-secondary-storage");
+  });
+
   it("shows the mode, the requests by environment, the operator versions, and Orphan", () => {
     list();
     const row = rowOf("Secondary storage", "existing-secondary-storage");
