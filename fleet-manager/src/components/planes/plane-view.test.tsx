@@ -322,6 +322,15 @@ describe("PlaneView", () => {
     expect(screen.queryByText(notCreated)).toBeNull();
   });
 
+  it("does not say that the claim controller has not created the plane while the claim watch fails", () => {
+    live.errors.set("CamundaManagementClusterClaim", "The API server is down");
+    render(<PlaneView data={data({ plane: undefined })} />);
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementClusterClaim: The API server is down",
+    ]);
+    expect(screen.queryByText(notCreated)).toBeNull();
+  });
+
   it("names a watch error and does not say the plane is gone when the watches report no object", () => {
     live.objects.set("CamundaManagementCluster", undefined);
     live.objects.set("CamundaManagementClusterClaim", undefined);

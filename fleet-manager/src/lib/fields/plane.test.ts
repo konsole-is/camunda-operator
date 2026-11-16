@@ -308,6 +308,32 @@ describe("planeFields", () => {
     ).toEqual({ reason: "admin" });
   });
 
+  it("shows the policy value of a parameter that the claim cannot edit, not the value that the claim sets", () => {
+    const fixed = {
+      ...environment,
+      spec: {
+        ...environment.spec,
+        parameters: {
+          "existing-database-configs": {
+            identity: { claimEditable: true },
+            webModeler: { value: "admin-db" },
+          },
+        },
+      },
+    } as unknown as Environment;
+    const fields = planeFields({
+      claim: oidcClaim,
+      registrations,
+      environment: fixed,
+    });
+    const parameter = "plugins.management-database.existing-database-configs";
+    expect(byKey(fields, `${parameter}.webModeler`)).toMatchObject({
+      value: "admin-db",
+      lock: { reason: "admin" },
+    });
+    expect(byKey(fields, `${parameter}.identity`).value).toBe("identity-db");
+  });
+
   it("reads the recorded policy of a parameter before the environment", () => {
     const claim = claimOf({}, {
       resolvedPolicy: {

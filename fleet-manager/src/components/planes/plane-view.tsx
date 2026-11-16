@@ -181,11 +181,13 @@ export function PlaneView({
         </TabsList>
         <TabsContent value="overview">
           <div className="flex flex-col gap-4">
-            {!plane && !unread("CamundaManagementCluster") && (
-              <p className="text-sm text-muted">
-                The claim controller has not created the management plane yet.
-              </p>
-            )}
+            {!plane &&
+              !unread("CamundaManagementCluster") &&
+              !unread("CamundaManagementClusterClaim") && (
+                <p className="text-sm text-muted">
+                  The claim controller has not created the management plane yet.
+                </p>
+              )}
             <PlaneConditions
               plane={conditionRows(plane?.status?.conditions)}
               claim={conditionRows(claim?.status?.conditions)}

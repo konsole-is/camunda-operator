@@ -78,11 +78,12 @@ const URLS = {
  *
  * Locks: the name and the namespace are Set at creation. The option of
  * each selection is Chosen at creation, and a parameter is Set by your
- * admin unless its policy makes it claim-editable. The policy is the one that the claim recorded in its
- * status, else the one of the registration and environment. In OIDC mode the
- * administrator claim is Fixed after Identity started once plane carries
- * IDENTITY_INITIAL_CLAIM_ANNOTATION. The typed URLs are Set by a section
- * while the claim selects an option of the access section.
+ * admin unless its policy makes it claim-editable. The policy is the one
+ * that the claim recorded in its status, else the one of the registration
+ * and environment. In OIDC mode the administrator claim is Fixed after
+ * Identity started once plane carries IDENTITY_INITIAL_CLAIM_ANNOTATION. The
+ * typed URLs are Set by a section while the claim selects an option of the
+ * access section.
  */
 export function planeFields(input: {
   claim: Resource<"CamundaManagementClusterClaim">;
@@ -355,16 +356,18 @@ function selectionFields(
     ...names.map((name): PlaneField => {
       const steps: Step[] = [...item, { field: "parameters" }, { field: name }];
       const policy = Object.hasOwn(policies, name) ? policies[name] : undefined;
+      const editable = policy?.claimEditable === true;
       return {
         key: `${key}.${name}`,
         group,
         label: name,
-        value: Object.hasOwn(claimed, name) ? claimed[name] : policy?.value,
+        value:
+          editable && Object.hasOwn(claimed, name)
+            ? claimed[name]
+            : policy?.value,
         claimPath: pathFrom("", steps),
         claimSteps: steps,
-        ...(policy?.claimEditable !== true && {
-          lock: { reason: "admin" as const },
-        }),
+        ...(!editable && { lock: { reason: "admin" as const } }),
       };
     }),
   ];
