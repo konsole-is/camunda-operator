@@ -60,6 +60,12 @@ const claim = (spec: object = {}) =>
     },
   });
 
+const retaining = object("CamundaCluster", "orders", {
+  spec: {
+    zeebe: { persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" } },
+  },
+});
+
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
   cluster: object("CamundaCluster", "orders"),
@@ -101,7 +107,8 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
     object("BackupSchedule", "payments-backups", of("payments")),
   ],
   backups: { elasticsearch: [], rdbms: [] },
-  volumes: "Delete",
+  presets: [],
+  releases: [],
   errors: [],
   ...over,
 });
@@ -127,11 +134,30 @@ describe("deleteClusterModel", () => {
     expect(model.targets[2].note).toBe("Volumes deleted");
   });
 
-  it("a cluster that retains its volumes says so", () => {
-    const model = deleteClusterModel(data({ volumes: "Retain" }), "Delete");
-    expect(model.targets.find((t) => t.kind === "CamundaCluster")?.note).toBe(
+  it("a cluster that retains its volumes says so, from its own spec or its preset", () => {
+    const note = (d: DeleteClusterData) =>
+      deleteClusterModel(d, "Delete").targets.find(
+        (t) => t.kind === "CamundaCluster",
+      )?.note;
+    expect(note(data({ cluster: retaining }))).toBe(
       "Volumes kept for a cluster of the same name",
     );
+    expect(
+      note(
+        data({
+          cluster: object("CamundaCluster", "orders", {
+            spec: { presetRef: "retaining" },
+          }),
+          presets: [
+            {
+              metadata: { name: "retaining" },
+              spec: { cluster: retaining.spec },
+            } as unknown as Resource<"CamundaClusterPreset">,
+          ],
+        }),
+      ),
+    ).toBe("Volumes kept for a cluster of the same name");
+    expect(note(data())).toBe("Volumes deleted");
   });
 
   it("leaves out an Optimize and a schedule that the cluster does not have", () => {
@@ -186,7 +212,7 @@ describe("deleteClusterModel", () => {
   });
 
   it("a failed read of the cluster leaves its volumes not known", () => {
-    const model = deleteClusterModel(data({ volumes: "Retain" }), "Delete", [
+    const model = deleteClusterModel(data({ cluster: retaining }), "Delete", [
       "CamundaCluster",
     ]);
     expect(model.targets.find((t) => t.kind === "CamundaCluster")?.note).toBe(

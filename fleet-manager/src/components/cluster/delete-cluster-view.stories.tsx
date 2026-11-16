@@ -88,6 +88,11 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
   cluster: object("CamundaCluster", {
     metadata: { namespace: "team-orders", name: "orders" },
+    spec: {
+      zeebe: {
+        persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
+      },
+    },
   }),
   sections: [
     section("access", "Access", 10, "externalAccess"),
@@ -159,7 +164,8 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
     ),
     rdbms: [],
   },
-  volumes: "Retain",
+  presets: [],
+  releases: [],
   errors: [],
   ...over,
 });

@@ -4,7 +4,6 @@ import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
-import { mergeCluster } from "@/lib/merge";
 
 /**
  * loadDeleteClusterPage reads the first snapshot of the delete page of a
@@ -65,14 +64,6 @@ export async function loadDeleteClusterPage(
     environmentName === undefined
       ? undefined
       : environments.find((e) => e.metadata?.name === environmentName);
-  const spec = cluster?.spec;
-  const volumes = spec
-    ? mergeCluster(
-        presets.find((p) => p.metadata?.name === spec.presetRef)?.spec,
-        releases.find((r) => r.metadata?.name === spec.releaseRef)?.spec,
-        spec,
-      ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted
-    : undefined;
   return {
     claim,
     ...(cluster && { cluster }),
@@ -83,7 +74,8 @@ export async function loadDeleteClusterPage(
     optimizes,
     schedules,
     backups: { elasticsearch: backupsES, rdbms: backupsRDBMS },
-    volumes: volumes ?? "Delete",
+    presets,
+    releases,
     errors,
   };
 }

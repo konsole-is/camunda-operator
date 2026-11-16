@@ -165,7 +165,7 @@ If the claim changed after the page read it, the delete fails, and the page show
 
 ### When the page cannot read a list
 
-The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The review comes back when the fleet manager can read every list again.
+The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The review comes back when the fleet manager can read every list again. While the delete runs, an object of a kind that the page cannot read shows **Not known** in place of **Waiting**, **Deleting**, or **Deleted**.
 
 ### Delete in Git mode
 

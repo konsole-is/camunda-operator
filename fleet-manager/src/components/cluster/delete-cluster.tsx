@@ -79,8 +79,13 @@ export function DeleteCluster({
     { kind: "BackupSchedule", opts: { namespace }, ...schedules },
   ] as const;
   const fresh = useWatchesFresh(watched);
+  // A current snapshot of a watch replaces the list that the server could
+  // not read.
+  const replaced = watched
+    .filter((w, i) => fresh[i] && !w.error)
+    .map((w): string => w.kind);
   const errors: ReadError[] = [
-    ...initial.errors,
+    ...initial.errors.filter((e) => !replaced.includes(e.kind)),
     ...watched.flatMap((w) =>
       w.error ? [{ kind: w.kind, message: w.error }] : [],
     ),
@@ -116,13 +121,17 @@ export function DeleteCluster({
   if (run.stage.kind === "deleting") {
     stage = {
       kind: "deleting",
-      progress: deleteProgress(targets ?? model.targets, {
-        CamundaCluster: cluster.item ? [cluster.item] : [],
-        CamundaOptimize: optimizes.items,
-        BackupSchedule: schedules.items,
-        PluginRequest: requests.items,
-        CamundaClusterClaim: run.claim ? [run.claim] : [],
-      }),
+      progress: deleteProgress(
+        targets ?? model.targets,
+        {
+          CamundaCluster: cluster.item ? [cluster.item] : [],
+          CamundaOptimize: optimizes.items,
+          BackupSchedule: schedules.items,
+          PluginRequest: requests.items,
+          CamundaClusterClaim: run.claim ? [run.claim] : [],
+        },
+        unread,
+      ),
       gitWaiting: run.stage.gitWaiting,
       ...(run.claim && { claim: run.claim }),
     };

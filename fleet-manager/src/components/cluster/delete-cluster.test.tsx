@@ -115,7 +115,8 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
     optimizes: [],
     schedules: [],
     backups: { elasticsearch: [], rdbms: [] },
-    volumes: "Delete",
+    presets: [],
+    releases: [],
     errors: [],
     ...over,
   }) as DeleteClusterData;
@@ -452,7 +453,7 @@ describe("DeleteCluster", () => {
 
   it.each([
     ["PluginRegistration", /Not known/],
-    ["CamundaCluster", /Volumes not known/],
+    ["CamundaClusterPreset", /Volumes not known/],
   ])(
     "a failed server read of %s names the kind and opens no review",
     async (kind, shown) => {
@@ -467,6 +468,59 @@ describe("DeleteCluster", () => {
       ).toBeNull();
     },
   );
+
+  it("a current snapshot of a watch replaces a list that the server could not read", async () => {
+    page(data({ errors: [{ kind: "PluginRequest", message: "forbidden" }] }));
+    expect(
+      screen.getByText("Could not read PluginRequest: forbidden"),
+    ).toBeTruthy();
+    await readAll();
+    expect(
+      await screen.findByRole("button", { name: "Delete the cluster" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Could not read PluginRequest: forbidden"),
+    ).toBeNull();
+  });
+
+  it("the volumes follow the live cluster", async () => {
+    const retaining = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaCluster",
+      metadata: { namespace: "team-a", name: "orders" },
+      spec: {
+        zeebe: {
+          persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
+        },
+      },
+    } as unknown as Resource<"CamundaCluster">;
+    page(data({ cluster: retaining }));
+    expect(screen.getByText(/Volumes not known/)).toBeTruthy();
+    await readAll(data({ cluster: retaining }));
+    expect(
+      await screen.findByText(/Volumes kept for a cluster of the same name/),
+    ).toBeTruthy();
+    await snapshot(clusterWatch, [data().cluster!]);
+    expect(await screen.findByText(/Volumes deleted/)).toBeTruthy();
+  });
+
+  it("a delete in progress shows a target of a kind that it could not read as not known, with the error", () => {
+    page(
+      data({
+        claim: claim({ deletionTimestamp: "2026-11-15T10:00:00Z" }),
+        cluster: undefined,
+        errors: [{ kind: "CamundaCluster", message: "forbidden" }],
+      }),
+    );
+    expect(
+      screen.getByText("Could not read CamundaCluster: forbidden"),
+    ).toBeTruthy();
+    const list = screen.getByRole("region", { name: "Delete progress" });
+    expect(
+      within(list).getByText("CamundaCluster orders").closest("li")!
+        .textContent,
+    ).toContain("Not known");
+  });
 
   it("changes are off without a write mode", () => {
     page(data(), undefined);

@@ -10,6 +10,7 @@ import {
 } from "@/lib/claims/deletion";
 import type { SectionClaim } from "@/lib/claims/sections";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { mergeCluster } from "@/lib/merge";
 import {
   claimDeletionChoice,
   type DeletionChoice,
@@ -22,9 +23,8 @@ import {
  * cluster is undefined once the CamundaCluster is gone, or when its read
  * failed. environment is the
  * Environment that the label of the namespace names. requests are the
- * PluginRequests of the claim. volumes is whenDeleted of the retention of
- * the broker volumes in the merged spec of the cluster. errors holds each
- * read that failed.
+ * PluginRequests of the claim. presets and releases give the merged spec
+ * of the cluster. errors holds each read that failed.
  */
 export type DeleteClusterData = {
   claim: Resource<"CamundaClusterClaim">;
@@ -39,7 +39,8 @@ export type DeleteClusterData = {
     elasticsearch: Resource<"LogicalBackupElasticsearch">[];
     rdbms: Resource<"LogicalBackupRDBMS">[];
   };
-  volumes: "Retain" | "Delete";
+  presets: Resource<"CamundaClusterPreset">[];
+  releases: Resource<"CamundaRelease">[];
   errors: ReadError[];
 };
 
@@ -187,7 +188,7 @@ export function deleteClusterModel(
       name,
       !volumesKnown
         ? "Volumes not known"
-        : data.volumes === "Retain"
+        : volumesOf(data) === "Retain"
           ? "Volumes kept for a cluster of the same name"
           : "Volumes deleted",
     ),
@@ -220,6 +221,20 @@ export function deleteClusterModel(
   };
 }
 
+// volumesOf returns whenDeleted of the retention of the broker volumes in
+// the merged spec of the cluster of data, Delete without one.
+function volumesOf(data: DeleteClusterData): string {
+  const spec = data.cluster?.spec;
+  if (!spec) return "Delete";
+  return (
+    mergeCluster(
+      data.presets.find((p) => p.metadata?.name === spec.presetRef)?.spec,
+      data.releases.find((r) => r.metadata?.name === spec.releaseRef)?.spec,
+      spec,
+    ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted ?? "Delete"
+  );
+}
+
 // Attachment is the part of a CamundaOptimize or a BackupSchedule that the
 // model reads.
 type Attachment = {
@@ -241,14 +256,14 @@ export function initialPolicy(choice: DeletionChoice): DeletionPolicy {
 }
 
 /** DeleteState is where one target of a delete is. */
-export type DeleteState = "Waiting" | "Deleting" | "Deleted";
+export type DeleteState = "Waiting" | "Deleting" | "Deleted" | "Not known";
 
 /**
  * deleteProgress returns the state of each target, in the order of
  * targets, from the live objects of each kind: Deleting while the object
  * of its name has a deletionTimestamp, Waiting while it has none, and
  * Deleted when no object has its name. A kind that live leaves out counts
- * as having no objects.
+ * as having no objects. A target of a kind in unread is Not known.
  */
 export function deleteProgress(
   targets: readonly DeleteTarget[],
@@ -258,8 +273,11 @@ export function deleteProgress(
       readonly { metadata?: { name?: string; deletionTimestamp?: string } }[]
     >
   >,
+  unread: readonly string[] = [],
 ): { target: DeleteTarget; state: DeleteState }[] {
   return targets.map((target) => {
+    if (unread.includes(target.kind))
+      return { target, state: "Not known" as const };
     const object = live[target.kind]?.find(
       (o) => o.metadata?.name === target.name,
     );

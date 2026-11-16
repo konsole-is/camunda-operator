@@ -48,7 +48,6 @@ describe("loadDeleteClusterPage", () => {
     const data = await loadDeleteClusterPage("team-a", "orders");
     expect(data?.claim).toEqual(claim);
     expect(data?.cluster).toBeUndefined();
-    expect(data?.volumes).toBe("Delete");
   });
 
   it("lists the requests of the claim by the claim label", async () => {
@@ -76,28 +75,16 @@ describe("loadDeleteClusterPage", () => {
     );
   });
 
-  it("reads the retention of the broker volumes from the merged spec", async () => {
+  it("returns the presets and the releases for the merged spec of the cluster", async () => {
     k8s.objects["CamundaClusterClaim/orders"] = claim;
     k8s.objects["CamundaCluster/orders"] = cluster("retaining");
-    k8s.lists.CamundaClusterPreset = [
-      {
-        metadata: { name: "retaining" },
-        spec: {
-          cluster: {
-            zeebe: {
-              persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
-            },
-          },
-        },
-      },
-    ];
-    expect((await loadDeleteClusterPage("team-a", "orders"))?.volumes).toBe(
-      "Retain",
-    );
-    k8s.objects["CamundaCluster/orders"] = cluster();
-    expect((await loadDeleteClusterPage("team-a", "orders"))?.volumes).toBe(
-      "Delete",
-    );
+    const preset = { metadata: { name: "retaining" } };
+    const release = { metadata: { name: "camunda-8-9" } };
+    k8s.lists.CamundaClusterPreset = [preset];
+    k8s.lists.CamundaRelease = [release];
+    const data = await loadDeleteClusterPage("team-a", "orders");
+    expect(data?.presets).toEqual([preset]);
+    expect(data?.releases).toEqual([release]);
   });
 
   it("a failed list gives no objects of that kind, and its error", async () => {

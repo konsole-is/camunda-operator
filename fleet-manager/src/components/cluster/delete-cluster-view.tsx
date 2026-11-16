@@ -161,7 +161,10 @@ export function DeleteClusterView({
           onStopWaiting={onStopWaiting}
         />
       ) : stage.kind === "deleting" ? (
-        <Progress name={name} stage={stage} />
+        <>
+          <ReadErrors errors={errors} />
+          <Progress name={name} stage={stage} />
+        </>
       ) : (
         <>
           <DeletionChoiceField
@@ -175,11 +178,7 @@ export function DeleteClusterView({
           {mode === "git" && (
             <p className="text-sm text-text-2">{PRUNE_NOTE}</p>
           )}
-          {errors.map((e, i) => (
-            <p key={i} role="alert" className="text-sm text-bad">
-              Could not read {e.kind}: {e.message}
-            </p>
-          ))}
+          <ReadErrors errors={errors} />
           {stage.errors && stage.errors.length > 0 && (
             <Alert texts={stage.errors.map((e) => e.message)} />
           )}
@@ -400,7 +399,11 @@ function Progress({
               {target.note && <span className="text-muted">{target.note}</span>}
             </span>
             <Badge
-              variant={state === "Waiting" ? "outline" : "secondary"}
+              variant={
+                state === "Waiting" || state === "Not known"
+                  ? "outline"
+                  : "secondary"
+              }
               className={state === "Deleted" ? "text-muted" : undefined}
             >
               {state}
@@ -410,6 +413,14 @@ function Progress({
       </ol>
     </section>
   );
+}
+
+function ReadErrors({ errors }: { errors: readonly ReadError[] }) {
+  return errors.map((e, i) => (
+    <p key={i} role="alert" className="text-sm text-bad">
+      Could not read {e.kind}: {e.message}
+    </p>
+  ));
 }
 
 function Alert({ texts }: { texts: string[] }) {
