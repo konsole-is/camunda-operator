@@ -16,7 +16,8 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import { useAnswered } from "@/lib/k8s/answered";
+import { useResources } from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
 import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
@@ -540,17 +541,6 @@ export function FleetViewLive({
       onStopWaiting={settle}
     />
   );
-}
-
-// useAnswered gives the kinds whose watch sent a snapshot at least once. A
-// kind stays in it after a reconnect, so a failed first read does not come
-// back then.
-function useAnswered(kinds: readonly KindName[]): ReadonlySet<string> {
-  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
-  const added = kinds.filter((kind, i) => fresh[i] && !answered.has(kind));
-  if (added.length > 0) setAnswered(new Set([...answered, ...added]));
-  return answered;
 }
 
 // useClock starts at the time of the server, so that the first render in

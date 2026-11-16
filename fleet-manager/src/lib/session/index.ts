@@ -3,7 +3,12 @@ export {
   type ClusterClaimContext,
   type FieldError,
 } from "./cluster";
-export { clusterLocks, type LockProvider } from "./locks";
+export { clusterLocks, planeLocks, type LockProvider } from "./locks";
+export {
+  validatePlaneClaim,
+  type PlaneClaim,
+  type PlaneClaimContext,
+} from "./plane";
 export { outcomeOf, STALE_CLAIM_MESSAGE, type WriteOutcome } from "./outcome";
 export { PRECHECK_REASONS, precheckOf, type ClaimCondition } from "./precheck";
 export {

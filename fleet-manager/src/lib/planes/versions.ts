@@ -2,6 +2,7 @@
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import { parseVersion, versionBelow } from "@/lib/policy";
+import { listOf } from "@/lib/text";
 import type { ImagesTable } from "@/startup/bundled-data";
 
 /** PlaneVersionField is a field of spec.versions of a plane claim. */
@@ -44,6 +45,10 @@ export type VersionPrefill = {
 /** KEYCLOAK_REALM_WARNING is the warning of Keycloak 26.7.0 or later with Management Identity 8.9. */
 export const KEYCLOAK_REALM_WARNING =
   "Management Identity 8.9 cannot create its realm in Keycloak 26.7.0 or later. Use a Keycloak version below 26.7.0.";
+
+/** KEYCLOAK_RESTART_WARNING is the warning of a change of the version of a Keycloak that the plane runs. */
+export const KEYCLOAK_RESTART_WARNING =
+  "Sign-in stops while Keycloak restarts.";
 
 // The limits of pkg/components/camundamanagementcluster/validate.go.
 const CAMUNDA_FLOOR = [8, 9, 0];
@@ -127,30 +132,93 @@ export function versionErrors(
   versions: PlaneVersions,
   running: Running,
 ): string[] {
+  return runningFields(running).flatMap(
+    (field) => versionError(field, versions[field]) ?? [],
+  );
+}
+
+/** versionError returns the error of versionErrors for value as the version of field, or undefined when value passes. */
+export function versionError(
+  field: PlaneVersionField,
+  value: string | undefined,
+): string | undefined {
+  const label = VERSION_LABEL[field];
+  if (!value) return `Enter the ${label} version.`;
+  const parsed = parseVersion(value);
+  const keycloak = field === "keycloak";
+  if (!parsed) {
+    const example = keycloak ? "26.6.4" : "8.9.12";
+    return `Enter the ${label} version as major.minor.patch, for example ${example}.`;
+  }
+  if (keycloak) {
+    return versionBelow(parsed, KEYCLOAK_FLOOR) ||
+      !versionBelow(parsed, KEYCLOAK_CEILING)
+      ? "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0."
+      : undefined;
+  }
+  return versionBelow(parsed, CAMUNDA_FLOOR)
+    ? `${label} needs version 8.9.0 or later.`
+    : undefined;
+}
+
+/**
+ * versionChangeWarnings returns the warnings of a move of the versions of
+ * the running apps from before to after, in field order: a Camunda app
+ * that moves down or skips a minor, and KEYCLOAK_RESTART_WARNING for any
+ * change of the Keycloak version. An app without a version before or after
+ * gives no warning, and a malformed version gives no downgrade or skip
+ * warning. A warning never blocks a save.
+ */
+export function versionChangeWarnings(
+  before: PlaneVersions,
+  after: PlaneVersions,
+  running: Running,
+): string[] {
   return runningFields(running).flatMap((field) => {
+    const from = before[field];
+    const to = after[field];
+    if (!from || !to || from === to) return [];
+    if (field === "keycloak") return [KEYCLOAK_RESTART_WARNING];
+    const old = parseVersion(from);
+    const next = parseVersion(to);
+    if (!old || !next) return [];
     const label = VERSION_LABEL[field];
-    const value = versions[field] ?? "";
-    if (value === "") return [`Enter the ${label} version.`];
-    const parsed = parseVersion(value);
-    const keycloak = field === "keycloak";
-    if (!parsed) {
-      const example = keycloak ? "26.6.4" : "8.9.12";
+    if (versionBelow(next, old)) {
       return [
-        `Enter the ${label} version as major.minor.patch, for example ${example}.`,
+        `${label} moves down from ${from} to ${to}. Camunda documents no downgrade.`,
       ];
     }
-    if (keycloak) {
-      return versionBelow(parsed, KEYCLOAK_FLOOR) ||
-        !versionBelow(parsed, KEYCLOAK_CEILING)
-        ? [
-            "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0.",
-          ]
-        : [];
-    }
-    return versionBelow(parsed, CAMUNDA_FLOOR)
-      ? [`${label} needs version 8.9.0 or later.`]
+    const skips =
+      next[0] > old[0] || (next[0] === old[0] && next[1] > old[1] + 1);
+    return skips
+      ? [
+          `${label} skips ${old[0]}.${old[1] + 1}: ${from} to ${to}. Move one minor at a time.`,
+        ]
       : [];
   });
+}
+
+/**
+ * versionMatrixWarning returns a warning when the running Camunda apps with
+ * a well-formed version are on more than one minor. It compares the minor
+ * only: the apps of one Camunda minor have their own patch lines, as the
+ * images table shows. Keycloak is not a Camunda app. A warning never blocks
+ * a save.
+ */
+export function versionMatrixWarning(
+  versions: PlaneVersions,
+  running: Running,
+): string | undefined {
+  const apps = runningFields(running).flatMap((field) => {
+    const parsed =
+      field === "keycloak" ? undefined : parseVersion(versions[field]);
+    return parsed
+      ? [{ label: VERSION_LABEL[field], minor: `${parsed[0]}.${parsed[1]}` }]
+      : [];
+  });
+  const minors = [...new Set(apps.map((a) => a.minor))];
+  if (minors.length < 2) return undefined;
+  return `${listOf(apps.map((a) => a.label))} run on different minors: ${minors.join(", ")}. Camunda supports them together on one minor only.`;
 }
 
 /**

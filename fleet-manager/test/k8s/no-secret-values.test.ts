@@ -17,6 +17,10 @@ import {
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
+  applyPlaneClaimChange,
+  previewPlaneClaimChange,
+} from "@/app/fleet/planes/[namespace]/[name]/actions";
+import {
   createPlane,
   previewPlaneCreate,
 } from "@/app/fleet/planes/new/actions";
@@ -26,6 +30,10 @@ import {
   previewEnvironmentChange,
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
+import {
+  applyPresetChange,
+  previewPresetChange,
+} from "@/app/setup/presets/actions";
 import {
   applyReleaseChange,
   applyReleaseMove,
@@ -304,6 +312,17 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...claimChange(),
       preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
+  "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimChange":
+    () => previewPlaneClaimChange(planeClaimChange()),
+  // The precondition names a claim that does not exist, so the write
+  // refuses with Stale and leaves nothing behind.
+  "app/fleet/planes/[namespace]/[name]/actions.ts#applyPlaneClaimChange": () =>
+    applyPlaneClaimChange({
+      ...planeClaimChange(),
+      preconditions: {
+        [`CamundaManagementClusterClaim/${namespace}/leak`]: "1",
+      },
+    }),
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
     previewPlaneCreate(planeCreate()),
   // The claim has no spec that the API server accepts, so the write
@@ -326,6 +345,12 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...labelChange(),
       preconditions: { [`Namespace//${namespace}-gone`]: "1" },
     }),
+  "app/setup/presets/actions.ts#previewPresetChange": () =>
+    previewPresetChange(presetDelete()),
+  // The preset does not exist, so the delete refuses with Stale and
+  // removes nothing.
+  "app/setup/presets/actions.ts#applyPresetChange": () =>
+    applyPresetChange(presetDelete()),
   "app/setup/releases/actions.ts#previewReleaseChange": () =>
     previewReleaseChange(releaseChange()),
   // A precondition for an object that does not exist refuses with Stale,
@@ -356,6 +381,21 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function presetDelete() {
+  return {
+    intent: "Delete the preset leak",
+    apply: [],
+    delete: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaClusterPreset",
+        name: namespace,
+      },
+    ],
+    preconditions: { [`CamundaClusterPreset//${namespace}`]: "1" },
+  };
+}
 
 function environmentChange() {
   return {
@@ -411,6 +451,19 @@ function claimChange() {
         kind: "CamundaClusterClaim",
         metadata: { name: "leak", namespace },
         spec: { presetRef: "medium" },
+      },
+    ],
+  };
+}
+function planeClaimChange() {
+  return {
+    intent: "Change the plane claim leak",
+    apply: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
+        metadata: { name: "leak", namespace },
+        spec: { suspend: true },
       },
     ],
   };

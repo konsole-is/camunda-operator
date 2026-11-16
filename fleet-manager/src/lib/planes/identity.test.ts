@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import {
+  IDENTITY_MODE_LABEL,
   authMethod,
+  externalKeycloakDraftOf,
   externalKeycloakErrors,
+  externalKeycloakSpecOf,
+  identityModeOf,
   oidcDisabledReason,
   planeIssuer,
+  sameFamily,
 } from "./identity";
 
 const config = (auth?: unknown): CamundaPlatformConfig =>
@@ -172,5 +177,87 @@ describe("planeIssuer", () => {
 
   it("is unknown without a mode", () => {
     expect(planeIssuer(undefined, ext, undefined)).toEqual({ kind: "unknown" });
+  });
+});
+
+describe("identityModeOf", () => {
+  it("returns the one mode that the provider sets", () => {
+    expect(identityModeOf({ oidc: {} })).toBe("oidc");
+    expect(identityModeOf({ keycloak: {} })).toBe("keycloak");
+    expect(
+      identityModeOf({
+        externalKeycloak: {
+          url: "https://kc.example.com",
+          adminCredentialsSecretRef: { name: "kc" },
+        },
+      }),
+    ).toBe("externalKeycloak");
+  });
+
+  it("returns undefined for an empty provider and for two providers", () => {
+    expect(identityModeOf({})).toBeUndefined();
+    expect(identityModeOf(undefined)).toBeUndefined();
+    expect(identityModeOf({ keycloak: {}, oidc: {} })).toBeUndefined();
+  });
+});
+
+describe("IDENTITY_MODE_LABEL", () => {
+  it("names each mode", () => {
+    expect(IDENTITY_MODE_LABEL).toEqual({
+      keycloak: "Keycloak",
+      externalKeycloak: "External Keycloak",
+      oidc: "OIDC",
+    });
+  });
+});
+
+describe("sameFamily", () => {
+  it("puts the two Keycloak modes together and OIDC alone", () => {
+    expect(sameFamily("keycloak", "externalKeycloak")).toBe(true);
+    expect(sameFamily("externalKeycloak", "keycloak")).toBe(true);
+    expect(sameFamily("oidc", "oidc")).toBe(true);
+    expect(sameFamily("oidc", "keycloak")).toBe(false);
+    expect(sameFamily("externalKeycloak", "oidc")).toBe(false);
+  });
+});
+
+describe("externalKeycloakDraftOf and externalKeycloakSpecOf", () => {
+  it("read back what they write", () => {
+    const draft = {
+      url: "https://kc.example.com/auth",
+      realm: "teams",
+      adminSecret: "kc-admin",
+      caBundle: { name: "kc-ca", key: "ca.crt" },
+    };
+    expect(externalKeycloakDraftOf(externalKeycloakSpecOf(draft))).toEqual(
+      draft,
+    );
+  });
+
+  it("leaves an empty realm out of the spec", () => {
+    expect(
+      externalKeycloakSpecOf({
+        url: "https://kc.example.com",
+        realm: "",
+        adminSecret: "kc",
+      }),
+    ).toEqual({
+      url: "https://kc.example.com",
+      adminCredentialsSecretRef: { name: "kc" },
+    });
+  });
+
+  it("reads a missing spec and a missing realm as empty fields", () => {
+    expect(externalKeycloakDraftOf(undefined)).toEqual({
+      url: "",
+      realm: "",
+      adminSecret: "",
+    });
+    expect(
+      externalKeycloakDraftOf({
+        url: "https://kc.example.com",
+        adminCredentialsSecretRef: { name: "kc" },
+      }),
+    ).toEqual({ url: "https://kc.example.com", realm: "", adminSecret: "kc" });
   });
 });

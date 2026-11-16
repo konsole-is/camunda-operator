@@ -7,6 +7,7 @@ import {
   takenHosts,
 } from "@/lib/claims/hosts";
 import {
+  type ControllerParameters,
   type StorageDraft,
   draftErrors,
   picksOf,
@@ -412,11 +413,37 @@ export function storageErrors(
     storage,
     shown,
     planeSelections(draft).map((p) => runningSelection(p, running)),
-    // The claim controller sets databases on the request of the database
-    // section (WithDatabases of camundamanagementclusterclaim).
-    (request) =>
-      request.section === databases?.metadata.name
-        ? { databases: DATABASE_APPS.filter((app) => runs(app, running)) }
-        : {},
+    planeControllerParameters(ctx.sections, running),
   );
+}
+
+/**
+ * planeControllerParameters returns the ControllerParameters of a plane
+ * claim that runs running: databases on each request in a section with the
+ * slot managementDatabases, as WithDatabases of the claim controller sets it.
+ */
+export function planeControllerParameters(
+  sections: readonly PluginSection[],
+  running: Running,
+): ControllerParameters {
+  return (request) =>
+    isDatabaseSection(sections, request.section)
+      ? { databases: databaseApps(running) }
+      : {};
+}
+
+/** isDatabaseSection reports whether the section named name has the slot managementDatabases. */
+export function isDatabaseSection(
+  sections: readonly PluginSection[],
+  name: string,
+): boolean {
+  return (
+    sections.find((s) => s.metadata.name === name)?.spec.slot ===
+    "managementDatabases"
+  );
+}
+
+/** databaseApps returns the apps of a plane that runs running that get a database, as Databases of camundamanagementclusterclaim does. */
+export function databaseApps(running: Running): string[] {
+  return DATABASE_APPS.filter((app) => runs(app, running));
 }
