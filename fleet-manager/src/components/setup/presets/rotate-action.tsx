@@ -89,7 +89,7 @@ export function RotateAction({
               `The admin password of each of these clusters changes: ${targets
                 .map((t) => `${t.namespace}/${t.name}`)
                 .join(", ")}.`,
-              "The Connectors pods of each cluster restart.",
+              "A cluster that runs Connectors restarts its Connectors pods.",
             ]}
             confirm={{ label: "Rotate" }}
             savedMessage="The rotation of the admin password is saved."

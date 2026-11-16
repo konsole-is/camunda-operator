@@ -208,7 +208,7 @@ spec:
     # ... the rest of your preset
 ```
 
-The review names each cluster whose password changes and says that its Connectors pods restart. Select **Rotate**, or **Push to Git** in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so **Rotate** stays disabled. Each cluster shows the value in `status.adminPassword.rotation` when its rotation is complete. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
+The review names each cluster whose password changes and says that a cluster that runs Connectors restarts its Connectors pods. Select **Rotate**, or **Push to Git** in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so **Rotate** stays disabled. Each cluster shows the value in `status.adminPassword.rotation` when its rotation is complete. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
 
 The button is disabled while the form has unsaved changes or shows an error. Save or discard the changes first, or correct the error. While the fleet manager cannot read the clusters or the platform configs, the section offers no rotation and names those lists.
 

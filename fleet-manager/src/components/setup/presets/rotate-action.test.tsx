@@ -84,7 +84,7 @@ describe("RotateAction", () => {
       "The admin password of each of these clusters changes: team-orders/orders.",
     );
     expect(review.textContent).toContain(
-      "The Connectors pods of each cluster restart.",
+      "A cluster that runs Connectors restarts its Connectors pods.",
     );
     const confirm = within(review).getByRole("button", { name: "Rotate" });
     await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
