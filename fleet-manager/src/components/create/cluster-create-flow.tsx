@@ -53,6 +53,7 @@ import {
   clusterCreateChange,
   draftCluster,
   draftOptimize,
+  holdsWrittenSpec,
   offeredPresets,
   releaseOf,
   type SecretsRead,
@@ -541,10 +542,11 @@ export function ClusterCreateFlow({
             c.metadata?.name === refusedRef.name,
         )
       : undefined;
-  // A write whose answer was lost can have landed. The API server can add
-  // defaults to the claim, so the live spec can hold more than the write sent.
+  // A write whose answer was lost can have landed.
   const landed =
-    taken && refused?.unavailable && covers(taken.spec, refused.claim.spec)
+    taken &&
+    refused?.unavailable &&
+    holdsWrittenSpec(taken.spec, refused.claim.spec)
       ? taken
       : undefined;
   const earlier = steps
@@ -894,26 +896,6 @@ function useLive<K extends KindName>(
         items,
         failure: `The fleet manager could not read the ${kind} objects: ${error}`,
       };
-}
-
-// covers says whether live holds each value of sent, at the same place.
-function covers(live: unknown, sent: unknown): boolean {
-  if (Array.isArray(sent))
-    return (
-      Array.isArray(live) &&
-      live.length === sent.length &&
-      sent.every((item, i) => covers(live[i], item))
-    );
-  if (typeof sent === "object" && sent !== null)
-    return (
-      typeof live === "object" &&
-      live !== null &&
-      !Array.isArray(live) &&
-      Object.entries(sent).every(([key, value]) =>
-        covers((live as Record<string, unknown>)[key], value),
-      )
-    );
-  return live === sent;
 }
 
 // A Resource is plain JSON, so it differs from its model type only in its

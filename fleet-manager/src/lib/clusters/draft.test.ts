@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
@@ -21,6 +23,7 @@ import {
   draftCluster,
   draftOptimize,
   draftSelections,
+  holdsWrittenSpec,
   offeredPresets,
   pickerEnvironment,
   secretErrors,
@@ -1132,6 +1135,10 @@ describe("Secret references", () => {
           extraEnv: [
             { name: "A", value: "a" },
             { name: "B", valueFrom: { secretKeyRef: ref } },
+            {
+              name: "C",
+              valueFrom: { configMapKeyRef: { name: "settings", key: "mode" } },
+            },
           ],
           extraEnvFrom: [{ secretRef: { name: "orders-env" } }],
         },
@@ -1229,5 +1236,86 @@ describe("Secret references", () => {
         undefined,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("holdsWrittenSpec", () => {
+  const sent = {
+    presetRef: "small",
+    plugins: [{ section: "access", registration: "gateway" }],
+    cluster: {
+      zeebe: {
+        extraEnv: [{ name: "A", valueFrom: { secretKeyRef: { key: "k" } } }],
+      },
+    },
+    attachments: { backupSchedule: { schedule: "@daily", retained: {} } },
+  };
+
+  const retained = (value: object) => ({
+    ...sent,
+    attachments: { backupSchedule: { schedule: "@daily", retained: value } },
+  });
+
+  it("accepts the sent spec with the defaults of the API server", () => {
+    const live = {
+      ...retained({ completed: 7, failed: 3 }),
+      cluster: {
+        zeebe: {
+          extraEnv: [
+            { name: "A", valueFrom: { secretKeyRef: { key: "k", name: "" } } },
+          ],
+        },
+      },
+    };
+    expect(holdsWrittenSpec(live, sent)).toBe(true);
+  });
+
+  it("refuses a spec with a field that the write did not send", () => {
+    expect(holdsWrittenSpec({ ...sent, suspend: true }, sent)).toBe(false);
+    expect(holdsWrittenSpec(retained({ completed: 30, failed: 3 }), sent)).toBe(
+      false,
+    );
+  });
+
+  it("refuses a spec with another value or a missing field", () => {
+    expect(holdsWrittenSpec({ ...sent, presetRef: "large" }, sent)).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, cluster: undefined }, sent)).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, plugins: [] }, sent)).toBe(false);
+  });
+
+  // The CRD is the source of the defaults. A new default fails here.
+  it("knows each default of the claim CRD", () => {
+    const crd = parse(
+      readFileSync(
+        new URL(
+          "../../../../config/crd/bases/fleet.camunda.io_camundaclusterclaims.yaml",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const defaults = new Set<string>();
+    const walk = (node: unknown, field: string) => {
+      if (typeof node !== "object" || node === null) return;
+      const schema = node as {
+        default?: unknown;
+        properties?: Record<string, unknown>;
+        items?: unknown;
+        additionalProperties?: unknown;
+      };
+      if ("default" in schema)
+        defaults.add(`${field}=${JSON.stringify(schema.default)}`);
+      for (const [name, child] of Object.entries(schema.properties ?? {}))
+        walk(child, name);
+      walk(schema.items, field);
+      walk(schema.additionalProperties, field);
+    };
+    walk(crd.spec.versions[0].schema.openAPIV3Schema.properties.spec, "spec");
+    for (const entry of defaults) {
+      const [field, value] = entry.split("=");
+      const live = { x: { [field]: JSON.parse(value) } };
+      expect(holdsWrittenSpec(live, { x: {} }), entry).toBe(true);
+    }
+    expect(defaults.size).toBeGreaterThan(0);
   });
 });

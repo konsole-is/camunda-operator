@@ -532,6 +532,40 @@ export function withoutClaimValue(
   return { ...draft, claim: { ...claim, spec: claim.spec ?? {} } };
 }
 
+// CLAIM_DEFAULTS holds each default of the CRD of the claim, by field name.
+// The API server adds one to an object that a write sent without it.
+const CLAIM_DEFAULTS: Record<string, unknown> = {
+  name: "",
+  optional: false,
+  completed: 7,
+  failed: 3,
+  whenDeleted: "Delete",
+};
+
+/**
+ * holdsWrittenSpec says whether live, the spec of a live claim, is the spec
+ * sent with the defaults that the API server adds, and nothing else.
+ */
+export function holdsWrittenSpec(live: unknown, sent: unknown): boolean {
+  if (Array.isArray(sent))
+    return (
+      Array.isArray(live) &&
+      live.length === sent.length &&
+      sent.every((item, i) => holdsWrittenSpec(live[i], item))
+    );
+  if (typeof sent !== "object" || sent === null) return live === sent;
+  if (typeof live !== "object" || live === null || Array.isArray(live))
+    return false;
+  const fields = sent as Record<string, unknown>;
+  return (
+    Object.entries(live).every(([key, value]) =>
+      Object.hasOwn(fields, key)
+        ? holdsWrittenSpec(value, fields[key])
+        : Object.hasOwn(CLAIM_DEFAULTS, key) && value === CLAIM_DEFAULTS[key],
+    ) && Object.keys(fields).every((key) => Object.hasOwn(live, key))
+  );
+}
+
 /**
  * SecretReference is one Secret reference of a draft claim. path is the
  * path under spec.cluster, or under spec and starting with "attachments."
@@ -543,7 +577,7 @@ export type SecretReference = { path: string; steps: Step[] };
  * secretReferences returns each Secret reference in spec.cluster and
  * spec.attachments of the draft claim, in document order: a secretKeyRef or
  * a secretRef, and an object whose name ends in Ref with exactly the
- * fields name and key.
+ * fields name and key, other than a configMapKeyRef.
  */
 export function secretReferences(draft: ClusterDraft): SecretReference[] {
   const found: SecretReference[] = [];
@@ -576,7 +610,11 @@ function isSecretReference(field: string, value: unknown): boolean {
     return false;
   if (field === "secretKeyRef" || field === "secretRef") return true;
   const keys = Object.keys(value).sort();
-  return field.endsWith("Ref") && keys.join() === "key,name";
+  return (
+    field.endsWith("Ref") &&
+    field !== "configMapKeyRef" &&
+    keys.join() === "key,name"
+  );
 }
 
 /**
