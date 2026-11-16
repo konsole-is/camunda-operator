@@ -233,6 +233,25 @@ describe("ClusterSettingsStep", () => {
     );
   });
 
+  it("turns on Connectors that the preset leaves off", async () => {
+    const { set } = renderStep();
+    const connectors = screen.getByRole("region", {
+      name: "Connectors settings",
+    });
+    await userEvent.click(
+      within(connectors).getByRole("checkbox", { name: "enabled" }),
+    );
+    expect(set).toHaveBeenLastCalledWith(
+      [
+        { field: "spec" },
+        { field: "cluster" },
+        { field: "connectors" },
+        { field: "enabled" },
+      ],
+      true,
+    );
+  });
+
   it("keeps the Connectors settings while the draft turns them off", () => {
     const connectors = {
       ...preset,

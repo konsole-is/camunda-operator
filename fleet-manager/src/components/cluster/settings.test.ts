@@ -173,6 +173,7 @@ describe("settingsGroupsOf", () => {
       "Operate",
       "Tasklist",
       "Admin",
+      "Connectors",
     ]);
     expect(groups[0]).toMatchObject({
       component: "cluster",
@@ -181,15 +182,11 @@ describe("settingsGroupsOf", () => {
     expect(groups[0].fields.map((f) => f.group)).toEqual(["cluster"]);
   });
 
-  it("has a Connectors group only when connectors run", () => {
-    expect(
-      settingsGroupsOf(all, { connectors: { enabled: true } }).map(
-        (g) => g.label,
-      ),
-    ).toContain("Connectors");
-    expect(
-      settingsGroupsOf(all, {}).some((g) => g.component === "connectors"),
-    ).toBe(false);
+  it("has one Connectors group whether connectors run or not", () => {
+    for (const spec of [{ connectors: { enabled: true } }, {}])
+      expect(
+        settingsGroupsOf(all, spec).filter((g) => g.component === "connectors"),
+      ).toHaveLength(1);
   });
 
   it("keeps the Connectors group while the claim turns them off", () => {
