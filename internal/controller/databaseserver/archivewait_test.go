@@ -17,6 +17,7 @@ limitations under the License.
 package databaseserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -24,12 +25,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
+	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 )
 
 var _ = Describe("DatabaseServer recovery from the archive it writes now", func() {
@@ -126,45 +133,6 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 			To(BeNumerically(">=", suiteArchiveWait-time.Second))
 	})
 
-	It("closes no segment on a cluster that another owner took", func() {
-		server, from := archivingServer()
-		primaries.silence(server.Namespace)
-		askForRecovery(server, from.Add(time.Hour))
-
-		Eventually(func(g Gomega) {
-			recovery := reconciledServer(server).Status.Recovery
-			g.Expect(recovery).NotTo(BeNil())
-			g.Expect(recovery.StartedAt).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
-
-		// The primary answers again only once the cluster is not this
-		// server's, so any segment it closes is one on the database of
-		// somebody else.
-		By("taking the cluster the server runs from away from it")
-		running := client.ObjectKey{Namespace: server.Namespace, Name: server.Name}
-		Eventually(func(g Gomega) {
-			var cluster cnpgv1.Cluster
-			g.Expect(k8sClient.Get(ctx, running, &cluster)).To(Succeed())
-			cluster.OwnerReferences = nil
-			g.Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
-		}, timeout, interval).Should(Succeed())
-		primaries.wake(server.Namespace)
-
-		key := client.ObjectKey{Namespace: server.Namespace, Name: recoveryCluster(server)}
-		var recovered cnpgv1.Cluster
-		Eventually(func() error {
-			return k8sClient.Get(ctx, key, &recovered)
-		}, timeout, interval).Should(Succeed())
-
-		recovery := reconciledServer(server).Status.Recovery
-		Expect(recovery.ClosedSegment).To(BeEmpty())
-		Expect(primaries.closedIn(server.Namespace)).To(BeZero())
-		// Built when the owner changed, not when the wait ran out. Both times
-		// are whole seconds.
-		Expect(recovered.CreationTimestamp.Sub(recovery.StartedAt.Time)).
-			To(BeNumerically("<", suiteArchiveWait-2*time.Second))
-	})
-
 	It("builds the recovered cluster at once from an archive that the server no longer writes", func() {
 		server, from := archivingServer()
 		askForRecovery(server, from.Add(time.Hour))
@@ -201,6 +169,125 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 		Expect(primaries.closedIn(server.Namespace)).To(Equal(closed))
 	})
 })
+
+// The primary of a cluster that another owner took holds the database of that
+// owner, so the wait sends it no query and ends at once. A spec of the running
+// controller cannot test this: a look that read the owner before the spec took
+// the cluster still closes a segment on it.
+func TestAwaitArchivedTargetQueriesOnlyThePrimaryOfItsOwnCluster(t *testing.T) {
+	t.Parallel()
+
+	server := &v1.DatabaseServer{
+		ObjectMeta: metav1.ObjectMeta{Name: "camunda", Namespace: "camunda-ns", UID: types.UID("server-uid")},
+	}
+
+	cases := []struct {
+		name     string
+		cluster  *metav1.ObjectMeta
+		segment  string
+		waits    bool
+		queries  int
+		recorded string
+	}{
+		{
+			name:     "the cluster of the server",
+			cluster:  new(ownedClusterMeta(server)),
+			waits:    true,
+			queries:  1,
+			recorded: countingWALSegment,
+		},
+		{
+			name:     "the cluster of the server after the segment closed",
+			cluster:  new(ownedClusterMeta(server)),
+			segment:  countingWALSegment,
+			waits:    true,
+			queries:  1,
+			recorded: countingWALSegment,
+		},
+		{
+			name:    "a cluster another owner controls",
+			cluster: new(foreignClusterMeta(server, "stranger-uid")),
+		},
+		{
+			name:     "a cluster another owner controls after the segment closed",
+			cluster:  new(foreignClusterMeta(server, "stranger-uid")),
+			segment:  countingWALSegment,
+			recorded: countingWALSegment,
+		},
+		{
+			name:    "a cluster nothing controls",
+			cluster: new(unownedClusterMeta(server)),
+		},
+		{
+			name: "no cluster",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			waiting := server.DeepCopy()
+			source := v1.ArchiveRecord{ServerName: "camunda", Location: "s3://archive/camunda"}
+			waiting.Status.Archive = &v1.DatabaseServerArchiveStatus{History: []v1.ArchiveRecord{source}}
+			waiting.Status.Recovery = &v1.DatabaseServerRecoveryStatus{
+				StartedAt:     new(metav1.Now()),
+				ClosedSegment: tc.segment,
+			}
+
+			objects := []client.Object{&corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Name:      components.SuperuserSecretName(waiting),
+				Namespace: waiting.Namespace,
+			}}}
+			if tc.cluster != nil {
+				objects = append(objects, &cnpgv1.Cluster{ObjectMeta: *tc.cluster})
+			}
+			wal := &countingWAL{}
+			reconciler := &DatabaseServerReconciler{APIReader: archiveWaitReader(t, objects...), WAL: wal}
+
+			assert.Equal(t, tc.waits, reconciler.awaitArchivedTarget(t.Context(), waiting, source))
+			assert.Equal(t, tc.queries, wal.queries)
+			assert.Equal(t, tc.recorded, waiting.Status.Recovery.ClosedSegment)
+		})
+	}
+}
+
+// countingWALSegment is the segment that every CloseSegment of countingWAL
+// closes.
+const countingWALSegment = "000000010000000A00000042"
+
+// countingWAL is a primary that answers every query and counts them. It
+// archived nothing yet.
+type countingWAL struct {
+	queries int
+}
+
+// CloseSegment implements WriteAheadLog.
+func (w *countingWAL) CloseSegment(context.Context, pgbootstrap.Connection) (string, error) {
+	w.queries++
+
+	return countingWALSegment, nil
+}
+
+// LastArchived implements WriteAheadLog.
+func (w *countingWAL) LastArchived(context.Context, pgbootstrap.Connection) (string, error) {
+	w.queries++
+
+	return "", nil
+}
+
+// archiveWaitReader is the live reader of the archive wait, holding the
+// clusters and the superuser Secret that it reads.
+func archiveWaitReader(t *testing.T, objects ...client.Object) client.Reader {
+	t.Helper()
+
+	s := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(s))
+	require.NoError(t, v1.AddToScheme(s))
+	require.NoError(t, cnpgv1.AddToScheme(s))
+
+	return fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build()
+}
 
 // The recovery starts only once the archive holds the segment it closed. A
 // name that counts as later than it starts a recovery that PostgreSQL fails,
