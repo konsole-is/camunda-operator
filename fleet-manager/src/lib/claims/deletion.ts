@@ -20,13 +20,14 @@ import {
 
 /**
  * deleteClaimSteps returns the writes that delete claim under policy.
- * remove deletes the claim with its UID in uids and its resourceVersion in
- * preconditions, so that it fails with Stale when the claim changed since;
- * each is left out when the claim has none. policy is present only when
- * the deletion policy of the claim (deletionPolicyOf) differs from policy:
- * it writes spec.deletionPolicy as the whole claim, with the
- * resourceVersion of claim as its precondition. After policy, take remove
- * from the claim that carries the new policy.
+ * remove deletes the claim with its UID in uids and its generation in
+ * generations, so that runClaimDelete refuses it with Stale when the claim
+ * was made again or its spec changed since. Each is left out when the
+ * claim has none, and claimDeleteSchema then refuses remove. policy is
+ * absent when the claim is sure to delete under policy. policy writes
+ * spec.deletionPolicy as the whole claim, with the resourceVersion of claim
+ * as its precondition. After policy, take remove from the claim that
+ * carries the new policy.
  */
 export function deleteClaimSteps<C extends DeletableClaim>(
   claim: C,
@@ -41,11 +42,17 @@ export function deleteClaimSteps<C extends DeletableClaim>(
     apply: [],
     delete: [ref],
     ...(metadata.uid && { uids: { [refKey(ref)]: metadata.uid } }),
-    ...(metadata.resourceVersion && {
-      preconditions: { [refKey(ref)]: metadata.resourceVersion },
+    ...(metadata.generation !== undefined && {
+      generations: { [refKey(ref)]: metadata.generation },
     }),
   };
-  if (deletionPolicyOf(spec?.deletionPolicy, status?.resolvedPolicy) === policy)
+  // The claim controller records the default deletion policy of the
+  // Environment once, and it can differ from policy.
+  const known = !!spec?.deletionPolicy || status?.resolvedPolicy !== undefined;
+  if (
+    known &&
+    deletionPolicyOf(spec?.deletionPolicy, status?.resolvedPolicy) === policy
+  )
     return { remove };
   const open: Session<C> = {
     claim,

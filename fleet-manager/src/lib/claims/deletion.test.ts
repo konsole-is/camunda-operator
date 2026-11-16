@@ -20,6 +20,7 @@ const claim = (
     name: "orders",
     resourceVersion: "41",
     uid: "uid-1",
+    generation: 3,
   },
   spec: { releaseRef: "camunda-8-9-1", ...spec },
   ...(resolved && { status: { resolvedPolicy: { deletionPolicy: resolved } } }),
@@ -33,7 +34,7 @@ const ref = {
 const key = "CamundaClusterClaim/team-a/orders";
 
 describe("deleteClaimSteps", () => {
-  it("removes the claim by its UID and resourceVersion, and writes no policy when the claim policy is the choice", () => {
+  it("removes the claim by its UID and generation, and writes no policy when the claim policy is the choice", () => {
     expect(
       deleteClaimSteps(
         claim({ deletionPolicy: "Orphan" }),
@@ -46,16 +47,24 @@ describe("deleteClaimSteps", () => {
         apply: [],
         delete: [ref],
         uids: { [key]: "uid-1" },
-        preconditions: { [key]: "41" },
+        generations: { [key]: 3 },
       },
     });
   });
 
-  it("reads the recorded policy, else Delete, when the claim sets none", () => {
+  it("reads the recorded policy when the claim sets none", () => {
     expect(
       deleteClaimSteps(claim({}, "Orphan"), "Orphan", "x").policy,
     ).toBeUndefined();
-    expect(deleteClaimSteps(claim(), "Delete", "x").policy).toBeUndefined();
+    expect(
+      deleteClaimSteps(claim({}, "Delete"), "Delete", "x").policy,
+    ).toBeUndefined();
+  });
+
+  it("writes the policy first when the claim sets none and has not recorded one, because the claim controller can still record another", () => {
+    expect(deleteClaimSteps(claim(), "Delete", "x").policy).toMatchObject({
+      apply: [{ spec: { deletionPolicy: "Delete" } }],
+    });
   });
 
   it("writes the policy first, as the whole claim with the resourceVersion that the page read", () => {
@@ -83,16 +92,16 @@ describe("deleteClaimSteps", () => {
       apply: [],
       delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
       uids: { "CamundaManagementClusterClaim/team-a/orders": "uid-1" },
-      preconditions: { "CamundaManagementClusterClaim/team-a/orders": "41" },
+      generations: { "CamundaManagementClusterClaim/team-a/orders": 3 },
     });
   });
 
-  it("leaves out uids and preconditions for a claim without a UID and a resourceVersion", () => {
+  it("leaves out uids and generations for a claim without a UID and a generation", () => {
     const { metadata } = claim();
     const remove = deleteClaimSteps(
       {
         ...claim(),
-        metadata: { ...metadata, uid: undefined, resourceVersion: undefined },
+        metadata: { ...metadata, uid: undefined, generation: undefined },
       },
       "Delete",
       "x",

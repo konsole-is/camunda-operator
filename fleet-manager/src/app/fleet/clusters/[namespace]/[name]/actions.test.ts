@@ -74,15 +74,34 @@ const remove = (kind = "CamundaClusterClaim") => ({
       name: "orders",
     },
   ],
+  uids: { [`${kind}/team-a/orders` as const]: "uid-1" },
+  generations: { [`${kind}/team-a/orders` as const]: 3 },
 });
+const liveClaim = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  metadata: {
+    name: "orders",
+    namespace: "team-a",
+    uid: "uid-1",
+    generation: 3,
+    resourceVersion: "45",
+  },
+};
 
 describe("applyClaimDelete", () => {
-  it("applyClaimDelete deletes the claim through the writer", async () => {
+  it("applyClaimDelete deletes the claim through the writer at the resourceVersion that it reads", async () => {
+    fakeWriter.objects = [liveClaim];
     expect(await applyClaimDelete(remove())).toEqual({
       ok: true,
       mode: "direct",
     });
-    expect(fakeWriter.applied).toEqual([remove()]);
+    expect(fakeWriter.applied).toEqual([
+      {
+        ...remove(),
+        preconditions: { "CamundaClusterClaim/team-a/orders": "45" },
+      },
+    ]);
   });
 
   it("applyClaimDelete refuses a delete of another kind and writes nothing", async () => {
@@ -94,6 +113,7 @@ describe("applyClaimDelete", () => {
 
 describe("previewClaimDelete", () => {
   it("previewClaimDelete previews the delete through the writer", async () => {
+    fakeWriter.objects = [liveClaim];
     expect(await previewClaimDelete(remove())).toEqual({
       objects: [],
       errors: [],

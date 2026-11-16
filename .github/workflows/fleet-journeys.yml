@@ -83,7 +83,20 @@ jobs:
         run: make fleet-harness-check
 
       - name: Run the journeys
+        id: run-journeys
         run: make fleet-journeys FLEET_PLAYWRIGHT_FLAGS=--with-deps
+
+      # The output of a failed journey holds the text of the page at the
+      # failure (error-context.md), its trace, and its screenshot. The
+      # delete journey adds the state of its objects before its cleanup.
+      - name: Upload the journey failures
+        if: ${{ failure() && steps.run-journeys.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: journey-failures
+          path: fleet-manager/test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload the UI journeys
         id: journeys
