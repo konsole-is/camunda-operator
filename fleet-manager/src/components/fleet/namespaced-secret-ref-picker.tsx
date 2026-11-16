@@ -68,9 +68,9 @@ export function staticSecretRefs(
  * that Secret. It shows names only, never a Secret value. A value whose
  * namespace, Secret, or key does not exist stays picked, so a save keeps it,
  * and a missing Secret or key is marked. While the Secrets of the namespace
- * cannot be read, nothing is marked. onChange runs only on a pick of the user: it gets the
- * reference when all three are picked, and undefined when a pick clears a
- * reference that it reported before or that value gave.
+ * cannot be read, nothing is marked. onChange runs only on a pick of the
+ * user: it gets the reference when all three are picked, and undefined when
+ * a pick clears a reference that it reported before or that value gave.
  */
 export function NamespacedSecretRefPicker({
   label,
