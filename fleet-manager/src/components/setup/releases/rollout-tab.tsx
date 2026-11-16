@@ -39,8 +39,11 @@ type Review = {
   version: string | undefined;
 };
 
-// Failed is a refused move: the clusters it picked, by key, and the errors.
-type Failed = {
+/**
+ * FailedMove is a refused move: the keys of the clusters it picked, the
+ * target version of each operator-refused downgrade, by key, and the errors.
+ */
+export type FailedMove = {
   keys: string[];
   downgrades: Record<string, string>;
   errors: ApiError[];
@@ -53,14 +56,17 @@ type Failed = {
  * move can be selected. errors and stale say which lists are not read:
  * while a list that the move checks is not read, no cluster can move, and
  * an open review closes, unless its write already runs. A review also
- * closes when a cluster of it no longer offers its move. Without mode the
- * tab offers no move.
+ * closes when a cluster of it no longer offers its move, or when the
+ * version of release changes. The tab gives each new value of failed, a
+ * refused move, to onFailed. Without mode the tab offers no move.
  */
 export function RolloutTab({
   release,
   data,
   mode,
   actions,
+  failed,
+  onFailed,
 }: {
   release: Resource<"CamundaRelease">;
   data: RolloutData & {
@@ -69,6 +75,8 @@ export function RolloutTab({
   };
   mode?: WriteMode;
   actions: Pick<ReleaseActions, "previewMove" | "applyMove">;
+  failed?: FailedMove;
+  onFailed: (failed: FailedMove | undefined) => void;
 }): ReactNode {
   const target = release.metadata?.name ?? "";
   const rows = rolloutRows(release, data);
@@ -78,7 +86,6 @@ export function RolloutTab({
   const [review, setReview] = useState<Review>();
   const [planErrors, setPlanErrors] = useState<string[]>([]);
   const [writing, setWriting] = useState(false);
-  const [failed, setFailed] = useState<Failed>();
   const { toast, show, dismiss } = useWriteToast();
 
   const actionOf = (key: string) => rows.find((r) => r.key === key)?.action;
@@ -91,7 +98,7 @@ export function RolloutTab({
     setReview(undefined);
 
   const move = (picks: MovePick[]) => {
-    setFailed(undefined);
+    onFailed(undefined);
     const plan = planMove(release, picks, data);
     if (plan.change === undefined) {
       setPlanErrors(plan.errors);
@@ -146,11 +153,11 @@ export function RolloutTab({
         </div>
       )}
       {!review && failed && (
-        <FailedMove
+        <FailedNote
           failed={failed}
           rows={rows}
           target={target}
-          onDismiss={() => setFailed(undefined)}
+          onDismiss={() => onFailed(undefined)}
         />
       )}
       {mode && review && (
@@ -165,13 +172,13 @@ export function RolloutTab({
             actions={actions}
             show={(result, message) => {
               show(result, message);
-              if (result.ok) setFailed(undefined);
+              if (result.ok) onFailed(undefined);
               setReview(undefined);
             }}
             onCancel={() => setReview(undefined)}
             onWriting={setWriting}
             onRefused={(errors) =>
-              setFailed({
+              onFailed({
                 keys: review.picks.map((p) => p.row.key),
                 downgrades: Object.fromEntries(
                   review.picks.flatMap((p) =>
@@ -424,13 +431,13 @@ function MoveReview({
   );
 }
 
-function FailedMove({
+function FailedNote({
   failed,
   rows,
   target,
   onDismiss,
 }: {
-  failed: Failed;
+  failed: FailedMove;
   rows: readonly RolloutRow[];
   target: string;
   onDismiss: () => void;
@@ -445,14 +452,18 @@ function FailedMove({
     if (errors.length > 0) return errors.map((e) => e.message);
     const row = rows.find((r) => r.key === key);
     const release = row?.claim?.spec?.releaseRef;
-    return [
-      // In direct mode the claims before a failed one keep the new release.
-      release === target &&
-      (failed.downgrades[key] === undefined ||
-        row?.claim?.spec?.allowVersionDowngrade === failed.downgrades[key])
-        ? `${key}: moved to ${target}.`
-        : `${key}: not moved${typeof release === "string" && release !== "" ? `, still on ${release}` : ""}.`,
-    ];
+    const downgrade = failed.downgrades[key];
+    // In direct mode the claims before a failed one keep the new release.
+    if (release !== target)
+      return [
+        `${key}: not moved${typeof release === "string" && release !== "" ? `, still on ${release}` : ""}.`,
+      ];
+    if (
+      downgrade !== undefined &&
+      row?.claim?.spec?.allowVersionDowngrade !== downgrade
+    )
+      return [`${key}: the downgrade to ${downgrade} is not confirmed.`];
+    return [`${key}: moved to ${target}.`];
   });
   return (
     <div

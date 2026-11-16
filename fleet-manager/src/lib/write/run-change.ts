@@ -150,8 +150,8 @@ export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
  * spec.allowVersionDowngrade, status, and the metadata that the API server
  * sets (Invalid), or has a cluster with a backup of either kind that has
  * not ended (Stale, naming the backup). Each such error names the claim in
- * ref. When these checks
- * cannot read the claims or the backups, it gives Unavailable.
+ * ref. When these checks cannot read the claims or the backups, it gives
+ * Unavailable.
  */
 export async function runClaimMove(input: unknown): Promise<WriteResult> {
   const parsed = claimBatchChangeSchema.safeParse(input);

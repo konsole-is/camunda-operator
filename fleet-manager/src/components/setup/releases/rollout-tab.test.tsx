@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { type ComponentProps, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { ReadError } from "@/components/planes/planes-table";
@@ -25,7 +26,7 @@ import {
   rolloutData,
   targetRelease,
 } from "./rollout-fixtures";
-import { RolloutTab } from "./rollout-tab";
+import { type FailedMove, RolloutTab } from "./rollout-tab";
 
 vi.mock("@/lib/k8s/hooks", () => ({
   useGitSync: () => "waiting",
@@ -60,6 +61,14 @@ const staleErrorOf = (namespace: string, name: string): ApiError => ({
   },
 });
 
+// StatefulTab holds the failed move, as ReleaseDetailView does.
+function StatefulTab(
+  props: Omit<ComponentProps<typeof RolloutTab>, "failed" | "onFailed">,
+) {
+  const [failed, setFailed] = useState<FailedMove>();
+  return <RolloutTab {...props} failed={failed} onFailed={setFailed} />;
+}
+
 function renderTab(opts: { data?: Data; mode?: WriteMode } = {}) {
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
@@ -74,7 +83,12 @@ function renderTab(opts: { data?: Data; mode?: WriteMode } = {}) {
   };
   const view = (data: Data, release = targetRelease) => (
     <GitPushesProvider>
-      <RolloutTab release={release} data={data} mode={mode} actions={actions} />
+      <StatefulTab
+        release={release}
+        data={data}
+        mode={mode}
+        actions={actions}
+      />
     </GitPushesProvider>
   );
   const { rerender } = render(view(opts.data ?? rolloutData()));
@@ -110,6 +124,39 @@ function freshCanMove(): RolloutData {
     clusters: data.clusters.map((c) =>
       c.metadata?.name === "fresh"
         ? cluster("team-pay", "fresh", { version: "8.9.0" })
+        : c,
+    ),
+  };
+}
+
+// refusedDowngrade gives team-pay/payments on targetRelease, with the
+// downgrade to it refused by the operator and claimSpec on its claim.
+function refusedDowngrade(claimSpec: object = {}): RolloutData {
+  const base = rolloutData();
+  return {
+    ...base,
+    clusters: base.clusters.map((c) =>
+      c.metadata?.name === "payments"
+        ? cluster("team-pay", "payments", {
+            version: "8.9.4",
+            releaseRef: "camunda-8-9-1",
+            conditions: [
+              {
+                type: "Ready",
+                status: "False",
+                reason: "VersionDowngradeRefused",
+                message: "the effective version is refused",
+              },
+            ],
+          })
+        : c,
+    ),
+    claims: base.claims.map((c) =>
+      c.metadata.name === "payments"
+        ? clusterClaim("team-pay", "payments", {
+            releaseRef: "camunda-8-9-1",
+            ...claimSpec,
+          })
         : c,
     ),
   };
@@ -334,6 +381,42 @@ describe("RolloutTab", () => {
     ).toBeTruthy();
   });
 
+  it("says that the downgrade of a refused pick is not confirmed when the write fails", async () => {
+    const { actions, rerender } = renderTab({ data: refusedDowngrade() });
+    actions.applyMove.mockResolvedValueOnce({
+      ok: false,
+      errors: [
+        { code: "Unavailable", message: "The API server did not answer." },
+      ],
+    });
+    await userEvent.click(
+      within(rowOf("payments")).getByRole("button", {
+        name: "Confirm downgrade",
+      }),
+    );
+    const confirm = await screen.findByRole("button", {
+      name: "Confirm downgrade",
+    });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+    const result = await screen.findByRole("alert", {
+      name: "The move did not finish",
+    });
+    expect(
+      within(result).getByText(
+        "team-pay/payments: the downgrade to 8.9.1 is not confirmed.",
+      ),
+    ).toBeTruthy();
+    rerender(refusedDowngrade({ allowVersionDowngrade: "8.9.1" }));
+    expect(
+      within(
+        screen.getByRole("alert", { name: "The move did not finish" }),
+      ).getByText("team-pay/payments: moved to camunda-8-9-1."),
+    ).toBeTruthy();
+  });
+
   it("keeps the boxes and Move selected in step after Back", async () => {
     renderTab({ data: freshCanMove() });
     await userEvent.click(
@@ -447,33 +530,7 @@ describe("RolloutTab", () => {
   });
 
   it("closes the review of a refused downgrade when a backup of its cluster starts", async () => {
-    const base = rolloutData();
-    const refused: RolloutData = {
-      ...base,
-      clusters: base.clusters.map((c) =>
-        c.metadata?.name === "payments"
-          ? cluster("team-pay", "payments", {
-              version: "8.9.4",
-              releaseRef: "camunda-8-9-1",
-              conditions: [
-                {
-                  type: "Ready",
-                  status: "False",
-                  reason: "VersionDowngradeRefused",
-                  message: "the effective version is refused",
-                },
-              ],
-            })
-          : c,
-      ),
-      claims: base.claims.map((c) =>
-        c.metadata.name === "payments"
-          ? clusterClaim("team-pay", "payments", {
-              releaseRef: "camunda-8-9-1",
-            })
-          : c,
-      ),
-    };
+    const refused = refusedDowngrade();
     const { rerender } = renderTab({ data: refused });
     await userEvent.click(
       within(rowOf("payments")).getByRole("button", {

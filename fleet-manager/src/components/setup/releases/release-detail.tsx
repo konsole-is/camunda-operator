@@ -19,7 +19,7 @@ import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
 import type { RolloutData } from "./rollout";
 import { type RolloutLists, useRolloutSources } from "./rollout-sources";
-import { RolloutTab } from "./rollout-tab";
+import { type FailedMove, RolloutTab } from "./rollout-tab";
 import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
@@ -104,6 +104,8 @@ export function ReleaseDetailView({
   actions: ReleaseActions;
 }): ReactNode {
   const [tab, setTab] = useState(initialTab);
+  // The Rollout tab unmounts on a tab change, and its failed move stays.
+  const [failed, setFailed] = useState<FailedMove>();
   const release = sources.releases.find((r) => r.metadata.name === name) as
     Resource<"CamundaRelease"> | undefined;
   // A Resource is plain JSON, so it differs from its model type only in its
@@ -162,6 +164,8 @@ export function ReleaseDetailView({
               data={rolloutData}
               mode={mode}
               actions={actions}
+              failed={failed}
+              onFailed={setFailed}
             />
           ) : (
             <p role="alert" className="text-sm text-bad">

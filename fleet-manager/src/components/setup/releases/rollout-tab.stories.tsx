@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { useState } from "react";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import type { Change, KubeObject } from "@/lib/write/types";
 import {
@@ -7,7 +8,7 @@ import {
   rolloutData,
   targetRelease,
 } from "./rollout-fixtures";
-import { RolloutTab } from "./rollout-tab";
+import { type FailedMove, RolloutTab } from "./rollout-tab";
 
 const changed = (o: KubeObject) => ({
   ref: {
@@ -52,6 +53,21 @@ const meta = {
         mode: "direct" as const,
       })),
     },
+    onFailed: fn(),
+  },
+  // The page holds the failed move, so that it stays across tab changes.
+  render: function Render(args) {
+    const [failed, setFailed] = useState<FailedMove>();
+    return (
+      <RolloutTab
+        {...args}
+        failed={failed}
+        onFailed={(next) => {
+          args.onFailed(next);
+          setFailed(next);
+        }}
+      />
+    );
   },
 } satisfies Meta<typeof RolloutTab>;
 export default meta;

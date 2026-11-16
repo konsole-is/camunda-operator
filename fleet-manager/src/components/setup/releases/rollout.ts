@@ -212,16 +212,17 @@ export function rolloutRows(
         return checked();
       }
 
-      function checked(): MoveStatus {
-        return moveStatus(
-          releaseMove(
-            cluster,
-            generated<CamundaRelease>(release),
-            generated<Environment | undefined>(environment),
-            backups,
-          ),
+      function moveCheck() {
+        return releaseMove(
           cluster,
+          generated<CamundaRelease>(release),
+          generated<Environment | undefined>(environment),
+          backups,
         );
+      }
+
+      function checked(): MoveStatus {
+        return moveStatus(moveCheck(), cluster);
       }
 
       function targetStatus(claim: ClusterClaim): RolloutStatus {
@@ -234,7 +235,9 @@ export function rolloutRows(
           to !== "" &&
           claim.spec?.allowVersionDowngrade !== to
         ) {
-          const check = checked();
+          // runClaimMove refuses the confirm during a backup, whatever the
+          // environment allows.
+          const check = moveStatus({ ...moveCheck(), allowed: true }, cluster);
           return check.kind === "backupRunning"
             ? check
             : { kind: "downgradeRefused", to, text: refused };

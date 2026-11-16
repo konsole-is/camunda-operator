@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import {
@@ -9,6 +16,7 @@ import {
 } from "./fixtures";
 import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
 import type { ReleaseTab } from "./release-tabs";
+import { rolloutData } from "./rollout-fixtures";
 import type { RolloutLists } from "./rollout-sources";
 import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
@@ -135,6 +143,75 @@ describe("ReleaseDetailView", () => {
     });
     expect(
       screen.queryByText(/Delete is possible when the fleet manager can read/),
+    ).toBeNull();
+  });
+
+  it("keeps a failed move across a switch to Settings and back until Dismiss", async () => {
+    const data = rolloutData();
+    vi.mocked(actions.previewMove).mockImplementationOnce(async (c) => ({
+      objects: c.apply.map((o) => ({
+        ref: {
+          apiVersion: o.apiVersion,
+          kind: o.kind,
+          namespace: o.metadata.namespace,
+          name: o.metadata.name,
+        },
+        diff: [{ op: "added" as const, text: "releaseRef: camunda-8-9-1" }],
+      })),
+      errors: [],
+    }));
+    vi.mocked(actions.applyMove).mockResolvedValueOnce({
+      ok: false,
+      errors: [
+        { code: "Unavailable", message: "The API server did not answer." },
+      ],
+    });
+    show(
+      "camunda-8-9-1",
+      {
+        releases: data.releases,
+        environments: data.environments,
+        namespaces: data.namespaces,
+        clusters: data.clusters,
+        elasticsearchClusters: [],
+        databaseServers: data.databaseServers,
+        claims: data.claims,
+      } as unknown as ReleasesData,
+      "rollout",
+      {
+        clusterPresets: data.clusterPresets,
+        sections: data.sections,
+        registrations: data.registrations,
+        requests: data.requests,
+        elasticsearchBackups: data.elasticsearchBackups,
+        rdbmsBackups: data.rdbmsBackups,
+      } as unknown as RolloutLists,
+    );
+    const orders = screen
+      .getByRole("link", { name: "orders" })
+      .closest("tr") as HTMLElement;
+    await userEvent.click(within(orders).getByRole("button", { name: "Move" }));
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+    await screen.findByRole("alert", { name: "The move did not finish" });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(
+      screen.queryByRole("alert", { name: "The move did not finish" }),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Rollout" }));
+    const note = screen.getByRole("alert", { name: "The move did not finish" });
+    expect(
+      within(note).getByText("The API server did not answer."),
+    ).toBeTruthy();
+
+    await userEvent.click(
+      within(note).getByRole("button", { name: "Dismiss" }),
+    );
+    expect(
+      screen.queryByRole("alert", { name: "The move did not finish" }),
     ).toBeNull();
   });
 
