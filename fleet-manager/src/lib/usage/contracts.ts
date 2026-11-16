@@ -365,6 +365,13 @@ export function contractUsage(
           name: server.status?.recovery?.archive?.objectStorageRef,
           field: "status.recovery.archive.objectStorageRef",
         },
+        {
+          kind: "DatabaseServerConfig",
+          name: server.status?.recovery?.completedAt
+            ? undefined
+            : server.status?.recovery?.contract,
+          field: "status.recovery.contract",
+        },
       ],
       preset?.metadata.name,
     );
@@ -512,7 +519,12 @@ const USER_KINDS: Record<ContractKind, readonly string[]> = {
     "LogicalBackupElasticsearch",
     "PointInTimeRestore",
   ],
-  DatabaseServerConfig: ["Database", "DatabaseConfig", "PointInTimeRestore"],
+  DatabaseServerConfig: [
+    "Database",
+    "DatabaseConfig",
+    "DatabaseServer",
+    "PointInTimeRestore",
+  ],
   DatabaseConfig: [
     "CamundaManagementCluster",
     "PointInTimeRestore",

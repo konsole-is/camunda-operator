@@ -641,6 +641,45 @@ describe("contractUsage", () => {
     ]);
   });
 
+  it("counts the contract of a rollback that the server has not answered", () => {
+    const server = (name: string, completedAt?: string) =>
+      object<DatabaseServer>(
+        "DatabaseServer",
+        "team-a",
+        name,
+        {},
+        {
+          recovery: {
+            requestID: "r1",
+            contract: "postgres",
+            requestedBy: "team-a/restore",
+            targetTime: "2026-11-15T10:00:00Z",
+            ...(completedAt && { completedAt }),
+          },
+        },
+      );
+    const sources = sourcesWith({
+      databaseServers: [
+        server("running"),
+        server("answered", "2026-11-15T11:00:00Z"),
+      ],
+    });
+    expect(
+      usersOf(sources, {
+        kind: "DatabaseServerConfig",
+        namespace: "team-a",
+        name: "postgres",
+      }),
+    ).toEqual([
+      {
+        kind: "DatabaseServer",
+        namespace: "team-a",
+        name: "running",
+        fields: ["status.recovery.contract"],
+      },
+    ]);
+  });
+
   it("counts the storage contract that an Elasticsearch backup pinned", () => {
     const sources = sourcesWith({
       elasticsearchBackups: [
@@ -1001,7 +1040,10 @@ describe("unreadUserKinds", () => {
           "ns",
           "db",
           { archive: { objectStorageRef: "o" } },
-          { archive: { boundary: { objectStorageRef: "o" } } },
+          {
+            archive: { boundary: { objectStorageRef: "o" } },
+            recovery: { contract: "dsc" },
+          },
         ),
       ],
       databases: [

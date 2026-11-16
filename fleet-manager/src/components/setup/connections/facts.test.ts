@@ -112,6 +112,43 @@ describe("contractFacts", () => {
     });
   });
 
+  it("shows the retention of point-in-time recovery and who rolls the server back", () => {
+    const facts = contractFacts({
+      ...server,
+      spec: {
+        ...server.spec,
+        pitr: { enabled: true, retentionPeriodDays: 7, recovery: "operator" },
+      },
+    });
+    expect(fact(facts, "Point-in-time recovery")?.value).toBe(
+      "7 days of retention",
+    );
+    expect(fact(facts, "Rollback")?.value).toBe("By the writer");
+  });
+
+  it("shows a manual rollback when the contract leaves recovery unset", () => {
+    const facts = contractFacts({
+      ...server,
+      spec: { ...server.spec, pitr: { enabled: true, retentionPeriodDays: 1 } },
+    });
+    expect(fact(facts, "Rollback")?.value).toBe("Manual");
+  });
+
+  it("shows point-in-time recovery as off when the contract turns it off", () => {
+    const facts = contractFacts({
+      ...server,
+      spec: { ...server.spec, pitr: { enabled: false } },
+    });
+    expect(fact(facts, "Point-in-time recovery")?.value).toBe("Off");
+    expect(fact(facts, "Rollback")).toBeUndefined();
+  });
+
+  it("gives no point-in-time recovery fact when the contract has no pitr", () => {
+    expect(fact(contractFacts(server), "Point-in-time recovery")).toBe(
+      undefined,
+    );
+  });
+
   it("shows the credentials and the backup credentials of a database, with the defaults", () => {
     const facts = contractFacts(database);
     expect(fact(facts, "Credentials")?.secret).toEqual({

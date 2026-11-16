@@ -88,6 +88,7 @@ export function contractFacts(contract: ContractObject): Fact[] {
           label: "Admin credentials",
           secret: userPassword(contract.spec.adminCredentialsSecretRef),
         },
+        ...pitrFacts(contract.spec.pitr),
       ]);
     case "DatabaseConfig":
       return compact([
@@ -288,6 +289,21 @@ function keyFact(
       secret: { name: ref.name, keys: [["Key", ref.key]] },
     }
   );
+}
+
+function pitrFacts(pitr: DatabaseServerConfig["spec"]["pitr"]): Fact[] {
+  if (!pitr) return [];
+  if (!pitr.enabled) return [{ label: "Point-in-time recovery", value: "Off" }];
+  return [
+    {
+      label: "Point-in-time recovery",
+      value: `${pitr.retentionPeriodDays} days of retention`,
+    },
+    {
+      label: "Rollback",
+      value: pitr.recovery === "operator" ? "By the writer" : "Manual",
+    },
+  ];
 }
 
 function value(label: string, v: string | undefined): Fact | undefined {

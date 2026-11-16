@@ -18,7 +18,7 @@ The page has one tab for each kind of contract.
 
 Each row shows the name, the namespace, the main settings of the kind, the writer, the number of users, and the status. Select the name to open the page of the contract. Add `?tab=` to the address to open a tab directly, for example `/setup/connections?tab=databases`.
 
-The page of a contract shows the panels **Status**, **Writer**, **Settings**, and **Used by**. **Settings** shows each Secret reference with the key of each value that the contract reads. A username key or a password key that the contract does not set shows its default, `username` or `password`. For an Elasticsearch contract, **Settings** shows `nodeCount` as **Node count**, with the note `Sets the index replicas when the cluster sets no replica count.` The [SecondaryStorageConfig](../crds/secondarystorageconfig.md#node-count) reference gives the replica count for each node count.
+The page of a contract shows the panels **Status**, **Writer**, **Settings**, and **Used by**. **Settings** shows each Secret reference with the key of each value that the contract reads. A username key or a password key that the contract does not set shows its default, `username` or `password`. For an Elasticsearch contract, **Settings** shows `nodeCount` as **Node count**, with the note `Sets the index replicas when the cluster sets no replica count.` The [SecondaryStorageConfig](../crds/secondarystorageconfig.md#node-count) reference gives the replica count for each node count. For a database server contract with `pitr`, **Settings** shows the retention days and who rolls the server back. The [DatabaseServerConfig](../crds/databaseserverconfig.md#point-in-time-recovery) reference describes both.
 
 ### Who wrote a contract
 
@@ -73,6 +73,7 @@ The panel **Used by** lists each object that names the contract, with the fields
 | Secondary storage | `PointInTimeRestore` | `status.storage.secondaryStorageConfig` |
 | Database servers | `Database`, `DatabaseConfig` | `spec.serverRef` |
 | Database servers | `PointInTimeRestore` | `status.storage.databaseServerConfig` |
+| Database servers | `DatabaseServer` | `status.recovery.contract`, until the server answers the rollback |
 | Databases | `SecondaryStorageConfig` | `spec.rdbms.databaseConfigRef` |
 | Databases | `PointInTimeRestore` | `status.storage.databaseConfig` |
 | Databases | `CamundaManagementCluster` | `spec.identityProvider.keycloak.databaseConfigRef`, `spec.identity.databaseConfigRef`, `spec.webModeler.databaseConfigRef` |
