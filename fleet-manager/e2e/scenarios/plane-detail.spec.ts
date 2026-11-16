@@ -63,7 +63,7 @@ test("the Overview shows a card for each component that runs", async ({
   page,
 }) => {
   await page.goto("/fleet/planes/platform/plane-a");
-  const cards = page.getByRole("region", { name: "Components" });
+  const cards = page.getByRole("region", { name: "Components", exact: true });
   const provider = cards.getByRole("article", { name: "Identity provider" });
   await expect(provider).toContainText("OIDC");
   await expect(provider).toContainText(
@@ -92,7 +92,7 @@ test("a card opens the component detail with its condition and its settings", as
 }) => {
   await page.goto("/fleet/planes/platform/plane-a");
   await page
-    .getByRole("region", { name: "Components" })
+    .getByRole("region", { name: "Components", exact: true })
     .getByRole("link", { name: "Management Identity", exact: true })
     .click();
   await expect(page).toHaveURL(/\?tab=overview&component=identity$/);
@@ -113,5 +113,7 @@ test("a card opens the component detail with its condition and its settings", as
   await expect(claimName).toContainText("Fixed after Identity started");
 
   await page.getByRole("link", { name: "All components" }).click();
-  await expect(page.getByRole("region", { name: "Components" })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Components", exact: true }),
+  ).toBeVisible();
 });
