@@ -325,12 +325,26 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         [`CamundaManagementClusterClaim/${namespace}/leak`]: "1",
       },
     }),
-  "app/fleet/clusters/new/actions.ts#previewClusterCreate": () =>
-    previewClusterCreate(clusterCreate()),
+  "app/fleet/clusters/new/actions.ts#previewClusterCreate": async () => {
+    const preview = await previewClusterCreate(
+      clusterCreate({ presetRef: "leak" }),
+    );
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects).not.toEqual([]);
+    return preview;
+  },
   // The claim has no presetRef, which the API server requires, so the
-  // write refuses it and leaves nothing behind.
-  "app/fleet/clusters/new/actions.ts#createCluster": () =>
-    createCluster(clusterCreate()),
+  // write refuses it with Invalid and leaves nothing behind. A refusal of
+  // the schema of the action names no object.
+  "app/fleet/clusters/new/actions.ts#createCluster": async () => {
+    const result = await createCluster(clusterCreate({}));
+    const errors = result.ok ? [] : result.errors;
+    expect(errors).not.toEqual([]);
+    for (const error of errors) {
+      expect(error).toMatchObject({ code: "Invalid", ref: expect.anything() });
+    }
+    return result;
+  },
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
     previewPlaneCreate(planeCreate()),
   // The claim has no spec that the API server accepts, so the write
@@ -464,12 +478,12 @@ function planeClaimChange() {
     ],
   };
 }
-function clusterCreate() {
+function clusterCreate(spec: object) {
   return createChangeOf("Create the cluster leak", {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaClusterClaim",
     metadata: { name: "leak", namespace },
-    spec: {},
+    spec,
   });
 }
 
