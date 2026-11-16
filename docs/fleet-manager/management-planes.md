@@ -246,7 +246,7 @@ A tab needs some lists. When the page fails to read such a list, or its copy of 
 
 ## Change a management plane
 
-The **Claim** tab of the plane page shows the claim of the plane, one section at a time. Select **Edit** on a section to change it. The fleet manager changes only the claim. The operator then changes the plane. A page without a write mode shows the sections with no **Edit**. A plane that no claim made has no claim to show. While the page cannot read the plane or its claim, the tab offers no **Edit** and names that list.
+The **Claim** tab of the plane page shows the claim of the plane, one section at a time. Select **Edit** on a section to change it. The fleet manager changes only the claim. The operator then changes the plane. When the fleet manager cannot read its settings, the sections show no **Edit**. A plane that no claim made shows no claim on this tab. While the page cannot read the plane or its claim, the tab offers no **Edit** and names the kind that it did not read.
 
 ### What stays fixed
 
@@ -255,7 +255,7 @@ These values do not change after the plane is created:
 | Value | The tab shows |
 | --- | --- |
 | Name and namespace | `Set at creation` |
-| The option of **Databases** and of **Access** | `Chosen at creation`. A parameter that the policy of the environment lets the claim set stays open. |
+| The option of **Databases** and of **Access** | `Chosen at creation`. A parameter of the option stays open when the policy of the environment lets the claim set it. |
 | The claim name and the claim value of the first administrator, in OIDC mode, after Management Identity started | `Fixed after Identity started`. Management Identity keeps the first administrator in its database. |
 
 The **Access** section also shows the host of the plane and the URL of each app. A plane with **No access from outside** shows the URL of each app as a field that you can change.
@@ -266,7 +266,7 @@ The **Access** section also shows the host of the plane and the URL of each app.
 
 ### Change where users sign in
 
-**Identity** has the three options of the create form. A pick moves the claim to the new option in one change. A move between OIDC and a Keycloak option asks for the first administrator of the new option:
+**Identity** has the three options of [Basics](#basics). When you select an option, the claim moves to it in one change. A move between OIDC and a Keycloak option asks for the first administrator of the new option:
 
 - After a move to OIDC, enter the **Claim name** and the **Claim value**. The move removes the username and the **Password Secret** from the claim.
 - After a move to a Keycloak option, enter the **Username**, and the **Email** when Web Modeler runs. The move removes the claim name and the claim value.
@@ -301,7 +301,7 @@ spec:
 
 **Environments served** has one checkbox for each environment, and the **Cluster labels** of the cluster selector. Match expressions of the selector show as text. Change them in the claim YAML. A change of the labels keeps the match expressions.
 
-Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches loses its Console settings and restarts once. **Expected clusters** shows the result that each cluster can expect. These are expected results. The operator decides when the plane runs.
+Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches loses its Console settings and restarts once. **Expected clusters** shows the result that the page expects for each cluster. The operator decides the real result when the plane runs.
 
 In OIDC mode, the list needs the issuer URL of the platform config. Without it, the section says that the preview needs the issuer and lists no cluster.
 
@@ -311,7 +311,7 @@ In OIDC mode, the list needs the issuer URL of the platform config. Without it, 
 
 ### Change the versions
 
-**Versions** has one version for each app that runs. The checks of the create form apply, with the Keycloak range on its own. A version that the operator refuses blocks **Review**.
+**Versions** has one version for each app that runs. The section refuses the versions that [Components and versions](#components-and-versions) refuses, and the error blocks **Review**.
 
 A warning does not block **Review**. The section warns in these cases:
 
@@ -327,12 +327,13 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 - The move of the platform config and of the sign-in, and where the callbacks go.
 - Each cluster that attaches or detaches.
 - What Console off and Web Modeler off do, and each version move with its warnings.
-- The apps that restart, and the Optimize of each served cluster when its sign-in settings change. An app that restarts only in some cases shows as `may restart`, with the case. A database parameter and the access host are such cases, because the option decides.
+- The apps that restart, and the Optimize of each served cluster when its sign-in settings change.
+- The apps that restart only in some cases, as `may restart` with the case. For example, a change of a database parameter can restart the apps. The database option decides.
 
-A move of the sign-in needs the name of the plane typed before **Save** turns on. In Git mode, the button is **Push to Git**.
+A move of the sign-in needs the name of the plane typed before **Save** turns on. In Git mode, the button is **Push to Git**. [Fleet manager settings](settings.md) says how to turn on Git mode.
 
 The save carries the version of the claim that the page read. When the claim changed since then, the save writes nothing and says so. Review the change and save it again.
 
-The fleet manager does not take over a field that another tool wrote. A change of such a field fails in the review. A field that you clear stays in the claim, and the review says so. Change that field with the tool that wrote it.
+The fleet manager does not change a field that another tool, such as `kubectl apply`, wrote. A change of such a field fails in the review, and nothing is written. When you clear such a field, the field stays in the claim, and the review says so. Change that field with the tool that wrote it.
 
 While the page cannot read a list that the review needs, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
