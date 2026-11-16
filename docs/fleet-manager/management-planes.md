@@ -202,6 +202,8 @@ When the plane and its claim are both deleted, the page shows `This management p
 
 When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted.
 
+When the page cannot read the `CamundaManagementCluster`, it does not know if the plane is managed or which claim made it. The **Conditions** section shows the conditions of a claim with the same name in the group **Claim**. The line `The page could not read the management plane, so it cannot tell if the claim <name> made it.` stands above that section. The header shows `No status`, and a dash for the identity provider, the platform config, and **Serves**, because the page does not know them. The page also does not show the `Not managed by the fleet manager.` banner.
+
 ### A plane that no claim made
 
 A `CamundaManagementCluster` without the label `fleet.camunda.io/claim` is not managed by the fleet manager. The page shows `Not managed by the fleet manager. You can read this management plane but not change it here.` The **Conditions** section has no group **Claim**. A claim with the same name in the same namespace does not change this plane, so the page does not show that claim. To change such a plane, change the `CamundaManagementCluster` where you manage it, for example in your GitOps repository.

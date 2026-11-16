@@ -49,10 +49,13 @@ describe("PlaneHeader", () => {
     );
   });
 
-  it("shows a dash for a mode and a platform config that are not known", () => {
-    render(header({ mode: undefined, platformConfig: undefined }));
+  it("shows a dash for a mode, a platform config, and a scope that are not known", () => {
+    render(
+      header({ mode: undefined, platformConfig: undefined, serves: undefined }),
+    );
     expect(fact("Identity provider")).toBe("-");
     expect(fact("Platform config")).toBe("-");
+    expect(fact("Serves")).toBe("-");
   });
 
   it("shows Suspended for Ready with reason Suspended", () => {

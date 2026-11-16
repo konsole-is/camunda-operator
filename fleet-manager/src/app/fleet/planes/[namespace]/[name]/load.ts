@@ -8,8 +8,8 @@ import { CLAIM_LABEL } from "@/lib/labels";
 /**
  * loadPlanePage reads the first snapshot of the plane page. It returns
  * undefined only when it read both the CamundaManagementCluster and the
- * claim of that name and neither exists. The claim joins the plane while no
- * CamundaManagementCluster exists, or when the CamundaManagementCluster
+ * claim of that name and neither exists. It returns the claim while no
+ * CamundaManagementCluster is known, or when the CamundaManagementCluster
  * carries CLAIM_LABEL with the value name. When it returns a page, a failed
  * read of a kind gives no objects of that kind and an entry in readErrors.
  */

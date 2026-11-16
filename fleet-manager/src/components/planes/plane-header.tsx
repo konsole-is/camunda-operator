@@ -22,7 +22,7 @@ export function PlaneHeader({
   ready?: ConditionLike;
   mode?: IdentityMode;
   platformConfig?: string;
-  serves: Plane["serves"];
+  serves?: Plane["serves"];
   actions?: ReactNode;
 }) {
   const facts: [string, string][] = [
@@ -31,11 +31,13 @@ export function PlaneHeader({
     ["Platform config", platformConfig || "-"],
     [
       "Serves",
-      "environments" in serves
-        ? serves.environments.join(", ")
-        : serves.noClusterSelector
-          ? "No cluster, because it has no cluster selector"
-          : serves.selector,
+      !serves
+        ? "-"
+        : "environments" in serves
+          ? serves.environments.join(", ")
+          : serves.noClusterSelector
+            ? "No cluster, because it has no cluster selector"
+            : serves.selector,
     ],
   ];
   return (

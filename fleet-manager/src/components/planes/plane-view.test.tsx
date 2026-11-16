@@ -27,8 +27,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map((l) => live.fresh.has(l.kind)),
 }));
-// The page lists one tab today. A second one shows that the view takes the
-// tab from the URL and not from its default.
+// A second tab shows that the view takes the tab from the URL and not from
+// its default.
 vi.mock("./plane-tabs", () => {
   const tabs = [
     { id: "overview", label: "Overview" },
@@ -255,7 +255,10 @@ describe("PlaneView", () => {
   };
   const alerts = () => screen.queryAllByRole("alert").map((a) => a.textContent);
 
-  it("names a failed plane read beside the claim and does not say the plane is missing", () => {
+  const planeUnknown =
+    "The page could not read the management plane, so it cannot tell if the claim plane-a made it.";
+
+  it("shows a claim of the same name as a claim, not as the plane's, while the plane read fails", () => {
     render(
       <PlaneView data={data({ plane: undefined, readErrors: [planeError] })} />,
     );
@@ -263,7 +266,26 @@ describe("PlaneView", () => {
       "Could not read CamundaManagementCluster: CamundaManagementCluster is forbidden",
     ]);
     expect(screen.queryByText(notCreated)).toBeNull();
+    expect(screen.getByText(planeUnknown)).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("No status")).toBeTruthy();
+    expect(fact("Identity provider")).toBe("-");
+    expect(fact("Platform config")).toBe("-");
+    expect(fact("Serves")).toBe("-");
     expect(within(table()).getByText("RequestsReady")).toBeTruthy();
+  });
+
+  it("keeps a failed first read while the watch of its kind has not answered", () => {
+    const page = data({ plane: undefined, readErrors: [planeError] });
+    const { rerender } = render(<PlaneView data={page} />);
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementCluster: CamundaManagementCluster is forbidden",
+    ]);
+    live.fresh.add("CamundaManagementCluster");
+    live.objects.set("CamundaManagementCluster", planeOf());
+    rerender(<PlaneView data={page} />);
+    expect(alerts()).toEqual([]);
+    expect(screen.queryByText(planeUnknown)).toBeNull();
   });
 
   it("names a failed plane read without a claim and does not say the plane is gone", () => {
@@ -320,6 +342,8 @@ describe("PlaneView", () => {
       "Could not read CamundaManagementCluster: The API server is down",
     ]);
     expect(screen.queryByText(notCreated)).toBeNull();
+    expect(screen.getByText(planeUnknown)).toBeTruthy();
+    expect(fact("Serves")).toBe("-");
   });
 
   it("does not say that the claim controller has not created the plane while the claim watch fails", () => {

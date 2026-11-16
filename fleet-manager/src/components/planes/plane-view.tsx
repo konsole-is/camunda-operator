@@ -23,8 +23,9 @@ import type { ReadError } from "./planes-table";
  * PlanePageData is the first snapshot of the plane page. plane is undefined
  * for a claim-only plane, or when its read failed. claim is undefined for a
  * plane that no claim made, whose claim is not in the namespace, or whose
- * read failed. now is the time of the server. readErrors holds the kinds
- * whose first read failed.
+ * read failed. When the plane read failed, claim is the claim of that name,
+ * which the page does not join to the plane. now is the time of the server.
+ * readErrors holds the kinds whose first read failed.
  */
 export type PlanePageData = {
   namespace: string;
@@ -40,9 +41,9 @@ export type PlanePageData = {
 /**
  * PlaneView is the plane page. It follows the CamundaManagementCluster and
  * the claim of the route name live, and shows the plane once it exists. A
- * claim belongs to the plane while no CamundaManagementCluster exists, or
- * when the CamundaManagementCluster carries CLAIM_LABEL with the claim
- * name. It selects the tab that the tab query parameter names, and a click
+ * claim belongs to the plane while no CamundaManagementCluster exists and
+ * its read did not fail, or when the CamundaManagementCluster carries
+ * CLAIM_LABEL with the claim name. It selects the tab that the tab query parameter names, and a click
  * on a tab replaces that parameter. writeMode is the write mode of the
  * fleet manager, undefined when the page could not read it. The page
  * names each kind that it could not read. When both objects are gone and
@@ -127,11 +128,13 @@ export function PlaneView({
     );
   }
 
+  const planeUnknown = !plane && unread("CamundaManagementCluster");
   const claim =
-    live && (!plane || plane.metadata?.labels?.[CLAIM_LABEL] === name)
+    live &&
+    !planeUnknown &&
+    (!plane || plane.metadata?.labels?.[CLAIM_LABEL] === name)
       ? live
       : undefined;
-  const managed = plane ? isManaged(plane) : true;
   const summary = planesOf({
     clusters: plane ? [plane] : [],
     claims: claim ? [claim] : [],
@@ -147,11 +150,12 @@ export function PlaneView({
   const environmentName = namespaceObject
     ? environmentNameOf(namespaceObject, environments.items)
     : undefined;
-  const platformConfig =
-    plane?.spec.platformConfigRef ||
-    claim?.spec.platformConfigRef ||
-    environments.items.find((e) => e.metadata?.name === environmentName)?.spec
-      .platformConfigRef;
+  const platformConfig = planeUnknown
+    ? undefined
+    : plane?.spec.platformConfigRef ||
+      claim?.spec.platformConfigRef ||
+      environments.items.find((e) => e.metadata?.name === environmentName)?.spec
+        .platformConfigRef;
 
   const selectTab = (value: string) => {
     const next = planeTabOf(value);
@@ -162,14 +166,16 @@ export function PlaneView({
   return (
     <div className="flex flex-col gap-4">
       {alerts}
-      {!managed && <UnmanagedBanner subject="management plane" />}
+      {plane && !isManaged(plane) && (
+        <UnmanagedBanner subject="management plane" />
+      )}
       <PlaneHeader
         name={name}
         namespace={namespace}
         ready={ready}
         mode={summary?.mode}
         platformConfig={platformConfig}
-        serves={summary?.serves ?? { environments: [] }}
+        serves={summary?.serves}
       />
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
@@ -188,9 +194,17 @@ export function PlaneView({
                   The claim controller has not created the management plane yet.
                 </p>
               )}
+            {planeUnknown && (
+              <p className="text-sm text-muted">
+                The page could not read the management plane, so it cannot tell
+                if the claim {name} made it.
+              </p>
+            )}
             <PlaneConditions
               plane={conditionRows(plane?.status?.conditions)}
-              claim={conditionRows(claim?.status?.conditions)}
+              claim={conditionRows(
+                (planeUnknown ? live : claim)?.status?.conditions,
+              )}
               now={clock}
             />
           </div>
