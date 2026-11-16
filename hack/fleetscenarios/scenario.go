@@ -89,6 +89,7 @@ type state struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Apply       []map[string]any `json:"apply,omitempty"`
+	ThenApply   []map[string]any `json:"thenApply,omitempty"`
 	Workload    []workloadStep   `json:"workload,omitempty"`
 	Overlays    []overlay        `json:"overlays,omitempty"`
 }
@@ -160,6 +161,7 @@ func (s *scenario) validate() error {
 			errs = append(errs, fmt.Errorf("%s has no description", where))
 		}
 		errs = append(errs, validateObjects("object to apply of "+where+",", st.Apply)...)
+		errs = append(errs, validateObjects("object to apply after the settle of "+where+",", st.ThenApply)...)
 		errs = append(errs, validateSteps(where, st.Workload)...)
 		errs = append(errs, validateOverlays(where, st.Overlays)...)
 	}

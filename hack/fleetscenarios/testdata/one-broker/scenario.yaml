@@ -71,3 +71,48 @@ states:
         namespace: team-b
         name: orders-zeebe
         readyReplicas: 3
+  - name: a-second-cluster-waits
+    description: >-
+      The cluster refunds takes the backend refunds-es. After that settled,
+      the cluster audit asks for the same backend and waits for it.
+    apply:
+      - apiVersion: core.camunda.io/v1
+        kind: SecondaryStorageConfig
+        metadata:
+          name: refunds-es
+          namespace: team-b
+        spec:
+          type: elasticsearch
+          elasticsearch:
+            endpoint: https://refunds-es-http.team-b.svc:9200
+            credentialsSecretRef:
+              name: es-credentials
+              usernameKey: username
+              passwordKey: password
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaCluster
+        metadata:
+          name: refunds
+          namespace: team-b
+        spec:
+          platformConfigRef: basic
+          version: "8.9.23"
+          storageRef: refunds-es
+          zeebe:
+            replicas: 1
+          connectors:
+            enabled: false
+    thenApply:
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaCluster
+        metadata:
+          name: audit
+          namespace: team-b
+        spec:
+          platformConfigRef: basic
+          version: "8.9.23"
+          storageRef: refunds-es
+          zeebe:
+            replicas: 1
+          connectors:
+            enabled: false

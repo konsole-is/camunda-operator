@@ -104,6 +104,36 @@ func TestReadScenarioRefusesTwoStatesWithOneName(t *testing.T) {
 	assert.ErrorContains(t, err, `two states have the name "later"`)
 }
 
+func TestReadScenarioReadsTheObjectsToApplyAfterASettle(t *testing.T) {
+	body := validScenario + `states:
+  - name: later
+    description: A ConfigMap after the Secret settled.
+    apply:
+      - {apiVersion: v1, kind: Secret, metadata: {name: first, namespace: team-a}}
+    thenApply:
+      - {apiVersion: v1, kind: ConfigMap, metadata: {name: second, namespace: team-a}}
+`
+	s, err := readScenario(writeScenario(t, body))
+	require.NoError(t, err)
+	require.Len(t, s.States, 1)
+	assert.Len(t, s.States[0].Apply, 1)
+	assert.Len(t, s.States[0].ThenApply, 1)
+}
+
+func TestReadScenarioRefusesAnObjectToApplyAfterASettleWithoutAName(t *testing.T) {
+	body := validScenario + `states:
+  - name: later
+    description: A ConfigMap without a name.
+    thenApply:
+      - {apiVersion: v1, kind: ConfigMap, metadata: {namespace: team-a}}
+`
+	_, err := readScenario(writeScenario(t, body))
+	assert.ErrorContains(
+		t, err,
+		`object to apply after the settle of state "later", 1 has no apiVersion, kind, or metadata.name`,
+	)
+}
+
 func TestReadScenarioRefusesAJobStepWithReadyReplicas(t *testing.T) {
 	body := validScenario + `workload:
   - kind: Job
