@@ -108,9 +108,10 @@ type Sent =
  * policy is Orphan. apply then refuses with Invalid and writes nothing, and
  * the delete after the policy write does too. registrations are the live
  * PluginRegistrations. reads holds the failed or stale watch of the claim:
- * the policy step needs a current claim. A failed or stale watch of the
- * PluginRequests keeps the delete waiting, and reads does not show it. It
- * needs a QueryClientProvider above it.
+ * the policy step needs a current claim. Unless mode is direct and the
+ * claim has the cleanup finalizer, a failed or stale PluginRequest watch
+ * keeps the delete after the policy write waiting, and reads does not show
+ * it. It needs a QueryClientProvider above it.
  */
 export function useClaimDelete<C extends DeletableClaim>(input: {
   initial: C;
