@@ -37,8 +37,9 @@ import { unreadText } from "./unread-note";
  * plane that no claim made, whose claim is not in the namespace, or whose
  * read failed. When the plane read failed, claim is the claim of that name,
  * which the page does not join to the plane. now is the time of the server.
- * optimizes holds every CamundaOptimize, for the readers of the contract.
- * readErrors holds the kinds whose first read failed.
+ * optimizes holds every CamundaOptimize, or none when its read failed.
+ * managementAuthConfigs holds every ManagementAuthConfig, or none when its
+ * read failed. readErrors holds the kinds whose first read failed.
  */
 export type PlanePageData = {
   namespace: string;
