@@ -715,50 +715,36 @@ describe("contractUsage", () => {
     ]);
   });
 
-  it("counts the contracts that a point-in-time restore resolved", () => {
+  it("counts only the database server that a running point-in-time restore pinned", () => {
+    const restore = (
+      name: string,
+      phase: NonNullable<PointInTimeRestore["status"]>["phase"],
+    ) =>
+      object<PointInTimeRestore>(
+        "PointInTimeRestore",
+        "team-a",
+        name,
+        {},
+        {
+          phase,
+          storage: {
+            secondaryStorageConfig: "rdbms",
+            databaseConfig: "orders-db",
+            databaseServerConfig: "postgres",
+            databaseName: "orders",
+            endpoint: "e",
+          },
+        },
+      );
     const sources = sourcesWith({
       pointInTimeRestores: [
-        object<PointInTimeRestore>(
-          "PointInTimeRestore",
-          "team-a",
-          "restore",
-          {},
-          {
-            storage: {
-              secondaryStorageConfig: "rdbms",
-              databaseConfig: "orders-db",
-              databaseServerConfig: "postgres",
-              databaseName: "orders",
-              endpoint: "e",
-            },
-          },
-        ),
+        restore("running", "RestoringDatabase"),
+        restore("completed", "Completed"),
+        restore("failed", "Failed"),
       ],
     });
     const fieldsOf = (ref: ContractRef) =>
       usersOf(sources, ref).map((u) => [u.kind, u.name, u.fields]);
-    expect(
-      fieldsOf({
-        kind: "SecondaryStorageConfig",
-        namespace: "team-a",
-        name: "rdbms",
-      }),
-    ).toEqual([
-      [
-        "PointInTimeRestore",
-        "restore",
-        ["status.storage.secondaryStorageConfig"],
-      ],
-    ]);
-    expect(
-      fieldsOf({
-        kind: "DatabaseConfig",
-        namespace: "team-a",
-        name: "orders-db",
-      }),
-    ).toEqual([
-      ["PointInTimeRestore", "restore", ["status.storage.databaseConfig"]],
-    ]);
     expect(
       fieldsOf({
         kind: "DatabaseServerConfig",
@@ -768,10 +754,24 @@ describe("contractUsage", () => {
     ).toEqual([
       [
         "PointInTimeRestore",
-        "restore",
+        "running",
         ["status.storage.databaseServerConfig"],
       ],
     ]);
+    expect(
+      fieldsOf({
+        kind: "SecondaryStorageConfig",
+        namespace: "team-a",
+        name: "rdbms",
+      }),
+    ).toEqual([]);
+    expect(
+      fieldsOf({
+        kind: "DatabaseConfig",
+        namespace: "team-a",
+        name: "orders-db",
+      }),
+    ).toEqual([]);
   });
 
   it("counts the document storage that a claim sets before its cluster exists", () => {
@@ -1010,6 +1010,13 @@ describe("unreadUserKinds", () => {
     expect(
       unreadUserKinds("ManagementAuthConfig", ["CamundaCluster", "Namespace"]),
     ).toEqual([]);
+  });
+
+  it("names an unread point-in-time restore only for a database server contract", () => {
+    const unread = ["PointInTimeRestore"];
+    expect(unreadUserKinds("DatabaseServerConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("SecondaryStorageConfig", unread)).toEqual([]);
+    expect(unreadUserKinds("DatabaseConfig", unread)).toEqual([]);
   });
 
   // A new reference of contractUsage belongs in these sources too, or this

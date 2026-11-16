@@ -400,21 +400,12 @@ export function contractUsage(
     ]);
   }
   for (const restore of sources.pointInTimeRestores) {
-    const storage = restore.status?.storage;
+    const phase = restore.status?.phase;
+    if (phase === "Completed" || phase === "Failed") continue;
     add("PointInTimeRestore", restore, [
       {
-        kind: "SecondaryStorageConfig",
-        name: storage?.secondaryStorageConfig,
-        field: "status.storage.secondaryStorageConfig",
-      },
-      {
-        kind: "DatabaseConfig",
-        name: storage?.databaseConfig,
-        field: "status.storage.databaseConfig",
-      },
-      {
         kind: "DatabaseServerConfig",
-        name: storage?.databaseServerConfig,
+        name: restore.status?.storage?.databaseServerConfig,
         field: "status.storage.databaseServerConfig",
       },
     ]);
@@ -514,22 +505,14 @@ const USER_KINDS: Record<ContractKind, readonly string[]> = {
     "LogicalBackupElasticsearch",
     "LogicalBackupRDBMS",
   ],
-  SecondaryStorageConfig: [
-    "CamundaCluster",
-    "LogicalBackupElasticsearch",
-    "PointInTimeRestore",
-  ],
+  SecondaryStorageConfig: ["CamundaCluster", "LogicalBackupElasticsearch"],
   DatabaseServerConfig: [
     "Database",
     "DatabaseConfig",
     "DatabaseServer",
     "PointInTimeRestore",
   ],
-  DatabaseConfig: [
-    "CamundaManagementCluster",
-    "PointInTimeRestore",
-    "SecondaryStorageConfig",
-  ],
+  DatabaseConfig: ["CamundaManagementCluster", "SecondaryStorageConfig"],
   ManagementAuthConfig: ["CamundaClusterClaim", "CamundaOptimize"],
 };
 
