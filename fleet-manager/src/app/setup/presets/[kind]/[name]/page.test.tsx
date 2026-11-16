@@ -5,7 +5,8 @@ import {
   applyPresetChange,
   previewPresetChange,
 } from "@/app/setup/presets/actions";
-import { get } from "@/lib/k8s/read";
+import { get, list } from "@/lib/k8s/read";
+import { listSecretRefsIn } from "@/lib/secrets";
 import { writeMode } from "@/lib/write/writer";
 import PresetPage, { dynamic } from "./page";
 
@@ -22,6 +23,11 @@ vi.mock("@/lib/k8s/read", () => ({
       : undefined,
   ),
 }));
+vi.mock("@/lib/secrets", () => ({
+  listSecretRefsIn: vi.fn(async () => ({
+    search: [{ name: "es-credentials", keys: ["password"] }],
+  })),
+}));
 vi.mock("@/lib/write/writer", () => ({
   writeMode: vi.fn(async () => "direct"),
 }));
@@ -29,15 +35,20 @@ vi.mock("@/app/setup/presets/actions", () => ({
   previewPresetChange: vi.fn(),
   applyPresetChange: vi.fn(),
 }));
-const detail = vi.hoisted(() => ({ actions: undefined as unknown }));
+const detail = vi.hoisted(() => ({
+  actions: undefined as unknown,
+  secrets: undefined as unknown,
+}));
 vi.mock("@/components/setup/presets/preset-detail", () => ({
   PresetDetailLive: (props: {
     kind: string;
     name: string;
     mode?: string;
     actions: unknown;
+    secrets: unknown;
   }) => {
     detail.actions = props.actions;
+    detail.secrets = props.secrets;
     return (
       <p>
         detail {props.kind} {props.name} {props.mode ?? "unknown"}
@@ -93,6 +104,24 @@ describe("PresetPage", () => {
     expect(detail.actions).toEqual({
       previewChange: previewPresetChange,
       applyChange: applyPresetChange,
+    });
+  });
+
+  it("gives the detail the Secrets of the namespaces that use the preset", async () => {
+    vi.mocked(list).mockImplementation((async (kind: string) =>
+      kind === "ElasticsearchCluster"
+        ? [
+            {
+              kind,
+              metadata: { namespace: "search", name: "logs" },
+              spec: { presetRef: "standard" },
+            },
+          ]
+        : []) as unknown as typeof list);
+    render(await PresetPage(params("elasticsearch", "standard")));
+    expect(vi.mocked(listSecretRefsIn)).toHaveBeenCalledWith(["search"]);
+    expect(detail.secrets).toEqual({
+      search: [{ name: "es-credentials", keys: ["password"] }],
     });
   });
 });
