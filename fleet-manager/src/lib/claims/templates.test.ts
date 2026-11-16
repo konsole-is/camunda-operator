@@ -454,6 +454,32 @@ describe("grantPreviews", () => {
     });
   });
 
+  it("gives a cluster claim's release to a registration that declares releaseRef", () => {
+    const released = registration("s3", {
+      ...s3.spec,
+      parameters: {
+        type: "object",
+        properties: { releaseRef: { type: "string" } },
+      },
+      grantTemplates: [template({ Release: "{{ .parameters.releaseRef }}" })],
+    });
+    const [preview] = grantPreviews({
+      claim: {
+        ...claim,
+        plugins: [{ section: "backup-storage", registration: "s3" }],
+        releaseRef: "camunda-8-9",
+      },
+      sections: [backup],
+      registrations: [released],
+      environment: environmentWith({
+        s3: { releaseRef: { value: "camunda-8-8" } },
+      }),
+    });
+    expect(preview.result).toEqual({
+      value: { Effect: "Allow", Release: "camunda-8-9" },
+    });
+  });
+
   it("keeps a list that a choice gives, so the template reports it", () => {
     const listed = environmentWith({
       s3: {

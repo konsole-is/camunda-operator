@@ -12,6 +12,7 @@ import {
 import {
   type ClaimKind,
   claimEditable,
+  declaresRelease,
   parameterPolicies,
   type PluginSelection,
   resolve,
@@ -19,12 +20,16 @@ import {
 } from "@/lib/policy";
 import { requestName } from "./requests";
 
-/** TemplateClaim is the claim that a template renders for. */
+/**
+ * TemplateClaim is the claim that a template renders for. releaseRef is the
+ * release of a cluster claim, its own or the default of its Environment.
+ */
 export type TemplateClaim = {
   kind: ClaimKind;
   namespace: string;
   name: string;
   plugins: PluginSelection[];
+  releaseRef?: string;
 };
 
 /**
@@ -63,8 +68,18 @@ export function templateData(input: {
     registrations: [...input.registrations],
     selections: [selection],
   });
-  const parameters =
-    ("value" in resolved && resolved.value.requests?.[0]?.parameters) || {};
+  const parameters = {
+    ...(("value" in resolved && resolved.value.requests?.[0]?.parameters) ||
+      {}),
+  };
+  // The claim controller sets the parameter releaseRef of a cluster claim
+  // (requestParameters of pkg/components/claimrequests).
+  if (
+    claim.kind === "CamundaClusterClaim" &&
+    claim.releaseRef &&
+    declaresRelease(registration)
+  )
+    parameters.releaseRef = claim.releaseRef;
   return {
     namespace: claim.namespace,
     claim: claim.name,

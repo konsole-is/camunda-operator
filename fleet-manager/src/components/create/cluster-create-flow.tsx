@@ -689,6 +689,7 @@ export function ClusterCreateFlow({
                 namespace: claim.metadata.namespace,
                 name: claim.metadata.name,
                 plugins: claim.spec.plugins ?? [],
+                releaseRef: releaseOf(flow.draft, environment),
               },
               sections,
               registrations,
