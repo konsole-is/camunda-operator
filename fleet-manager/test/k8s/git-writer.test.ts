@@ -274,6 +274,34 @@ describe("the Git writer against envtest", () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it("a preview of a delete shows the object as removed and leaves it in the cluster", async () => {
+    await direct.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      name,
+    };
+    const live = () => api.read({ ...ref, metadata: { name } });
+    const before = await live();
+
+    const preview = await writer.preview({
+      intent: "Delete the environment",
+      apply: [],
+      delete: [ref],
+      uids: { [refKey(ref)]: before.metadata!.uid! },
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects.map((o) => o.ref.name)).toEqual([name]);
+    const after = await live();
+    expect(after.metadata?.deletionTimestamp).toBeUndefined();
+    expect(after.metadata?.uid).toBe(before.metadata!.uid);
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("a create of a claim that exists in the cluster makes no commit and returns Stale", async () => {
     const namespace = `team-${randomUUID().slice(0, 8)}`;
     const orders: KubeObject = {
