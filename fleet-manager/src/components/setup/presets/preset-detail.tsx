@@ -41,17 +41,10 @@ import {
 } from "./sources";
 
 /**
- * PresetDetail shows the preset name of kind: its facts and users, an
- * editor of its fields and description with the merge rule of each field
- * that it sets, the fields that it cannot set, and the resources that
- * inherit it. A save shows a review with the dry run and the impact on
- * each inheriting resource. The save waits while a list that the impact
- * reads cannot be read. A cluster preset offers the rotation of the
- * admin password of its clusters while the form has no pending change and
- * no error. A preset that can be deleted offers a delete after a typed
- * confirm and a review. The delete review closes before its write starts
- * when the preset can no longer be deleted. secrets are the Secret refs of
- * each namespace whose Secrets the body can name, and secretsUnread the
+ * PresetDetail shows the preset name of kind, an editor of its fields and
+ * description, and the resources that inherit it. A save and a delete each
+ * open a review before they write. secrets are the Secret refs of each
+ * namespace whose Secrets the body can name, and secretsUnread names the
  * lists that they need and that were not read. Without mode nothing can
  * change.
  */

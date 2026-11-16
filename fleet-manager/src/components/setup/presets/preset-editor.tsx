@@ -49,12 +49,11 @@ const GROUPS: readonly SettingsGroup[] = [
  * refs of each namespace whose Secrets the body can name, and a Secret key
  * that one of them lacks shows as missing there. The editor names each
  * list of secretsUnread: the lists that secrets needs and that were not
- * read. onDraft gets a function
- * that applies each valid edit to a draft. onErrors gets every error that
- * the editors show, and an empty list once they show none. While the YAML
- * of the body has an error, the draft keeps its last valid body. The
- * editors read draft once, so a caller gives the component a new key when
- * it replaces the draft.
+ * read. onDraft gets a function that applies each valid edit to a draft.
+ * onErrors gets every error that the editors show, and an empty list once
+ * they show none. While the YAML of the body has an error, the draft keeps
+ * its last valid body. The editors read draft once, so a caller gives the
+ * component a new key when it replaces the draft.
  */
 export function PresetEditor({
   kind,

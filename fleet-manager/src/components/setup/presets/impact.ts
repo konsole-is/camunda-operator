@@ -137,15 +137,12 @@ export function impactUnread(
  * presetImpact returns the impact of the change of the spec of the preset
  * name of kind from before to after on each resource that inherits it,
  * sorted by namespace, then name. A cluster gets "Pods roll" when the
- * preset fingerprint moves, whatever it sets itself. connectorsRestart is
- * set when the change restarts the Connectors pods of a cluster: a new
- * rotation under basic auth, or a change of what the pods take from the
- * Connectors service account. An Elasticsearch cluster or a database
- * server gets "Unchanged" when its merged spec stays, else "Pods may roll".
- * unread are the lists of impactUnread. The notes name, in this order, the
- * restart of the brokers when a cluster rolls, the restart of the
- * Connectors pods, and the storage rule of a smaller size, a new class, or
- * a cleared size that the change touches.
+ * preset fingerprint moves, whatever it sets itself. An Elasticsearch
+ * cluster or a database server gets "Unchanged" when its merged spec stays,
+ * else "Pods may roll". unread are the lists of impactUnread. The notes
+ * name, in this order, the restart of the brokers when a cluster rolls, the
+ * restart of the Connectors pods, and the storage rule of a smaller size, a
+ * new class, or a cleared size that the change touches.
  */
 export function presetImpact(input: {
   kind: PresetKind;
@@ -197,7 +194,8 @@ function rowsOf(input: {
           will.connectors?.enabled === true &&
           ((basicAuth(cluster, sources) &&
             !!rotation &&
-            rotation !== was.auth?.basic?.passwordRotation) ||
+            rotation !== was.auth?.basic?.passwordRotation &&
+            rotation !== cluster.status?.adminPassword?.rotation) ||
             !equalJSON(connectorsAccount(was), connectorsAccount(will)));
         const mark: RollMark = moved
           ? "Pods roll"

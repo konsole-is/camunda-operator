@@ -133,7 +133,7 @@ The review lists each resource that inherits the preset, as `<namespace>/<name>`
 | Mark | Meaning |
 | --- | --- |
 | `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The only exceptions are `auth.basic.passwordRotation`, `auth.basic.adminEmail`, and the fields under `connectors.serviceAccount`. |
-| `Connectors restart` | The change restarts only the Connectors pods of the cluster. A new `auth.basic.passwordRotation` does this for a cluster with basic auth. A change under `connectors.serviceAccount` does this when it reaches the Connectors pods. A cluster without Connectors never gets this mark. |
+| `Connectors restart` | The change restarts only the Connectors pods of the cluster. A value of `auth.basic.passwordRotation` that the cluster did not apply yet does this for a cluster with basic auth. A change under `connectors.serviceAccount` does this when it reaches the Connectors pods. A cluster without Connectors never gets this mark. |
 | `No roll` | The change reaches the cluster but restarts no pods, for example a change of `auth.basic.adminEmail`. |
 | `Unchanged` | The change does not reach the resource. For a cluster, this occurs only when the change touches no field of `spec.cluster` other than the exceptions of `Pods roll`. A change of the description only is an example. A cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
 | `Pods may roll` | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |

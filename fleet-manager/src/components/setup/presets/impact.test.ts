@@ -119,6 +119,20 @@ describe("presetImpact of a cluster preset", () => {
     ).toEqual(["billing", "No roll"]);
   });
 
+  it("marks No roll when the rotation that a cluster applied is set again", () => {
+    const applied = {
+      ...sources.clusters.find((c) => c.metadata.name === "billing"),
+      status: { adminPassword: { rotation: "2026-11-15T10:42Z" } },
+    } as Resource<"CamundaCluster">;
+    const impact = presetImpact({
+      ...input,
+      after: rotated,
+      sources: { ...sources, clusters: [applied] },
+    });
+    expect(marks(impact)).toEqual([["billing", "No roll"]]);
+    expect(impact.notes).toEqual([]);
+  });
+
   it("marks No roll when the rotation is cleared, because nothing rotates", () => {
     const impact = presetImpact({ ...input, before: rotated, after: before });
     expect(marks(impact)[0]).toEqual(["billing", "No roll"]);
@@ -169,16 +183,14 @@ describe("presetImpact of a cluster preset", () => {
   });
 
   it("marks Connectors restart for an Azure client ID on a Connectors account that the user owns", () => {
+    const owned = (annotations: Record<string, string>) =>
+      withCluster((c) => {
+        c.connectors = { serviceAccount: { create: false, annotations } };
+      });
     const impact = presetImpact({
       ...input,
-      after: withCluster((c) => {
-        c.connectors = {
-          serviceAccount: {
-            create: false,
-            annotations: { "azure.workload.identity/client-id": "id" },
-          },
-        };
-      }),
+      before: owned({}),
+      after: owned({ "azure.workload.identity/client-id": "id" }),
     });
     expect(marks(impact)[0]).toEqual(["billing", "Connectors restart"]);
   });
