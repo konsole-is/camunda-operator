@@ -127,6 +127,23 @@ describe("missingSecrets", () => {
     ]);
   });
 
+  it("marks a key as env only when every occurrence is in an env list", () => {
+    const body = {
+      zeebe: {
+        extraEnv: [
+          {
+            name: "A",
+            valueFrom: {
+              secretKeyRef: { name: "db-credentials", key: "password" },
+            },
+          },
+        ],
+      },
+      auth: { clientSecretRef: { name: "db-credentials", key: "password" } },
+    };
+    expect(missingSecrets(body, missingIn).map((m) => m.env)).toEqual([false]);
+  });
+
   it("marks an env entry outside the env lists of the top level and the process blocks as not env", () => {
     const body = {
       backup: {

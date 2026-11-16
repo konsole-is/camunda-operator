@@ -233,6 +233,15 @@ describe("presetImpact of a cluster preset", () => {
     ).not.toContain(STORAGE_NOTES.CamundaClusterPreset.shrink);
   });
 
+  it("names the shrink rule for a storage size written as a number", () => {
+    const num = withCluster((c) => {
+      c.zeebe = { ...c.zeebe, storageSize: 17179869184 };
+    });
+    expect(presetImpact({ ...input, after: num }).notes).toContain(
+      STORAGE_NOTES.CamundaClusterPreset.shrink,
+    );
+  });
+
   it("names the shrink rule when a cleared storage size falls back to a smaller default", () => {
     const after = withCluster((c) => {
       c.zeebe = { ...c.zeebe };

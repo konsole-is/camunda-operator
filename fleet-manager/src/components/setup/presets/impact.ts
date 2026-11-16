@@ -338,9 +338,11 @@ function storageNotes(
 // value that is not a quantity compares as not smaller: the dry run refuses
 // it.
 function smaller(before: unknown, after: unknown): boolean {
-  if (typeof before !== "string" || typeof after !== "string") return false;
+  const isQuantity = (v: unknown) =>
+    typeof v === "string" || typeof v === "number";
+  if (!isQuantity(before) || !isQuantity(after)) return false;
   try {
-    return parseQuantity(after) < parseQuantity(before);
+    return parseQuantity(String(after)) < parseQuantity(String(before));
   } catch {
     return false;
   }

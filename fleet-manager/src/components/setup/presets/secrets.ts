@@ -99,7 +99,9 @@ export function missingSecrets(
       }
       const id = `${ref.name}/${ref.key}`;
       const namespaces = [...missingIn(ref.name, ref.key)];
-      if (!found.has(id) && namespaces.length > 0)
+      const seen = found.get(id);
+      if (seen) seen.env = seen.env && env;
+      else if (namespaces.length > 0)
         found.set(id, { ...ref, namespaces, env });
     }
   };
