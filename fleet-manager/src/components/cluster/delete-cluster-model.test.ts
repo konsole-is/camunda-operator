@@ -6,6 +6,7 @@ import {
   deleteClusterModel,
   deleteProgress,
   initialPolicy,
+  KEPT_ATTACHMENT,
 } from "./delete-cluster-model";
 
 const object = <K extends Parameters<typeof cast>[0]>(
@@ -28,9 +29,21 @@ function cast<
   return value as unknown as Resource<K>;
 }
 const of = (cluster: string) => ({ spec: { clusterRef: { name: cluster } } });
+// made is a CamundaOptimize or a BackupSchedule of the cluster that the
+// claim made and controls.
+const made = (name: string) => ({
+  metadata: {
+    namespace: "team-a",
+    name,
+    ownerReferences: [{ controller: true, uid: "claim-uid" }],
+  },
+  ...of("orders"),
+});
 
 const claim = (spec: object = {}) =>
-  object("CamundaClusterClaim", "orders", {
+  cast("CamundaClusterClaim", {
+    kind: "CamundaClusterClaim",
+    metadata: { namespace: "team-a", name: "orders", uid: "claim-uid" },
     apiVersion: "fleet.camunda.io/v1alpha1",
     spec: {
       plugins: [{ section: "backup-storage", registration: "aws-s3" }],
@@ -80,13 +93,16 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
       },
     }),
   ],
-  optimizes: [object("CamundaOptimize", "orders-optimize", of("orders"))],
+  optimizes: [
+    object("CamundaOptimize", "orders-optimize", made("orders-optimize")),
+  ],
   schedules: [
-    object("BackupSchedule", "orders-daily", of("orders")),
-    object("BackupSchedule", "payments-daily", of("payments")),
+    object("BackupSchedule", "orders-backups", made("orders-backups")),
+    object("BackupSchedule", "payments-backups", of("payments")),
   ],
   backups: { elasticsearch: [], rdbms: [] },
   volumes: "Delete",
+  errors: [],
   ...over,
 });
 
@@ -96,14 +112,14 @@ describe("deleteClusterModel", () => {
     expect(model).toMatchObject({ name: "orders", namespace: "team-a" });
     expect(model.targets.map((t) => t.label)).toEqual([
       "CamundaOptimize orders-optimize",
-      "BackupSchedule orders-daily",
+      "BackupSchedule orders-backups",
       "CamundaCluster orders",
       "Backup storage request orders-backup-storage",
       "CamundaClusterClaim orders",
     ]);
     expect(model.targets.map((t) => [t.kind, t.name])).toEqual([
       ["CamundaOptimize", "orders-optimize"],
-      ["BackupSchedule", "orders-daily"],
+      ["BackupSchedule", "orders-backups"],
       ["CamundaCluster", "orders"],
       ["PluginRequest", "orders-backup-storage"],
       ["CamundaClusterClaim", "orders"],
@@ -133,6 +149,49 @@ describe("deleteClusterModel", () => {
       "PluginRequest",
       "CamundaClusterClaim",
     ]);
+  });
+
+  it("keeps an Optimize or a schedule of the cluster that the claim does not control, with the reason", () => {
+    const model = deleteClusterModel(
+      data({
+        optimizes: [object("CamundaOptimize", "orders-optimize", of("orders"))],
+        schedules: [
+          object("BackupSchedule", "orders-backups", made("orders-backups")),
+          object("BackupSchedule", "orders-hourly", of("orders")),
+        ],
+      }),
+      "Delete",
+    );
+    expect(model.targets.map((t) => t.label)).toEqual([
+      "BackupSchedule orders-backups",
+      "CamundaCluster orders",
+      "Backup storage request orders-backup-storage",
+      "CamundaClusterClaim orders",
+    ]);
+    expect(model.kept.map((t) => [t.label, t.note])).toEqual([
+      ["CamundaOptimize orders-optimize", KEPT_ATTACHMENT],
+      ["BackupSchedule orders-hourly", KEPT_ATTACHMENT],
+    ]);
+  });
+
+  it("a failed read of the requests leaves the fates and the warning not known", () => {
+    const model = deleteClusterModel(data(), "Delete", ["PluginRequest"]);
+    expect(model.fatesKnown).toBe(false);
+    expect(model.warning).toBeUndefined();
+    expect(model.unread).toEqual(["PluginRequest"]);
+    expect(deleteClusterModel(data(), "Delete").fatesKnown).toBe(true);
+    expect(
+      deleteClusterModel(data(), "Delete", ["PluginRegistration"]).fatesKnown,
+    ).toBe(false);
+  });
+
+  it("a failed read of the cluster leaves its volumes not known", () => {
+    const model = deleteClusterModel(data({ volumes: "Retain" }), "Delete", [
+      "CamundaCluster",
+    ]);
+    expect(model.targets.find((t) => t.kind === "CamundaCluster")?.note).toBe(
+      "Volumes not known",
+    );
   });
 
   it("counts the backups of this cluster only", () => {
@@ -202,7 +261,7 @@ describe("deleteProgress", () => {
     const model = deleteClusterModel(data(), "Delete");
     const progress = deleteProgress(model.targets, {
       CamundaOptimize: [],
-      BackupSchedule: [{ metadata: { name: "payments-daily" } }],
+      BackupSchedule: [{ metadata: { name: "payments-backups" } }],
       CamundaCluster: [
         {
           metadata: {
@@ -223,7 +282,7 @@ describe("deleteProgress", () => {
     });
     expect(progress.map((p) => [p.target.label, p.state])).toEqual([
       ["CamundaOptimize orders-optimize", "Deleted"],
-      ["BackupSchedule orders-daily", "Deleted"],
+      ["BackupSchedule orders-backups", "Deleted"],
       ["CamundaCluster orders", "Deleting"],
       ["Backup storage request orders-backup-storage", "Waiting"],
       ["CamundaClusterClaim orders", "Deleting"],

@@ -2,11 +2,13 @@
 
 import { type ReactNode, useState } from "react";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
+import type { ReadError } from "@/components/planes/planes-table";
+import { unreadKinds } from "@/components/setup/releases/rows";
 import {
   type ClaimDeleteActions,
   useClaimDelete,
 } from "@/components/fleet/use-claim-delete";
-import { useResource, useResources } from "@/lib/k8s/hooks";
+import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import { CLAIM_LABEL } from "@/lib/labels";
 import type { WriteMode } from "@/lib/write/types";
 import {
@@ -53,37 +55,56 @@ export function DeleteCluster({
     actions,
     show,
   });
+  const requestsOf = { namespace, labelSelector: `${CLAIM_LABEL}=${name}` };
   const cluster = useResource(
     "CamundaCluster",
     { namespace, name },
     initial.cluster,
-  ).item;
-  const requests = useResources(
-    "PluginRequest",
-    { namespace, labelSelector: `${CLAIM_LABEL}=${name}` },
-    initial.requests,
-  ).items;
+  );
+  const requests = useResources("PluginRequest", requestsOf, initial.requests);
   const optimizes = useResources(
     "CamundaOptimize",
     { namespace },
     initial.optimizes,
-  ).items;
+  );
   const schedules = useResources(
     "BackupSchedule",
     { namespace },
     initial.schedules,
-  ).items;
+  );
+  const watched = [
+    { kind: "CamundaCluster", opts: { namespace }, name, ...cluster },
+    { kind: "PluginRequest", opts: requestsOf, ...requests },
+    { kind: "CamundaOptimize", opts: { namespace }, ...optimizes },
+    { kind: "BackupSchedule", opts: { namespace }, ...schedules },
+  ] as const;
+  const fresh = useWatchesFresh(watched);
+  const errors: ReadError[] = [
+    ...initial.errors,
+    ...watched.flatMap((w) =>
+      w.error ? [{ kind: w.kind, message: w.error }] : [],
+    ),
+    ...run.reads.errors,
+  ];
+  const unread = unreadKinds({
+    errors,
+    stale: [
+      ...watched.filter((_, i) => !fresh[i]).map((w) => w.kind),
+      ...run.reads.stale,
+    ],
+  });
 
   const model = deleteClusterModel(
     {
       ...initial,
       claim: run.claim ?? initial.claim,
-      cluster,
-      requests,
-      optimizes,
-      schedules,
+      cluster: cluster.item,
+      requests: requests.items,
+      optimizes: optimizes.items,
+      schedules: schedules.items,
     },
     picked,
+    unread,
   );
   // The targets stay as they were when the delete started, so that an
   // object that is gone shows as Deleted instead of leaving the list.
@@ -96,10 +117,10 @@ export function DeleteCluster({
     stage = {
       kind: "deleting",
       progress: deleteProgress(targets ?? model.targets, {
-        CamundaCluster: cluster ? [cluster] : [],
-        CamundaOptimize: optimizes,
-        BackupSchedule: schedules,
-        PluginRequest: requests,
+        CamundaCluster: cluster.item ? [cluster.item] : [],
+        CamundaOptimize: optimizes.items,
+        BackupSchedule: schedules.items,
+        PluginRequest: requests.items,
         CamundaClusterClaim: run.claim ? [run.claim] : [],
       }),
       gitWaiting: run.stage.gitWaiting,
@@ -113,6 +134,7 @@ export function DeleteCluster({
         model={model}
         mode={writeMode}
         stage={stage}
+        errors={errors}
         remove={run.remove}
         policyStep={run.policyStep}
         onPick={setPicked}

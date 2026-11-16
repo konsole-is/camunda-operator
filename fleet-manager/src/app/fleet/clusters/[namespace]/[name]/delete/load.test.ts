@@ -8,8 +8,10 @@ const k8s = vi.hoisted(() => ({
   failing: "",
 }));
 vi.mock("@/lib/k8s/read", () => ({
-  get: async (kind: string, _namespace: string | undefined, name: string) =>
-    k8s.objects[`${kind}/${name}`],
+  get: async (kind: string, _namespace: string | undefined, name: string) => {
+    if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
+    return k8s.objects[`${kind}/${name}`];
+  },
   list: async (kind: string, opts: unknown) => {
     k8s.calls.push({ kind, opts });
     if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
@@ -98,12 +100,32 @@ describe("loadDeleteClusterPage", () => {
     );
   });
 
-  it("a failed list gives no objects of that kind", async () => {
+  it("a failed list gives no objects of that kind, and its error", async () => {
     k8s.objects["CamundaClusterClaim/orders"] = claim;
-    k8s.lists.BackupSchedule = [{ metadata: { name: "orders-daily" } }];
-    k8s.failing = "BackupSchedule";
-    expect(
-      (await loadDeleteClusterPage("team-a", "orders"))?.schedules,
-    ).toEqual([]);
+    k8s.lists.PluginRequest = [{ metadata: { name: "orders-backup" } }];
+    k8s.failing = "PluginRequest";
+    const data = await loadDeleteClusterPage("team-a", "orders");
+    expect(data?.requests).toEqual([]);
+    expect(data?.errors).toEqual([
+      { kind: "PluginRequest", message: "PluginRequest is forbidden" },
+    ]);
+  });
+
+  it("a failed read of the cluster gives its error", async () => {
+    k8s.objects["CamundaClusterClaim/orders"] = claim;
+    k8s.objects["CamundaCluster/orders"] = cluster();
+    k8s.failing = "CamundaCluster";
+    const data = await loadDeleteClusterPage("team-a", "orders");
+    expect(data?.cluster).toBeUndefined();
+    expect(data?.errors).toEqual([
+      { kind: "CamundaCluster", message: "CamundaCluster is forbidden" },
+    ]);
+  });
+
+  it("gives no errors when every read succeeds", async () => {
+    k8s.objects["CamundaClusterClaim/orders"] = claim;
+    expect((await loadDeleteClusterPage("team-a", "orders"))?.errors).toEqual(
+      [],
+    );
   });
 });

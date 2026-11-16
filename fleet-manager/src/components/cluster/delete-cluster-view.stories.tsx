@@ -24,6 +24,12 @@ type Kind =
 const object = <K extends Kind>(kind: K, value: object) =>
   value as unknown as Resource<K>;
 
+const CLAIM_UID = "8c1f6c1e-1d1a-4c5e-9d43-0f3b1c2d4e5f";
+// controlled is the owner reference of an object that the claim made.
+const controlled = {
+  ownerReferences: [{ controller: true, uid: CLAIM_UID }],
+};
+
 const selections = [
   { section: "access", registration: "gateway" },
   { section: "backup-storage", registration: "aws-s3" },
@@ -38,7 +44,7 @@ const claim = (deletionPolicy?: DeletionPolicy) =>
       namespace: "team-orders",
       name: "orders",
       resourceVersion: "41",
-      uid: "8c1f6c1e-1d1a-4c5e-9d43-0f3b1c2d4e5f",
+      uid: CLAIM_UID,
     },
     spec: { releaseRef: "camunda-8-9-1", plugins: selections, deletionPolicy },
     status: {
@@ -122,13 +128,25 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   ],
   optimizes: [
     object("CamundaOptimize", {
-      metadata: { namespace: "team-orders", name: "orders-optimize" },
+      metadata: {
+        namespace: "team-orders",
+        name: "orders-optimize",
+        ...controlled,
+      },
       ...of("orders"),
     }),
   ],
   schedules: [
     object("BackupSchedule", {
-      metadata: { namespace: "team-orders", name: "orders-daily" },
+      metadata: {
+        namespace: "team-orders",
+        name: "orders-backups",
+        ...controlled,
+      },
+      ...of("orders"),
+    }),
+    object("BackupSchedule", {
+      metadata: { namespace: "team-orders", name: "orders-hourly" },
       ...of("orders"),
     }),
   ],
@@ -142,6 +160,7 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
     rdbms: [],
   },
   volumes: "Retain",
+  errors: [],
   ...over,
 });
 
@@ -178,6 +197,7 @@ const meta = {
     model: keep,
     mode: "direct",
     stage: { kind: "choose" },
+    errors: [],
     remove: remove.remove,
     policyStep: false,
     onPick: fn(),
@@ -232,6 +252,41 @@ export const KeepRefused: Story = {
   args: { model: deleteClusterModel(refused, "Delete") },
 };
 
+export const RequestsNotRead: Story = {
+  name: "The requests could not be read",
+  args: {
+    model: deleteClusterModel(data(), "Orphan", ["PluginRequest"]),
+    errors: [
+      {
+        kind: "PluginRequest",
+        message: "pluginrequests.plugins.camunda.io is forbidden",
+      },
+    ],
+  },
+};
+
+export const PolicyWritten: Story = {
+  name: "Git: the delete was refused after the policy commit",
+  args: {
+    mode: "git",
+    stage: {
+      kind: "choose",
+      errors: [
+        {
+          code: "Stale",
+          message: "The claim orders changed since you opened it.",
+        },
+      ],
+      policyWritten: "Orphan",
+    },
+  },
+};
+
+export const DirectPolicyWait: Story = {
+  name: "Waiting for the operator to read the deletion policy",
+  args: { stage: { kind: "waiting" } },
+};
+
 export const DirectProgress: Story = {
   name: "The cluster and its requests going",
   args: { stage: { kind: "deleting", progress, gitWaiting: false } },
@@ -250,7 +305,7 @@ export const GitDeleteWait: Story = {
       kind: "deleting",
       progress: deleteProgress(keep.targets, {
         CamundaOptimize: [{ metadata: { name: "orders-optimize" } }],
-        BackupSchedule: [{ metadata: { name: "orders-daily" } }],
+        BackupSchedule: [{ metadata: { name: "orders-backups" } }],
         CamundaCluster: [{ metadata: { name: "orders" } }],
         PluginRequest: [
           { metadata: { name: "orders-access" } },

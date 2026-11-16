@@ -116,6 +116,7 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
     schedules: [],
     backups: { elasticsearch: [], rdbms: [] },
     volumes: "Delete",
+    errors: [],
     ...over,
   }) as DeleteClusterData;
 
@@ -148,7 +149,7 @@ function page(
 // confirm types the name of the cluster and clicks label once the preview
 // has run.
 async function confirm(label: string) {
-  fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+  fireEvent.change(await screen.findByLabelText("Type orders to confirm"), {
     target: { value: "orders" },
   });
   const button = screen.getByRole<HTMLButtonElement>("button", {
@@ -192,6 +193,33 @@ async function liveClaim(c: Resource<"CamundaClusterClaim">) {
   await snapshot(claimWatch, [c]);
 }
 
+const clusterWatch: WatchSpec = {
+  kind: "CamundaCluster",
+  namespace: "team-a",
+  name: "orders",
+};
+const requestsWatch: WatchSpec = {
+  kind: "PluginRequest",
+  namespace: "team-a",
+  labelSelector: "fleet.camunda.io/claim=orders",
+};
+
+// readAll sends a snapshot of the objects of initial on each watch of the
+// page, so that every list is current and the review opens.
+async function readAll(initial: DeleteClusterData = data()) {
+  await liveClaim(initial.claim);
+  await snapshot(clusterWatch, initial.cluster ? [initial.cluster] : []);
+  await snapshot(requestsWatch, initial.requests);
+  await snapshot(
+    { kind: "CamundaOptimize", namespace: "team-a" },
+    initial.optimizes,
+  );
+  await snapshot(
+    { kind: "BackupSchedule", namespace: "team-a" },
+    initial.schedules,
+  );
+}
+
 // revisionOfFirstPush is the revision that GitOps writes for the first
 // push of fakeWriter.
 function revisionOfFirstPush() {
@@ -210,42 +238,50 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const remove = {
+const remove = (resourceVersion = "41") => ({
   intent: "Delete the cluster orders",
   apply: [],
   delete: [ref],
   uids: { [KEY]: "uid-1" },
-};
+  preconditions: { [KEY]: resourceVersion },
+});
 
 describe("DeleteCluster", () => {
-  it("direct mode: Keep writes the deletion policy, then deletes the claim by its UID", async () => {
+  it("direct mode: Keep writes the deletion policy, waits until the claim has it, then deletes the claim by its UID and resourceVersion", async () => {
     page();
+    await readAll();
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Delete the cluster");
-    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    const [policy, deleted] = fakeWriter.applied;
+    expect(
+      await screen.findByText(
+        /Waiting for the operator to read the deletion policy\./,
+      ),
+    ).toBeTruthy();
+    expect(fakeWriter.applied).toHaveLength(1);
+    const [policy] = fakeWriter.applied;
     expect(
       (policy.apply[0].spec as { deletionPolicy?: string }).deletionPolicy,
     ).toBe("Orphan");
     expect(policy.preconditions).toEqual({ [KEY]: "41" });
-    expect(deleted).toEqual(remove);
+    await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "42" }));
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    expect(fakeWriter.applied[1]).toEqual(remove("42"));
   });
 
   it("direct mode: the default sends only the delete", async () => {
     page();
+    await readAll();
     await confirm("Delete the cluster");
-    await waitFor(() => expect(fakeWriter.applied).toEqual([remove]));
+    await waitFor(() => expect(fakeWriter.applied).toEqual([remove()]));
   });
 
   it("direct mode: after the delete the page follows the cluster and its requests until the claim is gone", async () => {
     page();
+    await readAll();
     await confirm("Delete the cluster");
     const list = await screen.findByRole("region", { name: "Delete progress" });
     await liveClaim(claim({ deletionTimestamp: "2026-11-15T10:00:00Z" }));
-    await snapshot(
-      { kind: "CamundaCluster", namespace: "team-a", name: "orders" },
-      [],
-    );
+    await snapshot(clusterWatch, []);
     const row = within(list).getByText("CamundaCluster orders").closest("li")!;
     await waitFor(() => expect(row.textContent).toContain("Deleted"));
     expect(
@@ -259,33 +295,35 @@ describe("DeleteCluster", () => {
     ).toBeTruthy();
   });
 
-  it("a refused delete after the policy write shows the refusal, and the next confirm sends only the delete", async () => {
+  it("a refused delete after the policy write keeps the refusal and a note on the policy while the claim changes, and the next confirm sends only the delete", async () => {
     fakeWriter.results = [
       { ok: true, mode: "direct" },
       {
         ok: false,
-        errors: [
-          { code: "Stale", message: "The claim changed since you opened it." },
-        ],
+        errors: [{ code: "Forbidden", message: "The app may not delete it." }],
       },
     ];
     page();
+    await readAll();
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Delete the cluster");
-    await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
-        "The claim changed since you opened it.",
-      ),
-    );
     await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "42" }));
+    const note =
+      "The deletion policy of orders is now Keep, and the cluster is not deleted.";
+    expect(await screen.findByText(note)).toBeTruthy();
+    expect(screen.getByText("The app may not delete it.")).toBeTruthy();
+    await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "43" }));
+    expect(screen.getByText(note)).toBeTruthy();
+    expect(screen.getByText("The app may not delete it.")).toBeTruthy();
     await confirm("Delete the cluster");
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(3));
-    expect(fakeWriter.applied[2]).toEqual(remove);
+    expect(fakeWriter.applied[2]).toEqual(remove("43"));
   });
 
   it("Git mode: the policy and the delete are two commits, the second after GitOps applied the first", async () => {
     fakeWriter.reset("git");
     page(data(), "git");
+    await readAll();
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Push the delete to Git");
     expect(
@@ -302,15 +340,16 @@ describe("DeleteCluster", () => {
       }),
     );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    expect(fakeWriter.applied[1].delete).toEqual([ref]);
+    expect(fakeWriter.applied[1]).toEqual(remove("42"));
     expect(
       await screen.findByText("Waiting for GitOps to delete orders"),
     ).toBeTruthy();
   });
 
-  it("Git mode: stop waiting sends no delete", async () => {
+  it("Git mode: stop waiting sends no delete and says that the policy commit is in the repository", async () => {
     fakeWriter.reset("git");
     page(data(), "git");
+    await readAll();
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Push the delete to Git");
     fireEvent.click(
@@ -319,12 +358,18 @@ describe("DeleteCluster", () => {
     expect(
       screen.getByRole("button", { name: "Push the delete to Git" }),
     ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /The commit of the deletion policy is in the repository\./,
+      ),
+    ).toBeTruthy();
     // The new claim version makes the review preview again, so the page
     // has seen it once the preview count grows.
     const previews = fakeWriter.previewed.length;
     await liveClaim(
       claim({
         resourceVersion: "42",
+        deletionPolicy: "Orphan",
         annotations: { [REVISION_ANNOTATION]: revisionOfFirstPush() },
       }),
     );
@@ -334,20 +379,94 @@ describe("DeleteCluster", () => {
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
-  it("Git mode: a claim with no file in the repository shows the refusal of the writer", async () => {
-    const message =
-      "fleet/team-a/camundaclusterclaims/orders.yaml is not in the repository. GitOps does not manage CamundaClusterClaim orders.";
-    fakeWriter.reset("git");
-    fakeWriter.results = [
-      { ok: false, errors: [{ code: "Invalid", message }] },
-    ];
-    page(data(), "git");
-    await confirm("Push the delete to Git");
-    await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(message),
-    );
-    expect(fakeWriter.applied).toHaveLength(1);
+  it.each([
+    ["the default choice", false],
+    ["Keep, which writes the policy first", true],
+  ])(
+    "Git mode: a claim with no file in the repository shows the refusal and writes nothing, with %s",
+    async (_, keep) => {
+      const message =
+        "fleet/team-a/camundaclusterclaims/orders.yaml is not in the repository. GitOps does not manage CamundaClusterClaim orders.";
+      fakeWriter.reset("git");
+      fakeWriter.previews = Array.from({ length: 6 }, () => ({
+        objects: [],
+        errors: [{ code: "Invalid" as const, message }],
+      }));
+      page(data(), "git");
+      await readAll();
+      if (keep)
+        fireEvent.click(
+          screen.getByRole("radio", { name: /Keep the resources/ }),
+        );
+      fireEvent.change(await screen.findByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toContain(message),
+      );
+      const button = screen.getByRole<HTMLButtonElement>("button", {
+        name: "Push the delete to Git",
+      });
+      expect(button.disabled).toBe(true);
+      expect(fakeWriter.applied).toEqual([]);
+    },
+  );
+
+  it("opens no review until every list of the page has a current snapshot", async () => {
+    page();
+    expect(
+      screen.getByText(/Delete is possible when the fleet manager can read/)
+        .textContent,
+    ).toContain("CamundaClusterClaim");
+    expect(
+      screen.queryByRole("button", { name: "Delete the cluster" }),
+    ).toBeNull();
+    await readAll();
+    expect(
+      await screen.findByRole("button", { name: "Delete the cluster" }),
+    ).toBeTruthy();
   });
+
+  it("a failed watch of the requests closes the review, names the kind, and leaves the fates not known", async () => {
+    page();
+    await readAll();
+    await screen.findByRole("button", { name: "Delete the cluster" });
+    const { source, watch } = await watched(requestsWatch);
+    act(() =>
+      source.emit("failure", { watch, kind: "PluginRequest", message: "lost" }),
+    );
+    expect(
+      await screen.findByText("Could not read PluginRequest: lost"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Delete the cluster" }),
+    ).toBeNull();
+    expect(screen.getByText("Not known")).toBeTruthy();
+    expect(screen.queryByText(/the backup bucket goes too/)).toBeNull();
+  });
+
+  it.each([
+    ["PluginRegistration", /Not known/],
+    ["CamundaCluster", /Volumes not known/],
+  ])(
+    "a failed server read of %s names the kind and opens no review",
+    async (kind, shown) => {
+      page(data({ errors: [{ kind, message: "forbidden" }] }));
+      await readAll();
+      expect(
+        screen.getByText(`Could not read ${kind}: forbidden`),
+      ).toBeTruthy();
+      expect(screen.getAllByText(shown).length).toBeGreaterThan(0);
+      expect(
+        screen.queryByRole("button", { name: "Delete the cluster" }),
+      ).toBeNull();
+    },
+  );
 
   it("changes are off without a write mode", () => {
     page(data(), undefined);

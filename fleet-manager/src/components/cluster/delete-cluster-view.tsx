@@ -2,10 +2,12 @@
 
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 import { PrecheckLine } from "@/components/fleet/precheck-line";
+import type { ReadError } from "@/components/planes/planes-table";
+import { unreadDeleteText } from "@/components/setup/releases/rows";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -43,13 +45,14 @@ export const KEEP_REFUSED_ON_DELETE =
 
 /**
  * DeleteStage is what the delete page shows. choose holds the errors of a
- * refused delete after a Git wait. waiting: in Git mode, the commit of the
- * deletion policy waits for GitOps. deleting holds the state of each target,
+ * delete refused after the policy write, and the policy that the claim
+ * keeps after it. waiting: the policy write waits for GitOps, or for the
+ * operator to read it. deleting holds the state of each target,
  * whether the delete commit waits for GitOps, and the live claim. deleted:
  * the claim is gone. replaced: the claim was made again under its name.
  */
 export type DeleteStage =
-  | { kind: "choose"; errors?: ApiError[] }
+  | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
   | { kind: "waiting" }
   | {
       kind: "deleting";
@@ -67,13 +70,14 @@ const PRUNE_NOTE =
  * DeleteClusterView is the delete page of a cluster. It never writes: the
  * confirm of its review calls apply with remove, and the review previews
  * remove once for each remove object. Without a mode it shows CHANGES_OFF
- * and what the delete takes, and no review. policyStep says that the
- * delete writes the deletion policy first.
+ * and what the delete takes, and no review. While model.unread has a kind
+ * it shows what the delete takes, and no review, unless a write runs. policyStep says that the delete writes the deletion policy first.
  */
 export function DeleteClusterView({
   model,
   mode,
   stage,
+  errors,
   remove,
   policyStep,
   onPick,
@@ -86,6 +90,7 @@ export function DeleteClusterView({
   model: DeleteClusterModel;
   mode: WriteMode | undefined;
   stage: DeleteStage;
+  errors: readonly ReadError[];
   remove: Change;
   policyStep: boolean;
   onPick(policy: DeletionPolicy): void;
@@ -98,6 +103,16 @@ export function DeleteClusterView({
   const { name, namespace } = model;
   const clusterHref = `/fleet/clusters/${namespace}/${name}`;
   const effects = effectsOf(model, mode === "git" && policyStep);
+  const [writing, setWriting] = useState(false);
+  const takes = (
+    <section aria-label="What the delete takes">
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-text-2">
+        {effects.map((effect, i) => (
+          <li key={i}>{effect}</li>
+        ))}
+      </ul>
+    </section>
+  );
   return (
     <div className="flex max-w-3xl min-w-0 flex-col gap-6">
       <div className="flex flex-col gap-2">
@@ -138,7 +153,11 @@ export function DeleteClusterView({
         </div>
       ) : stage.kind === "waiting" ? (
         <WaitingPanel
-          text="Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
+          text={
+            mode === "git"
+              ? "Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
+              : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
+          }
           onStopWaiting={onStopWaiting}
         />
       ) : stage.kind === "deleting" ? (
@@ -156,21 +175,36 @@ export function DeleteClusterView({
           {mode === "git" && (
             <p className="text-sm text-text-2">{PRUNE_NOTE}</p>
           )}
+          {errors.map((e, i) => (
+            <p key={i} role="alert" className="text-sm text-bad">
+              Could not read {e.kind}: {e.message}
+            </p>
+          ))}
           {stage.errors && stage.errors.length > 0 && (
             <Alert texts={stage.errors.map((e) => e.message)} />
+          )}
+          {stage.policyWritten && (
+            <p role="status" className="text-sm text-warn">
+              The deletion policy of {name} is now{" "}
+              {stage.policyWritten === "Orphan" ? "Keep" : "Delete"}, and the
+              cluster is not deleted.
+              {mode === "git" &&
+                " The commit of the deletion policy is in the repository."}
+            </p>
           )}
           {mode === undefined ? (
             <>
               <p role="alert" className="text-sm text-bad">
                 {CHANGES_OFF}
               </p>
-              <section aria-label="What the delete takes">
-                <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-text-2">
-                  {effects.map((effect, i) => (
-                    <li key={i}>{effect}</li>
-                  ))}
-                </ul>
-              </section>
+              {takes}
+            </>
+          ) : model.unread.length > 0 && !writing ? (
+            <>
+              <p className="text-sm text-muted">
+                {unreadDeleteText(model.unread)}
+              </p>
+              {takes}
             </>
           ) : (
             <ChangeReview
@@ -187,7 +221,9 @@ export function DeleteClusterView({
               }}
               savedMessage={
                 mode === "direct"
-                  ? `The claim ${name} is being deleted.`
+                  ? policyStep
+                    ? `Set the deletion policy of ${name}. The delete follows when the operator reads it.`
+                    : `The claim ${name} is being deleted.`
                   : policyStep
                     ? `Pushed the deletion policy of ${name}. The delete follows when GitOps applies it.`
                     : `Pushed the delete of ${name}.`
@@ -196,6 +232,7 @@ export function DeleteClusterView({
               apply={apply}
               show={show}
               onWritten={onWritten}
+              onWriting={setWriting}
             />
           )}
         </>
@@ -209,6 +246,9 @@ function effectsOf(
   twoCommits: boolean,
 ): ReactNode[] {
   const always = model.targets.filter((t) => t.kind !== "PluginRequest");
+  const unknown = model.unread.filter(
+    (kind) => kind === "CamundaOptimize" || kind === "BackupSchedule",
+  );
   return [
     <div key="always" className="flex flex-col gap-1">
       <span className="font-medium text-text">Always deleted</span>
@@ -219,9 +259,32 @@ function effectsOf(
             {t.note && <span className="text-muted">: {t.note}</span>}
           </li>
         ))}
+        {unknown.map((kind) => (
+          <li key={kind}>
+            {kind}
+            <span className="text-muted">: not known</span>
+          </li>
+        ))}
       </ul>
     </div>,
-    ...model.groups.map((group) => <GroupTable key={group.id} group={group} />),
+    ...(model.kept.length > 0
+      ? [
+          <div key="kept" className="flex flex-col gap-1">
+            <span className="font-medium text-text">Kept</span>
+            <ul className="flex flex-col gap-0.5">
+              {model.kept.map((t) => (
+                <li key={`${t.kind}/${t.name}`}>
+                  {t.label}
+                  {t.note && <span className="text-muted">: {t.note}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>,
+        ]
+      : []),
+    ...model.groups.map((group) => (
+      <GroupTable key={group.id} group={group} known={model.fatesKnown} />
+    )),
     ...(model.backups > 0
       ? [
           `The ${model.backups} backups of ${model.name} stay, and their artifacts stay in the bucket.`,
@@ -237,7 +300,13 @@ function effectsOf(
 
 // The fate is the one emphasis of the page: Deleted in the bad tone, so
 // that a reader sees at a glance what goes.
-function GroupTable({ group }: { group: DeletionGroup }) {
+function GroupTable({
+  group,
+  known,
+}: {
+  group: DeletionGroup;
+  known: boolean;
+}) {
   const many = group.id.includes("/");
   const caption = many ? `${group.label} (${group.registration})` : group.label;
   return (
@@ -245,7 +314,11 @@ function GroupTable({ group }: { group: DeletionGroup }) {
       {group.rows.length === 0 ? (
         <>
           <span className="font-medium text-text">{caption}</span>
-          <span>This option made no resources.</span>
+          <span>
+            {known
+              ? "This option made no resources."
+              : "What this option made is not known."}
+          </span>
         </>
       ) : (
         <Table label={`Resources of ${caption}`}>
@@ -271,12 +344,18 @@ function GroupTable({ group }: { group: DeletionGroup }) {
                   {row.id ?? "-"}
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant={row.fate === "Deleted" ? "destructive" : "outline"}
-                    className={row.fate === "Kept" ? "text-muted" : undefined}
-                  >
-                    {row.fate}
-                  </Badge>
+                  {known ? (
+                    <Badge
+                      variant={
+                        row.fate === "Deleted" ? "destructive" : "outline"
+                      }
+                      className={row.fate === "Kept" ? "text-muted" : undefined}
+                    >
+                      {row.fate}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Not known</Badge>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
