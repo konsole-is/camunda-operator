@@ -369,7 +369,7 @@ export const ClusterNotMadeDeleted: Story = {
 };
 
 export const DirectPolicyWait: Story = {
-  name: "Waiting for the claim to show the deletion policy",
+  name: "Waiting for the operator to read the deletion policy",
   args: { stage: { kind: "waiting" } },
 };
 

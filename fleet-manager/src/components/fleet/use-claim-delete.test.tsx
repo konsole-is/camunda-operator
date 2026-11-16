@@ -62,6 +62,7 @@ const claim = (
     resourceVersion: "41",
     uid: "uid-1",
     generation: 1,
+    finalizers: ["fleet.camunda.io/cleanup"],
     ...over.metadata,
   },
   spec: { releaseRef: "camunda-8-9-1", ...over.spec },
@@ -165,16 +166,50 @@ const KEEP_REFUSED_DELETING =
 
 const watch = watchId({ kind: KIND, namespace: "platform", name: "plane-a" });
 
+const requestsWatch = watchId({
+  kind: "PluginRequest",
+  namespace: "platform",
+});
+
+// request is a PluginRequest of the claim with uid-1 that has policy.
+const request = (name: string, policy: DeletionPolicy) => ({
+  apiVersion: "plugins.camunda.io/v1alpha1",
+  kind: "PluginRequest",
+  metadata: {
+    name,
+    namespace: "platform",
+    ownerReferences: [{ controller: true, uid: "uid-1" }],
+  },
+  spec: { deletionPolicy: policy },
+});
+
 // live sends the claim on the watch of the claim as a snapshot, an empty
-// one when it is undefined. The server then has server, c by default.
-async function live(c: Claim | undefined, server = c) {
-  fakeWriter.objects = server ? [server] : [];
+// one when it is undefined, and requests on the watch of the requests,
+// none when it is "unread". The server then has server, c by default, and
+// the requests.
+async function live(
+  c: Claim | undefined,
+  server = c,
+  requests: ReturnType<typeof request>[] | "unread" = [],
+) {
+  const listed = requests === "unread" ? [] : requests;
+  fakeWriter.objects = [...(server ? [server] : []), ...listed];
   await waitFor(() =>
     expect(FakeEventSource.instances.at(-1)?.ids()).toContain(watch),
   );
   FakeEventSource.instances
     .at(-1)!
     .emit("snapshot", { watch, kind: KIND, objects: c ? [c] : [] });
+  if (requests !== "unread") {
+    await waitFor(() =>
+      expect(FakeEventSource.instances.at(-1)?.ids()).toContain(requestsWatch),
+    );
+    FakeEventSource.instances.at(-1)!.emit("snapshot", {
+      watch: requestsWatch,
+      kind: "PluginRequest",
+      objects: requests,
+    });
+  }
   await act(async () => {});
 }
 
@@ -358,6 +393,43 @@ describe("useClaimDelete", () => {
     await live(read("42"), read("43"));
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(removeOf(2, "43"));
+  });
+
+  it("after the policy write, the delete waits while a request of the claim has the old policy, and goes once each has the new one", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    await confirm(hook);
+    await live(read("42"), read("42"), [
+      request("plane-a-db", "Delete"),
+      request("plane-a-access", "Orphan"),
+    ]);
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    expect(fakeWriter.applied).toHaveLength(1);
+
+    await live(read("43"), read("43"), [
+      request("plane-a-db", "Orphan"),
+      request("plane-a-access", "Orphan"),
+    ]);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    expect(fakeWriter.applied[1]).toEqual(removeOf(2, "43"));
+    await live(read("44"), read("44"), [request("plane-a-db", "Orphan")]);
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("44"),
+    );
+    expect(fakeWriter.applied).toHaveLength(2);
+  });
+
+  it("after the policy write, the delete waits while the list of the requests is unread", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    await confirm(hook);
+    await live(read("42"), read("42"), "unread");
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    expect(fakeWriter.applied).toHaveLength(1);
   });
 
   it("a delete refused after the policy write keeps its errors and the written policy, also when the claim changed first", async () => {
@@ -562,6 +634,31 @@ describe("useClaimDelete", () => {
       expect(hook.result.current.claim?.metadata.resourceVersion).toBe("43"),
     );
     expect(fakeWriter.applied).toHaveLength(2);
+  });
+
+  it("Git mode waits for GitOps and then for the requests before it pushes the delete", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    const revision = createHash("sha1")
+      .update(JSON.stringify(fakeWriter.applied[0].apply[0]))
+      .digest("hex");
+    const applied = read("42");
+    applied.metadata.annotations = { [REVISION_ANNOTATION]: revision };
+    await live(applied, applied, [request("plane-a-db", "Delete")]);
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+    expect(fakeWriter.applied).toHaveLength(1);
+
+    const next = {
+      ...applied,
+      metadata: { ...applied.metadata, resourceVersion: "43" },
+    };
+    await live(next, next, [request("plane-a-db", "Orphan")]);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    expect(fakeWriter.applied[1]).toEqual(reviewOf(2));
   });
 
   it("Git mode goes back to the choice with the refusal of the delete after the wait", async () => {

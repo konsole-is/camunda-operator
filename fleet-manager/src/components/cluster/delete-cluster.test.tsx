@@ -56,6 +56,7 @@ const claim = (over: ClaimOver = {}) => {
       resourceVersion: "41",
       uid: "uid-1",
       generation: 1,
+      finalizers: ["fleet.camunda.io/cleanup"],
       ...metadata,
     },
     spec: {
@@ -225,10 +226,19 @@ const claimWatch: WatchSpec = {
 };
 
 // liveClaim sends c as the live claim and waits until the page shows it.
-// The server then has the same claim.
-async function liveClaim(c: Resource<"CamundaClusterClaim">) {
+// The server then has the same claim. With policy, it also sends the
+// requests of data() with that deletion policy.
+async function liveClaim(
+  c: Resource<"CamundaClusterClaim">,
+  policy?: "Delete" | "Orphan",
+) {
   fakeWriter.objects = [c as unknown as KubeObject];
   await snapshot(claimWatch, [c]);
+  if (policy)
+    await snapshot(
+      requestsWatch,
+      data().requests.map((r) => ({ ...r, spec: { deletionPolicy: policy } })),
+    );
 }
 
 const clusterWatch: WatchSpec = {
@@ -318,7 +328,7 @@ describe("DeleteCluster", () => {
     await confirm("Delete the cluster");
     expect(
       await screen.findByText(
-        /Waiting for the claim to show the deletion policy\./,
+        /Waiting for the operator to read the deletion policy\./,
       ),
     ).toBeTruthy();
     expect(fakeWriter.applied).toHaveLength(1);
@@ -327,7 +337,16 @@ describe("DeleteCluster", () => {
       (policy.apply[0].spec as { deletionPolicy?: string }).deletionPolicy,
     ).toBe("Orphan");
     expect(policy.preconditions).toEqual({ [KEY]: "41" });
-    await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "42" }));
+    // The request of the option still has the old policy.
+    await liveClaim(
+      claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
+      "Delete",
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+    await liveClaim(
+      claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
+      "Orphan",
+    );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(remove("42"));
   });
@@ -398,7 +417,10 @@ describe("DeleteCluster", () => {
     await readAll();
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Delete the cluster");
-    await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "42" }));
+    await liveClaim(
+      claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
+      "Orphan",
+    );
     const note =
       "The cluster is not deleted. The claim orders has the deletion policy Keep.";
     expect(await screen.findByText(note)).toBeTruthy();
@@ -429,6 +451,7 @@ describe("DeleteCluster", () => {
         deletionPolicy: "Orphan",
         annotations: { [REVISION_ANNOTATION]: revisionOfFirstPush() },
       }),
+      "Orphan",
     );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     // The Git writer checks the generation and needs no resourceVersion.
@@ -501,7 +524,7 @@ describe("DeleteCluster", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
     await confirm("Delete the cluster");
     await screen.findByText(
-      /Waiting for the claim to show the deletion policy\./,
+      /Waiting for the operator to read the deletion policy\./,
     );
     await liveClaim(claim({ deletionPolicy: "Delete", resourceVersion: "42" }));
     expect(

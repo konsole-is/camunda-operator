@@ -13,7 +13,16 @@ let reads: (KubeObject | undefined)[] = [];
 const readLive = vi.fn<(ref: ObjectRef) => Promise<KubeObject | undefined>>(
   async () => (reads.length > 1 ? reads.shift() : reads[0]),
 );
-vi.mock("./writer", () => ({ getWriter: async () => fake, readLive }));
+// listed are the objects that listObjects reads, of every kind.
+let listed: KubeObject[] = [];
+const listObjects = vi.fn(async (kind: string, namespace: string) =>
+  listed.filter((o) => o.kind === kind && o.metadata.namespace === namespace),
+);
+vi.mock("./writer", () => ({
+  getWriter: async () => fake,
+  readLive,
+  listObjects,
+}));
 
 const {
   adminChangeSchema,
@@ -58,6 +67,8 @@ beforeEach(() => {
   fake.preview.mockReset();
   readLive.mockClear();
   reads = [];
+  listObjects.mockClear();
+  listed = [];
 });
 
 describe("runChange", () => {
@@ -390,6 +401,96 @@ describe("runClaimDelete and previewClaimDelete", () => {
     ok: false as const,
     errors: [{ code: "Stale" as const, message: "Changed.", ref }],
   };
+  // set is a live claim of generation 3 that the operator set up: it has
+  // the cleanup finalizer and a recorded policy, and its own policy.
+  const set = (policy: "Delete" | "Orphan"): KubeObject => {
+    const c = live("45");
+    return {
+      ...c,
+      metadata: { ...c.metadata, finalizers: ["fleet.camunda.io/cleanup"] },
+      spec: { deletionPolicy: policy },
+      status: { resolvedPolicy: { deletionPolicy: "Delete" } },
+    };
+  };
+  const request = (
+    name: string,
+    policy: "Delete" | "Orphan",
+    over: { uid?: string; deletionTimestamp?: string } = {},
+  ): KubeObject => ({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: {
+      name,
+      namespace: "team-a",
+      ownerReferences: [{ controller: true, uid: over.uid ?? "uid-1" }],
+      ...(over.deletionTimestamp && {
+        deletionTimestamp: over.deletionTimestamp,
+      }),
+    },
+    spec: { deletionPolicy: policy },
+  });
+
+  it("refuses while a request of the claim does not have its deletion policy yet, and deletes nothing", async () => {
+    reads = [set("Orphan")];
+    listed = [
+      request("orders-backup-storage", "Delete"),
+      request("orders-access", "Orphan"),
+    ];
+
+    const refusal = {
+      code: "Stale",
+      message:
+        "The request orders-backup-storage does not have the deletion policy yet. The operator writes it within a moment. Try again.",
+      ref,
+    };
+    expect(await runClaimDelete(remove)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(await previewClaimDelete(remove)).toEqual({
+      objects: [],
+      errors: [refusal],
+    });
+    expect(listObjects).toHaveBeenCalledWith("PluginRequest", "team-a");
+    expect(fake.apply).not.toHaveBeenCalled();
+    expect(fake.preview).not.toHaveBeenCalled();
+  });
+
+  it("deletes once each request of the claim has its deletion policy, whatever the requests of other claims and the requests being deleted hold", async () => {
+    reads = [set("Orphan")];
+    listed = [
+      request("orders-backup-storage", "Orphan"),
+      request("payments-backup-storage", "Delete", { uid: "uid-2" }),
+      request("orders-old", "Delete", {
+        deletionTimestamp: "2026-11-16T10:00:00Z",
+      }),
+    ];
+    fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+  });
+
+  it("refuses in both modes a claim that lost its cleanup finalizer after the operator set it up", async () => {
+    const lost = set("Orphan");
+    lost.metadata = { ...lost.metadata, finalizers: [] };
+    reads = [lost];
+    const refusal = {
+      code: "Invalid",
+      message:
+        "The CamundaClusterClaim orders has no finalizer fleet.camunda.io/cleanup, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.",
+      ref,
+    };
+    expect(await runClaimDelete(remove)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    fake.mode = "git";
+    expect(await runClaimDelete(remove)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
 
   it("deletes at the resourceVersion of a fresh read when only the status changed since the review", async () => {
     reads = [live("45")];
