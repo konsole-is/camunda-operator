@@ -231,8 +231,8 @@ export async function runClaimDelete(input: unknown): Promise<WriteResult> {
 
 /**
  * previewClaimDelete is runPreview with claimDeleteSchema. It gives no
- * objects and the refusal of runClaimDelete when runClaimDelete would
- * refuse before it deletes.
+ * objects and the refusal of runClaimDelete when the claim is gone, has
+ * another UID or generation, or lost its cleanup finalizer.
  */
 export async function previewClaimDelete(input: unknown): Promise<Preview> {
   const parsed = claimDeleteSchema.safeParse(input);
@@ -241,9 +241,10 @@ export async function previewClaimDelete(input: unknown): Promise<Preview> {
   const ref = change.delete![0];
   try {
     const live = await readLive(ref);
+    // A policy write that corrects the requests can follow the preview.
     const refusal =
       reviewRefusalOf(change, ref, live) ??
-      (await cleanupRefusalOf(ref, live!));
+      (await cleanupRefusalOf(ref, live!, false));
     if (refusal !== undefined) return { objects: [], errors: [refusal] };
     return await (await getWriter()).preview(change);
   } catch (error) {
@@ -277,6 +278,7 @@ const CLEANUP_FINALIZER = "fleet.camunda.io/cleanup";
 async function cleanupRefusalOf(
   ref: ObjectRef,
   live: KubeObject,
+  requests = true,
 ): Promise<ApiError | undefined> {
   const { uid, finalizers } = live.metadata as {
     uid?: string;
@@ -294,6 +296,7 @@ async function cleanupRefusalOf(
       message: `The ${ref.kind} ${ref.name} has no finalizer ${CLEANUP_FINALIZER}, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.`,
       ref,
     };
+  if (!requests) return undefined;
   const policy = deletionPolicyOf(spec?.deletionPolicy, status?.resolvedPolicy);
   const behind = (await listObjects("PluginRequest", ref.namespace!))
     .filter((request) => {

@@ -162,12 +162,30 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   if (refusal.at !== undefined && refusal.at !== version)
     setRefusal({ retry: version });
   const { retry } = refusal;
+  // The claim finalizer writes no policy on a request that is already
+  // being deleted.
+  const carry = (claim: C, held: DeletionPolicy) =>
+    requestsFresh &&
+    requests.error === undefined &&
+    requests.items.every(
+      (r) =>
+        !controls(claim, r) ||
+        r.metadata?.deletionTimestamp !== undefined ||
+        r.spec?.deletionPolicy === held,
+    );
+  const carried = carry(
+    live ?? initial,
+    deletionPolicyOf(
+      (live ?? initial).spec?.deletionPolicy,
+      (live ?? initial).status?.resolvedPolicy,
+    ),
+  );
   const remove = useMemo(
     () => deleteClaimSteps(live ?? initial, policy, intent).remove,
     // A Git preview clones the repository, so a status write of the claim
     // must not start a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [uid, generation, spec, intent, policy, retry],
+    [uid, generation, spec, intent, policy, retry, carried],
   );
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
@@ -288,16 +306,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     sent.kind === "waiting" &&
     live !== undefined &&
     (sent.revision === undefined || sync === "applied") &&
-    // The claim finalizer writes no policy on a request that is already
-    // being deleted.
-    requestsFresh &&
-    requests.error === undefined &&
-    requests.items.every(
-      (r) =>
-        !controls(live, r) ||
-        r.metadata?.deletionTimestamp !== undefined ||
-        r.spec?.deletionPolicy === sent.policy,
-    );
+    carry(live, sent.policy);
   if (changedSince && live !== undefined && isOriginal(live))
     setSent({
       kind: "choose",

@@ -235,6 +235,10 @@ afterEach(() => {
 describe("useClaimDelete", () => {
   it("gives the remove step of the live claim with its UID and generation, a new one for each pick and spec change but not for a status write", async () => {
     const { hook } = mount(claim());
+    await live(claim());
+    await waitFor(() =>
+      expect(hook.result.current.reads).toEqual({ errors: [], stale: [] }),
+    );
     const first = hook.result.current.remove;
     expect(first).toEqual(reviewOf());
     hook.rerender({ policy: "Orphan" });
@@ -263,6 +267,17 @@ describe("useClaimDelete", () => {
     await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
     expect(hook.result.current.remove).toEqual(reviewOf(3));
     expect(await confirm(hook)).toEqual({ ok: true, mode: "direct" });
+  });
+
+  it("gives a new remove step when the requests of the claim come to carry its policy", async () => {
+    const { hook } = mount(claim());
+    await live(claim(), claim(), [request("plane-a-db", "Orphan")]);
+    await waitFor(() =>
+      expect(hook.result.current.reads).toEqual({ errors: [], stale: [] }),
+    );
+    const behind = hook.result.current.remove;
+    await live(claim(), claim(), [request("plane-a-db", "Delete")]);
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(behind));
   });
 
   it("a status write that the watch has not shown yet does not refuse the delete", async () => {

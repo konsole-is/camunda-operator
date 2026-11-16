@@ -447,13 +447,22 @@ describe("runClaimDelete and previewClaimDelete", () => {
       ok: false,
       errors: [refusal],
     });
-    expect(await previewClaimDelete(remove)).toEqual({
-      objects: [],
-      errors: [refusal],
-    });
     expect(listObjects).toHaveBeenCalledWith("PluginRequest", "team-a");
     expect(fake.apply).not.toHaveBeenCalled();
-    expect(fake.preview).not.toHaveBeenCalled();
+  });
+
+  it("the preview does not wait for the requests, so a policy write that corrects them can follow it", async () => {
+    // An option that cannot keep holds its request at Delete under a claim
+    // that says Orphan.
+    reads = [set("Orphan")];
+    listed = [request("orders-backup-storage", "Delete")];
+    fake.preview.mockResolvedValue({ objects: [], errors: [] });
+
+    expect(await previewClaimDelete(remove)).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fake.preview).toHaveBeenCalledWith(remove);
   });
 
   it("deletes once each request of the claim has its deletion policy, whatever the requests of other claims and the requests being deleted hold", async () => {

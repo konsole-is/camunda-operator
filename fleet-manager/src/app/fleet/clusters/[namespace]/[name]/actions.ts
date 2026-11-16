@@ -20,7 +20,7 @@ export async function applyClaimChange(change: Change): Promise<WriteResult> {
   return runChange(change, claimChangeSchema);
 }
 
-/** previewClaimDelete is the dry run of the delete of one claim, with the checks of runClaimDelete. */
+/** previewClaimDelete is the dry run of the delete of one claim, as previewClaimDelete of run-change gives it. */
 export async function previewClaimDelete(change: Change): Promise<Preview> {
   return previewDelete(change);
 }
