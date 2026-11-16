@@ -6,7 +6,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { REGISTRATION_SOURCE_KINDS } from "./source-kinds";
 
@@ -22,11 +22,12 @@ export type RegistrationSources = {
 /**
  * useRegistrationSources follows each list of initial live. errors holds
  * the error of each failed watch. The lists then keep their last items,
- * which can be out of date.
+ * which can be out of date. stale holds the kind of each list whose watch
+ * has no snapshot on its current connection.
  */
 export function useRegistrationSources(
   initial: RegistrationSources,
-): RegistrationSources & { errors: ReadError[] } {
+): RegistrationSources & { errors: ReadError[]; stale: string[] } {
   const results = {
     sections: useLive("PluginSection", initial.sections),
     registrations: useLive("PluginRegistration", initial.registrations),
@@ -34,9 +35,10 @@ export function useRegistrationSources(
     namespaces: useLive("Namespace", initial.namespaces),
     environments: useLive("Environment", initial.environments),
   };
-  const errors = (
-    Object.keys(results) as (keyof RegistrationSources)[]
-  ).flatMap((key) => {
+  const keys = Object.keys(results) as (keyof RegistrationSources)[];
+  const kinds = keys.map((key) => REGISTRATION_SOURCE_KINDS[key]);
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
+  const errors = keys.flatMap((key) => {
     const error = results[key].error;
     return error
       ? [{ kind: REGISTRATION_SOURCE_KINDS[key], message: error }]
@@ -49,6 +51,7 @@ export function useRegistrationSources(
     namespaces: results.namespaces.items,
     environments: results.environments.items,
     errors,
+    stale: kinds.filter((_, i) => !fresh[i]),
   };
 }
 

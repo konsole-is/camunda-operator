@@ -4,9 +4,10 @@ import catalog from "../../../../catalog/official-plugins.json";
 import { condition, pluginRegistration, registrationSources } from "./fixtures";
 import { registrationGroups, registrationSummary } from "./groups";
 import { RegistrationList } from "./registration-list";
+import type { SourceReads } from "./groups";
 import type { RegistrationSources } from "./sources";
 
-const listOf = (sources: RegistrationSources) => ({
+const listOf = (sources: RegistrationSources & SourceReads) => ({
   groups: registrationGroups(sources),
   summary: registrationSummary(sources.registrations),
   sections: sources.sections,
@@ -121,4 +122,38 @@ export const SectionGone: Story = {
 export const WithTheCatalogPanel: Story = {
   name: "With the catalog panel",
   args: { charts: catalog.charts as CatalogChart[] },
+};
+
+export const RegistrationsNotRead: Story = {
+  name: "The registrations cannot be read",
+  args: {
+    ...listOf({
+      ...registrationSources(),
+      registrations: [],
+      errors: [{ kind: "PluginRegistration", message: "forbidden" }],
+    }),
+    errors: [{ kind: "PluginRegistration", message: "forbidden" }],
+    charts: catalog.charts as CatalogChart[],
+  },
+};
+
+export const ListsNotAnswered: Story = {
+  name: "Sections, requests, and environments not read yet",
+  args: {
+    ...listOf({
+      ...registrationSources(),
+      sections: [],
+      stale: ["PluginSection", "PluginRequest", "Environment"],
+    }),
+    sections: [],
+    stale: ["PluginSection", "PluginRequest", "Environment"],
+  },
+};
+
+export const CatalogNotRead: Story = {
+  name: "The catalog cannot be read",
+  args: {
+    catalogError:
+      "reading catalog /app/catalog/official-plugins.json: ENOENT: no such file or directory",
+  },
 };

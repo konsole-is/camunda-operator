@@ -35,3 +35,16 @@ export const OneChartWithTwoSections: Story = {
     ],
   },
 };
+
+export const CatalogNotRead: Story = {
+  name: "The catalog cannot be read",
+  args: {
+    error:
+      "reading catalog /app/catalog/official-plugins.json: ENOENT: no such file or directory",
+  },
+};
+
+export const InstalledNotKnown: Story = {
+  name: "Which charts are installed is not known",
+  args: { installedUnknown: true },
+};

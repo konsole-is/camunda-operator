@@ -33,6 +33,40 @@ describe("CatalogPanel", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("says that the catalog could not be read and lists no chart", () => {
+    render(
+      <CatalogPanel
+        charts={[chart("aws-kms")]}
+        sections={[]}
+        error="reading catalog /catalog.json: ENOENT"
+      />,
+    );
+    const panel = screen.getByRole("region", {
+      name: "Charts you can install",
+    });
+    expect(within(panel).getByRole("alert").textContent).toBe(
+      "Could not read the chart catalog: reading catalog /catalog.json: ENOENT",
+    );
+    expect(within(panel).queryByText("aws-kms")).toBeNull();
+  });
+
+  it("lists no chart as not installed while it cannot tell which are installed", () => {
+    render(
+      <CatalogPanel
+        charts={[chart("aws-kms")]}
+        sections={[]}
+        installedUnknown
+      />,
+    );
+    const panel = screen.getByRole("region", {
+      name: "Charts you can install",
+    });
+    expect(
+      within(panel).getByText("Which charts are installed is not known."),
+    ).toBeTruthy();
+    expect(within(panel).queryByText("aws-kms")).toBeNull();
+  });
+
   it("names the sections of a chart by their labels and shows its command", () => {
     render(
       <CatalogPanel

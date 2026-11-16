@@ -6,23 +6,48 @@ import { Button } from "@/components/ui/button";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { CatalogChart } from "@/startup/bundled-data";
 
+const LABEL = "Charts you can install";
+
 /**
  * CatalogPanel lists charts that are not installed, with the sections they
- * bring and the command that installs each. It renders nothing for no
- * chart. A section that sections does not hold shows by its name.
+ * bring and the command that installs each. error is the error of the read
+ * of the catalog, and installedUnknown is true while the page cannot tell
+ * which charts are installed: in both cases the panel says so and lists no
+ * chart. Otherwise it renders nothing for no chart. A section that sections
+ * does not hold shows by its name.
  */
 export function CatalogPanel({
   charts,
   sections,
+  error,
+  installedUnknown = false,
 }: {
   charts: readonly CatalogChart[];
   sections: readonly PluginSection[];
+  error?: string;
+  installedUnknown?: boolean;
 }): ReactNode {
+  if (error !== undefined)
+    return (
+      <Panel label={LABEL}>
+        <p role="alert" className="text-sm text-bad">
+          Could not read the chart catalog: {error}
+        </p>
+      </Panel>
+    );
+  if (installedUnknown)
+    return (
+      <Panel label={LABEL}>
+        <p className="text-sm text-muted">
+          Which charts are installed is not known.
+        </p>
+      </Panel>
+    );
   if (charts.length === 0) return null;
   const labelOf = (name: string) =>
     sections.find((s) => s.metadata.name === name)?.spec.label ?? name;
   return (
-    <Panel label="Charts you can install">
+    <Panel label={LABEL}>
       <ul className="flex flex-col divide-y divide-border">
         {charts.map((chart) => (
           <li

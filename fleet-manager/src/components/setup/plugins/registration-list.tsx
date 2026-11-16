@@ -8,7 +8,7 @@ import type { ReadError } from "@/components/planes/planes-table";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SlotField } from "@/lib/fields/slots";
 import type { CatalogChart } from "@/startup/bundled-data";
-import { missingCharts } from "./catalog";
+import { type CatalogRead, missingCharts } from "./catalog";
 import { CatalogPanel } from "./catalog-panel";
 import { ConditionBadge } from "./condition-badge";
 import {
@@ -17,6 +17,7 @@ import {
   type SectionHeader,
   registrationGroups,
   registrationSummary,
+  unreadKinds,
 } from "./groups";
 import { type RegistrationSources, useRegistrationSources } from "./sources";
 
@@ -25,24 +26,34 @@ const MUTED = "block text-xs text-muted";
 /**
  * RegistrationList is the Plugins page: the registrations in the groups of
  * their sections, the summary line, and the panel of the charts. charts are
- * the charts that the panel offers. Each of errors shows above the groups,
- * and the groups stay. now is the time that "Healthy since" counts to.
+ * the charts that the panel offers, and catalogError the error of the read
+ * of the catalog. Each of errors shows above the groups, and the groups
+ * stay. stale holds the kinds whose watch has no snapshot on its current
+ * connection, as useRegistrationSources gives them. While PluginRegistration
+ * is not read, the page shows no health count and no chart as not
+ * installed. now is the time that "Healthy since" counts to.
  */
 export function RegistrationList({
   groups,
   summary,
   charts,
+  catalogError,
   sections,
   errors,
+  stale = [],
   now,
 }: {
   groups: RegistrationGroup[];
   summary: { healthy: number; notHealthy: number };
   charts: readonly CatalogChart[];
+  catalogError?: string;
   sections: readonly PluginSection[];
   errors: ReadError[];
+  stale?: readonly string[];
   now: string;
 }): ReactNode {
+  const unread = unreadKinds({ errors, stale });
+  const registrationsUnread = unread.includes("PluginRegistration");
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -50,7 +61,9 @@ export function RegistrationList({
           Plugins
         </h1>
         <p className="text-sm text-muted">
-          {`${summary.healthy} healthy, ${summary.notHealthy} not healthy`}
+          {registrationsUnread
+            ? "Health not known"
+            : `${summary.healthy} healthy, ${summary.notHealthy} not healthy`}
         </p>
       </div>
       {errors.map((e) => (
@@ -58,26 +71,36 @@ export function RegistrationList({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {unread.length > 0 && (
+        <p className="text-sm text-muted">
+          {`Not read: ${unread.join(", ")}. What needs them shows as not known.`}
+        </p>
+      )}
       {groups.map((group) => (
         <Group key={group.section?.name ?? ""} group={group} now={now} />
       ))}
-      <CatalogPanel charts={charts} sections={sections} />
+      <CatalogPanel
+        charts={charts}
+        sections={sections}
+        error={catalogError}
+        installedUnknown={registrationsUnread}
+      />
     </div>
   );
 }
 
 /**
  * RegistrationListLive is RegistrationList on the live sources, starting
- * from initial. charts is the whole catalog: the panel offers the charts
+ * from initial. catalog is the whole catalog: the panel offers the charts
  * that no registration names as its controller.
  */
 export function RegistrationListLive({
   initial,
-  charts,
+  catalog,
   now,
 }: {
   initial: RegistrationSources;
-  charts: readonly CatalogChart[];
+  catalog: CatalogRead;
   now: string;
 }): ReactNode {
   const sources = useRegistrationSources(initial);
@@ -85,22 +108,32 @@ export function RegistrationListLive({
     <RegistrationList
       groups={registrationGroups(sources)}
       summary={registrationSummary(sources.registrations)}
-      charts={missingCharts(charts, sources.registrations)}
+      charts={
+        "charts" in catalog
+          ? missingCharts(catalog.charts, sources.registrations)
+          : []
+      }
+      catalogError={"error" in catalog ? catalog.error : undefined}
       sections={sources.sections}
       errors={sources.errors}
+      stale={sources.stale}
       now={now}
     />
   );
 }
 
 function Group({ group, now }: { group: RegistrationGroup; now: string }) {
-  const label = group.section?.label ?? "Not in a section";
+  const label =
+    group.section?.label ??
+    (group.unread ? "Section not known" : "Not in a section");
   return (
     <Panel label={label}>
       {group.section && <SectionFacts section={group.section} />}
       {group.rows.length === 0 ? (
         <p className="text-sm text-muted">
-          No option is installed for this section.
+          {group.unread
+            ? "Options not known"
+            : "No option is installed for this section."}
         </p>
       ) : (
         <DataTable
@@ -186,15 +219,21 @@ function cellsOf(row: RegistrationRow, now: string): Record<string, ReactNode> {
         )}
       </>
     ),
-    requests: (
+    requests: row.requests ? (
       <>
         <span>{row.requests.total}</span>
-        {row.requests.byEnvironment.map((e) => (
-          <span key={e.environment} className={MUTED}>
-            {`${e.environment} ${e.count}`}
-          </span>
-        ))}
+        {row.requests.byEnvironment
+          ? row.requests.byEnvironment.map((e) => (
+              <span key={e.environment} className={MUTED}>
+                {`${e.environment} ${e.count}`}
+              </span>
+            ))
+          : row.requests.total > 0 && (
+              <span className={MUTED}>Environments not known</span>
+            )}
       </>
+    ) : (
+      "Not known"
     ),
     operatorVersions: row.operatorVersions ?? "Any",
     orphan: row.orphan ? "Supported" : "Not supported",

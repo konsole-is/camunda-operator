@@ -11,6 +11,7 @@ import {
   registrationRow,
   registrationSummary,
   sectionFields,
+  unreadKinds,
 } from "./groups";
 
 describe("registrationGroups", () => {
@@ -119,6 +120,36 @@ describe("registrationGroups", () => {
       registrationGroups(registrationSources()).every((g) => g.section),
     ).toBe(true);
   });
+
+  it("marks every section group unread while PluginRegistration is not read", () => {
+    const groups = registrationGroups({
+      ...registrationSources(),
+      registrations: [],
+      stale: ["PluginRegistration"],
+    });
+    expect(groups).toHaveLength(8);
+    expect(groups.every((g) => g.section && g.unread)).toBe(true);
+  });
+
+  it("does not call a registration lost while PluginSection is not read", () => {
+    const sources = registrationSources();
+    for (const reads of [
+      { stale: ["PluginSection"] },
+      { errors: [{ kind: "PluginSection", message: "forbidden" }] },
+    ]) {
+      const groups = registrationGroups({ ...sources, sections: [], ...reads });
+      expect(groups).toHaveLength(1);
+      expect(groups[0].section).toBeUndefined();
+      expect(groups[0].unread).toBe(true);
+      expect(groups[0].rows).toHaveLength(sources.registrations.length);
+    }
+  });
+
+  it("marks no group unread while every list is read", () => {
+    expect(
+      registrationGroups(registrationSources()).some((g) => g.unread),
+    ).toBe(false);
+  });
 });
 
 describe("registrationRow", () => {
@@ -212,7 +243,7 @@ describe("registrationRow", () => {
       sources.registrations.find((r) => r.metadata.name === "elasticsearch")!,
       sources,
     );
-    expect(row.requests.byEnvironment).toEqual([
+    expect(row.requests?.byEnvironment).toEqual([
       { environment: "No environment", count: 1 },
     ]);
   });
@@ -232,9 +263,49 @@ describe("registrationRow", () => {
       sources.registrations.find((r) => r.metadata.name === "elasticsearch")!,
       sources,
     );
-    expect(row.requests.byEnvironment).toEqual([
+    expect(row.requests?.byEnvironment).toEqual([
       { environment: "production", count: 1 },
     ]);
+  });
+});
+
+describe("registrationRow on lists that are not read", () => {
+  const existing = (sources: ReturnType<typeof registrationSources>) =>
+    sources.registrations.find(
+      (r) => r.metadata.name === "existing-secondary-storage",
+    )!;
+
+  it("gives no request count while PluginRequest is not read", () => {
+    const sources = registrationSources();
+    for (const reads of [
+      { stale: ["PluginRequest"] },
+      { errors: [{ kind: "PluginRequest", message: "forbidden" }] },
+    ]) {
+      const read = { ...sources, ...reads };
+      expect(registrationRow(existing(read), read).requests).toBeUndefined();
+    }
+  });
+
+  it.each(["Namespace", "Environment"])(
+    "gives the total but no count by environment while %s is not read",
+    (kind) => {
+      const sources = { ...registrationSources(), stale: [kind] };
+      expect(registrationRow(existing(sources), sources).requests).toEqual({
+        total: 1,
+      });
+    },
+  );
+});
+
+describe("unreadKinds", () => {
+  it("names each failed or stale kind once", () => {
+    expect(
+      unreadKinds({
+        errors: [{ kind: "PluginRequest", message: "forbidden" }],
+        stale: ["PluginSection", "PluginRequest"],
+      }),
+    ).toEqual(["PluginRequest", "PluginSection"]);
+    expect(unreadKinds({})).toEqual([]);
   });
 });
 

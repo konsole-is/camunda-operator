@@ -1,4 +1,5 @@
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import type { ReadError } from "@/components/planes/planes-table";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SLOT_FIELDS, type SlotField } from "@/lib/fields/slots";
@@ -25,18 +26,39 @@ export type RegistrationRow = {
   ready?: ConditionRow;
   /** healthySince is lastTransitionTime of Ready while Ready is True. */
   healthySince?: string;
-  requests: {
+  /**
+   * requests is unset while PluginRequest is not read, and byEnvironment
+   * while Namespace or Environment is not read.
+   */
+  requests?: {
     total: number;
-    byEnvironment: { environment: string; count: number }[];
+    byEnvironment?: { environment: string; count: number }[];
   };
   operatorVersions?: string;
   orphan: boolean;
 };
 
-/** section is undefined for the group "Not in a section". */
+/**
+ * section is undefined for the group of the registrations without an
+ * existing section. unread is true while a list that the group needs is not
+ * read: PluginRegistration for the group of a section, so that its rows can
+ * be missing, and PluginSection for the group without a section, so that
+ * its sections can exist.
+ */
 export type RegistrationGroup = {
   section?: SectionHeader;
   rows: RegistrationRow[];
+  unread?: boolean;
+};
+
+/**
+ * SourceReads says which lists of RegistrationSources are not read: errors
+ * holds the error of each failed watch, and stale the kind of each list
+ * whose watch has no snapshot on its current connection.
+ */
+export type SourceReads = {
+  errors?: readonly ReadError[];
+  stale?: readonly string[];
 };
 
 /** NO_ENVIRONMENT names the requests whose namespace belongs to no Environment. */
@@ -63,22 +85,12 @@ export function sectionFields(section: PluginSection): SlotField[] {
  */
 export function registrationRow(
   registration: PluginRegistration,
-  sources: RegistrationSources,
+  sources: RegistrationSources & SourceReads,
 ): RegistrationRow {
   const { spec } = registration;
   const accepted = conditionOf(registration, "Accepted");
   const ready = conditionOf(registration, "Ready");
-  const requests = sources.requests.filter(
-    (r) => r.spec.registration === registration.metadata.name,
-  );
-  const counts = new Map<string, number>();
-  for (const request of requests) {
-    const environment = environmentLabel(
-      request.metadata.namespace ?? "",
-      sources,
-    );
-    counts.set(environment, (counts.get(environment) ?? 0) + 1);
-  }
+  const unread = unreadKinds(sources);
   return {
     name: registration.metadata.name ?? "",
     label: spec.label,
@@ -89,12 +101,9 @@ export function registrationRow(
     ...(ready?.status === "True" && {
       healthySince: String(ready.lastTransitionTime),
     }),
-    requests: {
-      total: requests.length,
-      byEnvironment: [...counts]
-        .map(([environment, count]) => ({ environment, count }))
-        .sort((a, b) => compare(a.environment, b.environment)),
-    },
+    ...(!unread.includes("PluginRequest") && {
+      requests: requestCounts(registration, sources, unread),
+    }),
     ...(spec.operatorVersions && { operatorVersions: spec.operatorVersions }),
     orphan: spec.deletionPolicies.includes("Orphan"),
   };
@@ -108,8 +117,9 @@ export function registrationRow(
  * exists only when it has a row. Rows sort by label, then by name.
  */
 export function registrationGroups(
-  sources: RegistrationSources,
+  sources: RegistrationSources & SourceReads,
 ): RegistrationGroup[] {
+  const unread = unreadKinds(sources);
   const sections = [...sources.sections].sort(
     (a, b) =>
       (a.spec.order ?? 0) - (b.spec.order ?? 0) ||
@@ -130,6 +140,7 @@ export function registrationGroups(
       }),
       fields: sectionFields(section),
     },
+    ...(unread.includes("PluginRegistration") && { unread: true }),
     rows: rowsOf(
       sources.registrations.filter((r) =>
         r.spec.sections.includes(section.metadata.name ?? ""),
@@ -139,7 +150,14 @@ export function registrationGroups(
   const lost = sources.registrations.filter(
     (r) => !r.spec.sections.some((s) => names.has(s)),
   );
-  return lost.length > 0 ? [...groups, { rows: rowsOf(lost) }] : groups;
+  if (lost.length === 0) return groups;
+  return [
+    ...groups,
+    {
+      rows: rowsOf(lost),
+      ...(unread.includes("PluginSection") && { unread: true }),
+    },
+  ];
 }
 
 /**
@@ -153,6 +171,41 @@ export function registrationSummary(
     (r) => conditionTrue(r, "Accepted") && conditionTrue(r, "Ready"),
   ).length;
   return { healthy, notHealthy: registrations.length - healthy };
+}
+
+/** unreadKinds returns each kind of reads that failed or is stale, once. */
+export function unreadKinds(reads: SourceReads): string[] {
+  const kinds = [
+    ...(reads.errors ?? []).map((e) => e.kind),
+    ...(reads.stale ?? []),
+  ];
+  return [...new Set(kinds)];
+}
+
+function requestCounts(
+  registration: PluginRegistration,
+  sources: RegistrationSources,
+  unread: readonly string[],
+): NonNullable<RegistrationRow["requests"]> {
+  const requests = sources.requests.filter(
+    (r) => r.spec.registration === registration.metadata.name,
+  );
+  if (unread.includes("Namespace") || unread.includes("Environment"))
+    return { total: requests.length };
+  const counts = new Map<string, number>();
+  for (const request of requests) {
+    const environment = environmentLabel(
+      request.metadata.namespace ?? "",
+      sources,
+    );
+    counts.set(environment, (counts.get(environment) ?? 0) + 1);
+  }
+  return {
+    total: requests.length,
+    byEnvironment: [...counts]
+      .map(([environment, count]) => ({ environment, count }))
+      .sort((a, b) => compare(a.environment, b.environment)),
+  };
 }
 
 function conditionOf(

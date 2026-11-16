@@ -12,13 +12,19 @@ import {
 import { registrationGroups, registrationSummary } from "./groups";
 import { RegistrationList, RegistrationListLive } from "./registration-list";
 
+const watch = vi.hoisted(() => ({ unanswered: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
   }),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => !watch.unanswered.includes(kind)),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  watch.unanswered = [];
+});
 
 const officialCharts = catalog.charts as CatalogChart[];
 const sources = registrationSources();
@@ -166,6 +172,92 @@ describe("RegistrationList", () => {
     expect(screen.getByRole("region", { name: "Access" })).toBeTruthy();
   });
 
+  it("names each list that is not read", () => {
+    list({
+      errors: [{ kind: "PluginRequest", message: "forbidden" }],
+      stale: ["Namespace"],
+    });
+    expect(
+      screen.getByText(
+        "Not read: PluginRequest, Namespace. What needs them shows as not known.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no health count and no chart as not installed while PluginRegistration is not read", () => {
+    const unread = { ...sources, stale: ["PluginRegistration"] };
+    list({
+      groups: registrationGroups(unread),
+      stale: unread.stale,
+      charts: officialCharts,
+    });
+    expect(screen.getByText("Health not known")).toBeTruthy();
+    expect(screen.queryByText(/\d+ healthy/)).toBeNull();
+    const panel = screen.getByRole("region", {
+      name: "Charts you can install",
+    });
+    expect(
+      within(panel).getByText("Which charts are installed is not known."),
+    ).toBeTruthy();
+    expect(within(panel).queryByText("rustfs", { exact: true })).toBeNull();
+  });
+
+  it("says that the options of a section are not known while PluginRegistration is not read", () => {
+    const unread = {
+      ...sources,
+      registrations: [],
+      stale: ["PluginRegistration"],
+    };
+    list({ groups: registrationGroups(unread), stale: unread.stale });
+    const key = screen.getByRole("region", { name: "Encryption key" });
+    expect(within(key).getByText("Options not known")).toBeTruthy();
+    expect(
+      screen.queryByText("No option is installed for this section."),
+    ).toBeNull();
+  });
+
+  it("shows the requests as not known while PluginRequest is not read", () => {
+    const unread = { ...sources, requests: [], stale: ["PluginRequest"] };
+    list({ groups: registrationGroups(unread), stale: unread.stale });
+    const row = rowOf("Secondary storage", "existing-secondary-storage");
+    expect(within(row).getByText("Not known")).toBeTruthy();
+  });
+
+  it("shows the total but not the environments of the requests while Environment is not read", () => {
+    const unread = { ...sources, stale: ["Environment"] };
+    list({ groups: registrationGroups(unread), stale: unread.stale });
+    const row = rowOf("Secondary storage", "existing-secondary-storage");
+    expect(within(row).getByText("1")).toBeTruthy();
+    expect(within(row).getByText("Environments not known")).toBeTruthy();
+    expect(within(row).queryByText(/Production/)).toBeNull();
+  });
+
+  it("puts the registrations under Section not known while PluginSection is not read", () => {
+    const unread = { ...sources, sections: [], stale: ["PluginSection"] };
+    list({
+      groups: registrationGroups(unread),
+      sections: [],
+      stale: unread.stale,
+    });
+    expect(
+      screen.getByRole("region", { name: "Section not known" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "Not in a section" }),
+    ).toBeNull();
+  });
+
+  it("says that the catalog could not be read", () => {
+    list({ catalogError: "reading catalog /catalog.json: ENOENT" });
+    expect(
+      within(
+        screen.getByRole("region", { name: "Charts you can install" }),
+      ).getByRole("alert").textContent,
+    ).toBe(
+      "Could not read the chart catalog: reading catalog /catalog.json: ENOENT",
+    );
+  });
+
   it("hides the catalog panel when every chart is installed or the catalog is empty", () => {
     list({ charts: [] });
     expect(
@@ -203,7 +295,7 @@ describe("RegistrationListLive", () => {
             }),
           ],
         }}
-        charts={officialCharts}
+        catalog={{ charts: officialCharts }}
         now="2026-11-13T09:00:00Z"
       />,
     );
@@ -212,5 +304,48 @@ describe("RegistrationListLive", () => {
     });
     expect(within(panel).queryByText("aws-kms", { exact: true })).toBeNull();
     expect(within(panel).getByText("rustfs", { exact: true })).toBeTruthy();
+  });
+
+  it("shows nothing as empty, healthy, or not installed while a watch has not answered", () => {
+    watch.unanswered = ["PluginRegistration"];
+    render(
+      <RegistrationListLive
+        initial={{ ...sources, registrations: [] }}
+        catalog={{ charts: officialCharts }}
+        now="2026-11-13T09:00:00Z"
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Not read: PluginRegistration. What needs them shows as not known.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("No option is installed for this section."),
+    ).toBeNull();
+    expect(screen.getAllByText("Options not known")).toHaveLength(8);
+    expect(screen.getByText("Health not known")).toBeTruthy();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Charts you can install" }),
+      ).queryByText("rustfs", { exact: true }),
+    ).toBeNull();
+  });
+
+  it("says that the catalog could not be read", () => {
+    render(
+      <RegistrationListLive
+        initial={sources}
+        catalog={{ error: "reading catalog /catalog.json: ENOENT" }}
+        now="2026-11-13T09:00:00Z"
+      />,
+    );
+    expect(
+      within(
+        screen.getByRole("region", { name: "Charts you can install" }),
+      ).getByRole("alert").textContent,
+    ).toBe(
+      "Could not read the chart catalog: reading catalog /catalog.json: ENOENT",
+    );
   });
 });
