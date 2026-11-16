@@ -12,6 +12,7 @@ import {
   useRegistrationDetail,
 } from "./detail-sources";
 import { unreadKinds } from "./groups";
+import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";
 import { ParametersTab } from "./parameters-tab";
@@ -100,6 +101,14 @@ export function RegistrationDetail({
             <ParametersTab
               rows={parameterRows(registration, sources.environments, unread)}
               unread={unread}
+            />
+          </TabsContent>
+          <TabsContent value="grants">
+            <GrantsTab
+              registration={registration}
+              grants={data.grants}
+              unread={unread}
+              now={now}
             />
           </TabsContent>
           <TabsContent value="health">
