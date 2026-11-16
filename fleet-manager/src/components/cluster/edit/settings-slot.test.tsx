@@ -131,7 +131,34 @@ async function openEditors() {
 }
 
 describe("ComponentSettingsEditor", () => {
-  it("renders nothing for a section", () => {
+  it("opens the editor of the Claim tab for a section", async () => {
+    const plugins = [{ section: "volume-encryption", registration: "aws-ebs" }];
+    renderSlot(
+      contextOf({
+        openId: "section:volume-encryption",
+        claim: claim("41", { plugins }),
+        sections: [volumeEncryption],
+        registrations: [
+          {
+            kind: "PluginRegistration",
+            metadata: { name: "aws-ebs" },
+            spec: {
+              label: "Amazon EBS",
+              sections: ["volume-encryption"],
+              mode: "Optional",
+              deletionPolicies: ["Delete"],
+              serviceAccount: { name: "aws-ebs", namespace: "plugins" },
+            },
+          } as unknown as Resource<"PluginRegistration">,
+        ],
+      }),
+    );
+    await openEditors();
+    const option = screen.getByRole("group", { name: "Option" });
+    expect(option.textContent).toContain("Amazon EBS");
+  });
+
+  it("renders nothing for a section that the claim no longer selects", () => {
     renderSlot(contextOf({ openId: "section:backup-storage" }));
     expect(screen.queryByRole("button", { name: "Edit settings" })).toBeNull();
   });

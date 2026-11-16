@@ -135,7 +135,6 @@ describe("ComponentSettings", () => {
         groups={[
           {
             label: "Connectors",
-            component: "connectors",
             embedded: false,
             fields: [],
           },

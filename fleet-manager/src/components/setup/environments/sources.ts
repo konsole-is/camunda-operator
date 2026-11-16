@@ -41,7 +41,7 @@ export type EnvironmentSources = {
  * useEnvironmentSources follows each list of initial live. errors holds the
  * error of each failed watch. The lists then keep their last items, which
  * can be out of date. namespacesStale is true while the watch of the
- * namespaces has no snapshot on its current connection.
+ * namespaces is not fresh (freshKey).
  */
 export function useEnvironmentSources(
   initial: EnvironmentSources,

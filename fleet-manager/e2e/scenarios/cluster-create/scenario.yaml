@@ -1,0 +1,70 @@
+schemaVersion: 1
+description: >-
+  An Environment Apps that lets a claim create its namespace with the
+  label team, and that asks for a new Elasticsearch cluster from the
+  preset small-es as secondary storage. One namespace, apps-existing,
+  belongs to it. The cluster create flow writes a new namespace and a
+  claim in it. No controller runs while the page test runs.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: apps-existing
+      labels:
+        fleet.camunda.io/environment: apps
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      name: default-platform
+    spec:
+      auth:
+        method: basic
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaRelease
+    metadata:
+      name: camunda-8-9-0
+    spec:
+      version: "8.9.0"
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaClusterPreset
+    metadata:
+      name: small
+    spec:
+      cluster:
+        zeebe:
+          replicas: 1
+          partitions: 1
+          replicationFactor: 1
+  - apiVersion: core.camunda.io/v1
+    kind: ElasticsearchClusterPreset
+    metadata:
+      name: small-es
+    spec:
+      cluster:
+        replicas: 1
+        storageSize: "16Gi"
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: Environment
+    metadata:
+      name: apps
+    spec:
+      displayName: Apps
+      platformConfigRef: default-platform
+      presets:
+        camundaCluster: [small]
+        elasticsearchCluster: [small-es]
+      releases:
+        allowed: [camunda-8-9-0]
+        default: camunda-8-9-0
+      namespaceCreation:
+        allowed: true
+        requiredLabelKeys: [team]
+      sections:
+        secondary-storage:
+          required: true
+          allowed: [elasticsearch]
+          default: elasticsearch
+      parameters:
+        elasticsearch:
+          preset:
+            value: small-es

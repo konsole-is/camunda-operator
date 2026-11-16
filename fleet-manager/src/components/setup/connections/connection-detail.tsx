@@ -41,7 +41,8 @@ import {
   draftOf,
   updateChange,
 } from "./draft";
-import { type ContractObject, contractFacts, readyOf } from "./facts";
+import { type ContractObject, contractFacts } from "./facts";
+import { readyOf } from "@/lib/policy";
 import { saveEffects } from "./impact";
 import { SecretRefView } from "./secret-ref-view";
 import {
@@ -138,7 +139,7 @@ export function ConnectionDetail({
       </div>
     );
   }
-  const ready = readyOf(shown);
+  const ready = readyOf(shown.status?.conditions);
   const formErrors = draftErrors(target.kind, draft);
   const unreadLine =
     unread.length > 0

@@ -99,7 +99,11 @@ export function missingInputs(
     }));
 }
 
-function splitFrom(from: string): { section: string; output: string } {
+/**
+ * splitFrom splits the from of an input into the section and the output
+ * key. A from without a slash names a section with an empty output.
+ */
+export function splitFrom(from: string): { section: string; output: string } {
   const slash = from.indexOf("/");
   return slash < 0
     ? { section: from, output: "" }

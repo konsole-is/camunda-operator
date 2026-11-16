@@ -32,7 +32,7 @@ const NOW_INTERVAL_MS = 30_000;
  * While it is not read, charts must not be empty when the catalog has a
  * chart. catalogError is the error of the read of the catalog. Each of
  * errors shows above the groups, and the groups stay. stale holds the kinds
- * whose watch has no snapshot on its current connection, as
+ * whose watch is not fresh (freshKey), as
  * useRegistrationSources gives them. While PluginRegistration is not read,
  * the page shows no health count and no chart as not installed. now is the
  * time that "Healthy since" counts to.

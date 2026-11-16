@@ -13,6 +13,7 @@ import {
   unreadKinds,
 } from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
@@ -345,24 +346,6 @@ export function PlaneView({
       </PlaneClaimEditProvider>
     </div>
   );
-}
-
-// useAnswered gives the kinds whose watch got a snapshot at least once. A
-// kind stays in it after a reconnect, so a failed first read does not come
-// back then.
-function useAnswered(
-  lists: readonly {
-    kind: KindName;
-    opts: { namespace?: string; name?: string };
-  }[],
-): ReadonlySet<string> {
-  const fresh = useWatchesFresh(lists);
-  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
-  const added = lists
-    .filter(({ kind }, i) => fresh[i] && !answered.has(kind))
-    .map(({ kind }) => kind);
-  if (added.length > 0) setAnswered(new Set([...answered, ...added]));
-  return answered;
 }
 
 function textOf(value: unknown): string | undefined {

@@ -5,6 +5,7 @@ import { describeIsomorphic } from "../../../test/imports/scan";
 describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/claims/hosts",
   "@/lib/claims/names",
+  "@/lib/claims/requests",
   "@/lib/drafts",
   "@/lib/environments",
   "@/lib/fields",
@@ -14,4 +15,5 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/policy",
   "@/lib/session/locks",
   "@/lib/session/steps",
+  "@/lib/write/create",
 ]);

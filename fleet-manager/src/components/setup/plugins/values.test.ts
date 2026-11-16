@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { condition } from "./fixtures";
-import { conditionsOf, listOf } from "./values";
+import { conditionsOf, listOf, readyOf } from "./values";
 
 describe("listOf", () => {
   it("gives an empty list for no value", () => {
@@ -52,5 +52,16 @@ describe("conditionsOf", () => {
     ).toEqual({
       error: "Condition 2 is not a valid condition.",
     });
+  });
+});
+
+describe("readyOf", () => {
+  it("gives the Ready condition, and nothing for conditions that conditionsOf refuses", () => {
+    const ready = condition("Ready", "False", "Unreachable");
+    expect(readyOf([condition("Other", "True", "Healthy"), ready])).toBe(ready);
+    expect(readyOf("Ready")).toBeUndefined();
+    expect(
+      readyOf([ready, { type: "Other", status: "Maybe" }]),
+    ).toBeUndefined();
   });
 });

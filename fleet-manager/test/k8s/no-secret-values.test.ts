@@ -24,6 +24,10 @@ import {
   previewPlaneClaimChange,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import {
+  createCluster,
+  previewClusterCreate,
+} from "@/app/fleet/clusters/new/actions";
+import {
   createPlane,
   previewPlaneCreate,
 } from "@/app/fleet/planes/new/actions";
@@ -433,6 +437,14 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         },
       }),
     ),
+  "app/fleet/clusters/new/actions.ts#previewClusterCreate": previewed(() =>
+    previewClusterCreate(clusterCreate({ presetRef: "leak" })),
+  ),
+  // The claim has no presetRef, which the API server requires, so the
+  // write refuses it with Invalid and leaves nothing behind.
+  "app/fleet/clusters/new/actions.ts#createCluster": refused("Invalid", () =>
+    createCluster(clusterCreate({})),
+  ),
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": previewed(() =>
     previewPlaneCreate(planeCreate(planeSpec())),
   ),
@@ -734,6 +746,14 @@ function planeClaimChange() {
       },
     ],
   };
+}
+function clusterCreate(spec: object) {
+  return createChangeOf("Create the cluster leak", {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: { name: "leak", namespace },
+    spec,
+  });
 }
 function planeCreate(spec: object) {
   return createChangeOf("Create the management plane leak", {

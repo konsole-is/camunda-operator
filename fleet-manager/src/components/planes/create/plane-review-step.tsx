@@ -1,8 +1,9 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCreateReview } from "@/components/create/use-create-review";
 import { ReviewPanel } from "@/components/fleet/review-panel";
+import { useStepperErrors } from "@/components/fleet/wizard-stepper";
 import { objectDiff } from "@/lib/diff";
 import {
   type PlaneContext,
@@ -43,7 +44,7 @@ export function PlaneReviewStep({
   preview,
   create,
   onWritten,
-  blocked: held = false,
+  blocked = false,
   onBack,
 }: {
   change: Change;
@@ -57,56 +58,14 @@ export function PlaneReviewStep({
   blocked?: boolean;
   onBack?: () => void;
 }) {
-  const key = JSON.stringify(change);
-  const [previewed, setPreviewed] = useState<{
-    key: string;
-    result: Preview;
-  }>();
-  const [writing, setWriting] = useState(false);
-  // A second click arrives before React disables the button.
-  const writingNow = useRef(false);
-  const previewRef = useRef(preview);
-  useEffect(() => {
-    previewRef.current = preview;
+  const { refusals, pending, confirm } = useCreateReview({
+    change,
+    preview,
+    create,
+    onWritten,
+    blocked,
   });
-
-  useEffect(() => {
-    let current = true;
-    previewRef
-      .current(JSON.parse(key) as Change)
-      .catch((error: unknown): Preview => ({
-        objects: [],
-        errors: [{ code: "Unavailable", message: String(error) }],
-      }))
-      .then((result) => {
-        if (current) setPreviewed({ key, result });
-      });
-    return () => {
-      current = false;
-    };
-  }, [key]);
-
-  const checked = previewed?.key === key ? previewed.result : undefined;
-  const refusals = checked?.errors.map((e) => e.message) ?? [];
-  const blocked = held || !checked || refusals.length > 0;
-
-  async function confirm() {
-    if (writingNow.current || blocked) return;
-    writingNow.current = true;
-    setWriting(true);
-    try {
-      const result = await create(change).catch(
-        (error: unknown): WriteResult => ({
-          ok: false,
-          errors: [{ code: "Unavailable", message: String(error) }],
-        }),
-      );
-      onWritten(result);
-    } finally {
-      writingNow.current = false;
-      setWriting(false);
-    }
-  }
+  const describedBy = useStepperErrors();
 
   return (
     <ReviewPanel
@@ -134,7 +93,8 @@ export function PlaneReviewStep({
       }
       mode={mode}
       confirmLabel="Create"
-      pending={writing || blocked}
+      pending={pending}
+      describedBy={describedBy}
       onConfirm={confirm}
       onCancel={onBack}
     />

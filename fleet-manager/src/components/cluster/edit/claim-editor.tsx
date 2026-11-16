@@ -168,6 +168,18 @@ function viewOf(
       sections: context.sections,
       registrations: context.registrations,
     });
+  return claimViewAfter(context, session);
+}
+
+/**
+ * claimViewAfter returns the read view of the claim of session after its
+ * pending changes. A ref that the claim leaves empty shows the value that
+ * the cluster gets after the changes, not the live one.
+ */
+export function claimViewAfter(
+  context: ClusterSlotContext,
+  session: Session<ClusterClaim>,
+): ClaimView {
   const merged = mergedSpecs(changeInputOf(context, session)).after;
   const { releaseRef, platformConfigRef } = merged.spec;
   return claimView({

@@ -7,6 +7,7 @@ import {
   clusterFieldsInputOf,
   componentSettings,
   operatorVersionOf,
+  sectionSettings,
   settingsGroupsOf,
 } from "./settings";
 
@@ -196,5 +197,29 @@ describe("settingsGroupsOf", () => {
         connectors: { enabled: false },
       }).map((g) => g.label),
     ).toContain("Connectors");
+  });
+});
+
+describe("sectionSettings", () => {
+  it("gives one block of the parameters of a selection, named by its section and option", () => {
+    const parameters = [
+      { key: "secondary-storage/elasticsearch:spec.parameters.preset" },
+    ] as unknown as ClusterField[];
+    expect(
+      sectionSettings({
+        id: "section:secondary-storage",
+        section: "secondary-storage",
+        sectionLabel: "Secondary storage",
+        registration: "elasticsearch",
+        optionLabel: "Elasticsearch",
+        parameters,
+      }),
+    ).toEqual([
+      {
+        label: "Secondary storage: Elasticsearch",
+        embedded: false,
+        fields: parameters,
+      },
+    ]);
   });
 });
