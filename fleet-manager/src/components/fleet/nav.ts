@@ -26,7 +26,7 @@ const item = (slug: string, label: string, kind?: string): SetupItem => ({
 export const SETUP_ITEMS: readonly SetupItem[] = [
   item("environments", "Environments", "environment"),
   item("presets", "Presets"),
-  item("releases", "Releases"),
+  item("releases", "Releases", "release"),
   item("platform", "Platform"),
   item("connections", "Connections"),
   item("plugins", "Plugins"),

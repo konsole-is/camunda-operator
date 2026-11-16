@@ -67,7 +67,6 @@ function data(managed = true): ClusterPageData {
     presets: [],
     releases: [],
     storage: [],
-    accessRequests: [],
     requests: [],
     pods: [],
     podSelector: "camunda.io/cluster=orders",

@@ -73,3 +73,24 @@ export const UsageNotAvailable: Story = {
     usage: "unavailable",
   },
 };
+
+const accessWaiting: ConditionRow = {
+  type: "Ready",
+  status: "False",
+  reason: "WaitingForEndpoints",
+  message: "The gateway has no address yet",
+  lastTransitionTime: "2026-10-30T11:58:00Z",
+};
+
+export const ComponentWithoutPods: Story = {
+  name: "Component without pods",
+  args: {
+    title: "Access",
+    subtitle: "Gateway access",
+    conditions: [accessWaiting],
+    ready: accessWaiting,
+    pods: [],
+    usage: [],
+    podless: true,
+  },
+};

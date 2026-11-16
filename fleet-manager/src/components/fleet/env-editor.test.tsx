@@ -253,4 +253,46 @@ describe("EnvEditor", () => {
       }),
     ).toBeTruthy();
   });
+
+  it("marks a Secret entry with the namespaces that miss it", () => {
+    render(
+      <EnvEditor
+        label="Environment variables"
+        secrets={[{ name: "db", keys: ["user"] }]}
+        defaultValue={[
+          {
+            name: "DB_USER",
+            valueFrom: { secretKeyRef: { name: "db", key: "user" } },
+          },
+        ]}
+        missingIn={(name, key) =>
+          name === "db" && key === "user" ? ["team-a", "team-c"] : []
+        }
+      />,
+    );
+    const row = screen.getByRole("group", { name: "Variable 1" });
+    const line = within(row).getByText("Missing in team-a, team-c");
+    expect(
+      within(row)
+        .getByRole("combobox", { name: "Secret" })
+        .getAttribute("aria-describedby")
+        ?.split(" "),
+    ).toContain(line.id);
+  });
+
+  it("shows no missing line without missingIn", () => {
+    render(
+      <EnvEditor
+        label="Environment variables"
+        secrets={[{ name: "db", keys: ["user"] }]}
+        defaultValue={[
+          {
+            name: "DB_USER",
+            valueFrom: { secretKeyRef: { name: "db", key: "user" } },
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByText(/Missing in/)).toBeNull();
+  });
 });

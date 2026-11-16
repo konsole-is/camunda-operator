@@ -1,16 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import type {
+  SectionComponent,
+  SectionComponentId,
+} from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
 import {
+  type CardInput,
   type ComponentCardModel,
   componentCards,
   componentOf,
   componentReady,
   highestUse,
   highestUseOf,
+  isSectionId,
+  overviewHref,
   partitionsLed,
+  sectionCards,
 } from "./cards";
 
 function pod(
@@ -389,4 +397,176 @@ describe("componentReady", () => {
 
   it("gives a component without a condition none", () =>
     expect(componentReady("operate", [])).toBeUndefined());
+});
+
+type RequestStatus = NonNullable<Resource<"PluginRequest">["status"]>;
+
+const request = (status: RequestStatus): Resource<"PluginRequest"> =>
+  ({
+    kind: "PluginRequest",
+    metadata: { name: "orders-backup-storage", namespace: "team-a" },
+    spec: { registration: "aws-s3", section: "backup-storage" },
+    status,
+  }) as Resource<"PluginRequest">;
+
+const row = (kind: string) => ({
+  kind,
+  name: `orders-${kind}`,
+  onOrphan: "Kept" as const,
+});
+
+const section = (over: Partial<SectionComponent> = {}): SectionComponent => ({
+  id: "section:backup-storage",
+  section: "backup-storage",
+  label: "Backup storage",
+  order: 4,
+  selection: { section: "backup-storage", registration: "aws-s3" },
+  ...over,
+});
+
+describe("sectionCards", () => {
+  it("makes one used card for each section component, in the order given", () => {
+    const cards = sectionCards([
+      section(),
+      section({ id: "section:access", section: "access", label: "Access" }),
+    ]);
+    expect(cards.map((c) => [c.id, c.label, c.used])).toEqual([
+      ["section:backup-storage", "Backup storage", true],
+      ["section:access", "Access", true],
+    ]);
+  });
+
+  it("gives a section card no pods and no embedded apps", () => {
+    const [card] = sectionCards([section()]);
+    expect([card.pods, card.embedded]).toEqual([[], []]);
+  });
+
+  it("shows the first summary item as the headline and counts the resources", () => {
+    const [card] = sectionCards([
+      section({
+        request: request({
+          summary: [
+            { label: "Bucket", value: "orders-backups", severity: "Info" },
+            { label: "Objects", value: "12" },
+          ],
+          resources: [row("Bucket"), row("Grant")],
+        }),
+      }),
+    ]);
+    expect(card.numbers).toEqual([
+      { label: "Bucket", value: "orders-backups" },
+      { label: "Resources", value: "2" },
+    ]);
+  });
+
+  it("carries a Warning or Error severity of the headline", () => {
+    const [error, warning] = sectionCards([
+      section({
+        request: request({
+          summary: [
+            { label: "Key", value: "Pending deletion", severity: "Error" },
+          ],
+        }),
+      }),
+      section({
+        request: request({
+          summary: [{ label: "Key", value: "Rotating", severity: "Warning" }],
+        }),
+      }),
+    ]);
+    expect(error.numbers[0]).toEqual({
+      label: "Key",
+      value: "Pending deletion",
+      severity: "Error",
+    });
+    expect(warning.numbers[0]).toEqual({
+      label: "Key",
+      value: "Rotating",
+      severity: "Warning",
+    });
+  });
+
+  it("says that a request has no summary yet", () => {
+    const [card] = sectionCards([section({ request: request({}) })]);
+    expect(card.numbers).toEqual([
+      { label: "Summary", value: "Not written yet" },
+      { label: "Resources", value: "0" },
+    ]);
+  });
+
+  it("says that the request is not made yet when the section has none", () => {
+    const [card] = sectionCards([section()]);
+    expect(card.numbers).toEqual([{ label: "Request", value: "Not made yet" }]);
+    expect(card.condition).toBeUndefined();
+  });
+
+  it("says that the request could not be read when the read of the requests failed", () => {
+    const [card] = sectionCards([section()], "forbidden");
+    expect(card.numbers).toEqual([
+      { label: "Request", value: "Could not read", severity: "Warning" },
+    ]);
+  });
+
+  it("shows a request that the page holds although the read of the requests failed", () => {
+    const [card] = sectionCards(
+      [section({ request: request({ resources: [row("Bucket")] }) })],
+      "watch broke",
+    );
+    expect(card.numbers).toEqual([
+      { label: "Summary", value: "Not written yet" },
+      { label: "Resources", value: "1" },
+    ]);
+  });
+
+  it("takes the Ready condition of the request as the state of the card", () => {
+    const rejected = {
+      type: "Ready",
+      status: "False" as const,
+      reason: "GrantRejected",
+      message: "Grant orders-read has Ready=False",
+    };
+    const [card] = sectionCards([section({ condition: rejected })]);
+    expect(card.condition).toEqual(rejected);
+  });
+});
+
+describe("overviewHref", () => {
+  const input: CardInput = {
+    spec: spec({ gateway: { mode: "Standalone" } }),
+    pods: [],
+    optimize: optimizeWith([]),
+  };
+
+  it.each([
+    "section:backup-storage",
+    "section:access/gateway-access",
+    "zeebe",
+    "optimize",
+  ] as const)(
+    "gives a URL whose component componentOf reads back as %s",
+    (id) => {
+      const cards = [
+        ...componentCards(input),
+        ...sectionCards([section({ id: id as SectionComponentId })]),
+      ];
+      const value = new URLSearchParams(overviewHref(id).slice(1)).get(
+        "component",
+      );
+      expect(componentOf(value, cards)).toBe(id);
+    },
+  );
+
+  it("keeps the plain form for a process", () =>
+    expect(overviewHref("zeebe")).toBe("?tab=overview&component=zeebe"));
+
+  it("gives the cards for null", () =>
+    expect(overviewHref(null)).toBe("?tab=overview"));
+});
+
+describe("isSectionId", () => {
+  it("is true for a section id only", () => {
+    expect(isSectionId("section:access")).toBe(true);
+    expect(isSectionId("zeebe")).toBe(false);
+    expect(isSectionId("optimize")).toBe(false);
+  });
 });

@@ -31,6 +31,10 @@ import {
   previewPresetChange,
 } from "@/app/setup/presets/actions";
 import {
+  applyReleaseChange,
+  previewReleaseChange,
+} from "@/app/setup/releases/actions";
+import {
   saveSettings,
   testGitConnection,
   testPrometheusQuery,
@@ -330,6 +334,15 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   // removes nothing.
   "app/setup/presets/actions.ts#applyPresetChange": () =>
     applyPresetChange(presetDelete()),
+  "app/setup/releases/actions.ts#previewReleaseChange": () =>
+    previewReleaseChange(releaseChange()),
+  // A precondition for an object that does not exist refuses with Stale,
+  // so this write leaves nothing behind.
+  "app/setup/releases/actions.ts#applyReleaseChange": () =>
+    applyReleaseChange({
+      ...releaseChange(),
+      preconditions: { [`CamundaRelease//${namespace}`]: "1" },
+    }),
   "app/setup/settings/actions.ts#saveSettings": async () =>
     saveSettings(
       { "git.path": "y" },
@@ -364,6 +377,20 @@ function environmentChange() {
         kind: "Environment",
         metadata: { name: namespace },
         spec: { displayName: "Leak" },
+      },
+    ],
+  };
+}
+
+function releaseChange() {
+  return {
+    intent: "Create the release leak",
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaRelease",
+        metadata: { name: namespace },
+        spec: { version: "8.9.0" },
       },
     ],
   };
@@ -416,6 +443,7 @@ const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#testGit": () => settings.testGit(),
   "settings#testPrometheus": () => settings.testPrometheus(),
   "secrets#listSecretRefs": () => secrets.listSecretRefs(namespace),
+  "secrets#listSecretRefsIn": () => secrets.listSecretRefsIn([namespace]),
   "secrets#writeSecretValue": () =>
     secrets.writeSecretValue(
       { namespace, name: "leak", key: "token" },
