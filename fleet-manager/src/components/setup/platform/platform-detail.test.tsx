@@ -59,9 +59,7 @@ function setup(
   } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
-    previewChange: vi.fn<PlatformActions["previewChange"]>(
-      async () => preview,
-    ),
+    previewChange: vi.fn<PlatformActions["previewChange"]>(async () => preview),
     applyChange: vi.fn<PlatformActions["applyChange"]>(async () => ({
       ok: true as const,
       mode: "direct" as const,
@@ -266,7 +264,9 @@ describe("PlatformDetail", () => {
       ),
     ).toBeDefined();
     expect(screen.queryByText("Nothing uses this config.")).toBeNull();
-    expect(screen.queryByText(/^No cluster or management plane uses/)).toBeNull();
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
   });
 
   it("offers no delete while the watch of a kind that can use the config has not answered", () => {

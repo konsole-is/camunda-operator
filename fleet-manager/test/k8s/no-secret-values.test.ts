@@ -27,6 +27,10 @@ import {
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
 import {
+  applyPlatformConfigChange,
+  previewPlatformConfigChange,
+} from "@/app/setup/platform/actions";
+import {
   applyReleaseChange,
   previewReleaseChange,
 } from "@/app/setup/releases/actions";
@@ -324,6 +328,15 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...labelChange(),
       preconditions: { [`Namespace//${namespace}-gone`]: "1" },
     }),
+  "app/setup/platform/actions.ts#previewPlatformConfigChange": () =>
+    previewPlatformConfigChange(platformConfigChange()),
+  // A precondition for an object that does not exist refuses with Stale,
+  // so this write leaves nothing behind.
+  "app/setup/platform/actions.ts#applyPlatformConfigChange": () =>
+    applyPlatformConfigChange({
+      ...platformConfigChange(),
+      preconditions: { [`CamundaPlatformConfig//${namespace}`]: "1" },
+    }),
   "app/setup/releases/actions.ts#previewReleaseChange": () =>
     previewReleaseChange(releaseChange()),
   // A precondition for an object that does not exist refuses with Stale,
@@ -352,6 +365,20 @@ function environmentChange() {
         kind: "Environment",
         metadata: { name: namespace },
         spec: { displayName: "Leak" },
+      },
+    ],
+  };
+}
+
+function platformConfigChange() {
+  return {
+    intent: "Change the platform config leak",
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaPlatformConfig",
+        metadata: { name: namespace },
+        spec: { auth: { method: "basic" } },
       },
     ],
   };

@@ -88,8 +88,13 @@ describe("PlatformConfigPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "basic-lab" }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Review the delete" })).toBeTruthy();
-    expect(seen.imagesTable).toEqual({ schemaVersion: 1, minors: { "8.9": {} } });
+    expect(
+      screen.getByRole("button", { name: "Review the delete" }),
+    ).toBeTruthy();
+    expect(seen.imagesTable).toEqual({
+      schemaVersion: 1,
+      minors: { "8.9": {} },
+    });
     expect(dynamic).toBe("force-dynamic");
   });
 
@@ -113,7 +118,9 @@ describe("PlatformConfigPage", () => {
         "Delete is possible when the fleet manager can read Environment.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Review the delete" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
     expect(
       screen.getByText(
         "The users are not known while the fleet manager cannot read Environment.",

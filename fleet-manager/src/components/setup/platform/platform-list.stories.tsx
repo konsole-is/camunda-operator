@@ -25,5 +25,9 @@ const unread = {
 
 export const UsersNotKnown: Story = {
   name: "A list that cannot be read",
-  args: { rows: platformRows(unread), errors: unread.errors, stale: unread.stale },
+  args: {
+    rows: platformRows(unread),
+    errors: unread.errors,
+    stale: unread.stale,
+  },
 };

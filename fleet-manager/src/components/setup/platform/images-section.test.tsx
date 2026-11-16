@@ -91,7 +91,9 @@ describe("ImagesSection", () => {
   it("does not call the config unused when its users are not known", () => {
     setup([], {}, [], false);
 
-    expect(screen.queryByText(/^No cluster or management plane uses/)).toBeNull();
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
     expect(
       screen.getByText(
         "The users of this config are not known. The defaults are those of Camunda 8.10, the newest in the images table.",
