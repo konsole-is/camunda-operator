@@ -8,6 +8,7 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/clusters/draft",
   "@/lib/drafts",
   "@/lib/environments",
+  "@/lib/fields",
   "@/lib/fields/slots",
   "@/lib/policy",
   "@/lib/schema",

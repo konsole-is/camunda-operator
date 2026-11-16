@@ -451,3 +451,28 @@ describe("planeFields", () => {
     }
   });
 });
+
+describe("planeFields with a null value in the claim", () => {
+  it("reads a null management block, admin, and versions as unset", () => {
+    const claim = structuredClone(keycloakClaim);
+    const spec = claim.spec as unknown as Record<string, unknown>;
+    spec.versions = null;
+    spec.management = null;
+    const fields = planeFields({ claim, registrations });
+    expect(byKey(fields, "identityProvider").value).toBe("keycloak");
+    expect(byKey(fields, "admin.username").value).toBeUndefined();
+    expect(byKey(fields, "console").value).toBe(false);
+    expect(byKey(fields, "versions.identity").value).toBeUndefined();
+  });
+
+  it("reads a null mode block as no such mode", () => {
+    const claim = structuredClone(keycloakClaim);
+    Object.assign(claim.spec.management, {
+      identityProvider: { keycloak: {}, oidc: null },
+      console: null,
+    });
+    const fields = planeFields({ claim, registrations });
+    expect(byKey(fields, "identityProvider").value).toBe("keycloak");
+    expect(byKey(fields, "console").value).toBe(false);
+  });
+});

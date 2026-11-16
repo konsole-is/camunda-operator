@@ -93,13 +93,14 @@ export function planeFields(input: {
 }): PlaneField[] {
   const { claim, plane, registrations, environment } = input;
   const spec = claim.spec;
-  const management = spec.management;
-  const mode = modeOf(management.identityProvider);
+  // Another tool can write null where the CRD expects an object.
+  const management: Partial<typeof spec.management> = spec.management ?? {};
+  const mode = modeOf(management.identityProvider ?? {});
   const running = {
     identity: true,
     keycloak: mode === "keycloak",
-    console: management.console !== undefined,
-    webModeler: management.webModeler !== undefined,
+    console: management.console != null,
+    webModeler: management.webModeler != null,
   };
   const selections = (spec.plugins ?? []) as PluginSelection[];
   const recorded = claim.status?.resolvedPolicy as ResolvedPolicy | undefined;
@@ -155,7 +156,8 @@ export function planeFields(input: {
     mode,
     fieldSteps("spec", "management", "identityProvider"),
   );
-  const admin = management.identity.admin;
+  const admin: Partial<typeof spec.management.identity.admin> =
+    management.identity?.admin ?? {};
   const adminSteps = (name: string) =>
     fieldSteps("spec", "management", "identity", "admin", name);
   if (mode === "oidc") {
@@ -244,7 +246,7 @@ export function planeFields(input: {
     );
   }
 
-  const versions: Record<string, string | undefined> = spec.versions;
+  const versions: Record<string, string | undefined> = spec.versions ?? {};
   for (const [app, label] of VERSIONS) {
     if (!running[app]) continue;
     add(
@@ -387,8 +389,8 @@ function policiesOf(
 }
 
 function modeOf(provider: object): Mode {
-  if ("oidc" in provider && provider.oidc !== undefined) return "oidc";
-  if ("externalKeycloak" in provider && provider.externalKeycloak !== undefined)
+  if ("oidc" in provider && provider.oidc != null) return "oidc";
+  if ("externalKeycloak" in provider && provider.externalKeycloak != null)
     return "externalKeycloak";
   return "keycloak";
 }
