@@ -42,10 +42,9 @@ var scenarioTime = metav1.NewTime(time.Date(2026, time.January, 1, 0, 0, 0, 0, t
 // secretValue is the one value of every key of every Secret in the outputs.
 const secretValue = "scenario"
 
-// scenarioConfigHash is the one value of every config hash annotation in the
-// outputs and in each pod template that the simulator hashes. The hash covers
-// the UID of a Secret that the operator generates, and that UID differs on
-// each run.
+// scenarioConfigHash is the one value of the config hash annotation of each
+// object in the outputs and of its spec.template, and of each pod template
+// that the simulator hashes.
 const scenarioConfigHash = "scenario"
 
 // scenarioNode is the node that every Pod of a scenario runs on. The
@@ -80,7 +79,7 @@ const (
 //  4. Each RFC 3339 string becomes scenarioTime, in the layout of the
 //     original.
 //  5. Each value of a v1 Secret becomes secretValue.
-//  6. The config hash annotation of an object and of its pod template
+//  6. The config hash annotation of an object and of its spec.template
 //     becomes scenarioConfigHash.
 //  7. metadata.managedFields are sorted by manager, operation, and
 //     subresource.
@@ -256,7 +255,8 @@ func (s *serviceIPs) assign(objs []unstructured.Unstructured) (map[string]string
 }
 
 // normalizeObject applies rules 2 to 9 of normalize to obj, a copy that it
-// may change. uids maps each real UID to its scenario UID, and ips maps the
+// may change, apart from the resource version of the object that an Event is
+// about. uids maps each real UID to its scenario UID, and ips maps the
 // namespace and name of each Service with a cluster IP to its scenario IP.
 func normalizeObject(
 	obj *unstructured.Unstructured,
@@ -273,6 +273,7 @@ func normalizeObject(
 		}
 	}
 
+	// The config hash covers the UID of a Secret that the operator generates.
 	hash := camundamanagementcluster.ConfigHashAnnotation
 	for _, field := range [][]string{
 		{"metadata", "annotations", hash},

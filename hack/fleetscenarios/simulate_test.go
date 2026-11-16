@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
+	operatorlabels "github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // fakeClient returns a fake client with the status subresource of every kind
@@ -281,6 +282,24 @@ func TestTemplateHashIgnoresTheValueOfTheConfigHash(t *testing.T) {
 		"the template keeps its own config hash")
 
 	newImage := withConfigHash("0429b9eafb6e532c")
+	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
+	assert.NotEqual(t, templateHash(first, d), templateHash(newImage, d))
+}
+
+func TestTemplateHashIgnoresTheUIDOfAnObjectThatIsNotAnOwner(t *testing.T) {
+	d := webapp()
+	withClusterUID := func(uid string) corev1.PodTemplateSpec {
+		template := *d.Spec.Template.DeepCopy()
+		template.Labels[operatorlabels.ClusterUIDKey] = uid
+		return template
+	}
+
+	first := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
+	assert.Equal(t, templateHash(first, d), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), d))
+	assert.Equal(t, "6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71", first.Labels[operatorlabels.ClusterUIDKey],
+		"the template keeps its own UID")
+
+	newImage := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
 	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
 	assert.NotEqual(t, templateHash(first, d), templateHash(newImage, d))
 }

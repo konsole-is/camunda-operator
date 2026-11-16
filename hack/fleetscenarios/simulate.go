@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -855,15 +856,14 @@ func (s *simulator) writePodStatus(ctx context.Context, pod *corev1.Pod, status 
 }
 
 // templateHash returns the first 10 hex characters of the SHA-256 of the
-// JSON of t, the template of workload. A template can hold the UID of an
-// owner of workload, such as a label that names the owner, and the UID of
-// an object differs on each run. The hash takes the scenario UID of each
-// owner in its place, so it is the same on each run. It ignores the value of
-// the config hash annotation, so two templates that differ only in that
-// value get one hash.
+// JSON of t, the template of workload. Two templates of workload that differ
+// only in the UID of an owner of workload, in the value of a label or
+// annotation that is a UID, or in the value of the config hash annotation
+// get one hash.
 func templateHash(t corev1.PodTemplateSpec, workload metav1.Object) string {
+	t.Labels = withFixedUIDs(t.Labels)
+	t.Annotations = withFixedUIDs(t.Annotations)
 	if _, ok := t.Annotations[camundamanagementcluster.ConfigHashAnnotation]; ok {
-		t.Annotations = maps.Clone(t.Annotations)
 		t.Annotations[camundamanagementcluster.ConfigHashAnnotation] = scenarioConfigHash
 	}
 
@@ -874,6 +874,16 @@ func templateHash(t corev1.PodTemplateSpec, workload metav1.Object) string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])[:10]
+}
+
+func withFixedUIDs(values map[string]string) map[string]string {
+	out := maps.Clone(values)
+	for key, value := range out {
+		if id, err := uuid.Parse(value); err == nil && id.String() == value {
+			out[key] = uuid.Nil.String()
+		}
+	}
+	return out
 }
 
 // podSuffix returns 5 characters from the alphabet of the generated names
