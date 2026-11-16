@@ -14,10 +14,12 @@ type Fixture = {
 const k8s = vi.hoisted(() => ({
   objects: [] as Fixture[],
   lists: [] as { kind: string; opts: unknown }[],
+  gets: [] as string[],
   failing: [] as string[],
 }));
 vi.mock("@/lib/k8s/read", () => ({
   get: async (kind: string, namespace: string, name: string) => {
+    k8s.gets.push(kind);
     if (k8s.failing.includes(kind)) throw new Error(`${kind} is forbidden`);
     return k8s.objects.find(
       (o) =>
@@ -36,6 +38,7 @@ vi.mock("@/lib/k8s/read", () => ({
 beforeEach(() => {
   k8s.objects = [];
   k8s.lists = [];
+  k8s.gets = [];
   k8s.failing = [];
 });
 
@@ -165,6 +168,8 @@ describe("loadPlanePage", () => {
   it("reads no Secret", async () => {
     k8s.objects = [claim("plane-a")];
     await loadPlanePage("platform", "plane-a");
+    expect(k8s.gets).toContain("CamundaManagementCluster");
+    expect(k8s.gets).not.toContain("Secret");
     expect(k8s.lists.map((l) => l.kind)).not.toContain("Secret");
   });
 });
