@@ -168,6 +168,9 @@ describe("UsedByTab", () => {
       termOf("team-orders/orders-secondary-storage", "Headline").textContent,
     ).toBe("Not known: PluginRequest is not read.");
     expect(
+      termOf("team-orders/orders-secondary-storage", "Resources").textContent,
+    ).toBe("Not known: PluginRequest is not read.");
+    expect(
       screen.getByText(
         "The list can miss requests: PluginRequest is not read.",
       ),

@@ -13,7 +13,7 @@ const MUTED = "block text-xs text-muted";
  * environment, OutputsReady and Ready, its headline, its resources, its
  * Grants, and its deletion policy. unread holds the kinds that are not
  * read: with PluginRequest in it, the tab never says that no claim uses the
- * option, and shows no condition and no headline of a request.
+ * option, and shows no condition, headline, or resources of a request.
  */
 export function UsedByTab({
   rows,
@@ -94,7 +94,9 @@ export function UsedByTab({
                 )}
               </Term>
               <Term label="Resources">
-                {row.resources.length === 0 ? (
+                {row.healthUnknown ? (
+                  <NotKnown kinds={["PluginRequest"]} />
+                ) : row.resources.length === 0 ? (
                   <span className="text-muted">None reported</span>
                 ) : (
                   <ul className="flex flex-col gap-1.5">

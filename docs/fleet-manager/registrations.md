@@ -153,7 +153,7 @@ The page of an option shows the same red line and the same `Not read:` line. It 
 | `PluginRegistration` | `Not known` on the tab **Health** in place of the conditions, and for **Other options of this controller** on the tab **About**. The tabs **About**, **Contract**, **Parameters**, and **Grants** show the registration as the page last read it, with the line `This is the registration as the page last read it. It can be old.` |
 | `PluginSection` | `Not known` in place of `Not a section on this cluster` on the tab **Contract**. |
 | `Environment` | `Values of the environments: Not known` on the tab **Parameters**, with no line for an environment. The tab shows no parameter that only an environment sets. If it has no other parameter, it shows `Not known` in place of `This option takes no parameters.` |
-| `PluginRequest` | `Not known` in place of `No claim uses this option.` on the tab **Used by**. Each request that the page still shows has `Ready: Not known`, `OutputsReady: Not known`, and `Not known` for **Headline**. |
+| `PluginRequest` | `Not known` in place of `No claim uses this option.` on the tab **Used by**. Each request that the page still shows has `Ready: Not known`, `OutputsReady: Not known`, and `Not known` for **Headline** and **Resources**. |
 | `Namespace` or `Environment` | `Not known` for **Environment** on the tab **Used by**. |
 | `Grant` | No count of ready and refused Grants on the tab **Grants**. Each Grant that the page still shows has `Applied: Not known`, `MatchesTemplate: Not known`, and `Ready: Not known`. `Not known` for **Grants** on the tab **Used by**. |
 | `Event` | `Not known` in place of `No events` on the tab **Health**. Events that the page read before stay, with a line that the list can miss events. |
