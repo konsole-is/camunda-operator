@@ -84,10 +84,15 @@ export function ClusterReviewStep({
             <SummaryGroup key={group.label} {...group} />
           ))}
           {namespace && (
-            <DiffView
-              label="The namespace"
-              lines={objectDiff(undefined, namespace)}
-            />
+            <div className="flex min-w-0 flex-col gap-2">
+              <h3 className="font-heading text-sm font-semibold">
+                The new namespace
+              </h3>
+              <DiffView
+                label="The namespace"
+                lines={objectDiff(undefined, namespace)}
+              />
+            </div>
           )}
           <GrantPreviewList
             previews={grants}
