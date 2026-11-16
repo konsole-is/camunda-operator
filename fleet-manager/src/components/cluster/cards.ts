@@ -11,6 +11,7 @@ import {
   conditionsAt,
 } from "@/lib/conditions";
 import type { Resource } from "@/lib/k8s/kinds";
+import { isObject } from "@/lib/policy";
 import {
   COMPONENT_LABEL,
   OPTIMIZE_COMPONENTS,
@@ -165,52 +166,73 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
  * sectionCards returns one used card for each section component, in the
  * order given. The headline is the first summary item of the request, with
  * its Warning or Error severity, then the count of its resources. A section
- * whose request does not exist yet says so. With requestsError, the error
- * of the read of the PluginRequests, a section without its request says
- * that the request could not be read. The Ready condition of the request
- * is the state of the card.
+ * whose request does not exist yet says so. The Ready condition of the
+ * request is the state of the card. With requestsError, the error of the
+ * read of the PluginRequests, or with requestsStale, when their list is out
+ * of date, no card shows a request or a state: each says that the request
+ * could not be read, or is not known. A summary or resources of the wrong
+ * type, which a watch can give, show "Not valid".
  */
 export function sectionCards(
   components: readonly SectionComponent[],
   requestsError?: string,
+  requestsStale = false,
 ): ComponentCardModel[] {
+  const unread =
+    requestsError !== undefined
+      ? "Could not read"
+      : requestsStale
+        ? "Not known"
+        : undefined;
   return components.map((component) => ({
     id: component.id,
     label: component.label,
     used: true,
-    ...(component.condition
+    ...(component.condition && !unread
       ? { condition: { type: "Ready", ...component.condition } }
       : {}),
     embedded: [],
     pods: [],
-    numbers: sectionNumbers(component.request, requestsError !== undefined),
+    numbers: sectionNumbers(component.request, unread),
   }));
 }
 
 function sectionNumbers(
   request: Resource<"PluginRequest"> | undefined,
-  unread: boolean,
+  unread: string | undefined,
 ): CardNumber[] {
-  if (!request && unread) {
-    return [{ label: "Request", value: "Could not read", severity: "Warning" }];
+  if (unread) {
+    return [{ label: "Request", value: unread, severity: "Warning" }];
   }
   if (!request) return [{ label: "Request", value: "Not made yet" }];
-  const first = request.status?.summary?.[0];
-  const severity = first?.severity;
-  const headline: CardNumber = first
-    ? {
-        label: first.label,
-        value: first.value,
-        ...(severity === "Warning" || severity === "Error" ? { severity } : {}),
-      }
-    : { label: "Summary", value: "Not written yet" };
+  const summary: unknown = request.status?.summary;
+  const resources: unknown = request.status?.resources ?? [];
+  const first: unknown = Array.isArray(summary) ? summary[0] : undefined;
+  const severity = isObject(first) ? first.severity : undefined;
+  const headline: CardNumber =
+    summary === undefined || (Array.isArray(summary) && first === undefined)
+      ? { label: "Summary", value: "Not written yet" }
+      : isObject(first) &&
+          typeof first.label === "string" &&
+          typeof first.value === "string"
+        ? {
+            label: first.label,
+            value: first.value,
+            ...(severity === "Warning" || severity === "Error"
+              ? { severity }
+              : {}),
+          }
+        : notValid("Summary");
   return [
     headline,
-    {
-      label: "Resources",
-      value: String(request.status?.resources?.length ?? 0),
-    },
+    Array.isArray(resources)
+      ? { label: "Resources", value: String(resources.length) }
+      : notValid("Resources"),
   ];
+}
+
+function notValid(label: string): CardNumber {
+  return { label, value: "Not valid", severity: "Warning" };
 }
 
 /**

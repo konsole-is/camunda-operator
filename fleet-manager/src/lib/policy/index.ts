@@ -1,6 +1,7 @@
 export * from "./allowed";
 export * from "./backups";
 export * from "./builtins";
+export * from "./conditions";
 export * from "./conflicts";
 export * from "./deletion";
 export * from "./environment";

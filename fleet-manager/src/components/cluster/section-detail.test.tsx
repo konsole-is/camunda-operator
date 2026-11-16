@@ -220,6 +220,92 @@ describe("SectionComponentDetail", () => {
     expect(detail.seen.metrics).toEqual({ request: "orders-backup-storage" });
   });
 
+  it("shows the state of a request as not known, and names PluginRequest in place of children, while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={withRequest}
+        registrations={[s3]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      >
+        <p>Request outputs</p>
+      </SectionComponentDetail>,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Request outputs")).toBeNull();
+  });
+
+  it("says the error of the read in place of children when the read of the requests failed", () => {
+    render(
+      <SectionComponentDetail
+        component={withRequest}
+        registrations={[s3]}
+        namespace="team-a"
+        requestsError="watch broke"
+        now={now}
+      >
+        <p>Request outputs</p>
+      </SectionComponentDetail>,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+    expect(
+      screen.getByText("Could not read PluginRequest: watch broke"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Request outputs")).toBeNull();
+  });
+
+  it("names PluginRequest, never that the request is not made yet, while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage()}
+        registrations={[]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/has not made the request/)).toBeNull();
+  });
+
+  it("marks the state and the conditions not known for a request that the page does not hold while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage()}
+        registrations={[]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      />,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+  });
+
+  it("names conditions of the wrong type and shows none of them", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage({
+          request: request({ conditions: "Ready" } as never),
+        })}
+        registrations={[]}
+        namespace="team-a"
+        now={now}
+      />,
+    );
+    expect(detail.seen.conditions).toEqual([]);
+    expect(screen.getByText("The conditions are not a list.")).toBeTruthy();
+  });
+
   it("passes the settings and the children of the section", () => {
     render(
       <SectionComponentDetail

@@ -11,7 +11,7 @@ import {
   unreadKinds,
 } from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { byCodeUnit } from "@/lib/policy";
+import { byCodeUnit, readyOf } from "@/lib/policy";
 import {
   type ContractKind,
   type ContractRef,
@@ -22,7 +22,7 @@ import {
   unreadUserKinds,
   writerLabel,
 } from "@/lib/usage";
-import { KEY_FACT_LABELS, type KeyFacts, keyFacts, readyOf } from "./facts";
+import { KEY_FACT_LABELS, type KeyFacts, keyFacts } from "./facts";
 import {
   type ConnectionPageData,
   type ConnectionSources,
@@ -74,7 +74,7 @@ export function contractRows(
         }),
         name: contract.metadata.name ?? "",
       };
-      const ready = readyOf(contract);
+      const ready = readyOf(contract.status?.conditions);
       return {
         ref,
         facts: keyFacts(contract),

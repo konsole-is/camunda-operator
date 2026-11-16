@@ -14,7 +14,7 @@ import {
 import type { FieldDoc } from "@/generated/fielddocs";
 import type { ClusterField } from "@/lib/fields";
 import { cn } from "@/lib/utils";
-import { claimFieldHref, type SettingsGroup } from "./settings";
+import { claimFieldHref, type SettingsBlock } from "./settings";
 
 /**
  * ComponentSettings shows the fields of one component read only: each
@@ -28,7 +28,7 @@ export function ComponentSettings({
   operatorVersion,
   cluster,
 }: {
-  groups: SettingsGroup[];
+  groups: readonly SettingsBlock[];
   docs: Record<string, FieldDoc>;
   operatorVersion: string;
   cluster: { namespace: string; name: string };

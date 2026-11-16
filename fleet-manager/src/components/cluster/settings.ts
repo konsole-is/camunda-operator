@@ -7,6 +7,7 @@ import type {
 import type { Resource } from "@/lib/k8s/kinds";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
 import type { FieldPath, Merged } from "@/lib/merge";
+import type { ClaimSection } from "./claim";
 import { PROCESS_LABEL, topologyOf, type Process } from "./topology";
 
 /**
@@ -56,6 +57,26 @@ export function componentSettings(
       embedded: true,
       fields: of(app.process),
     })),
+  ];
+}
+
+/** SettingsBlock is the part of a SettingsGroup that ComponentSettings shows. */
+export type SettingsBlock = Pick<
+  SettingsGroup,
+  "label" | "embedded" | "fields"
+>;
+
+/**
+ * sectionSettings returns the block of the Settings tab of a selection of
+ * the claim: its parameters, labelled "<section label>: <option label>".
+ */
+export function sectionSettings(section: ClaimSection): SettingsBlock[] {
+  return [
+    {
+      label: `${section.sectionLabel}: ${section.optionLabel}`,
+      embedded: false,
+      fields: section.parameters,
+    },
   ];
 }
 
