@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  applyContractChange,
+  previewContractChange,
+} from "@/app/setup/connections/actions";
 import { get } from "@/lib/k8s/read";
+import { writeMode } from "@/lib/write/writer";
 import ConnectionPage, { dynamic } from "./page";
 
 vi.mock("next/navigation", () => ({
@@ -23,15 +28,26 @@ vi.mock("@/lib/k8s/read", () => ({
         : undefined,
   ),
 }));
+vi.mock("@/lib/write/writer", () => ({
+  writeMode: vi.fn(async () => "git"),
+}));
+vi.mock("@/app/setup/connections/actions", () => ({
+  previewContractChange: vi.fn(),
+  applyContractChange: vi.fn(),
+}));
+const passed = vi.hoisted(() => ({ props: undefined as unknown }));
 vi.mock("@/components/setup/connections/connection-detail", () => ({
   ConnectionDetailLive: (props: {
     target: { kind: string; namespace?: string; name: string };
-  }) => (
-    <p>
-      detail {props.target.kind} {props.target.namespace ?? "-"}{" "}
-      {props.target.name}
-    </p>
-  ),
+  }) => {
+    passed.props = props;
+    return (
+      <p>
+        detail {props.target.kind} {props.target.namespace ?? "-"}{" "}
+        {props.target.name}
+      </p>
+    );
+  },
 }));
 
 afterEach(cleanup);
@@ -50,6 +66,27 @@ describe("ConnectionPage", () => {
       screen.getByText("detail ObjectStorageConfig team-a backups"),
     ).toBeTruthy();
     expect(dynamic).toBe("force-dynamic");
+  });
+
+  it("passes the write mode and the actions", async () => {
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "backups"])),
+    );
+    expect(passed.props).toMatchObject({
+      mode: "git",
+      actions: {
+        previewChange: previewContractChange,
+        applyChange: applyContractChange,
+      },
+    });
+  });
+
+  it("opens the page without a write mode when the settings cannot be read", async () => {
+    vi.mocked(writeMode).mockRejectedValueOnce(new Error("no settings"));
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "backups"])),
+    );
+    expect((passed.props as { mode?: string }).mode).toBeUndefined();
   });
 
   it("opens a Management Identity contract from its name", async () => {

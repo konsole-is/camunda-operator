@@ -3,13 +3,16 @@ import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { unknownUsersText } from "@/components/setup/platform/model";
 import type { ContractUser } from "@/lib/usage";
 
 /**
  * UsersTable lists the objects that name a contract, each with the fields
  * that name it, its environment, and its own Ready. The message of a user
  * that is not ready shows under its status. unread names the kinds that can
- * use the contract and that the page could not read.
+ * use the contract and that the page could not read or has not read yet:
+ * the users are then not known, and the list shows the users that the page
+ * read.
  */
 export function UsersTable({
   users,
@@ -22,9 +25,7 @@ export function UsersTable({
   return (
     <div className="flex flex-col gap-2">
       {incomplete && (
-        <p className="text-sm text-bad">
-          This list can miss users. Could not read {unread.join(", ")}.
-        </p>
+        <p className="text-sm text-bad">{unknownUsersText(unread)}</p>
       )}
       <DataTable
         label="Users of the contract"

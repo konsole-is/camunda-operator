@@ -143,7 +143,7 @@ spec:
 | `Applied` | `OverSizeLimit` | The fragment takes the policy of the identity over the size limit of the cloud. | Select fewer options that ask for permissions for this cluster. |
 | `Applied` | `Rejected` | The identity extension or the cloud refused the fragment for another reason. The message says why. | Read the message. |
 | `MatchesTemplate` | `Healthy` | The fragment matches its template in the registration. | Nothing. |
-| `MatchesTemplate` | `TemplateChanged` | The fragment no longer matches its template in the registration. | Wait for the plugin to write the grant again from the new template. |
+| `MatchesTemplate` | `TemplateChanged` | The fragment is not the template of the registration now. The identity keeps the statement of the fragment. | After a chart upgrade, wait. The plugin writes the grant from its own template at its next reconcile. If the reason stays, the registration was changed outside the plugin. The plugin keeps its own template, and the old statement stays. |
 | `Ready` | `Healthy` | `Applied` and `MatchesTemplate` are both `True`. | Nothing. |
 | `Ready` | the reason of the first `False` condition | `Applied` or `MatchesTemplate` is `False`. The message is the message of that condition. | See the row of that reason. |
 
