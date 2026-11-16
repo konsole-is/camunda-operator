@@ -166,6 +166,7 @@ function Group({ group, now }: { group: RegistrationGroup; now: string }) {
           rows={group.rows.map((row) => ({
             id: row.name,
             label: row.label,
+            href: `/setup/plugins/${encodeURIComponent(row.name)}`,
             cells: cellsOf(row, now),
           }))}
         />
