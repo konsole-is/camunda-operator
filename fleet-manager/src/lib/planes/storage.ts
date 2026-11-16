@@ -419,8 +419,8 @@ export function storageErrors(
 
 /**
  * planeControllerParameters returns the ControllerParameters of a plane
- * claim that runs running: databases on the request of the database
- * section, as WithDatabases of camundamanagementclusterclaim sets it.
+ * claim that runs running: databases on each request in a section with the
+ * slot managementDatabases, as WithDatabases of the claim controller sets it.
  */
 export function planeControllerParameters(
   sections: readonly PluginSection[],
