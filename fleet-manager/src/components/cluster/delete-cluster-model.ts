@@ -196,9 +196,12 @@ export function deleteClusterModel(
   );
   const volumesKnown = !unread.some((k) => VOLUME_KINDS.includes(k));
   const fatesKnown = !unread.some((k) => FATE_KINDS.includes(k));
-  // The claim controller names the cluster in status.cluster only while
-  // the claim controls it, and the claim finalizer deletes only that one.
-  const clusterGoes = claim.status?.cluster?.name === name;
+  // The claim finalizer deletes the cluster only when the claim controls
+  // it. status.cluster can lag the live cluster, so it counts only while
+  // the page has no cluster.
+  const clusterGoes = data.cluster
+    ? controlled(data.cluster)
+    : claim.status?.cluster?.name === name;
   const clusterKept =
     !clusterGoes && data.cluster
       ? [target("CamundaCluster", name, KEPT_ATTACHMENT)]

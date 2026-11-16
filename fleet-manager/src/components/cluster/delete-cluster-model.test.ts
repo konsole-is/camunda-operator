@@ -65,6 +65,7 @@ const claim = (spec: object = {}, status: object = {}) =>
   });
 
 const retaining = object("CamundaCluster", "orders", {
+  metadata: made("orders").metadata,
   spec: {
     zeebe: { persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" } },
   },
@@ -72,7 +73,7 @@ const retaining = object("CamundaCluster", "orders", {
 
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
-  cluster: object("CamundaCluster", "orders"),
+  cluster: object("CamundaCluster", "orders", made("orders")),
   environments: [],
   sections: [
     cast("PluginSection", {
@@ -152,6 +153,7 @@ describe("deleteClusterModel", () => {
       note(
         data({
           cluster: object("CamundaCluster", "orders", {
+            metadata: made("orders").metadata,
             spec: { presetRef: "retaining" },
           }),
           presets: [
@@ -206,15 +208,29 @@ describe("deleteClusterModel", () => {
     ]);
   });
 
-  it("keeps a cluster that the claim does not control, with the reason", () => {
+  it("keeps a live cluster that the claim does not control, also while status.cluster names it", () => {
     const model = deleteClusterModel(
-      data({ claim: claim({}, { cluster: undefined }) }),
+      data({ cluster: object("CamundaCluster", "orders") }),
       "Delete",
     );
     expect(model.targets.map((t) => t.kind)).not.toContain("CamundaCluster");
     expect(model.kept.map((t) => [t.label, t.note])).toEqual([
       ["CamundaCluster orders", KEPT_ATTACHMENT],
     ]);
+  });
+
+  it("deletes a live cluster that the claim controls, also before status.cluster names it", () => {
+    const model = deleteClusterModel(
+      data({ claim: claim({}, { cluster: undefined }) }),
+      "Delete",
+    );
+    expect(model.targets.map((t) => t.kind)).toContain("CamundaCluster");
+    expect(model.kept).toEqual([]);
+  });
+
+  it("without a cluster to read, deletes the cluster that status.cluster names", () => {
+    const model = deleteClusterModel(data({ cluster: undefined }), "Delete");
+    expect(model.targets.map((t) => t.kind)).toContain("CamundaCluster");
   });
 
   it("leaves out a cluster that is gone and that the claim does not name", () => {
