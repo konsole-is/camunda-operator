@@ -12,12 +12,13 @@ import {
   servedChangeLines,
   servedChanges,
 } from "@/lib/planes/impacts";
-import { appliedSession, claimAfter } from "@/lib/session";
+import { claimAfter } from "@/lib/session";
 import { FieldErrors } from "./fields";
 import { selectorText } from "./plane-claim-tab";
 import {
   changesWaitText,
   planeChangeInput,
+  savedOf,
   usePlaneClaimEdit,
 } from "./plane-claim-edit";
 
@@ -75,13 +76,17 @@ export function ServedPanel() {
   const selector = (after.spec?.clusterSelector ?? undefined) as
     Selector | undefined;
   const expressions = selector?.matchExpressions ?? [];
+  const live = session.claim.spec?.clusterSelector;
   const toggle = (name: string, on: boolean) =>
     edit.set(
       ENVIRONMENTS,
       on ? [...chosen, name] : chosen.filter((n) => n !== name),
     );
   // The preview reads the claim that the save leaves.
-  const input = planeChangeInput(plane, appliedSession(session));
+  const input = planeChangeInput(
+    plane,
+    savedOf(session, plane.writeMode).applied,
+  );
   const changes = plane.unread.length ? undefined : servedChanges(input);
   const lines = changes ? servedChangeLines(changes, input) : [];
 
@@ -114,10 +119,15 @@ export function ServedPanel() {
           onChange={own((labels: Record<string, string> | undefined) => {
             const rest: Selector = { ...selector };
             delete rest.matchLabels;
-            edit.set(
-              SELECTOR,
-              labels ? { ...rest, matchLabels: labels } : rest,
-            );
+            // A blank row keeps a claim without a selector serving no
+            // cluster.
+            if (!labels && Object.keys(rest).length === 0 && live == null)
+              edit.set(SELECTOR, live);
+            else
+              edit.set(
+                SELECTOR,
+                labels ? { ...rest, matchLabels: labels } : rest,
+              );
           })}
         />
         <p id={`${id}-labels-hint`} className="text-sm text-muted">

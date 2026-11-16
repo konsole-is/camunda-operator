@@ -350,6 +350,6 @@ The fleet manager does not take over a field that another tool, such as `kubectl
 - A new value fails in the review. The message names the other tool, and nothing is written.
 - A removed field or list item stays in the claim. The review lists each such field with the tool that keeps it. When the change removes nothing else, the review says that the save changes nothing.
 
-To change or remove such a field, make the change with the tool that set it.
+To change or remove such a field, make the change with the tool that set it. In Git mode, your GitOps tool applies the save, so a field that only it set is not kept.
 
 The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane, the Claim tab can only add fields. Make each other change in the claim file, and apply the file again.

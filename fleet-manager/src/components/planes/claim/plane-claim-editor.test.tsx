@@ -553,6 +553,17 @@ describe("PlaneClaimEditor served clusters, components, and versions", () => {
     expect(reviewButton().disabled).toBe(false);
   });
 
+  it("a blank label row keeps a claim without a cluster selector unchanged", () => {
+    const claim = claimOf();
+    delete (claim.spec as { clusterSelector?: unknown }).clusterSelector;
+    editor({ claim });
+    open("Environments served");
+    fireEvent.click(screen.getByRole("button", { name: /Add/ }));
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+  });
+
   it("says that a claim without a cluster selector serves no cluster", () => {
     const claim = claimOf();
     delete (claim.spec as { clusterSelector?: unknown }).clusterSelector;

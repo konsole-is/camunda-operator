@@ -54,6 +54,7 @@ import {
   planeLocks,
   type Session,
   keptFields,
+  saveManager,
   validatePlaneClaim,
   valueAt,
 } from "@/lib/session";
@@ -89,7 +90,7 @@ export type PlaneClaimSources = {
 
 /**
  * PlaneClaimEdit is the claim edit state of the plane page. edit is
- * undefined without claim actions. moveIdentity moves the identity mode of
+ * undefined without claim actions. writeMode is the write mode of a save. moveIdentity moves the identity mode of
  * the claim after the pending changes to to, with the edits of
  * identityMoveEdits, and returns the lock that refused one of them. A move
  * to the mode of the live claim takes back the identity changes instead.
@@ -97,6 +98,7 @@ export type PlaneClaimSources = {
  */
 export type PlaneClaimEdit = PlaneClaimSources & {
   edit?: ClaimEdit<PlaneClaim>;
+  writeMode?: WriteMode;
   moveIdentity(
     to: IdentityModeId,
     external?: ExternalKeycloakDraft,
@@ -247,9 +249,9 @@ export function PlaneClaimEditProvider({
   // The impacts read the claim that the save leaves: a field that another
   // field manager keeps stays.
   const review = (s: Session<PlaneClaim>): ClaimReviewInput => {
-    const kept = keptFields(s);
-    const applied = appliedSession(s);
-    const nothing = equalJSON(claimAfter(applied).spec, s.claim.spec);
+    const { kept, applied } = savedOf(s, writeMode);
+    const nothing =
+      kept.length > 0 && equalJSON(claimAfter(applied).spec, s.claim.spec);
     const input = planeChangeInput(sources, applied);
     return {
       impacts: [...planeImpacts(input), ...planeRestarts(input)],
@@ -280,7 +282,12 @@ export function PlaneClaimEditProvider({
     );
   return (
     <ClaimEditProvider host={host} actions={actions}>
-      <EditBridge sources={sources} afterRef={afterRef} movingRef={movingRef}>
+      <EditBridge
+        sources={sources}
+        writeMode={writeMode}
+        afterRef={afterRef}
+        movingRef={movingRef}
+      >
         {children}
       </EditBridge>
     </ClaimEditProvider>
@@ -326,6 +333,24 @@ export function usePlaneClaimEdit(): PlaneClaimEdit {
   if (!edit)
     throw new Error("usePlaneClaimEdit needs a PlaneClaimEditProvider.");
   return edit;
+}
+
+/**
+ * savedOf returns the fields that a save of s in writeMode keeps for
+ * another field manager, and a session whose change gives the claim that
+ * the save leaves. It keeps no field when the manager of the save is not
+ * known.
+ */
+export function savedOf(
+  s: Session<PlaneClaim>,
+  writeMode: WriteMode | undefined,
+): { kept: KeptField[]; applied: Session<PlaneClaim> } {
+  const manager = saveManager(s.claim, writeMode);
+  if (manager === undefined) return { kept: [], applied: s };
+  return {
+    kept: keptFields(s, manager),
+    applied: appliedSession(s, manager),
+  };
 }
 
 /** planeClaimContext returns what validatePlaneClaim reads of sources. */
@@ -377,11 +402,13 @@ export function planeFieldsOf(
 
 function EditBridge({
   sources,
+  writeMode,
   afterRef,
   movingRef,
   children,
 }: {
   sources: PlaneClaimSources;
+  writeMode: WriteMode | undefined;
   afterRef: { current: PlaneClaim | undefined };
   movingRef: { current: IdentityModeId | undefined };
   children: ReactNode;
@@ -429,7 +456,9 @@ function EditBridge({
     [afterRef, movingRef, live, set, reset, sources.plane],
   );
   return (
-    <PlaneClaimEditContext.Provider value={{ ...sources, edit, moveIdentity }}>
+    <PlaneClaimEditContext.Provider
+      value={{ ...sources, edit, writeMode, moveIdentity }}
+    >
       {children}
     </PlaneClaimEditContext.Provider>
   );

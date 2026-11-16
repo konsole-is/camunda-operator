@@ -131,8 +131,8 @@ export function planeModeMove(
 /**
  * planeSignInMoves reports whether the change moves where users and the
  * served clusters sign in: a move of the identity mode, another External
- * Keycloak realm, another platform config in OIDC mode, or a change of the
- * access settings in the keycloak mode.
+ * Keycloak realm, another platform config in OIDC mode, or in the keycloak
+ * mode another public URL of Keycloak or a change of the access settings.
  */
 export function planeSignInMoves(input: PlaneChangeInput): boolean {
   const live: Spec = input.session.claim.spec ?? {};
@@ -142,8 +142,19 @@ export function planeSignInMoves(input: PlaneChangeInput): boolean {
     realmMoves(input.session) ||
     (identityModeOf(spec.management?.identityProvider) === "oidc" &&
       effectiveConfig(live, input) !== effectiveConfig(spec, input)) ||
-    accessLines(input, live, spec).length > 0
+    accessLines(input, live, spec).length > 0 ||
+    keycloakUrlMoves(live, spec)
   );
+}
+
+function keycloakUrlMoves(live: Spec, spec: Spec): boolean {
+  const url = (s: Spec) =>
+    identityModeOf(s.management?.identityProvider) === "keycloak"
+      ? stringOf(s.management?.identityProvider?.keycloak?.externalUrl)
+      : undefined;
+  const before = url(live);
+  const after = url(spec);
+  return before !== undefined && after !== undefined && before !== after;
 }
 
 /**

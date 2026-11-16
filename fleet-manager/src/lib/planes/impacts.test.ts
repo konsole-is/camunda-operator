@@ -1169,6 +1169,14 @@ describe("planeSignInMoves", () => {
     expect(planeSignInMoves(input(k))).toBe(false);
   });
 
+  it("is true for a new public URL of the Keycloak that the plane runs", () => {
+    const s = changed(consoleClaim(), [
+      at("spec", "management", "identityProvider", "keycloak", "externalUrl"),
+      "https://other.example.com/auth",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
   it("is true for a change of the access settings in the keycloak mode", () => {
     const live = planeClaim({
       plugins: [

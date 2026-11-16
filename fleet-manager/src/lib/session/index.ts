@@ -31,4 +31,4 @@ export {
   type SetResult,
 } from "./session";
 export { valueAt, without, withValue } from "./steps";
-export { appliedSession, keptFields } from "./kept";
+export { appliedSession, keptFields, saveManager } from "./kept";

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/lib/fields";
-import { CLAIM_LABEL } from "@/lib/labels";
-import { appliedSession, keptFields } from "./kept";
+import {
+  CLAIM_LABEL,
+  LAST_APPLIED_ANNOTATION,
+  REVISION_ANNOTATION,
+} from "@/lib/labels";
+import { appliedSession, keptFields, saveManager } from "./kept";
 import {
   claimAfter,
   openSession,
@@ -132,5 +136,56 @@ describe("keptFields", () => {
     const set = setValue(s, at("spec", "deletionPolicy"), "Orphan");
     if ("session" in set) s = set.session;
     expect(keptFields(s)).toEqual([]);
+  });
+});
+
+describe("saveManager", () => {
+  const gitOps = {
+    manager: "argocd-controller",
+    operation: "Apply",
+    fieldsV1: {
+      "f:metadata": { "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} } },
+      "f:spec": { "f:deletionPolicy": {} },
+    },
+  };
+
+  it("is the fleet manager in direct mode", () => {
+    expect(saveManager(claimOf([gitOps]), "direct")).toBe("fleet-manager");
+  });
+
+  it("is the GitOps tool that applied the revision in Git mode", () => {
+    expect(saveManager(claimOf([gitOps]), "git")).toBe("argocd-controller");
+  });
+
+  it("is the fleet manager in Git mode while no tool applied a revision", () => {
+    expect(saveManager(claimOf([kubectl]), "git")).toBe("fleet-manager");
+  });
+
+  it("is undefined in Git mode for a claim that the GitOps tool applies client side", () => {
+    const claim = claimOf([]);
+    (claim.metadata as { annotations?: object }).annotations = {
+      [LAST_APPLIED_ANNOTATION]: "{}",
+    };
+    expect(saveManager(claim, "git")).toBeUndefined();
+  });
+
+  it("lets the GitOps tool remove a field that only it owns", () => {
+    const owned = {
+      ...gitOps,
+      fieldsV1: {
+        ...gitOps.fieldsV1,
+        "f:spec": { "f:environments": { 'v:"qa"': {} } },
+      },
+    };
+    let s = session(claimOf([owned]));
+    const set = setValue(s, at("spec", "environments"), ["platform"]);
+    if ("session" in set) s = set.session;
+    expect(keptFields(s)).toEqual([
+      { path: 'spec.environments[="qa"]', managers: ["argocd-controller"] },
+    ]);
+    expect(keptFields(s, "argocd-controller")).toEqual([]);
+    expect(claimAfter(appliedSession(s, "argocd-controller")).spec).toEqual(
+      claimAfter(s).spec,
+    );
   });
 });
