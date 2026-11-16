@@ -341,12 +341,13 @@ function movedSession(
 ): Session<ClusterClaim> | string {
   if (row.action !== "move" && row.action !== "confirmDowngrade")
     return row.status.text;
-  let session = openSession({
+  const opened = openSession({
     claim: row.claim,
     resource: row.cluster,
     locks: NO_LOCKS,
   });
-  if (!session) return "The claim cannot be changed.";
+  if (!opened) return "The claim cannot be changed.";
+  let session: Session<ClusterClaim> = opened;
   const values: [string, unknown][] = [["releaseRef", target]];
   if (downgrade && row.status.kind === "downgrade")
     values.push(["allowVersionDowngrade", row.status.to]);

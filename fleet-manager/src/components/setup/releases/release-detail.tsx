@@ -98,8 +98,7 @@ export function ReleaseDetailView({
 }): ReactNode {
   const [tab, setTab] = useState(initialTab);
   const release = sources.releases.find((r) => r.metadata.name === name) as
-    | Resource<"CamundaRelease">
-    | undefined;
+    Resource<"CamundaRelease"> | undefined;
   const selectTab = (value: string) => {
     const next = releaseTabOf(value);
     setTab(next);

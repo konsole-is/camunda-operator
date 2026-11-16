@@ -95,7 +95,9 @@ describe("ReleaseDetailView", () => {
   it("shows the Rollout tab and its clusters on ?tab=rollout", () => {
     show("camunda-8-9-1", releaseFixtures(), "rollout");
     expect(
-      screen.getByRole("tab", { name: "Rollout" }).getAttribute("aria-selected"),
+      screen
+        .getByRole("tab", { name: "Rollout" })
+        .getAttribute("aria-selected"),
     ).toBe("true");
     const table = screen.getByRole("region", { name: "Clusters" });
     expect(within(table).getByRole("link", { name: "orders" })).toBeTruthy();

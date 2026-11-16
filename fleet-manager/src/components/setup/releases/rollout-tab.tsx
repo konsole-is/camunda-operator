@@ -47,7 +47,10 @@ export function RolloutTab({
   actions,
 }: {
   release: Resource<"CamundaRelease">;
-  data: RolloutData & { errors?: readonly ReadError[]; stale?: readonly string[] };
+  data: RolloutData & {
+    errors?: readonly ReadError[];
+    stale?: readonly string[];
+  };
   mode?: WriteMode;
   actions: Pick<ReleaseActions, "previewMove" | "applyMove">;
 }): ReactNode {
@@ -108,7 +111,10 @@ export function RolloutTab({
           role="alert"
           className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
         >
-          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
+          <CircleAlert
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-bad"
+          />
           <ul className="flex flex-col gap-1">
             {planErrors.map((text) => (
               <li key={text}>{text}</li>
@@ -138,9 +144,7 @@ export function RolloutTab({
         <>
           <DataTable
             label="Clusters"
-            emptyText={
-              rows.length === 0 ? "No cluster exists yet." : undefined
-            }
+            emptyText={rows.length === 0 ? "No cluster exists yet." : undefined}
             columns={[
               { key: "name", label: "Name", sortable: true },
               { key: "environment", label: "Environment", sortable: true },
@@ -209,9 +213,7 @@ export function RolloutTab({
                   <div className="flex max-w-80 flex-col gap-1">
                     <span>{row.status.text}</span>
                     {row.refusal && (
-                      <span className="text-xs text-text-2">
-                        {row.refusal}
-                      </span>
+                      <span className="text-xs text-text-2">{row.refusal}</span>
                     )}
                   </div>
                 ),
@@ -331,7 +333,9 @@ function MoveReview({
       mode={mode}
       diffLabel={`Changes to the claim ${first.metadata.namespace}/${first.metadata.name}`}
       effects={impacts.map((i) => `${i.cluster}: ${i.lines.join(" ")}`)}
-      caution={mode === "direct" && count > 1 ? PARTIAL_MOVE_CAUTION : undefined}
+      caution={
+        mode === "direct" && count > 1 ? PARTIAL_MOVE_CAUTION : undefined
+      }
       confirm={
         downgrade
           ? { label: "Confirm downgrade", danger: true }

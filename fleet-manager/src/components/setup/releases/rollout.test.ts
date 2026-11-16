@@ -84,11 +84,11 @@ describe("rolloutRows", () => {
     const data = rolloutData();
     const clusters = data.clusters.map((c) =>
       c.metadata?.name === "orders"
-        ? {
+        ? ({
             ...c,
             spec: { ...c.spec, version: "8.9.0" },
             status: { management: { version: "8.8.3" } },
-          }
+          } as typeof c)
         : c,
     );
     const environments = data.environments.map((e) => ({
@@ -147,9 +147,7 @@ describe("rolloutRows", () => {
   });
 
   it("orders the rows by namespace, then name", () => {
-    expect(rows.map((r) => r.key)).toEqual(
-      [...rows.map((r) => r.key)].sort(),
-    );
+    expect(rows.map((r) => r.key)).toEqual([...rows.map((r) => r.key)].sort());
   });
 
   it("offers no move while a list that the move checks is not read", () => {
@@ -172,9 +170,7 @@ describe("rolloutRows", () => {
       ...rolloutData(),
       stale: ["ElasticsearchCluster", "DatabaseServer"],
     });
-    expect(read.find((r) => r.name === "orders")?.status.kind).toBe(
-      "canMove",
-    );
+    expect(read.find((r) => r.name === "orders")?.status.kind).toBe("canMove");
   });
 
   it("reads a live object with values of the wrong type without a throw", () => {
@@ -297,7 +293,9 @@ describe("planMove", () => {
     );
     expect(plan.change).toBeUndefined();
     expect(plan.errors).toEqual([
-      expect.stringMatching(/^team-pay\/payments: 8\.9\.4 to 8\.9\.1 is a downgrade/),
+      expect.stringMatching(
+        /^team-pay\/payments: 8\.9\.4 to 8\.9\.1 is a downgrade/,
+      ),
     ]);
   });
 
@@ -393,7 +391,8 @@ describe("planMove", () => {
     );
     expect(plan.change).toBeUndefined();
     expect(plan.errors.length).toBeGreaterThan(0);
-    for (const error of plan.errors) expect(error).toMatch(/^team-pay\/fresh: /);
+    for (const error of plan.errors)
+      expect(error).toMatch(/^team-pay\/fresh: /);
   });
 
   it("refuses a row that offers no move", () => {
@@ -421,7 +420,9 @@ describe("planMove", () => {
       [{ row: orphan, downgrade: false }],
       rolloutData(),
     );
-    expect(plan.errors).toEqual(["team-pay/orphan: The claim cannot be changed."]);
+    expect(plan.errors).toEqual([
+      "team-pay/orphan: The claim cannot be changed.",
+    ]);
   });
 });
 

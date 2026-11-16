@@ -126,9 +126,7 @@ describe("RolloutTab", () => {
     );
     for (const text of ["team-orders", "camunda-8-9-0", "8.9.0", "Can move."])
       expect(orders.getByText(text)).toBeTruthy();
-    expect(
-      within(rowOf("fresh")).getByText("Not reported"),
-    ).toBeTruthy();
+    expect(within(rowOf("fresh")).getByText("Not reported")).toBeTruthy();
     expect(rowOf("orders").querySelector("a")?.getAttribute("href")).toBe(
       "/fleet/clusters/team-orders/orders",
     );
@@ -151,7 +149,9 @@ describe("RolloutTab", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Select all that can move" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Move selected" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
     expect(
       await screen.findByText(
         /team-orders\/orders: .*The brokers restart one at a time/,
@@ -217,7 +217,9 @@ describe("RolloutTab", () => {
     await userEvent.click(
       screen.getByRole("checkbox", { name: "Select team-pay/fresh" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Move selected" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
     expect(await screen.findByText(PARTIAL_MOVE_CAUTION)).toBeTruthy();
     const confirm = await screen.findByRole("button", { name: "Move" });
     await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
@@ -251,9 +253,13 @@ describe("RolloutTab", () => {
     await userEvent.click(
       within(rowOf("orders")).getByRole("button", { name: "Move" }),
     );
-    expect(screen.getByRole("region", { name: "Review the move" })).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Review the move" }),
+    ).toBeTruthy();
     rerender(withBackupOf("orders", "Pending"));
-    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
     expect(
       within(rowOf("orders")).getByText(
         "Backup orders-now is running. The move waits until it ends.",
@@ -271,7 +277,9 @@ describe("RolloutTab", () => {
       errors: [{ kind: "LogicalBackupRDBMS", message: "forbidden" }],
       stale: ["PluginRequest"],
     });
-    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
     expect(
       screen.getByText("Could not read LogicalBackupRDBMS: forbidden"),
     ).toBeTruthy();
@@ -281,8 +289,9 @@ describe("RolloutTab", () => {
       ),
     ).toBeTruthy();
     expect(within(rowOf("orders")).queryByText("Can move.")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^(Move|Confirm downgrade)$/ }))
-      .toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^(Move|Confirm downgrade)$/ }),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "Select all that can move" }),
     ).toHaveProperty("disabled", true);
@@ -297,7 +306,11 @@ describe("RolloutTab", () => {
           c.metadata.name === "fresh"
             ? ({
                 ...clusterClaim("team-pay", "fresh"),
-                spec: { presetRef: 7, releaseRef: null, cluster: { version: 42 } },
+                spec: {
+                  presetRef: 7,
+                  releaseRef: null,
+                  cluster: { version: 42 },
+                },
               } as unknown as Resource<"CamundaClusterClaim">)
             : c,
         ),
@@ -307,10 +320,12 @@ describe("RolloutTab", () => {
       within(rowOf("fresh")).getByRole("button", { name: "Move" }),
     );
     const alert = screen.getByRole("alert");
-    expect(within(alert).getAllByText(/^team-pay\/fresh: /).length).toBeGreaterThan(
-      0,
-    );
-    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(
+      within(alert).getAllByText(/^team-pay\/fresh: /).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
     expect(screen.getByRole("region", { name: "Clusters" })).toBeTruthy();
   });
 

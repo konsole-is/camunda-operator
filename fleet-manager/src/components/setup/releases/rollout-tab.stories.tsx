@@ -62,7 +62,9 @@ export const BulkReviewWithImpacts: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Select all that can move" }),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Move selected" }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Move selected" }),
+    );
     await expect(
       await canvas.findByText(/team-pay\/fresh: The brokers restart/),
     ).toBeVisible();
@@ -97,7 +99,8 @@ export const PartialWrite: Story = {
         errors: [
           {
             code: "Stale" as const,
-            message: "The CamundaClusterClaim fresh changed since you opened it.",
+            message:
+              "The CamundaClusterClaim fresh changed since you opened it.",
             ref: {
               apiVersion: "fleet.camunda.io/v1alpha1",
               kind: "CamundaClusterClaim",
@@ -114,13 +117,13 @@ export const PartialWrite: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Select all that can move" }),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Move selected" }));
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Move selected" }),
+    );
     const confirm = await canvas.findByRole("button", { name: "Move" });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
-    await expect(
-      await canvas.findByText(/^team-pay\/fresh: /),
-    ).toBeVisible();
+    await expect(await canvas.findByText(/^team-pay\/fresh: /)).toBeVisible();
   },
 };
 

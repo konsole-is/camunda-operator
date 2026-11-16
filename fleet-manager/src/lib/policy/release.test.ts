@@ -11,7 +11,7 @@ import {
 
 const cluster = (version?: string, specVersion?: string) => ({
   metadata: { namespace: "team-a", name: "orders" },
-  spec: { version: specVersion },
+  spec: { version: specVersion } as { version?: string; suspend?: boolean },
   status: version ? { management: { version } } : {},
 });
 const release = (name: string, version: string) =>
@@ -151,7 +151,7 @@ describe("parseVersion", () => {
 
 describe("moveStatus", () => {
   const status = (
-    c: ReturnType<typeof cluster> & { spec: { suspend?: boolean } },
+    c: ReturnType<typeof cluster>,
     target: string,
     environment?: Environment,
     backups: BackupLike[] = [],
@@ -184,7 +184,11 @@ describe("moveStatus", () => {
       status(cluster("8.9.0"), "8.9.1", undefined, [pending("nightly")]),
     ).toEqual({
       kind: "backupRunning",
-      backup: { kind: "LogicalBackupRDBMS", namespace: "team-a", name: "nightly" },
+      backup: {
+        kind: "LogicalBackupRDBMS",
+        namespace: "team-a",
+        name: "nightly",
+      },
       text: "Backup nightly is running. The move waits until it ends.",
     });
   });
@@ -228,9 +232,7 @@ describe("moveStatus", () => {
   });
 
   it("reads the running version, not spec.version", () => {
-    expect(status(cluster("8.8.3", "8.9.0"), "8.10.0").kind).toBe(
-      "skipsMinor",
-    );
+    expect(status(cluster("8.8.3", "8.9.0"), "8.10.0").kind).toBe("skipsMinor");
   });
 });
 
