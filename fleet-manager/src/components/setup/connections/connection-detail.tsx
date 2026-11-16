@@ -203,7 +203,7 @@ export function ConnectionDetail({
       </div>
       {editable ? (
         <fieldset
-          key={editor.generation}
+          key={`settings-${editor.generation}`}
           disabled={locked || !live || !mode}
           className="flex min-w-0 flex-col gap-4"
         >
@@ -243,7 +243,7 @@ export function ConnectionDetail({
       </Panel>
       {editable && live && (
         <fieldset
-          key={editor.generation}
+          key={`delete-${editor.generation}`}
           disabled={locked || !mode}
           className="flex min-w-0 flex-col gap-4"
         >

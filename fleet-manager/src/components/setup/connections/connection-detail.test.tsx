@@ -598,6 +598,23 @@ describe("ConnectionDetail with changes", () => {
     ).toBeTruthy();
   });
 
+  it("shows one fresh form after a discard", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    edit(inTeamA("DatabaseConfig", "orders-db"));
+    fireEvent.change(screen.getByLabelText("Database name"), {
+      target: { value: "orders-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    const names = screen.getAllByLabelText(
+      "Database name",
+    ) as HTMLInputElement[];
+    expect(names.map((n) => n.value)).toEqual(["orders"]);
+    expect(
+      errors.mock.calls.filter((call) => String(call[0]).includes("same key")),
+    ).toEqual([]);
+    errors.mockRestore();
+  });
+
   it("disables the form without a write mode", () => {
     edit(inTeamA("ObjectStorageConfig", "backups"), { mode: undefined });
     expect(screen.getByLabelText("Region").closest("fieldset")!.disabled).toBe(
