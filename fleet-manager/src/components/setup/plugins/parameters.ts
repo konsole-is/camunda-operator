@@ -9,7 +9,7 @@ import {
   parameterPolicies,
 } from "@/lib/policy/resolve";
 import type { PolicyResult } from "@/lib/policy/types";
-import { isRecord } from "./values";
+import { isRecord, isText } from "./values";
 
 /**
  * ParameterRow is one parameter of a registration. error says why its
@@ -69,6 +69,10 @@ export function parameterRows(
   }[] = [];
   if (!unread.includes("Environment")) {
     for (const environment of environments) {
+      if (!validEntries(environment, registration.metadata.name ?? ""))
+        return {
+          error: `The parameters of the Environment ${environment.metadata.name ?? ""} for this option are not valid.`,
+        };
       const policies = parameterPolicies(registration, environment);
       if (!("value" in policies)) return policies;
       byEnvironment.push({
@@ -128,6 +132,16 @@ function schemaFacts(property: unknown): SchemaFacts {
   const field = fieldSchemaFromOpenAPI(property);
   if (!field || !isRecord(property))
     return { error: "The schema of this parameter is not an object." };
+  if (
+    !isText(property.description, true) ||
+    !isText(property.type, true) ||
+    !isNumber(property.minimum) ||
+    !isNumber(property.maximum) ||
+    (property.enum !== undefined && !Array.isArray(property.enum))
+  )
+    return {
+      error: "The schema of this parameter has a field of the wrong type.",
+    };
   return {
     ...(typeof property.description === "string" && {
       description: property.description,
@@ -141,4 +155,25 @@ function schemaFacts(property: unknown): SchemaFacts {
       ),
     }),
   };
+}
+
+function isNumber(value: unknown): boolean {
+  return value === undefined || typeof value === "number";
+}
+
+// parameterPolicies throws on an Environment entry that is not an object
+// of policy objects, or whose allowed is not a list.
+function validEntries(environment: Environment, name: string): boolean {
+  const parameters: unknown = environment.spec.parameters;
+  if (parameters === undefined) return true;
+  if (!isRecord(parameters)) return false;
+  const entries = own(parameters, name);
+  return (
+    entries === undefined ||
+    (isRecord(entries) &&
+      Object.values(entries).every(
+        (e) =>
+          isRecord(e) && (e.allowed === undefined || Array.isArray(e.allowed)),
+      ))
+  );
 }

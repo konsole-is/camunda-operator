@@ -177,6 +177,42 @@ describe("parameterRows", () => {
     ).toHaveProperty("error");
   });
 
+  it("returns an error for an Environment whose entry for the option is not valid", () => {
+    for (const entries of [{ region: null }, { region: { allowed: "a" } }, 3]) {
+      expect(
+        parameterRows(
+          kms,
+          [
+            fleetEnvironment("production", {
+              parameters: { "aws-kms": entries } as never,
+            }),
+          ],
+          [],
+        ),
+      ).toEqual({
+        error:
+          "The parameters of the Environment production for this option are not valid.",
+      });
+    }
+  });
+
+  it("gives an error row for a property schema with a field of the wrong type", () => {
+    const rows = valueOf(
+      parameterRows(
+        pluginRegistration("bad", {
+          parameters: { properties: { days: { type: 42, minimum: "7" } } },
+        }),
+        [],
+        [],
+      ),
+    );
+    expect(rows[0]).toMatchObject({
+      name: "days",
+      error: "The schema of this parameter has a field of the wrong type.",
+    });
+    expect(rows[0].type).toBeUndefined();
+  });
+
   it("returns an error for a schema that is not an object", () => {
     expect(
       parameterRows(
