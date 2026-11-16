@@ -178,7 +178,12 @@ describe("parameterRows", () => {
   });
 
   it("returns an error for an Environment whose entry for the option is not valid", () => {
-    for (const entries of [{ region: null }, { region: { allowed: "a" } }, 3]) {
+    for (const entries of [
+      { region: null },
+      { region: { allowed: "a" } },
+      { region: { allowed: [null] } },
+      3,
+    ]) {
       expect(
         parameterRows(
           kms,
@@ -211,6 +216,18 @@ describe("parameterRows", () => {
       error: "The schema of this parameter has a field of the wrong type.",
     });
     expect(rows[0].type).toBeUndefined();
+  });
+
+  it("returns an error for claimEditable that is not a list", () => {
+    expect(
+      parameterRows(
+        pluginRegistration("bad", { claimEditable: 5 as never }),
+        [],
+        [],
+      ),
+    ).toEqual({
+      error: "The claimEditable of the registration is not a list.",
+    });
   });
 
   it("returns an error for a schema that is not an object", () => {

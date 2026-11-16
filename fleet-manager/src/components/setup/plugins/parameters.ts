@@ -60,6 +60,9 @@ export function parameterRows(
     return {
       error: "The properties of the parameter schema are not an object.",
     };
+  const claimEditable: unknown = registration.spec.claimEditable;
+  if (claimEditable !== undefined && !Array.isArray(claimEditable))
+    return { error: "The claimEditable of the registration is not a list." };
   const fallback = parameterPolicies(registration, undefined);
   if (!("value" in fallback)) return fallback;
   const byEnvironment: {
@@ -162,7 +165,7 @@ function isNumber(value: unknown): boolean {
 }
 
 // parameterPolicies throws on an Environment entry that is not an object
-// of policy objects, or whose allowed is not a list.
+// of policy objects, or whose allowed is not a list of objects.
 function validEntries(environment: Environment, name: string): boolean {
   const parameters: unknown = environment.spec.parameters;
   if (parameters === undefined) return true;
@@ -173,7 +176,9 @@ function validEntries(environment: Environment, name: string): boolean {
     (isRecord(entries) &&
       Object.values(entries).every(
         (e) =>
-          isRecord(e) && (e.allowed === undefined || Array.isArray(e.allowed)),
+          isRecord(e) &&
+          (e.allowed === undefined ||
+            (Array.isArray(e.allowed) && e.allowed.every(isRecord))),
       ))
   );
 }
