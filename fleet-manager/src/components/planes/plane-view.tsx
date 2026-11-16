@@ -94,6 +94,7 @@ export type PlanePageData = {
  */
 export function PlaneView({
   data,
+  writeMode,
   claimActions,
 }: {
   data: PlanePageData;
@@ -344,6 +345,7 @@ export function PlaneView({
               ownKeycloak={summary?.mode === "Keycloak"}
               apply={claimActions.apply}
               deleteHref={`/fleet/planes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/delete`}
+              writeMode={writeMode}
               unread={actionsUnread}
               now={clock}
             />

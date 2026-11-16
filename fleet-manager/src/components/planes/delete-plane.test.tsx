@@ -461,6 +461,13 @@ describe("DeletePlane", () => {
     ).toBeTruthy();
     expect(screen.queryByText(/These clusters stay/)).toBeNull();
     expect(screen.queryByText(/still serves/)).toBeNull();
+    expect(
+      screen.getByText("Always deleted").parentElement?.textContent,
+    ).not.toContain("CamundaManagementCluster plane-a");
+    expect(
+      screen.getByText("Not known", { selector: "span" }).parentElement
+        ?.textContent,
+    ).toContain("CamundaManagementCluster plane-a: not known");
   });
 
   it("a failed watch of the requests leaves the fates not known", async () => {

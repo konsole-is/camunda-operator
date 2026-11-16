@@ -287,15 +287,20 @@ function effectsOf(model: DeletePlaneModel, twoCommits: boolean): ReactNode[] {
         {t.note && <span className="text-muted">: {t.note}</span>}
       </li>
     ));
-  const always = model.targets.filter((t) => t.kind !== "PluginRequest");
   const planeUnread = model.unread.includes("CamundaManagementCluster");
+  const known = (t: DeleteTarget) =>
+    !planeUnread || t.kind !== "CamundaManagementCluster";
+  const always = model.targets.filter(
+    (t) => t.kind !== "PluginRequest" && known(t),
+  );
+  const kept = model.kept.filter(known);
   const served = model.served;
   return [
     <div key="always" className="flex flex-col gap-1">
       <span className="font-medium text-text">Always deleted</span>
       <ul className="flex flex-col gap-0.5">
         {rows(always)}
-        {model.targets.some((t) => t.kind === "CamundaManagementCluster") && (
+        {always.some((t) => t.kind === "CamundaManagementCluster") && (
           <li className="text-muted">
             The plane takes its workloads, Services, and generated Secrets with
             it.
@@ -303,11 +308,24 @@ function effectsOf(model: DeletePlaneModel, twoCommits: boolean): ReactNode[] {
         )}
       </ul>
     </div>,
-    ...(model.kept.length > 0
+    ...(kept.length > 0
       ? [
           <div key="kept" className="flex flex-col gap-1">
             <span className="font-medium text-text">Kept</span>
-            <ul className="flex flex-col gap-0.5">{rows(model.kept)}</ul>
+            <ul className="flex flex-col gap-0.5">{rows(kept)}</ul>
+          </div>,
+        ]
+      : []),
+    ...(planeUnread
+      ? [
+          <div key="unknown" className="flex flex-col gap-1">
+            <span className="font-medium text-text">Not known</span>
+            <ul className="flex flex-col gap-0.5">
+              <li>
+                CamundaManagementCluster {model.name}
+                <span className="text-muted">: not known</span>
+              </li>
+            </ul>
           </div>,
         ]
       : []),

@@ -310,7 +310,7 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
     - The resources of each option, with `Deleted` or `Kept` for each.
     - With **Delete the resources**: `Deleting a Database keeps its data on its server. Deleting a DatabaseServer erases the server and its data.`
     - With **Delete the resources**, in the `keycloak` mode and while the plane serves clusters, the review also says: `When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.`
-    - With **Keep the resources**, the resources of the options show `Kept`. They stay after the plane is gone.
+    - With **Keep the resources**, a resource that shows `Kept` stays after the plane is gone. An option can still delete some of its resources, for example a route. Those show `Deleted`.
 3. Type the name of the plane.
 4. Select **Delete the management plane**.
 

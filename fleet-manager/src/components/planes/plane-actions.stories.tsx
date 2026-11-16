@@ -19,6 +19,7 @@ const meta = {
     served: 3,
     apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
     deleteHref: "/fleet/planes/platform/plane-a/delete",
+    writeMode: "direct",
     now: "2026-11-15T12:00:00Z",
   },
 } satisfies Meta<typeof PlaneActions>;
@@ -71,4 +72,9 @@ export const ClaimDeleting: Story = {
       },
     } as Resource<"CamundaManagementClusterClaim">,
   },
+};
+
+export const ChangesOff: Story = {
+  name: "Write mode not known",
+  args: { writeMode: undefined },
 };

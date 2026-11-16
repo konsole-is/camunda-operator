@@ -706,7 +706,11 @@ describe("PlaneView", () => {
       ] as never;
       render(
         withProviders(
-          <PlaneView data={data({ plane })} claimActions={claimActions} />,
+          <PlaneView
+            data={data({ plane })}
+            writeMode="direct"
+            claimActions={claimActions}
+          />,
         ),
       );
       await userEvent.click(
@@ -717,6 +721,15 @@ describe("PlaneView", () => {
       ).toContain(
         "The served clusters that use OIDC sign in at the Keycloak of this plane.",
       );
+    });
+
+    it("turns Suspend off while the write mode is not known", () => {
+      render(
+        withProviders(<PlaneView data={data()} claimActions={claimActions} />),
+      );
+      expect(
+        within(header()).getByRole("button", { name: "Suspend" }),
+      ).toHaveProperty("disabled", true);
     });
 
     it("turns Suspend and Delete off while the plane read fails", () => {

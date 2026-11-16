@@ -4,6 +4,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CHANGES_OFF } from "@/components/fleet/claim-edit";
 import { GitPushesProvider, useGitPushes } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { STALE_CLAIM_MESSAGE } from "@/lib/session";
@@ -55,6 +56,7 @@ function actions(
           served={2}
           apply={apply}
           deleteHref="/fleet/planes/platform/plane-a/delete"
+          writeMode="direct"
           now={now}
           {...props}
           {...over}
@@ -178,6 +180,18 @@ describe("PlaneActions", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       STALE_CLAIM_MESSAGE,
     );
+  });
+
+  it("offers no Suspend while the write mode is not known, and says why", async () => {
+    const { apply, rerender } = actions();
+    await userEvent.click(button("Suspend"));
+    rerender({ writeMode: undefined });
+    expect(screen.queryByRole("group", { name: "Suspend" })).toBeNull();
+    expect(button("Suspend")).toHaveProperty("disabled", true);
+    expect(screen.getByText(CHANGES_OFF)).toBeTruthy();
+    rerender({ writeMode: undefined, claim: claimOf({ suspend: true }) });
+    expect(button("Resume")).toHaveProperty("disabled", true);
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("Delete links to the delete page", () => {

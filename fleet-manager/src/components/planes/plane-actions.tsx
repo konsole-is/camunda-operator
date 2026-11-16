@@ -8,12 +8,14 @@ import {
   GitWaitingLine,
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
+import { CHANGES_OFF } from "@/components/fleet/claim-edit";
 import { InlineConfirm } from "@/components/fleet/inline-confirm";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { Resource } from "@/lib/k8s/kinds";
 import { REVISION_ANNOTATION } from "@/lib/labels";
 import { suspendChange } from "@/lib/planes/suspend";
+import type { WriteMode } from "@/lib/write/types";
 import { refKey } from "@/lib/write/refs";
 
 /**
@@ -27,7 +29,8 @@ import { refKey } from "@/lib/write/refs";
  * not read, while a write runs, until the claim shows a newer version after
  * a write, and while a pushed change of the claim waits for GitOps; an open
  * confirm then closes. Suspend and Resume are off while the claim is being
- * deleted. It needs a GitPushesProvider and a QueryClientProvider above it.
+ * deleted, and while writeMode is undefined. It needs a GitPushesProvider
+ * and a QueryClientProvider above it.
  */
 export function PlaneActions({
   claim,
@@ -35,6 +38,7 @@ export function PlaneActions({
   ownKeycloak = false,
   apply,
   deleteHref,
+  writeMode,
   unread = [],
   now,
 }: {
@@ -43,6 +47,7 @@ export function PlaneActions({
   ownKeycloak?: boolean;
   apply: ClaimActions["apply"];
   deleteHref: string;
+  writeMode: WriteMode | undefined;
   unread?: readonly string[];
   now: string;
 }): ReactNode {
@@ -71,7 +76,7 @@ export function PlaneActions({
 
   // The claim controller applies no plane while the claim is being deleted.
   const deleting = claim.metadata?.deletionTimestamp != null;
-  const suspendOff = off || deleting;
+  const suspendOff = off || deleting || writeMode === undefined;
 
   const write = async (suspend: boolean) => {
     if (suspendOff) return;
@@ -129,6 +134,9 @@ export function PlaneActions({
           </Link>
         )}
       </div>
+      {writeMode === undefined && (
+        <p className="text-right text-sm text-muted">{CHANGES_OFF}</p>
+      )}
       {deleting && (
         <p className="text-right text-sm text-muted">
           Suspend and Resume are off while the claim is being deleted.
