@@ -215,10 +215,10 @@ function SectionFacts({ section }: { section: SectionHeader }) {
 function cellsOf(row: RegistrationRow, now: string): Record<string, ReactNode> {
   return {
     option: (
-      <>
+      <span className="flex min-w-0 flex-col">
         <span className="font-medium">{row.label}</span>
-        <span className={`${MUTED} font-mono`}>{row.name}</span>
-      </>
+        <span className="font-mono text-xs text-muted">{row.name}</span>
+      </span>
     ),
     controller: row.controller
       ? [row.controller.name, row.controller.version].filter(Boolean).join(" ")

@@ -49,7 +49,7 @@ export function AboutTab({
                 href={spec.docsUrl}
                 target="_blank"
                 rel="noreferrer"
-                className={`${LINK} break-all`}
+                className={`${LINK} inline-block max-w-full break-all`}
               >
                 {spec.docsUrl}
               </a>

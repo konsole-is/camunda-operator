@@ -66,7 +66,7 @@ test("a registration opens with its tabs and the claims that use it", async ({
   await expect(
     page
       .getByRole("region", { name: "Outputs", exact: true })
-      .getByText("secondaryStorageConfig"),
+      .getByText("secondaryStorageConfig", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Used by" }).click();
   await expect(page).toHaveURL(/\?tab=usedBy$/);
@@ -76,8 +76,8 @@ test("a registration opens with its tabs and the claims that use it", async ({
   await expect(
     used.getByText("SecondaryStorageConfig: orders-storage, Ready"),
   ).toBeVisible();
-  await expect(used.getByText("Production")).toBeVisible();
-  await expect(used.getByText("Ready: True")).toBeVisible();
+  await expect(used.getByText("Production", { exact: true })).toBeVisible();
+  await expect(used.getByText("Ready: True", { exact: true })).toBeVisible();
   // Until each watch has its first snapshot, the page names the lists that
   // it has not read.
   await expect(page.getByText(/^Not read:/)).toHaveCount(0);

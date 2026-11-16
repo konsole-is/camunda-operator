@@ -107,7 +107,12 @@ function TemplatePanel({
           )}
         </Term>
       </Terms>
-      <pre className="overflow-x-auto rounded-md bg-panel-2 p-3 text-xs">
+      <pre
+        role="region"
+        aria-label={`Statement of ${template.name}`}
+        tabIndex={0}
+        className="overflow-x-auto rounded-md bg-panel-2 p-3 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
         <code>{template.template}</code>
       </pre>
       {template.grants.length > 0 ? (

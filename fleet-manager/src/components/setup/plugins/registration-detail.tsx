@@ -16,13 +16,13 @@ import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";
 import { ParametersTab } from "./parameters-tab";
-import { usedByRows } from "./used-by";
-import { UsedByTab } from "./used-by-tab";
 import {
   REGISTRATION_TABS,
   type RegistrationTab,
   registrationTabOf,
 } from "./registration-tabs";
+import { usedByRows } from "./used-by";
+import { UsedByTab } from "./used-by-tab";
 
 /**
  * RegistrationDetail is the page of the registration data.name, opened on
