@@ -36,6 +36,7 @@ function setup(
     mode?: WriteMode;
     sources?: PresetSources;
     errors?: ReadError[];
+    pending?: string[];
   } = {},
 ) {
   const {
@@ -43,6 +44,7 @@ function setup(
     name = "medium",
     sources = presetFixtures(),
     errors = [],
+    pending = [],
   } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
@@ -58,7 +60,7 @@ function setup(
   const view = (s: PresetSources, e: ReadError[]) => (
     <GitPushesProvider>
       <PresetDetail
-        sources={{ ...s, errors: e }}
+        sources={{ ...s, errors: e, pending }}
         kind={kind}
         name={name}
         mode={mode}
@@ -222,6 +224,16 @@ describe("PresetDetail", () => {
       ),
     ).toBeTruthy();
     expect(actions.applyChange).not.toHaveBeenCalled();
+  });
+
+  it("offers no delete until the lists of users are current", () => {
+    setup({ name: "spare", pending: ["CamundaCluster"] });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager has the current lists.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type spare to confirm")).toBeNull();
   });
 
   it("says Unknown for Used by and Allowed in while their lists cannot be read", () => {

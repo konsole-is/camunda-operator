@@ -22,7 +22,7 @@ The list has one row for each preset, sorted by kind and then by name. To show o
 | Kind | **Cluster**, **Elasticsearch**, or **PostgreSQL**. |
 | Key facts | The size that the preset sets: brokers and partitions for a cluster, nodes for Elasticsearch, instances for PostgreSQL. Then the CPU and memory requests and the storage size. A fact that the preset does not set is not shown. |
 | Allowed in | The [environments](environments.md#platform-config-presets-and-releases) that list the preset, or **Nowhere**. The operator refuses a claim that names a preset that its environment does not list. The column shows **Unknown** while the fleet manager cannot read the environments. |
-| Used by | The number of users of each kind, for example `1 cluster, 1 claim`, or **Unused**. [Who uses a preset](#who-uses-a-preset) says what counts as a user. The column shows **Unknown** while the fleet manager cannot read another list that the [delete check](#delete-a-preset) needs. |
+| Used by | The number of users of each kind, for example `1 cluster, 1 claim`, or **Unused**. [Who uses a preset](#who-uses-a-preset) says what counts as a user. The column shows **Unknown** while the fleet manager cannot read a list that it needs to find the users. [Delete a preset](#delete-a-preset) names these lists. |
 | Last changed | The time of the newest change to the preset, in UTC to the minute. In Git mode, this is the time that GitOps applied the file. |
 
 The description comes from the annotation `kubernetes.io/description` of the preset:
@@ -40,7 +40,7 @@ spec:
 
 A preset without the annotation shows no description. Two presets of different kinds can have the same name, for example an Elasticsearch preset and a PostgreSQL preset both named `standard`. The column **Kind** tells them apart, and the path of the preset page holds the kind, for example `/setup/presets/postgresql/standard`.
 
-If the fleet manager cannot read a kind, the page shows `Could not read <kind>: <message>` above the table. It also shows this line while a list can be out of date, for example after a lost connection to the cluster.
+If the fleet manager cannot read a kind, the page shows `Could not read <kind>: <message>` above the table.
 
 ## Who uses a preset
 
@@ -76,6 +76,7 @@ The page offers a delete only for a preset that it can delete safely. The check 
 - An object uses the preset (see [Who uses a preset](#who-uses-a-preset)).
 - An environment allows the preset.
 - The fleet manager cannot read a list that it needs for this check. These are the environments and the objects that can use a preset of that kind. For an Elasticsearch or PostgreSQL preset, they are also the namespaces and the plugin registrations. The page shows `Could not read <kind>: <message>` for that list.
+- The fleet manager does not have the current version of such a list yet. This occurs just after the page opens and after a lost connection.
 
 To delete presets from the list:
 

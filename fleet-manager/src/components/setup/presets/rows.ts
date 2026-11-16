@@ -116,13 +116,14 @@ export function presetFacts(
 
 /**
  * presetRows returns one row for each preset of sources, sorted by the order
- * of PRESET_KINDS, then by name. errors are the lists that could not be
- * read: a preset is deletable only when no list of its GUARD_KINDS is among
- * them, nothing uses it, and no environment allows it.
+ * of PRESET_KINDS, then by name. A preset is deletable only when no list of
+ * its GUARD_KINDS is in errors (unread) or pending (not current yet),
+ * nothing uses it, and no environment allows it.
  */
 export function presetRows(
   sources: PresetSources,
   errors: readonly ReadError[],
+  pending: readonly string[] = [],
 ): PresetRow[] {
   const lists: Record<PresetKind, readonly PresetObject[]> = {
     CamundaClusterPreset: sources.clusterPresets,
@@ -148,7 +149,12 @@ export function presetRows(
         const unread = GUARD_KINDS[kind].filter((k) =>
           errors.some((e) => e.kind === k),
         );
-        const blockedBy = blockedByOf(unread, users, allowed);
+        const blockedBy = blockedByOf(
+          unread,
+          GUARD_KINDS[kind].some((k) => pending.includes(k)),
+          users,
+          allowed,
+        );
         const description = presetDescription(preset);
         const changed = lastChanged(preset);
         return {
@@ -161,7 +167,11 @@ export function presetRows(
           allowedIn: allowed,
           users,
           allowedUnknown: unread.includes("Environment"),
-          usersUnknown: unread.some((k) => k !== "Environment"),
+          // The environments give the policy of a claim of an Elasticsearch
+          // or PostgreSQL preset, so they find its users too.
+          usersUnknown: unread.some(
+            (k) => k !== "Environment" || kind !== "CamundaClusterPreset",
+          ),
           ...(changed !== undefined && { lastChanged: changed }),
           deletable: blockedBy === undefined,
           ...(blockedBy !== undefined && { blockedBy }),
@@ -172,11 +182,14 @@ export function presetRows(
 
 function blockedByOf(
   unread: readonly KindName[],
+  pending: boolean,
   users: readonly PresetUser[],
   allowed: readonly string[],
 ): string | undefined {
   if (unread.length > 0)
     return `Delete is possible when the fleet manager can read ${unread.join(", ")}.`;
+  if (pending)
+    return "Delete is possible when the fleet manager has the current lists.";
   if (users.length > 0)
     return "Delete is possible when no resource, claim, or request uses the preset.";
   if (allowed.length > 0)

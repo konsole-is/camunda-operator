@@ -24,12 +24,12 @@ export type PresetActions = {
 
 /**
  * usePresetSources follows each list of initial live. errors holds each
- * list that is not current: a failed watch, a failed read of the server, or
- * a list from an earlier read until the watch sends a new one.
+ * failed watch, and a failed server read until its watch sends a list.
+ * pending holds each other kind whose watch sent no list on this connection.
  */
 export function usePresetSources(
   initial: PresetSnapshot,
-): PresetSources & { errors: ReadError[] } {
+): PresetSources & { errors: ReadError[]; pending: KindName[] } {
   const lists = {
     clusterPresets: useLive("CamundaClusterPreset", initial.clusterPresets),
     elasticsearchPresets: useLive(
@@ -56,21 +56,17 @@ export function usePresetSources(
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
   const errors = keys.flatMap((key, i): ReadError[] => {
     const kind = kinds[i];
-    const { items, error } = lists[key];
+    const { error } = lists[key];
     if (error) return [{ kind, message: error }];
-    if (fresh[i]) return [];
-    // The query cache keeps the list of an earlier visit or connection, and
-    // shows it in place of the read of the server.
-    if (items !== initial[key])
-      return [
-        { kind, message: "the list can be out of date until the next read" },
-      ];
-    return initial.readErrors.filter((e) => e.kind === kind);
+    return fresh[i] ? [] : initial.readErrors.filter((e) => e.kind === kind);
   });
+  const pending = kinds.filter(
+    (kind, i) => !fresh[i] && !errors.some((e) => e.kind === kind),
+  );
   const items = Object.fromEntries(
     keys.map((key) => [key, lists[key].items]),
   ) as PresetSources;
-  return { ...items, errors };
+  return { ...items, errors, pending };
 }
 
 function useLive<K extends KindName>(

@@ -19,12 +19,10 @@ import { PresetListLive } from "./preset-list";
 import type { PresetActions, PresetSources } from "./sources";
 
 const failing = vi.hoisted(() => ({ kind: "" }));
-// cached gives each list as a copy, as the query cache gives a list of an
-// earlier read in place of initial.
-const watch = vi.hoisted(() => ({ stale: [] as string[], cached: false }));
+const watch = vi.hoisted(() => ({ stale: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: watch.cached ? [...initial] : initial,
+    items: initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
@@ -37,7 +35,6 @@ afterEach(() => {
   cleanup();
   failing.kind = "";
   watch.stale = [];
-  watch.cached = false;
 });
 
 function setup(
@@ -268,14 +265,15 @@ describe("PresetList", () => {
     );
   });
 
-  it("offers no delete on a list of an earlier visit until the watch sends a new one", () => {
-    watch.cached = true;
+  it("offers no delete until the watch of a list of users sends a list", () => {
     watch.stale = ["CamundaClusterClaim"];
     const { rerender } = setup();
     expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
       "disabled",
       true,
     );
+    expect(within(rowOf(/spare/)).getByText("Unused")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
     watch.stale = [];
     rerender(presetFixtures());
     expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
@@ -284,16 +282,22 @@ describe("PresetList", () => {
     );
   });
 
-  it("offers no delete while the watch of a list of users reconnects", () => {
-    const { rerender } = setup();
-    watch.cached = true;
+  it("closes the delete review while the watch of a list of users reconnects", () => {
+    const { actions, rerender } = setup();
+    fireEvent.click(within(rowOf(/spare/)).getByRole("checkbox"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete the preset spare" }),
+    );
     watch.stale = ["CamundaCluster"];
     rerender(presetFixtures());
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
     expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
       "disabled",
       true,
     );
-    expect(screen.getByText(/^Could not read CamundaCluster: /)).toBeTruthy();
+    expect(actions.applyChange).not.toHaveBeenCalled();
   });
 
   it("says Unknown for Allowed in while the environments cannot be read", () => {

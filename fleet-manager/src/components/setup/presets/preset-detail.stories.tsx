@@ -7,7 +7,7 @@ const meta = {
   title: "setup/presets/PresetDetail",
   component: PresetDetail,
   args: {
-    sources: { ...presetFixtures(), errors: [] },
+    sources: { ...presetFixtures(), errors: [], pending: [] },
     kind: "CamundaClusterPreset",
     name: "medium",
     mode: "direct",

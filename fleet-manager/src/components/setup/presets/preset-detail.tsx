@@ -46,7 +46,7 @@ export function PresetDetail({
   mode,
   actions,
 }: {
-  sources: PresetSources & { errors: ReadError[] };
+  sources: PresetSources & { errors: ReadError[]; pending: string[] };
   kind: PresetKind;
   name: string;
   mode?: WriteMode;
@@ -66,7 +66,7 @@ export function PresetDetail({
   });
   const { base, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
-  const row = presetRows(sources, sources.errors).find(
+  const row = presetRows(sources, sources.errors, sources.pending).find(
     (r) => r.kind === kind && r.name === name,
   );
   const shown = live ?? base;

@@ -243,7 +243,7 @@ export function PresetListLive({
   const sources = usePresetSources(initial);
   return (
     <PresetList
-      rows={presetRows(sources, sources.errors)}
+      rows={presetRows(sources, sources.errors, sources.pending)}
       errors={sources.errors}
       mode={mode}
       actions={actions}

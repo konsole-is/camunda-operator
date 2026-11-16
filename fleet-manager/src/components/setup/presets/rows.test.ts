@@ -161,6 +161,20 @@ describe("presetRows", () => {
       usersUnknown: false,
       allowedUnknown: true,
     });
+    expect(
+      environments.find((r) => r.id === "elasticsearch/standard"),
+    ).toMatchObject({ usersUnknown: true, allowedUnknown: true });
+  });
+
+  it("offers no delete while a list of users is not current, and keeps the users known", () => {
+    const rows = presetRows(presetFixtures(), [], ["ElasticsearchCluster"]);
+    expect(rows.find((r) => r.id === "elasticsearch/standard")).toMatchObject({
+      deletable: false,
+      usersUnknown: false,
+      blockedBy:
+        "Delete is possible when the fleet manager has the current lists.",
+    });
+    expect(rows.find((r) => r.id === "cluster/spare")?.deletable).toBe(true);
   });
 
   it("sorts by kind, then by name", () => {
