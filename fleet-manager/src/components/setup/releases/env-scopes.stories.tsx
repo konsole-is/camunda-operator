@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { fn } from "storybook/test";
+import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
 import { EnvScopes } from "./env-scopes";
 import { releaseFixtures } from "./fixtures";
 
@@ -9,7 +10,7 @@ const meta = {
   title: "setup/releases/EnvScopes",
   component: EnvScopes,
   args: {
-    spec: { version: "8.9.0" },
+    spec: { version: "8.9.0" } as CamundaReleaseSpec,
     secrets: [{ name: "orders-db", keys: ["password"] }],
     missingIn: noneMissing,
     onChange: fn(),

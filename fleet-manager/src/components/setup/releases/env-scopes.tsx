@@ -5,7 +5,6 @@ import { type ReactNode, useId, useRef, useState } from "react";
 import { EnvEditor } from "@/components/fleet/env-editor";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { YamlEditor } from "@/components/fleet/yaml-editor";
-import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
 import { fullSchemaOf } from "@/lib/fields/schema";
 import type { ValidationError } from "@/lib/schema";
 import { cn } from "@/lib/utils";
@@ -13,6 +12,7 @@ import {
   ENV_SCOPES,
   type EnvFromSource,
   type EnvScope,
+  type EnvSpec,
   envOf,
   type ScopeEnv,
   withEnv,
@@ -21,28 +21,26 @@ import {
 const EXTRA_ENV_FROM = fullSchemaOf("extraEnvFrom");
 
 /**
- * EnvScopes edits the env lists of each scope of a release: extraEnv as
- * rows of a name with a value or a Secret key, and extraEnvFrom as YAML.
- * A scope with entries starts open. The editors read spec once, so a
- * caller gives the component a new key when it replaces the spec. After
- * each edit onChange gets a function that applies the edit to a spec, and
- * the errors of every editor. While the YAML of a scope has an error, the
- * function keeps its extraEnvFrom. An error path starts with the scope and
- * the list, such as "zeebe.extraEnv.0.name".
+ * EnvScopes edits the env lists of each scope of spec, a release or the
+ * body of a cluster preset: extraEnv as rows of a name with a value or a
+ * Secret key, and extraEnvFrom as YAML. A scope with entries starts open.
+ * The editors read spec once, so a caller gives the component a new key
+ * when it replaces the spec. After each edit onChange gets a function that
+ * applies the edit to a spec, and the errors of every editor. While the
+ * YAML of a scope has an error, the function keeps its extraEnvFrom. An
+ * error path starts with the scope and the list, such as
+ * "zeebe.extraEnv.0.name".
  */
-export function EnvScopes({
+export function EnvScopes<S extends EnvSpec>({
   spec,
   secrets,
   missingIn,
   onChange,
 }: {
-  spec: CamundaReleaseSpec;
+  spec: S;
   secrets: SecretRefs;
   missingIn: (name: string, key: string) => readonly string[];
-  onChange: (
-    update: (spec: CamundaReleaseSpec) => CamundaReleaseSpec,
-    errors: ValidationError[],
-  ) => void;
+  onChange: (update: (spec: S) => S, errors: ValidationError[]) => void;
 }): ReactNode {
   const id = useId();
   const [open, setOpen] = useState<ReadonlySet<EnvScope>>(

@@ -56,7 +56,8 @@ function section(
  * other preset is allowed nowhere. spare, the Elasticsearch preset
  * standard, and the PostgreSQL preset standard are unused. The PostgreSQL
  * preset small is named only by the selection of the plane claim
- * platform/plane.
+ * platform/plane. The cluster uses the release camunda-8-9-0 and the
+ * platform config shared, which sets no auth method.
  */
 export function presetFixtures(): PresetSources {
   return {
@@ -236,5 +237,21 @@ export function presetFixtures(): PresetSources {
       section("volume-encryption", "Volume encryption", "volumeEncryption"),
     ],
     registrations: [],
+    releases: [
+      {
+        apiVersion: CORE,
+        kind: "CamundaRelease",
+        metadata: { name: "camunda-8-9-0", resourceVersion: "30" },
+        spec: { version: "8.9.0" },
+      } as Resource<"CamundaRelease">,
+    ],
+    platformConfigs: [
+      {
+        apiVersion: CORE,
+        kind: "CamundaPlatformConfig",
+        metadata: { name: "shared", resourceVersion: "31" },
+        spec: {},
+      } as Resource<"CamundaPlatformConfig">,
+    ],
   };
 }
