@@ -27,7 +27,7 @@ const ref = {
 const key = "CamundaClusterClaim/team-a/orders";
 
 describe("deleteClaimSteps", () => {
-  it("removes the claim by its UID and writes no policy when the claim policy is the choice", () => {
+  it("removes the claim by its UID and resourceVersion, and writes no policy when the claim policy is the choice", () => {
     expect(
       deleteClaimSteps(
         claim({ deletionPolicy: "Orphan" }),
@@ -40,6 +40,7 @@ describe("deleteClaimSteps", () => {
         apply: [],
         delete: [ref],
         uids: { [key]: "uid-1" },
+        preconditions: { [key]: "41" },
       },
     });
   });
@@ -76,13 +77,17 @@ describe("deleteClaimSteps", () => {
       apply: [],
       delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
       uids: { "CamundaManagementClusterClaim/team-a/orders": "uid-1" },
+      preconditions: { "CamundaManagementClusterClaim/team-a/orders": "41" },
     });
   });
 
-  it("leaves out uids for a claim without a UID", () => {
+  it("leaves out uids and preconditions for a claim without a UID and a resourceVersion", () => {
     const { metadata } = claim();
     const remove = deleteClaimSteps(
-      { ...claim(), metadata: { ...metadata, uid: undefined } },
+      {
+        ...claim(),
+        metadata: { ...metadata, uid: undefined, resourceVersion: undefined },
+      },
       "Delete",
       "x",
     ).remove;

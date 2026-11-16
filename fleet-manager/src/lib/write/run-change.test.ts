@@ -233,6 +233,12 @@ describe("claimDeleteSchema", () => {
   it("accepts one delete of a claim of either kind, with or without its UID", () => {
     expect(claimDeleteSchema.safeParse(remove).success).toBe(true);
     expect(
+      claimDeleteSchema.safeParse({
+        ...remove,
+        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+      }).success,
+    ).toBe(true);
+    expect(
       claimDeleteSchema.safeParse({ ...remove, uids: undefined }).success,
     ).toBe(true);
     expect(
@@ -276,10 +282,10 @@ describe("claimDeleteSchema", () => {
       },
     ],
     [
-      "a precondition",
+      "a precondition of another object",
       {
         ...remove,
-        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+        preconditions: { "CamundaClusterClaim/team-a/payments": "41" },
       },
     ],
     ["create", { ...remove, create: ["CamundaClusterClaim/team-a/orders"] }],

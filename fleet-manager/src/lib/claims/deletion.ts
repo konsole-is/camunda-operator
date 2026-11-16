@@ -20,13 +20,13 @@ import {
 
 /**
  * deleteClaimSteps returns the writes that delete claim under policy.
- * remove deletes the claim with its UID in uids, so that a claim made
- * again under its name is not deleted; it has no uids when the claim has
- * no UID. policy is present only when the deletion policy of the claim
- * (deletionPolicyOf) differs from policy: it writes spec.deletionPolicy as
- * the whole claim, with the resourceVersion of claim as its precondition.
- * Direct mode sends policy, then remove. Git mode sends remove once the
- * live claim carries the revision of policy.
+ * remove deletes the claim with its UID in uids and its resourceVersion in
+ * preconditions, so that it fails with Stale when the claim changed since;
+ * each is left out when the claim has none. policy is present only when
+ * the deletion policy of the claim (deletionPolicyOf) differs from policy:
+ * it writes spec.deletionPolicy as the whole claim, with the
+ * resourceVersion of claim as its precondition. After policy, take remove
+ * from the claim that carries the new policy.
  */
 export function deleteClaimSteps<C extends DeletableClaim>(
   claim: C,
@@ -41,6 +41,9 @@ export function deleteClaimSteps<C extends DeletableClaim>(
     apply: [],
     delete: [ref],
     ...(metadata.uid && { uids: { [refKey(ref)]: metadata.uid } }),
+    ...(metadata.resourceVersion && {
+      preconditions: { [refKey(ref)]: metadata.resourceVersion },
+    }),
   };
   if (deletionPolicyOf(spec?.deletionPolicy, status?.resolvedPolicy) === policy)
     return { remove };
