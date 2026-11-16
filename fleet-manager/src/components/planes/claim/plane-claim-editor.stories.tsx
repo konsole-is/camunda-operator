@@ -153,12 +153,20 @@ const data: PlanePageData = {
       {
         kind: "PluginSection",
         metadata: { name: "databases" },
-        spec: { slot: "managementDatabases" },
+        spec: {
+          label: "Databases",
+          slot: "managementDatabases",
+          appliesTo: ["CamundaManagementClusterClaim"],
+        },
       },
       {
         kind: "PluginSection",
         metadata: { name: "access" },
-        spec: { slot: "externalAccess" },
+        spec: {
+          label: "Access",
+          slot: "externalAccess",
+          appliesTo: ["CamundaManagementClusterClaim"],
+        },
       },
     ] as unknown as Resource<"PluginSection">[],
     registrations: [
