@@ -741,6 +741,43 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it("the preview of a delete of an object without a file returns the refusal of the delete", async () => {
+    repo = await serveBareRepository();
+
+    const preview = await writerFor().preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining(
+          "team-a/camundaclusterclaims/orders.yaml is not in the repository",
+        ),
+        ref: claimRef("team-a", "orders"),
+      }),
+    ]);
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("the preview of a delete of an object with a file has no error", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const preview = await writerFor().preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([]);
+  });
+
   it("a change whose files are already in the repository makes no commit", async () => {
     repo = await serveBareRepository();
     const change: Change = {

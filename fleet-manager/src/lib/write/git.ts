@@ -110,7 +110,7 @@ type Remote = {
  * custom resource that GitOps applied with client-side apply, drops each
  * field of GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
  * an object without a file, and a file behind a symbolic link of the
- * repository, are Invalid. The UID is checked only before the push: GitOps
+ * repository, are Invalid, in the preview too for an object to delete. The UID is checked only before the push: GitOps
  * later deletes the object of that name, whatever its UID.
  *
  * When another push lands first, apply fetches and commits again on top
@@ -269,13 +269,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
   const commitChange = async (change: Change): Promise<WriteResult> => {
     const base = gitBase(target.path);
-    if (base === undefined) {
-      return failure({
-        code: "Invalid",
-        path: "git.path",
-        message: "git.path must be a folder inside the repository.",
-      });
-    }
+    if (base === undefined) return failure(GIT_PATH_ERROR);
     const auth = await gitCredentials(target.url, target.credentialsSecretRef);
     if (!auth.ok) return failure(auth.error);
 
@@ -467,7 +461,55 @@ export function gitWriter(options: GitWriterOptions): Writer {
     }
   };
 
-  return { mode: "git", preview, apply };
+  // fileErrors refuses each of refs that has no file on the branch, or a
+  // file behind a link, as the commit of its delete would.
+  const fileErrors = async (
+    refs: readonly ObjectRef[],
+  ): Promise<ApiError[]> => {
+    const base = gitBase(target.path);
+    if (base === undefined) return [GIT_PATH_ERROR];
+    const auth = await gitCredentials(target.url, target.credentialsSecretRef);
+    if (!auth.ok) return [auth.error];
+    const dir = await mkdtemp(path.join(os.tmpdir(), "fleet-git-"));
+    try {
+      const credentials = auth.auth;
+      await git.clone({
+        fs,
+        http,
+        dir,
+        url: target.url,
+        ...(credentials ? { onAuth: () => credentials } : {}),
+        onAuthFailure: () => ({ cancel: true }),
+        depth: 1,
+        singleBranch: true,
+        ...(target.branch ? { ref: target.branch } : {}),
+      });
+      const errors: ApiError[] = [];
+      for (const ref of refs) {
+        const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
+        if (await throughLink(dir, file)) errors.push(linkError(file, ref));
+        else if (!(await exists(path.join(dir, file))))
+          errors.push(noFileError(file, ref));
+      }
+      return errors;
+    } catch (error) {
+      const refusal = gitErrorOf(error, target);
+      if (refusal.code === "Forbidden") auth.forget();
+      return [refusal];
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+
+  const previewWithFiles = async (change: Change): Promise<Preview> => {
+    const result = await preview(change);
+    const deletes = change.delete ?? [];
+    if (change.directOnly || deletes.length === 0 || result.errors.length > 0)
+      return result;
+    return { ...result, errors: await fileErrors(deletes) };
+  };
+
+  return { mode: "git", preview: previewWithFiles, apply };
 }
 
 type Written =
@@ -513,11 +555,7 @@ async function writeFiles(
       continue;
     }
     if (!(await exists(path.join(dir, file)))) {
-      errors.push({
-        code: "Invalid",
-        message: `${file} is not in the repository. GitOps does not manage ${ref.kind} ${ref.name}.`,
-        ref,
-      });
+      errors.push(noFileError(file, ref));
       continue;
     }
     await rm(path.join(dir, file));
@@ -656,6 +694,20 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
     message: `Could not reach ${target.url}: ${reasonOf(error)}`,
   };
 }
+
+function noFileError(file: string, ref: ObjectRef): ApiError {
+  return {
+    code: "Invalid",
+    message: `${file} is not in the repository. GitOps does not manage ${ref.kind} ${ref.name}.`,
+    ref,
+  };
+}
+
+const GIT_PATH_ERROR: ApiError = {
+  code: "Invalid",
+  path: "git.path",
+  message: "git.path must be a folder inside the repository.",
+};
 
 function failure(...errors: ApiError[]): WriteResult {
   return { ok: false, errors };
