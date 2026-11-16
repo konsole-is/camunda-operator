@@ -127,9 +127,10 @@ The page lists each resource that an option made, under the name of its section.
 The delete always removes these objects, whatever you choose:
 
 - The `CamundaCluster`.
-- The `CamundaOptimize` of the cluster.
-- The `BackupSchedule` objects of the cluster.
+- The `CamundaOptimize` `<name>-optimize` and the `BackupSchedule` `<name>-backups`, when the claim made them.
 - The claim.
+
+A `CamundaOptimize` or a `BackupSchedule` of the cluster that the claim did not make stays. The page lists it under **Kept**, with "Kept: the claim did not make it".
 
 By default, the broker volumes go with the `CamundaCluster`, and the page says "Volumes deleted" next to it. The choice between keeping and deleting the resources does not change this. To keep the volumes for a later cluster of the same name, set `whenDeleted: Retain` in the claim. Apply this change to the claim before you open the delete page. In Git mode, wait until GitOps applied it:
 
@@ -158,15 +159,21 @@ The backups of the cluster stay, and their artifacts stay in the bucket. When th
 1. Type the name of the cluster.
 2. Select **Delete the cluster**. In Git mode, the button is **Push the delete to Git**.
 
-You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
+You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. The page shows "Waiting for the operator to read the deletion policy." Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
+
+If the claim changed after the page read it, the delete fails, and the page shows the claim again for a new review. If the delete fails after the fleet manager wrote your choice, the claim keeps that deletion policy. The page then says, for example, "The deletion policy of my-cluster is now Keep, and the cluster is not deleted."
+
+### When the page cannot read a list
+
+The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The review comes back when the fleet manager can read every list again.
 
 ### Delete in Git mode
 
-When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file. To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository, and the page shows the choice again.
+When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file. To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again and says "The commit of the deletion policy is in the repository."
 
 After the delete commit, the page shows "Waiting for GitOps to delete my-cluster" until the cluster starts to delete the claim. Your GitOps tool must prune: it deletes the claim only when it removes the objects of deleted files. [Waiting for GitOps](settings.md#waiting-for-gitops) shows how the fleet manager follows a push.
 
-If the claim has no file in the repository, the page refuses the delete. For example, with an empty `git.path`, it shows `my-cluster-ns/camundaclusterclaims/my-cluster.yaml is not in the repository. GitOps does not manage CamundaClusterClaim my-cluster.` Commit the claim to the folder of `git.path`, then delete it again. Or delete the claim with `kubectl delete camundaclusterclaim my-cluster -n my-cluster-ns`.
+If the claim has no file in the repository, the review refuses the delete before the first commit, with either choice. For example, with an empty `git.path`, it shows `my-cluster-ns/camundaclusterclaims/my-cluster.yaml is not in the repository. GitOps does not manage CamundaClusterClaim my-cluster.` Commit the claim to the folder of `git.path`, then delete it again. Or delete the claim with `kubectl delete camundaclusterclaim my-cluster -n my-cluster-ns`.
 
 ## What the tabs need
 
