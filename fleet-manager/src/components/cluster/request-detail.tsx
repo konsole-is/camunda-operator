@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Term, Terms } from "./claim-tab";
 import { SeverityMark } from "./component-card";
 import { DetailSection } from "./detail-section";
+import { NotRead } from "./not-read";
 import type {
   ConnectedRef,
   GrantRow,
@@ -472,13 +473,4 @@ function ErrorRow({ row, span }: { row: Invalid; span: number }) {
 
 function RowError({ row }: { row: Invalid }) {
   return <span className="text-sm text-bad">{row.error}</span>;
-}
-
-/** NotRead names kinds that the page could not read, so a box shows nothing from them. */
-export function NotRead({ kinds }: { kinds: readonly string[] }) {
-  return (
-    <p className="text-sm text-muted">
-      Not known: the page could not read {kinds.join(", ")}.
-    </p>
-  );
 }

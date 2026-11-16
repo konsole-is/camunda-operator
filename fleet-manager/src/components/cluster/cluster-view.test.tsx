@@ -15,6 +15,16 @@ import {
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
 import {
+  coreSections,
+  fixtureClaim,
+  fixtureContract,
+  fixtureGrant,
+  fixtureRegistrations,
+  fixtureRequest,
+  fixtureRequests,
+  fixtureSelections,
+} from "./request-fixtures";
+import {
   ACTION_SLOTS,
   type ActionSlots,
   type ClusterSlotContext,
@@ -28,6 +38,7 @@ const live = vi.hoisted(() => ({
   usage: undefined as unknown,
   partitions: undefined as unknown,
   observed: [] as { hook: string; args: string[] }[],
+  stale: [] as string[],
 }));
 // The App Router keeps useSearchParams in step with history.replaceState, so
 // the fake reads the URL of the window.
@@ -49,6 +60,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
     live.calls.push({ kind, opts });
     return { items: live.objects[kind] ?? initial, error: live.errors[kind] };
   },
+  useWatchesFresh: (lists: readonly { kind: string }[]) =>
+    lists.map((l) => !live.stale.includes(l.kind)),
   useResource: (kind: string, ref: { name: string }, initial?: unknown) => {
     live.calls.push({ kind, opts: ref });
     const items = live.objects[kind] as
@@ -66,6 +79,7 @@ beforeEach(() => {
   live.usage = undefined;
   live.partitions = undefined;
   live.observed = [];
+  live.stale = [];
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -1929,5 +1943,168 @@ describe("Section components", () => {
       screen.getByRole("heading", { name: "Backup storage" }),
     ).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+  });
+});
+
+describe("The detail of a section", () => {
+  const open = (component: string) =>
+    window.history.replaceState(
+      null,
+      "",
+      `/fleet/clusters/team-a/orders?tab=overview&component=${encodeURIComponent(component)}`,
+    );
+  const detail = (name: string) => screen.getByRole("region", { name });
+  const withClaim = (over: Partial<ClusterPageData> = {}) =>
+    data({
+      claims: [fixtureClaim()],
+      sections: coreSections,
+      registrations: fixtureRegistrations,
+      requests: fixtureRequests,
+      ...over,
+    });
+
+  it("shows the Overview blocks of the request of an open section", () => {
+    open("section:backup-storage");
+    render(view({ initial: withClaim() }));
+    const backup = detail("Backup storage");
+    expect(
+      within(within(backup).getByRole("region", { name: "Summary" })).getByText(
+        "orders-backups",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(backup).getByRole("region", { name: "Resources" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the grants of the request of an open section", () => {
+    open("section:backup-storage");
+    render(
+      view({
+        initial: withClaim({
+          grants: [fixtureGrant("orders-read", "backup-storage")],
+        }),
+      }),
+    );
+    expect(
+      within(detail("Grants")).getByLabelText("Statement of orders-read"),
+    ).toBeTruthy();
+  });
+
+  it("shows an existing secondary storage as connected with the Ready of its contract", () => {
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim({ storage: [fixtureContract("orders-storage")] }),
+      }),
+    );
+    expect(
+      within(detail("Connected")).getByRole("row", {
+        name: "SecondaryStorageConfig orders-storage Ready",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("shows the ElasticsearchCluster of a built-in secondary storage", () => {
+    const selections = fixtureSelections.map((s) =>
+      s.section === "secondary-storage"
+        ? { section: s.section, registration: "elasticsearch" }
+        : s,
+    );
+    const request = fixtureRequest("secondary-storage", {
+      resources: [
+        {
+          kind: "ElasticsearchCluster",
+          name: "orders-es",
+          onOrphan: "Deleted",
+        },
+      ],
+    });
+    request.spec.registration = "elasticsearch";
+    const es = {
+      kind: "ElasticsearchCluster",
+      metadata: { namespace: "team-a", name: "orders-es" },
+      spec: {},
+      status: { version: "8.19.2", snapshotRepository: "camunda" },
+    } as unknown as Resource<"ElasticsearchCluster">;
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim({
+          claims: [fixtureClaim(selections)],
+          requests: fixtureRequests.map((r) =>
+            r.spec.section === "secondary-storage" ? request : r,
+          ),
+          elasticsearchClusters: [es],
+        }),
+      }),
+    );
+    const box = detail("ElasticsearchCluster");
+    expect(within(box).getByText("8.19.2")).toBeTruthy();
+    expect(within(box).getByText("camunda")).toBeTruthy();
+  });
+
+  it("shows the parameters of a section in its Settings tab", async () => {
+    open("section:secondary-storage");
+    render(view({ initial: withClaim() }));
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    const table = screen.getByRole("table", {
+      name: "Secondary storage: Existing secondary storage settings",
+    });
+    expect(
+      within(table)
+        .getAllByRole("rowheader")
+        .map((h) => h.textContent),
+    ).toEqual(["name"]);
+  });
+
+  it("names the Grant kind and shows no grant state while the Grants are not read", () => {
+    live.stale = ["Grant"];
+    open("section:cloud-identity");
+    render(view({ initial: withClaim() }));
+    expect(
+      within(detail("Grants")).getByText(
+        "Not known: the page could not read Grant.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no fate while the claims are not read", () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    open("section:backup-storage");
+    render(view({ initial: withClaim() }));
+    const resources = detail("Resources");
+    expect(within(resources).queryByText("Kept")).toBeNull();
+    expect(within(resources).getAllByText("Not known").length).toBe(2);
+  });
+
+  it("shows nothing of a request that is out of date, and names its kind", () => {
+    live.stale = ["PluginRequest"];
+    open("section:backup-storage");
+    render(view({ initial: withClaim() }));
+    const backup = detail("Backup storage");
+    expect(within(backup).getByText("Ready: Not known")).toBeTruthy();
+    expect(
+      within(backup).getAllByText(
+        "Not known: the page could not read PluginRequest.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(backup).queryByRole("region", { name: "Summary" }),
+    ).toBeNull();
+    expect(within(backup).queryByText("Healthy")).toBeNull();
+  });
+
+  it("shows no state and no headline on a section card while the requests are out of date", () => {
+    live.stale = ["PluginRequest"];
+    render(view({ initial: withClaim() }));
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Not known");
+    expect(within(card).queryByText("orders-backups")).toBeNull();
   });
 });

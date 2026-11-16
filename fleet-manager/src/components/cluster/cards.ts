@@ -165,34 +165,42 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
  * sectionCards returns one used card for each section component, in the
  * order given. The headline is the first summary item of the request, with
  * its Warning or Error severity, then the count of its resources. A section
- * whose request does not exist yet says so. With requestsError, the error
- * of the read of the PluginRequests, a section without its request says
- * that the request could not be read. The Ready condition of the request
- * is the state of the card.
+ * whose request does not exist yet says so. The Ready condition of the
+ * request is the state of the card. With requestsError, the error of the
+ * read of the PluginRequests, or with requestsStale, when their list is out
+ * of date, no card shows a request or a state: each says that the request
+ * could not be read, or is not known.
  */
 export function sectionCards(
   components: readonly SectionComponent[],
   requestsError?: string,
+  requestsStale = false,
 ): ComponentCardModel[] {
+  const unread =
+    requestsError !== undefined
+      ? "Could not read"
+      : requestsStale
+        ? "Not known"
+        : undefined;
   return components.map((component) => ({
     id: component.id,
     label: component.label,
     used: true,
-    ...(component.condition
+    ...(component.condition && !unread
       ? { condition: { type: "Ready", ...component.condition } }
       : {}),
     embedded: [],
     pods: [],
-    numbers: sectionNumbers(component.request, requestsError !== undefined),
+    numbers: sectionNumbers(component.request, unread),
   }));
 }
 
 function sectionNumbers(
   request: Resource<"PluginRequest"> | undefined,
-  unread: boolean,
+  unread: string | undefined,
 ): CardNumber[] {
-  if (!request && unread) {
-    return [{ label: "Request", value: "Could not read", severity: "Warning" }];
+  if (unread) {
+    return [{ label: "Request", value: unread, severity: "Warning" }];
   }
   if (!request) return [{ label: "Request", value: "Not made yet" }];
   const first = request.status?.summary?.[0];

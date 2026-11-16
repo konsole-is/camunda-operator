@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { ConditionList } from "@/components/fleet/condition-list";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResources } from "@/lib/k8s/hooks";
 import type { EventRef } from "@/lib/observe/events";
@@ -14,6 +15,7 @@ import { DetailEvents } from "./detail-events";
 import { type ControllerLogs, DetailLogs } from "./detail-logs";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 import { DetailSection } from "./detail-section";
+import { NotRead } from "./not-read";
 import { NO_PODS, type PodLike, PodTable } from "./pod-table";
 
 /** DetailTab names one tab of a component detail. */
@@ -33,6 +35,7 @@ type DetailProps = {
   subtitle?: string;
   conditions: ConditionRow[];
   ready: ConditionRow | undefined;
+  unread?: string;
   settings?: ReactNode;
   children?: ReactNode;
   now: string;
@@ -61,7 +64,10 @@ type ObserveProps = {
  * that relatedSelector selects (podSelector without it), and of eventRefs.
  * A missing or empty podSelector selects no pods: the detail watches no
  * pods and no usage, says that the component runs no pods, and lists only
- * the events of eventRefs. It needs a QueryClientProvider above it.
+ * the events of eventRefs. unread names the kind of the object of the
+ * component while the page could not read it or its list is out of date:
+ * the state then shows Not known, and the Conditions section names the
+ * kind in place of conditions. It needs a QueryClientProvider above it.
  */
 export function ComponentDetail({
   podSelector,
@@ -191,6 +197,7 @@ export function ComponentDetailView({
   subtitle,
   conditions,
   ready,
+  unread,
   pods,
   usage,
   settings,
@@ -224,7 +231,11 @@ export function ComponentDetailView({
           >
             {title}
           </h2>
-          <StatusChip condition={ready} readyReason />
+          {unread ? (
+            <ConditionBadge type="Ready" unknown />
+          ) : (
+            <StatusChip condition={ready} readyReason />
+          )}
         </div>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
       </header>
@@ -252,11 +263,15 @@ export function ComponentDetailView({
                 )}
               </DetailSection>
               <DetailSection title="Conditions" className="flex-[1_1_18rem]">
-                <ConditionList
-                  conditions={conditions}
-                  label={`${title} conditions`}
-                  now={now}
-                />
+                {unread ? (
+                  <NotRead kinds={[unread]} />
+                ) : (
+                  <ConditionList
+                    conditions={conditions}
+                    label={`${title} conditions`}
+                    now={now}
+                  />
+                )}
               </DetailSection>
             </div>
             {children}

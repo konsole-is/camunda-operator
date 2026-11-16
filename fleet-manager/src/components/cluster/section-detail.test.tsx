@@ -220,6 +220,60 @@ describe("SectionComponentDetail", () => {
     expect(detail.seen.metrics).toEqual({ request: "orders-backup-storage" });
   });
 
+  it("shows the state of a request as not known, and names PluginRequest in place of children, while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={withRequest}
+        registrations={[s3]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      >
+        <p>Request outputs</p>
+      </SectionComponentDetail>,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+    expect(
+      screen.getByText("Not known: the page could not read PluginRequest."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Request outputs")).toBeNull();
+  });
+
+  it("says the error of the read in place of children when the read of the requests failed", () => {
+    render(
+      <SectionComponentDetail
+        component={withRequest}
+        registrations={[s3]}
+        namespace="team-a"
+        requestsError="watch broke"
+        now={now}
+      >
+        <p>Request outputs</p>
+      </SectionComponentDetail>,
+    );
+    expect(detail.seen.unread).toBe("PluginRequest");
+    expect(
+      screen.getByText("Could not read PluginRequest: watch broke"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Request outputs")).toBeNull();
+  });
+
+  it("names PluginRequest, never that the request is not made yet, while the requests are out of date", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage()}
+        registrations={[]}
+        namespace="team-a"
+        requestsStale
+        now={now}
+      />,
+    );
+    expect(
+      screen.getByText("Not known: the page could not read PluginRequest."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/has not made the request/)).toBeNull();
+  });
+
   it("passes the settings and the children of the section", () => {
     render(
       <SectionComponentDetail

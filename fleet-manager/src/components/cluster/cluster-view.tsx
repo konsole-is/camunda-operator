@@ -10,7 +10,9 @@ import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
-import { useResource, useResources } from "@/lib/k8s/hooks";
+import { useClock } from "@/components/fleet/use-clock";
+import { unreadKinds } from "@/components/setup/releases/rows";
+import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   ACCESS_SECTION,
@@ -40,6 +42,7 @@ import {
 } from "./cards";
 import { claimView } from "./claim";
 import { ClaimTab } from "./claim-tab";
+import { BuiltinStorage } from "./builtin-storage";
 import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
@@ -49,10 +52,13 @@ import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
 import { clusterOptimize } from "./optimize";
 import { OverviewConditions } from "./overview-conditions";
+import { RequestOverview } from "./request-detail";
+import { builtinStorageOf, requestDetail } from "./requests";
 import {
   clusterFieldsInputOf,
   componentSettings,
   operatorVersionOf,
+  sectionSettings,
 } from "./settings";
 import { type ClaimActions, ClusterEditProvider } from "./edit/cluster-edit";
 import { SectionComponentDetail } from "./section-detail";
@@ -189,9 +195,13 @@ export function ClusterView({
     initial.storage,
   );
   const claimName = cluster.item?.metadata?.labels?.[CLAIM_LABEL];
+  const requestsOpts = {
+    namespace: ns,
+    labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
+  };
   const requests = useResources(
     "PluginRequest",
-    { namespace: ns, labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}` },
+    requestsOpts,
     initial.requests,
   );
   const pods = useResources(
@@ -281,6 +291,21 @@ export function ClusterView({
     { namespace: ns },
     initial.elasticsearchClusters,
   );
+  // The detail of a section reads these lists. A list whose watch has no
+  // snapshot on its current connection can be out of date.
+  const sectionLists = [
+    { kind: "PluginRequest", opts: requestsOpts },
+    { kind: "CamundaClusterClaim", opts: { namespace: ns } },
+    { kind: "PluginSection", opts: {} },
+    { kind: "PluginRegistration", opts: {} },
+    { kind: "Grant", opts: { namespace: ns } },
+    { kind: "ElasticsearchCluster", opts: { namespace: ns } },
+    { kind: "DatabaseServer", opts: { namespace: ns } },
+    { kind: "SecondaryStorageConfig", opts: { namespace: ns } },
+    { kind: "ObjectStorageConfig", opts: { namespace: ns } },
+    { kind: "DatabaseConfig", opts: { namespace: ns } },
+  ] as const;
+  const sectionFresh = useWatchesFresh(sectionLists);
   useEffect(() => {
     const selector = focusNext.current;
     if (!selector) return;
@@ -392,7 +417,11 @@ export function ClusterView({
       usage,
       partitions,
     }),
-    ...sectionCards(sectionList, requests.error),
+    ...sectionCards(
+      sectionList,
+      requests.error,
+      !sectionFresh[0] && requests.error === undefined,
+    ),
   ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
     Object.fromEntries(
@@ -450,6 +479,13 @@ export function ClusterView({
   };
   const openId = componentOf(component, cards);
   const openSection = sectionList.find((s) => s.id === openId);
+  const unread = unreadKinds({
+    errors,
+    stale: sectionLists
+      .filter((_, i) => !sectionFresh[i])
+      .map(({ kind }) => kind),
+  });
+  const requestsStale = unread.includes("PluginRequest");
   const context: ClusterSlotContext = {
     cluster: live,
     claim,
@@ -484,6 +520,53 @@ export function ClusterView({
       context={context}
     />
   );
+
+  const sectionDetail =
+    openSection && claim
+      ? requestDetail({
+          component: openSection,
+          claim,
+          cluster: name ?? "",
+          sections: sections.items,
+          registrations: registrations.items,
+          components: sectionList,
+          grants: grants.items,
+          contracts: {
+            SecondaryStorageConfig: storage.items,
+            ObjectStorageConfig: objectStorage.items,
+            DatabaseConfig: databaseConfigs.items,
+          },
+        })
+      : undefined;
+  const builtin =
+    openSection?.request &&
+    builtinStorageOf(
+      openSection.request,
+      elasticsearchClusters.items,
+      databaseServers.items,
+    );
+  const sectionOverview = (builtin || sectionDetail) && (
+    <div className="flex flex-col gap-4">
+      {builtin && (
+        <BuiltinStorage storage={builtin} unread={unread} now={clock} />
+      )}
+      {sectionDetail && (
+        <RequestOverview detail={sectionDetail} unread={unread} now={clock} />
+      )}
+    </div>
+  );
+  const claimSection =
+    openSection && claim
+      ? claimView({
+          claim,
+          cluster: live,
+          merged,
+          environments: environments.items,
+          sections: sections.items,
+          registrations: registrations.items,
+        }).sections.find((s) => s.id === openSection.id)
+      : undefined;
+  const sectionBlocks = claimSection ? sectionSettings(claimSection) : [];
 
   const content = (
     <div className="flex flex-col gap-4">
@@ -545,9 +628,24 @@ export function ClusterView({
                     registrations={registrations.items}
                     namespace={ns}
                     requestsError={requests.error}
-                    settings={slot("component.settings.editor")}
+                    requestsStale={requestsStale}
+                    settings={
+                      <div className="flex flex-col gap-4">
+                        <ComponentSettings
+                          groups={sectionBlocks}
+                          docs={initial.fieldDocs}
+                          operatorVersion={operatorVersionOf(
+                            registrations.items,
+                          )}
+                          cluster={{ namespace: ns, name: name ?? "" }}
+                        />
+                        {slot("component.settings.editor")}
+                      </div>
+                    }
                     now={clock}
-                  />
+                  >
+                    {sectionOverview}
+                  </SectionComponentDetail>
                 )
               ) : (
                 <ClusterComponentDetail
@@ -674,16 +772,4 @@ function conditionRows(
   conditions: readonly { type: string; status: string }[] | undefined,
 ): ConditionRow[] | undefined {
   return conditions as ConditionRow[] | undefined;
-}
-
-// useClock starts at the time of the server, so that the first render in
-// the browser matches the render of the server.
-function useClock(initial: string, ticking: boolean): string {
-  const [clock, setClock] = useState(initial);
-  useEffect(() => {
-    if (!ticking) return;
-    const timer = setInterval(() => setClock(new Date().toISOString()), 1000);
-    return () => clearInterval(timer);
-  }, [ticking]);
-  return clock;
 }
