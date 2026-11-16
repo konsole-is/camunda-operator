@@ -62,8 +62,11 @@ describe("loadCreateCluster", () => {
     expect(data.readErrors).toEqual([]);
   });
 
-  it("gives the read error of each list that steps 3 and 4 check against", async () => {
+  it("gives the read error of each list that the steps and the review check against", async () => {
     for (const kind of [
+      "Environment",
+      "PluginSection",
+      "PluginRegistration",
       "CamundaRelease",
       "CamundaPlatformConfig",
       "ManagementAuthConfig",

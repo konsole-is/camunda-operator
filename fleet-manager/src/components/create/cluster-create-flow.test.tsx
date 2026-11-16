@@ -836,6 +836,25 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(false);
   });
 
+  it("blocks the flow on a failed server read of the registrations until the watch answers", async () => {
+    const initial = data({
+      accessRequests: [],
+      registrations: [],
+      readErrors: [{ kind: "PluginRegistration", message: "forbidden" }],
+    });
+    const { rerender } = show(initial);
+    await fillBasics("search");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "The fleet manager could not read the PluginRegistration objects: forbidden",
+    );
+
+    live.objects.PluginRegistration = data().registrations;
+    live.fresh.add("PluginRegistration");
+    rerender(flowOf(initial));
+    expect(footer()).not.toContain("could not read");
+  });
+
   it("keeps the step 3 and 4 picks after Back and Next", async () => {
     show(attachmentData());
     await toStep("Cluster settings");
@@ -1318,6 +1337,57 @@ describe("ClusterCreateFlow write", () => {
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
+  it("a lost answer with another claim of that name does not offer to follow it", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      const other = writtenClaim("team-a");
+      live.objects.CamundaClusterClaim = [
+        { ...other, spec: { ...other.spec, presetRef: "large" } },
+      ];
+      throw new Error("the connection to the API server was lost");
+    });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      (await screen.findByText(/This create did not make it/)).textContent,
+    ).toBe(
+      "A claim orders exists in team-a already. This create did not make it.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Follow the claim" }),
+    ).toBeNull();
+  });
+
+  it("a Stale refusal says that a claim of that name exists and was not made by this create", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      live.objects.CamundaClusterClaim = [writtenClaim("team-a")];
+      return {
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message: "CamundaClusterClaim team-a/orders exists already.",
+          },
+        ],
+      };
+    });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      (await screen.findByText(/This create did not make it/)).textContent,
+    ).toBe(
+      "A claim orders exists in team-a already. This create did not make it.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Follow the claim" }),
+    ).toBeNull();
+  });
+
   it("keeps Create disabled while a create runs, also after Back and Next", async () => {
     let finish: (result: WriteResult) => void = () => {};
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce((change) => {
@@ -1378,7 +1448,10 @@ describe("ClusterCreateFlow write", () => {
     expect(screen.queryByText(/Permissions the options ask for/)).toBeTruthy();
   });
 
-  it("refuses a Secret that was picked in another namespace until it is reset", async () => {
+  // pickInTeamA picks the Secret orders-oidc of team-a in step 3, then
+  // moves the draft to team-b, which holds no Secret, and returns to step 3.
+  async function pickInTeamA() {
+    live.fresh.add("Secret");
     live.objects.Secret = [
       {
         metadata: { namespace: "team-a", name: "orders-oidc" },
@@ -1396,7 +1469,7 @@ describe("ClusterCreateFlow write", () => {
         },
       ],
     });
-    show(initial);
+    const view = show(initial);
     await toStep("Cluster settings", "orders");
     // The setting and its picker are both groups of that name.
     const picker = screen.getAllByRole("group", {
@@ -1411,6 +1484,8 @@ describe("ClusterCreateFlow write", () => {
       "secret",
     );
     await userEvent.click(stepButton("Environment and name"));
+    // The fake watch serves one list for every namespace.
+    live.objects.Secret = [];
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: "Namespace" }),
       "team-b",
@@ -1420,8 +1495,33 @@ describe("ClusterCreateFlow write", () => {
     expect(heading("Cluster settings")).toBeTruthy();
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
-      "Cluster settings: auth.clientSecretRef: The Secret was picked in the namespace team-a. Pick a Secret of team-b, or reset the field.",
+      "Cluster settings: auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
     );
+    return { view, initial };
+  }
+
+  it("refuses a Secret that the namespace does not hold until it is reset", async () => {
+    await pickInTeamA();
+    const setting = screen.getAllByRole("group", {
+      name: "auth.clientSecretRef",
+    })[0];
+    await userEvent.click(
+      within(setting).getByRole("button", { name: /reset|default/i }),
+    );
+    await waitFor(() => expect(next().disabled).toBe(false));
+    expect(footer()).not.toContain("auth.clientSecretRef");
+  });
+
+  it("accepts the reference once the namespace holds the Secret and its key", async () => {
+    const { view, initial } = await pickInTeamA();
+    live.objects.Secret = [
+      {
+        metadata: { namespace: "team-b", name: "orders-oidc" },
+        keys: ["secret"],
+      },
+    ];
+    view.rerender(flowOf(initial));
+    await waitFor(() => expect(next().disabled).toBe(false));
   });
 });
 

@@ -21,16 +21,15 @@ import {
   draftCluster,
   draftOptimize,
   draftSelections,
-  movedSecretErrors,
   offeredPresets,
   pickerEnvironment,
+  secretErrors,
   secretReferences,
   settingsErrors,
   syncedNamespace,
   withClaimValue,
   withoutClaimValue,
   withoutClaimValues,
-  withSecretPicks,
 } from "./draft";
 import type { StorageSummary } from "./storage";
 import type { DeletionChoice } from "@/lib/policy";
@@ -1150,71 +1149,85 @@ describe("Secret references", () => {
     expect(secretReferences(draftWith({ presetRef: "small" }))).toEqual([]);
   });
 
-  it("refuses nothing while each reference was picked in the namespace of the draft", () => {
-    const picked = withSecretPicks(
-      draftWith({ presetRef: "small" }),
-      withSecrets("team-a"),
-    );
-    expect(movedSecretErrors(picked)).toEqual([]);
+  const read = (namespace: string, error?: string) => ({
+    namespace,
+    secrets: [
+      { name: "orders-oidc", keys: ["secret"] },
+      { name: "orders-env", keys: ["A"] },
+    ],
+    ...(error !== undefined && { error }),
+  });
+  const pathsOf = (errors: string[]) => errors.map((e) => e.split(": ")[0]);
+
+  it("refuses nothing while each Secret and key exists in the namespace of the draft", () => {
+    expect(secretErrors(withSecrets("team-a"), read("team-a"))).toEqual([]);
   });
 
-  it("names each reference that was picked in another namespace", () => {
-    const picked = withSecretPicks(
-      draftWith({ presetRef: "small" }),
-      withSecrets("team-a"),
-    );
-    const moved: ClusterDraft = {
-      ...picked,
-      namespace: { kind: "new", name: "team-new", labels: {} },
-    };
-    const errors = movedSecretErrors(moved);
-    expect(errors).toHaveLength(3);
-    expect(errors[0]).toBe(
-      "auth.clientSecretRef: The Secret was picked in the namespace team-a. Pick a Secret of team-new, or reset the field.",
-    );
-  });
-
-  it("takes a reference that changes after the move as picked in the new namespace", () => {
-    const picked = withSecretPicks(
-      draftWith({ presetRef: "small" }),
-      withSecrets("team-a"),
-    );
-    const moved: ClusterDraft = {
-      ...picked,
-      namespace: { kind: "existing", name: "team-b" },
-    };
-    const repicked = withSecretPicks(
-      moved,
-      withClaimValue(
-        moved,
-        [
-          { field: "spec" },
-          { field: "cluster" },
-          { field: "auth" },
-          { field: "clientSecretRef" },
-        ],
-        { name: "orders-oidc-b", key: "secret" },
-      ),
-    );
-    expect(movedSecretErrors(repicked).map((e) => e.split(":")[0])).toEqual([
+  it("names a Secret that the namespace does not hold, however the reference got there", () => {
+    const errors = secretErrors(withSecrets("team-b"), {
+      namespace: "team-b",
+      secrets: [{ name: "orders-env", keys: [] }],
+    });
+    expect(pathsOf(errors)).toEqual([
+      "auth.clientSecretRef",
       "zeebe.extraEnv[1].valueFrom.secretKeyRef",
-      "zeebe.extraEnvFrom[0].secretRef",
+    ]);
+    expect(errors[0]).toBe(
+      "auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+    );
+  });
+
+  it("names a key that the Secret does not hold", () => {
+    const errors = secretErrors(withSecrets("team-b"), {
+      namespace: "team-b",
+      secrets: [
+        { name: "orders-oidc", keys: ["other"] },
+        { name: "orders-env", keys: [] },
+      ],
+    });
+    expect(errors).toEqual([
+      "auth.clientSecretRef: The Secret orders-oidc of team-b holds no key secret. Pick a key of it, or reset the field.",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef: The Secret orders-oidc of team-b holds no key secret. Pick a key of it, or reset the field.",
     ]);
   });
 
-  it("forgets a reference that leaves the draft", () => {
-    const picked = withSecretPicks(
-      draftWith({ presetRef: "small" }),
-      withSecrets("team-a"),
+  it("accepts a reference that the new namespace holds, also when it did not change", () => {
+    expect(secretErrors(withSecrets("team-b"), read("team-b"))).toEqual([]);
+  });
+
+  it("says that a reference cannot be checked while the Secrets of the namespace are not read", () => {
+    expect(secretErrors(withSecrets("team-b"), read("team-a"))).toContain(
+      "auth.clientSecretRef: The Secrets of team-b are not read yet, so the fleet manager cannot check this reference.",
     );
-    const moved: ClusterDraft = {
-      ...picked,
-      namespace: { kind: "existing", name: "team-b" },
+    expect(secretErrors(withSecrets("team-b"), undefined)).toHaveLength(3);
+    expect(
+      secretErrors(withSecrets("team-b"), read("team-b", "forbidden")),
+    ).toContain(
+      "auth.clientSecretRef: The fleet manager could not read the Secrets of team-b, so it cannot check this reference: forbidden",
+    );
+  });
+
+  it("refuses each reference in a new namespace, which holds no Secret", () => {
+    const fresh: ClusterDraft = {
+      ...withSecrets("team-a"),
+      namespace: { kind: "new", name: "team-new", labels: {} },
     };
-    const reset = withSecretPicks(
-      moved,
-      withoutClaimValue(moved, [{ field: "spec" }, { field: "cluster" }]),
+    const errors = secretErrors(fresh, read("team-a"));
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toBe(
+      "auth.clientSecretRef: The new namespace team-new holds no Secret yet. Reset the field.",
     );
-    expect(movedSecretErrors(reset)).toEqual([]);
+  });
+
+  it("refuses nothing without a reference or a namespace", () => {
+    expect(secretErrors(draftWith({ presetRef: "small" }), undefined)).toEqual(
+      [],
+    );
+    expect(
+      secretErrors(
+        { ...withSecrets("team-a"), namespace: undefined },
+        undefined,
+      ),
+    ).toEqual([]);
   });
 });

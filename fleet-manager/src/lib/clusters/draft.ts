@@ -46,9 +46,6 @@ export type ClusterClaimSpec = Omit<CamundaClusterClaim["spec"], "plugins"> & {
  * unset while no Environment exists. storage holds the selections of each
  * section by section name, as step 2 last reported them. A section that
  * has a key was shown; an empty list is a picked empty option.
- * secretsPickedIn maps the path of each Secret reference of the claim, as
- * secretReferences gives it, to the namespace that it was picked in;
- * withSecretPicks keeps it.
  */
 export type ClusterDraft = {
   environment?: string;
@@ -58,7 +55,6 @@ export type ClusterDraft = {
     spec: Partial<Omit<ClusterClaimSpec, "plugins">>;
   };
   storage?: Record<string, PluginSelection[]>;
-  secretsPickedIn?: Record<string, string>;
 };
 
 /** ClusterClaimObject is the claim that a create writes. */
@@ -584,41 +580,48 @@ function isSecretReference(field: string, value: unknown): boolean {
 }
 
 /**
- * withSecretPicks returns after, the draft that an edit of before made,
- * with secretsPickedIn for its Secret references: a reference that the edit
- * added or changed counts as picked in the namespace of after, and every
- * other one keeps the namespace that before records for it.
+ * SecretsRead is the last answer of the read of the Secrets of namespace:
+ * the name and the keys of each Secret, or the error of the read.
  */
-export function withSecretPicks(
-  before: ClusterDraft,
-  after: ClusterDraft,
-): ClusterDraft {
-  const namespace = after.namespace?.name ?? "";
-  const picks: Record<string, string> = {};
-  for (const { path, steps } of secretReferences(after)) {
-    const kept = before.secretsPickedIn?.[path];
-    const same =
-      JSON.stringify(valueAt(before.claim, steps)) ===
-      JSON.stringify(valueAt(after.claim, steps));
-    picks[path] = same && kept !== undefined ? kept : namespace;
-  }
-  return { ...after, secretsPickedIn: picks };
-}
+export type SecretsRead = {
+  namespace: string;
+  secrets: { name: string; keys: string[] }[];
+  error?: string;
+};
 
 /**
- * movedSecretErrors returns one error for each Secret reference of draft
- * that was picked in another namespace than the namespace of draft. A
- * Secret of one namespace does not exist in another, so the claim must
- * not name it.
+ * secretErrors returns one error for each Secret reference of draft whose
+ * Secret, or key, the namespace of draft does not hold. A new namespace
+ * holds no Secret. read must be the answer for the namespace of draft: for
+ * an existing namespace, without it or with its error, each reference is
+ * an error that says it cannot be checked.
  */
-export function movedSecretErrors(draft: ClusterDraft): string[] {
-  const namespace = draft.namespace?.name ?? "";
-  return secretReferences(draft).flatMap(({ path }) => {
-    const picked = draft.secretsPickedIn?.[path] ?? namespace;
-    return picked === namespace
-      ? []
-      : [
-          `${path}: The Secret was picked in the namespace ${picked}. Pick a Secret of ${namespace}, or reset the field.`,
-        ];
+export function secretErrors(
+  draft: ClusterDraft,
+  read: SecretsRead | undefined,
+): string[] {
+  const namespace = draft.namespace;
+  if (namespace === undefined) return [];
+  return secretReferences(draft).flatMap(({ path, steps }) => {
+    const { name, key } = valueAt(draft.claim, steps) as {
+      name?: string;
+      key?: string;
+    };
+    const ns = namespace.name;
+    let error: string | undefined;
+    if (namespace.kind === "new")
+      error = `The new namespace ${ns} holds no Secret yet. Reset the field.`;
+    else if (read?.namespace !== ns)
+      error = `The Secrets of ${ns} are not read yet, so the fleet manager cannot check this reference.`;
+    else if (read.error !== undefined)
+      error = `The fleet manager could not read the Secrets of ${ns}, so it cannot check this reference: ${read.error}`;
+    else {
+      const secret = read.secrets.find((s) => s.name === name);
+      if (secret === undefined)
+        error = `The namespace ${ns} holds no Secret ${name}. Pick a Secret of ${ns}, or reset the field.`;
+      else if (key !== undefined && !secret.keys.includes(key))
+        error = `The Secret ${name} of ${ns} holds no key ${key}. Pick a key of it, or reset the field.`;
+    }
+    return error === undefined ? [] : [`${path}: ${error}`];
   });
 }

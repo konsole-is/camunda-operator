@@ -9,13 +9,14 @@ import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 /**
  * loadCreateCluster reads the first snapshot of the create cluster page
  * from the cache of the server, in every namespace. A failed read of a kind
- * gives no objects of that kind. A failed read of the releases, platform
- * configs, or ManagementAuthConfigs also gives an entry in readErrors.
+ * gives no objects of that kind. A failed read of the Environments,
+ * sections, registrations, releases, platform configs, or
+ * ManagementAuthConfigs also gives an entry in readErrors.
  */
 export async function loadCreateCluster(): Promise<ClusterCreateData> {
   const readErrors: ReadError[] = [];
-  // Steps 3 and 4 say that a picked object of these kinds does not exist,
-  // so they must tell a failed read from an empty list.
+  // The steps and the review must tell a failed read of these kinds from an
+  // empty list.
   const listOrRecord = <K extends KindName>(kind: K): Promise<Resource<K>[]> =>
     list(kind, {}).catch((err: unknown) => {
       readErrors.push({
@@ -41,13 +42,13 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     platformConfigs,
     managementAuthConfigs,
   ] = await Promise.all([
-    listOrEmpty("Environment", {}),
+    listOrRecord("Environment"),
     listOrEmpty("Namespace", {}),
     listOrEmpty("CamundaClusterClaim", {}),
     listOrEmpty("CamundaCluster", {}),
     listOrEmpty("CamundaClusterPreset", {}),
-    listOrEmpty("PluginSection", {}),
-    listOrEmpty("PluginRegistration", {}),
+    listOrRecord("PluginSection"),
+    listOrRecord("PluginRegistration"),
     listOrEmpty("PluginRequest", {
       labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
     }),

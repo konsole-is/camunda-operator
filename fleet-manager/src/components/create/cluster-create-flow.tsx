@@ -14,7 +14,7 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import type { ReadError } from "@/components/planes/planes-table";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
 import {
@@ -53,12 +53,12 @@ import {
   clusterCreateChange,
   draftCluster,
   draftOptimize,
-  movedSecretErrors,
   offeredPresets,
   releaseOf,
+  type SecretsRead,
+  secretErrors,
   settingsErrors,
   withClaimValue,
-  withSecretPicks,
   withoutClaimValue,
   withoutClaimValues,
 } from "@/lib/clusters/draft";
@@ -94,8 +94,8 @@ import type {
  * ClusterCreateData is the first snapshot of the create cluster page, from
  * every namespace. accessRequests are the requests of the access section.
  * Step 3 lists releases and platformConfigs, and step 4 lists
- * managementAuthConfigs. readErrors are the failed reads of those three
- * kinds.
+ * managementAuthConfigs. readErrors are the failed server reads of the
+ * kinds that RECORDED_KINDS names.
  */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
@@ -119,7 +119,11 @@ export type ClusterCreateData = {
 const EVERYWHERE = {};
 const ACCESS_REQUESTS = { labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` };
 
-const SETTINGS_KINDS: readonly KindName[] = [
+// The kinds whose failed server read loadCreateCluster records.
+const RECORDED_KINDS: readonly KindName[] = [
+  "Environment",
+  "PluginSection",
+  "PluginRegistration",
   "CamundaRelease",
   "CamundaPlatformConfig",
   "ManagementAuthConfig",
@@ -127,18 +131,17 @@ const SETTINGS_KINDS: readonly KindName[] = [
 
 const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
-// movedSecretErrors starts the error of an attachment with this path.
+// secretErrors starts the error of an attachment with this path.
 const ATTACHMENTS = "attachments.";
 
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 to 4 against the newest data. A list that cannot be
- * read, other than the Secrets, blocks each step that reads it. The picks
- * of a section that goes away leave the draft. Step 3 edits the release,
- * the platform config, and the settings, and step 4 the attachments. A
- * claim value that a step 2 option fills leaves the draft, and a Secret
- * picked in another namespace than the draft's blocks its step. Step 5
- * reviews the change, previews it with preview, and on Create writes the
+ * read blocks each step that reads it. The picks of a section that goes
+ * away leave the draft. Step 3 edits the release, the platform config, and
+ * the settings, and step 4 the attachments. A claim value that a step 2
+ * option fills leaves the draft. Step 5 reviews the change, previews it
+ * with preview, and on Create writes the
  * namespace and the claim once with create in mode. After the write, the
  * flow follows the claim. When a refused write created the new
  * namespace, create must name it in createdNamespace: the draft then moves
@@ -155,17 +158,33 @@ export function ClusterCreateFlow({
   preview: (change: Change) => Promise<Preview>;
   create: (change: Change) => Promise<WriteResult>;
 }) {
+  const answered = useAnswered(RECORDED_KINDS);
+  const readError = (kind: KindName) =>
+    answered.has(kind)
+      ? undefined
+      : initial.readErrors.find((e) => e.kind === kind)?.message;
   const live = {
-    environments: useLive("Environment", EVERYWHERE, initial.environments),
+    environments: useLive(
+      "Environment",
+      EVERYWHERE,
+      initial.environments,
+      readError("Environment"),
+    ),
     namespaces: useLive("Namespace", EVERYWHERE, initial.namespaces),
     claims: useLive("CamundaClusterClaim", EVERYWHERE, initial.claims),
     clusters: useLive("CamundaCluster", EVERYWHERE, initial.clusters),
     presets: useLive("CamundaClusterPreset", EVERYWHERE, initial.presets),
-    sections: useLive("PluginSection", EVERYWHERE, initial.sections),
+    sections: useLive(
+      "PluginSection",
+      EVERYWHERE,
+      initial.sections,
+      readError("PluginSection"),
+    ),
     registrations: useLive(
       "PluginRegistration",
       EVERYWHERE,
       initial.registrations,
+      readError("PluginRegistration"),
     ),
     accessRequests: useLive(
       "PluginRequest",
@@ -173,11 +192,6 @@ export function ClusterCreateFlow({
       initial.accessRequests,
     ),
   };
-  const answered = useAnswered(SETTINGS_KINDS);
-  const readError = (kind: KindName) =>
-    answered.has(kind)
-      ? undefined
-      : initial.readErrors.find((e) => e.kind === kind)?.message;
   const settingsLive = {
     releases: useLive(
       "CamundaRelease",
@@ -339,6 +353,17 @@ export function ClusterCreateFlow({
     };
   };
 
+  const [secrets, setSecrets] = useState<SecretsRead>();
+  // The namespaces whose Secret watch answered once: before that, an empty
+  // list does not mean that the namespace holds no Secret.
+  const [secretsAnswered, setSecretsAnswered] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const secretsRead =
+    secrets &&
+    (secretsAnswered.has(secrets.namespace) || secrets.error !== undefined)
+      ? secrets
+      : undefined;
   const checks: Record<string, CreateStep<ClusterDraft>["check"]> = {
     basics: (draft) => {
       const { presets, takenNames, conflicts } = derive(draft);
@@ -371,7 +396,9 @@ export function ClusterCreateFlow({
           fields,
           unread,
         }),
-        ...movedSecretErrors(draft).filter((e) => !e.startsWith(ATTACHMENTS)),
+        ...secretErrors(draft, secretsRead).filter(
+          (e) => !e.startsWith(ATTACHMENTS),
+        ),
         ...editor.shown("spec.cluster"),
       ];
     },
@@ -382,7 +409,9 @@ export function ClusterCreateFlow({
         managementAuthConfigs,
         unread,
       }),
-      ...movedSecretErrors(draft).filter((e) => e.startsWith(ATTACHMENTS)),
+      ...secretErrors(draft, secretsRead).filter((e) =>
+        e.startsWith(ATTACHMENTS),
+      ),
       ...editor.shown("spec.attachments"),
     ],
   };
@@ -415,26 +444,33 @@ export function ClusterCreateFlow({
   useEffect(() => {
     if (unfilled !== flow.draft) flow.set(["claim"], unfilled.claim);
   });
-  // An edit records the namespace of each Secret reference that it picks.
-  const editClaim = (edited: ClusterDraft) => {
-    const picked = withSecretPicks(flow.draft, edited);
-    flow.set(["claim"], picked.claim);
-    flow.set(["secretsPickedIn"], picked.secretsPickedIn);
-  };
+  const editClaim = (edited: ClusterDraft) => flow.set(["claim"], edited.claim);
   const setClaim = (steps: Step[], value: unknown) =>
     editClaim(withClaimValue(flow.draft, steps, value));
   const resetClaim = (steps: Step[]) =>
     editClaim(withoutClaimValue(flow.draft, steps));
-  const [secrets, setSecrets] = useState<SecretRefs>([]);
-  const [secretsError, setSecretsError] = useState<string>();
-  const onSecrets = useCallback((refs: SecretRefs, error?: string) => {
-    setSecrets(refs);
-    setSecretsError(error);
-  }, []);
   const existing =
     flow.draft.namespace?.kind === "existing"
       ? flow.draft.namespace.name
       : undefined;
+  const onSecrets = useCallback(
+    (refs: SecretRefs, error?: string) =>
+      setSecrets({
+        namespace: existing ?? "",
+        secrets: refs,
+        ...(error !== undefined && { error }),
+      }),
+    [existing],
+  );
+  const [secretsFresh] = useWatchesFresh(
+    existing === undefined
+      ? []
+      : [{ kind: "Secret", opts: { namespace: existing } }],
+  );
+  if (existing !== undefined && secretsFresh && !secretsAnswered.has(existing))
+    setSecretsAnswered(new Set([...secretsAnswered, existing]));
+  const secretsHere = secrets?.namespace === existing ? secrets : undefined;
+  const secretsError = secretsHere?.error;
   const onSection = (
     name: string,
     selections: PluginSelection[],
@@ -446,8 +482,10 @@ export function ClusterCreateFlow({
   const { toast, show, dismiss } = useWriteToast();
   const [written, setWritten] = useState<ClusterClaimObject>();
   const [keptNamespace, setKeptNamespace] = useState<string>();
-  // The namespace and the name of the claim of the last refused write.
-  const [refused, setRefused] = useState<{ namespace: string; name: string }>();
+  const [refused, setRefused] = useState<{
+    claim: ClusterClaimObject;
+    unavailable: boolean;
+  }>();
   // Back and Next remount the review step, so the lock of a running write
   // lives here.
   const [writing, setWriting] = useState(false);
@@ -472,7 +510,10 @@ export function ClusterCreateFlow({
       setWritten(clusterClaimOf(flow.draft, environment, deletion));
       return;
     }
-    setRefused({ namespace: flow.draft.namespace?.name ?? "", name });
+    setRefused({
+      claim: clusterClaimOf(flow.draft, environment, deletion),
+      unavailable: result.errors.some((e) => e.code === "Unavailable"),
+    });
     const now = latest.current.namespace;
     if (
       result.createdNamespace !== undefined &&
@@ -486,17 +527,25 @@ export function ClusterCreateFlow({
       setKeptNamespace(result.createdNamespace);
     }
   };
-  // A write can fail after its claim landed, for example when the answer
-  // of the API server is lost.
-  const landed =
-    refused &&
-    refused.namespace === flow.draft.namespace?.name &&
-    refused.name === flow.draft.claim.metadata.name
+  const refusedRef = refused && {
+    namespace: refused.claim.metadata.namespace,
+    name: refused.claim.metadata.name,
+  };
+  const taken =
+    refusedRef &&
+    refusedRef.namespace === flow.draft.namespace?.name &&
+    refusedRef.name === flow.draft.claim.metadata.name
       ? claims.find(
           (c) =>
-            c.metadata?.namespace === refused.namespace &&
-            c.metadata?.name === refused.name,
+            c.metadata?.namespace === refusedRef.namespace &&
+            c.metadata?.name === refusedRef.name,
         )
+      : undefined;
+  // A write whose answer was lost can have landed. The API server can add
+  // defaults to the claim, so the live spec can hold more than the write sent.
+  const landed =
+    taken && refused?.unavailable && covers(taken.spec, refused.claim.spec)
+      ? taken
       : undefined;
   const earlier = steps
     .filter((s) => s.id !== "review")
@@ -596,8 +645,8 @@ export function ClusterCreateFlow({
             // A Secret that cannot be read cannot be picked, and the alert
             // above names the failure.
             secrets={
-              existing !== undefined && secretsError === undefined
-                ? secrets
+              secretsHere && secretsError === undefined
+                ? secretsHere.secrets
                 : []
             }
             pick={(field, name) => flow.set(["claim", "spec", field], name)}
@@ -661,19 +710,27 @@ export function ClusterCreateFlow({
           {`The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the cluster now goes into it as an existing namespace. Fix the cause and create the cluster again.`}
         </p>
       )}
-      {landed && refused && (
+      {taken && refusedRef && (
         <div
           role="note"
           className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
         >
-          <p>{`The write reported an error, but the claim ${refused.name} exists in ${refused.namespace} now.`}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setWritten(landed as unknown as ClusterClaimObject)}
-          >
-            Follow the claim
-          </Button>
+          {landed ? (
+            <>
+              <p>{`The write reported an error, but the claim ${refusedRef.name} exists in ${refusedRef.namespace} now.`}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setWritten(landed as unknown as ClusterClaimObject)
+                }
+              >
+                Follow the claim
+              </Button>
+            </>
+          ) : (
+            <p>{`A claim ${refusedRef.name} exists in ${refusedRef.namespace} already. This create did not make it.`}</p>
+          )}
         </div>
       )}
       {toastView}
@@ -837,6 +894,26 @@ function useLive<K extends KindName>(
         items,
         failure: `The fleet manager could not read the ${kind} objects: ${error}`,
       };
+}
+
+// covers says whether live holds each value of sent, at the same place.
+function covers(live: unknown, sent: unknown): boolean {
+  if (Array.isArray(sent))
+    return (
+      Array.isArray(live) &&
+      live.length === sent.length &&
+      sent.every((item, i) => covers(live[i], item))
+    );
+  if (typeof sent === "object" && sent !== null)
+    return (
+      typeof live === "object" &&
+      live !== null &&
+      !Array.isArray(live) &&
+      Object.entries(sent).every(([key, value]) =>
+        covers((live as Record<string, unknown>)[key], value),
+      )
+    );
+  return live === sent;
 }
 
 // A Resource is plain JSON, so it differs from its model type only in its
