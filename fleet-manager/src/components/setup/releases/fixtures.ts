@@ -129,6 +129,12 @@ export function releaseFixtures(): ReleasesData {
       claim("team-orders", "orders", "camunda-8-9-0"),
       claim("team-new", "billing", "camunda-8-10-0"),
     ],
+    clusterPresets: [],
+    sections: [],
+    registrations: [],
+    requests: [],
+    elasticsearchBackups: [],
+    rdbmsBackups: [],
   };
 }
 

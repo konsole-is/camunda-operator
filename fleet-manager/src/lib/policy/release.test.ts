@@ -239,6 +239,12 @@ describe("versionCheckWait", () => {
     expect(versionCheckWait(cluster("8.9.0"))).toBeUndefined();
   });
 
+  it("waits for a version that is not major.minor.patch", () => {
+    expect(versionCheckWait(cluster("8.9"))).toBe(
+      "The version checks run when the cluster reports its version.",
+    );
+  });
+
   it("waits for a suspended cluster before one without a version", () => {
     expect(versionCheckWait({ ...cluster(), spec: { suspend: true } })).toBe(
       "The version checks run when the cluster resumes.",

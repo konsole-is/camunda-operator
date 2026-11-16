@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeWriter } from "../../../../test/fakes/writer";
-import { applyReleaseChange, previewReleaseChange } from "./actions";
+import {
+  applyReleaseChange,
+  applyReleaseMove,
+  previewReleaseChange,
+  previewReleaseMove,
+} from "./actions";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 
@@ -63,6 +68,66 @@ describe("previewReleaseChange", () => {
   it("refuses a change that writes another kind", async () => {
     const result = await previewReleaseChange(releaseChange("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+const clusterClaim = (namespace: string, name: string) => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  metadata: { namespace, name },
+  spec: { releaseRef: "camunda-8-9-1" },
+});
+
+const twoClaimMove = {
+  intent: "Move 2 clusters to the release camunda-8-9-1",
+  apply: [clusterClaim("team-a", "orders"), clusterClaim("team-b", "payments")],
+  preconditions: {
+    "CamundaClusterClaim/team-a/orders": "4",
+    "CamundaClusterClaim/team-b/payments": "9",
+  } as const,
+};
+
+const clusterMove = {
+  intent: "Move the cluster team-a/orders to the release camunda-8-9-1",
+  apply: [
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaCluster",
+      metadata: { namespace: "team-a", name: "orders" },
+      spec: { releaseRef: "camunda-8-9-1" },
+    },
+  ],
+  preconditions: { "CamundaCluster/team-a/orders": "4" } as const,
+};
+
+describe("applyReleaseMove", () => {
+  it("sends a move of two claims to the writer as one change", async () => {
+    expect(await applyReleaseMove(twoClaimMove)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([twoClaimMove]);
+  });
+
+  it("refuses a move that writes the CamundaCluster", async () => {
+    const result = await applyReleaseMove(clusterMove);
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("previewReleaseMove", () => {
+  it("previews a move of two claims as one change", async () => {
+    await previewReleaseMove(twoClaimMove);
+    expect(fakeWriter.previewed).toEqual([twoClaimMove]);
+  });
+
+  it("refuses a move that writes the CamundaCluster", async () => {
+    const result = await previewReleaseMove(clusterMove);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "Invalid" }),
+    ]);
     expect(fakeWriter.previewed).toEqual([]);
   });
 });

@@ -10,4 +10,10 @@ export const RELEASE_SOURCE_KINDS = {
   elasticsearchClusters: "ElasticsearchCluster",
   databaseServers: "DatabaseServer",
   claims: "CamundaClusterClaim",
+  clusterPresets: "CamundaClusterPreset",
+  sections: "PluginSection",
+  registrations: "PluginRegistration",
+  requests: "PluginRequest",
+  elasticsearchBackups: "LogicalBackupElasticsearch",
+  rdbmsBackups: "LogicalBackupRDBMS",
 } as const satisfies Record<keyof ReleasesData, KindName>;

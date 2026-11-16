@@ -32,6 +32,12 @@ describe("useReleaseSources", () => {
       "ElasticsearchCluster",
       "DatabaseServer",
       "CamundaClusterClaim",
+      "CamundaClusterPreset",
+      "PluginSection",
+      "PluginRegistration",
+      "PluginRequest",
+      "LogicalBackupElasticsearch",
+      "LogicalBackupRDBMS",
     ]);
     watch.fresh = [
       "CamundaRelease",
@@ -40,17 +46,32 @@ describe("useReleaseSources", () => {
       "CamundaCluster",
       "ElasticsearchCluster",
       "DatabaseServer",
+      "CamundaClusterPreset",
+      "PluginSection",
+      "PluginRegistration",
+      "PluginRequest",
+      "LogicalBackupElasticsearch",
     ];
     rerender();
-    expect(result.current.stale).toEqual(["CamundaClusterClaim"]);
+    expect(result.current.stale).toEqual([
+      "CamundaClusterClaim",
+      "LogicalBackupRDBMS",
+    ]);
   });
 
   it("gives the error of each failed watch with its kind", () => {
     watch.fresh = [];
-    watch.failed = { CamundaClusterClaim: "forbidden" };
+    watch.failed = {
+      CamundaClusterClaim: "forbidden",
+      LogicalBackupRDBMS: "the server could not find the requested resource",
+    };
     const { result } = renderHook(() => useReleaseSources(releaseFixtures()));
     expect(result.current.errors).toEqual([
       { kind: "CamundaClusterClaim", message: "forbidden" },
+      {
+        kind: "LogicalBackupRDBMS",
+        message: "the server could not find the requested resource",
+      },
     ]);
   });
 });

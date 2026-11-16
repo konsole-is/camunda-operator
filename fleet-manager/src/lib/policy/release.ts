@@ -59,15 +59,17 @@ export type MoveStatus =
 
 /**
  * versionCheckWait says why no version check of a move of cluster can run
- * now: the cluster is suspended, or it reports no running version. It is
- * undefined when the checks can run.
+ * now: the cluster is suspended, or it reports no running version. A
+ * version that is not major.minor.patch counts as no version, as in the
+ * operator. It is undefined when the checks can run.
  */
 export function versionCheckWait(
   cluster: SuspendableCluster,
 ): string | undefined {
   if (cluster.spec?.suspend)
     return "The version checks run when the cluster resumes.";
-  if (!cluster.status?.management?.version)
+  const version: unknown = cluster.status?.management?.version;
+  if (typeof version !== "string" || !parseVersion(version))
     return "The version checks run when the cluster reports its version.";
   return undefined;
 }

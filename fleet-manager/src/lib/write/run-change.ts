@@ -113,6 +113,35 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
   { message: "The change must apply one claim and nothing else." },
 );
 
+const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
+
+/**
+ * claimBatchChangeSchema accepts a Change that applies one or more
+ * CamundaClusterClaims, each with a namespace, the apiVersion of the kind,
+ * and a precondition, no claim twice, and that has no delete, no create, no
+ * force, and no directOnly.
+ */
+export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
+  (c) => {
+    const keys = c.apply.map((o) => refKey(refOf(o)));
+    return (
+      c.apply.every(
+        (o, i) =>
+          o.kind === "CamundaClusterClaim" &&
+          o.apiVersion === CLUSTER_CLAIM_API_VERSION &&
+          o.metadata.namespace !== undefined &&
+          c.preconditions?.[keys[i]] !== undefined,
+      ) &&
+      new Set(keys).size === keys.length &&
+      c.delete === undefined &&
+      c.create === undefined &&
+      c.force === undefined &&
+      c.directOnly === undefined
+    );
+  },
+  { message: "The change must apply cluster claims and nothing else." },
+);
+
 const BACKUP_KINDS: readonly string[] = [
   "LogicalBackupElasticsearch",
   "LogicalBackupRDBMS",

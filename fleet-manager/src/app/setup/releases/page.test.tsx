@@ -59,11 +59,17 @@ describe("ReleasesPage", () => {
     ).toEqual([
       "CamundaCluster",
       "CamundaClusterClaim",
+      "CamundaClusterPreset",
       "CamundaRelease",
       "DatabaseServer",
       "ElasticsearchCluster",
       "Environment",
+      "LogicalBackupElasticsearch",
+      "LogicalBackupRDBMS",
       "Namespace",
+      "PluginRegistration",
+      "PluginRequest",
+      "PluginSection",
     ]);
     expect(dynamic).toBe("force-dynamic");
   });
