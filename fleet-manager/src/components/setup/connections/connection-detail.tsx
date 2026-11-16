@@ -215,53 +215,56 @@ export function ConnectionDetail({
               onChange={(next) => editor.setDraft(() => next)}
             />
           </EditorSection>
-          <Panel label="Used by">
-            <UsersTable users={users} unread={unread} />
-          </Panel>
-          {live && (
-            <EditorSection title="Delete the contract">
-              {unread.length > 0 ? (
-                <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
-              ) : users.length > 0 ? (
-                <p className="text-sm text-muted">
-                  Delete is possible when no resource uses this contract.
-                </p>
-              ) : (
-                <TypedConfirm
-                  name={target.name}
-                  confirmLabel="Review the delete"
-                  onConfirm={() =>
-                    editor.review({
-                      change: deleteChange(live),
-                      kind: "delete",
-                    })
-                  }
-                >
-                  The contract {target.name} is deleted.
-                </TypedConfirm>
-              )}
-            </EditorSection>
-          )}
         </fieldset>
       ) : (
-        <>
-          <Panel label="Settings">
-            <Terms>
-              {contractFacts(shown).map((fact) => (
-                <Term key={fact.label} label={fact.label} note={fact.note}>
-                  {fact.secret ? (
-                    <SecretRefView secret={fact.secret} />
-                  ) : (
-                    fact.value
-                  )}
-                </Term>
-              ))}
-            </Terms>
-          </Panel>
-          <Panel label="Used by">
-            <UsersTable users={users} unread={unread} />
-          </Panel>
-        </>
+        <Panel label="Settings">
+          <Terms>
+            {contractFacts(shown).map((fact) => (
+              <Term key={fact.label} label={fact.label} note={fact.note}>
+                {fact.secret ? (
+                  <SecretRefView secret={fact.secret} />
+                ) : (
+                  fact.value
+                )}
+              </Term>
+            ))}
+          </Terms>
+        </Panel>
+      )}
+      {/* Used by stays out of the form, so its table keeps its controls
+          while a review locks the form. */}
+      <Panel label="Used by">
+        <UsersTable users={users} unread={unread} />
+      </Panel>
+      {editable && live && (
+        <fieldset
+          key={editor.generation}
+          disabled={locked || !mode}
+          className="flex min-w-0 flex-col gap-4"
+        >
+          <EditorSection title="Delete the contract">
+            {unread.length > 0 ? (
+              <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
+            ) : users.length > 0 ? (
+              <p className="text-sm text-muted">
+                Delete is possible when no resource uses this contract.
+              </p>
+            ) : (
+              <TypedConfirm
+                name={target.name}
+                confirmLabel="Review the delete"
+                onConfirm={() =>
+                  editor.review({
+                    change: deleteChange(live),
+                    kind: "delete",
+                  })
+                }
+              >
+                The contract {target.name} is deleted.
+              </TypedConfirm>
+            )}
+          </EditorSection>
+        </fieldset>
       )}
       {editable && reviewing && mode ? (
         <section
