@@ -172,7 +172,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 7d05a8fe8dbd857b
+        camunda.io/config-hash: scenario
         company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: camundacluster-sample
@@ -262,7 +262,7 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "camundacluster-sample-connectors-d515e25d28" has successfully
+    message: ReplicaSet "camundacluster-sample-connectors-ab07b43092" has successfully
       progressed.
     reason: NewReplicaSetAvailable
     status: "True"
@@ -507,7 +507,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 80c314003e211079
+        camunda.io/config-hash: scenario
         camunda.io/service-account-hash: 2331a04272fc5c78
         company.com/cluster-preset: medium
       labels:
@@ -644,7 +644,7 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "camundacluster-sample-gateway-de1cb6bcd8" has successfully
+    message: ReplicaSet "camundacluster-sample-gateway-470798274e" has successfully
       progressed.
     reason: NewReplicaSetAvailable
     status: "True"
@@ -665,7 +665,7 @@ metadata:
     camunda.io/component: connectors
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    pod-template-hash: d515e25d28
+    pod-template-hash: ab07b43092
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -817,7 +817,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: camundacluster-sample-connectors-d515e25d28
+  name: camundacluster-sample-connectors-ab07b43092
   namespace: team-a
   ownerReferences:
   - apiVersion: apps/v1
@@ -826,18 +826,18 @@ metadata:
     kind: Deployment
     name: camundacluster-sample-connectors
     uid: b5c7cee5-4bd2-5e20-90c7-2e7f87096b68
-  uid: 54b07f42-83f7-5bed-9c77-f30264b07a8d
+  uid: a0a744a7-49b4-5ceb-8eb4-f26769508480
 spec:
   replicas: 1
   selector:
     matchLabels:
       camunda.io/cluster: camundacluster-sample
       camunda.io/component: connectors
-      pod-template-hash: d515e25d28
+      pod-template-hash: ab07b43092
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 7d05a8fe8dbd857b
+        camunda.io/config-hash: scenario
         company.com/cluster-preset: medium
       labels:
         camunda.io/cluster: camundacluster-sample
@@ -845,7 +845,7 @@ spec:
         camunda.io/component: connectors
         camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
         company.com/team: automation-ops
-        pod-template-hash: d515e25d28
+        pod-template-hash: ab07b43092
     spec:
       containers:
       - env:
@@ -935,7 +935,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    pod-template-hash: de1cb6bcd8
+    pod-template-hash: 470798274e
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -1159,7 +1159,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: camundacluster-sample-gateway-de1cb6bcd8
+  name: camundacluster-sample-gateway-470798274e
   namespace: team-a
   ownerReferences:
   - apiVersion: apps/v1
@@ -1168,18 +1168,18 @@ metadata:
     kind: Deployment
     name: camundacluster-sample-gateway
     uid: e2f417f8-daed-5651-8469-347f4fa73180
-  uid: 5c5c0d47-aa40-5318-9903-5f681ea545d9
+  uid: 71dc3b7f-2572-539e-9b54-665d5f263f66
 spec:
   replicas: 2
   selector:
     matchLabels:
       camunda.io/cluster: camundacluster-sample
       camunda.io/component: gateway
-      pod-template-hash: de1cb6bcd8
+      pod-template-hash: 470798274e
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 80c314003e211079
+        camunda.io/config-hash: scenario
         camunda.io/service-account-hash: 2331a04272fc5c78
         company.com/cluster-preset: medium
       labels:
@@ -1188,7 +1188,7 @@ spec:
         camunda.io/component: gateway
         camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
         company.com/team: automation-ops
-        pod-template-hash: de1cb6bcd8
+        pod-template-hash: 470798274e
     spec:
       containers:
       - env:
@@ -1554,7 +1554,7 @@ spec:
   template:
     metadata:
       annotations:
-        camunda.io/config-hash: 3c73096c78b3dbe3
+        camunda.io/config-hash: scenario
         camunda.io/service-account-hash: 2331a04272fc5c78
         company.com/cluster-preset: medium
       labels:
@@ -1710,11 +1710,11 @@ spec:
 status:
   availableReplicas: 5
   currentReplicas: 5
-  currentRevision: camundacluster-sample-zeebe-a850423ac9
+  currentRevision: camundacluster-sample-zeebe-7ab2db49d4
   observedGeneration: 1
   readyReplicas: 5
   replicas: 5
-  updateRevision: camundacluster-sample-zeebe-a850423ac9
+  updateRevision: camundacluster-sample-zeebe-7ab2db49d4
   updatedReplicas: 5
 ---
 apiVersion: coordination.k8s.io/v1
@@ -4688,7 +4688,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 7d05a8fe8dbd857b
+    camunda.io/config-hash: scenario
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
@@ -4698,7 +4698,7 @@ metadata:
     camunda.io/component: connectors
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    pod-template-hash: d515e25d28
+    pod-template-hash: ab07b43092
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -4718,7 +4718,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"54b07f42-83f7-5bed-9c77-f30264b07a8d"}: {}
+          k:{"uid":"a0a744a7-49b4-5ceb-8eb4-f26769508480"}: {}
       f:spec:
         f:containers:
           k:{"name":"connectors"}:
@@ -4863,16 +4863,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: camundacluster-sample-connectors-d515e25d28-9jx87
+  name: camundacluster-sample-connectors-ab07b43092-s7qhl
   namespace: team-a
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: camundacluster-sample-connectors-d515e25d28
-    uid: 54b07f42-83f7-5bed-9c77-f30264b07a8d
-  uid: 67ce5b75-fe7d-5df0-bed9-ff87b61a10a4
+    name: camundacluster-sample-connectors-ab07b43092
+    uid: a0a744a7-49b4-5ceb-8eb4-f26769508480
+  uid: ba8766cb-a46f-5f98-a0c5-6bc7e29377d6
 spec:
   containers:
   - env:
@@ -4994,7 +4994,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 80c314003e211079
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -5005,7 +5005,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    pod-template-hash: de1cb6bcd8
+    pod-template-hash: 470798274e
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5026,7 +5026,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"5c5c0d47-aa40-5318-9903-5f681ea545d9"}: {}
+          k:{"uid":"71dc3b7f-2572-539e-9b54-665d5f263f66"}: {}
       f:spec:
         f:containers:
           k:{"name":"camunda"}:
@@ -5242,16 +5242,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: camundacluster-sample-gateway-de1cb6bcd8-52slk
+  name: camundacluster-sample-gateway-470798274e-7hgh2
   namespace: team-a
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: camundacluster-sample-gateway-de1cb6bcd8
-    uid: 5c5c0d47-aa40-5318-9903-5f681ea545d9
-  uid: 09752eb1-1d86-5217-afae-ebefe12d0de6
+    name: camundacluster-sample-gateway-470798274e
+    uid: 71dc3b7f-2572-539e-9b54-665d5f263f66
+  uid: d64a9df9-c7e1-58d7-a537-0479d4bdef42
 spec:
   containers:
   - env:
@@ -5419,7 +5419,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 80c314003e211079
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -5430,7 +5430,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    pod-template-hash: de1cb6bcd8
+    pod-template-hash: 470798274e
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5451,7 +5451,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"5c5c0d47-aa40-5318-9903-5f681ea545d9"}: {}
+          k:{"uid":"71dc3b7f-2572-539e-9b54-665d5f263f66"}: {}
       f:spec:
         f:containers:
           k:{"name":"camunda"}:
@@ -5667,16 +5667,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: camundacluster-sample-gateway-de1cb6bcd8-tc75l
+  name: camundacluster-sample-gateway-470798274e-vcsc6
   namespace: team-a
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: camundacluster-sample-gateway-de1cb6bcd8
-    uid: 5c5c0d47-aa40-5318-9903-5f681ea545d9
-  uid: 9588fb55-e2dc-528c-b8a6-7813373f3c70
+    name: camundacluster-sample-gateway-470798274e
+    uid: 71dc3b7f-2572-539e-9b54-665d5f263f66
+  uid: d3533a08-dcd3-5811-8e41-768f556533ae
 spec:
   containers:
   - env:
@@ -5844,7 +5844,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 3c73096c78b3dbe3
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -5856,7 +5856,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    controller-revision-hash: camundacluster-sample-zeebe-a850423ac9
+    controller-revision-hash: camundacluster-sample-zeebe-7ab2db49d4
     statefulset.kubernetes.io/pod-name: camundacluster-sample-zeebe-0
   managedFields:
   - apiVersion: v1
@@ -6301,7 +6301,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 3c73096c78b3dbe3
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -6313,7 +6313,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    controller-revision-hash: camundacluster-sample-zeebe-a850423ac9
+    controller-revision-hash: camundacluster-sample-zeebe-7ab2db49d4
     statefulset.kubernetes.io/pod-name: camundacluster-sample-zeebe-1
   managedFields:
   - apiVersion: v1
@@ -6758,7 +6758,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 3c73096c78b3dbe3
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -6770,7 +6770,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    controller-revision-hash: camundacluster-sample-zeebe-a850423ac9
+    controller-revision-hash: camundacluster-sample-zeebe-7ab2db49d4
     statefulset.kubernetes.io/pod-name: camundacluster-sample-zeebe-2
   managedFields:
   - apiVersion: v1
@@ -7215,7 +7215,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 3c73096c78b3dbe3
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -7227,7 +7227,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    controller-revision-hash: camundacluster-sample-zeebe-a850423ac9
+    controller-revision-hash: camundacluster-sample-zeebe-7ab2db49d4
     statefulset.kubernetes.io/pod-name: camundacluster-sample-zeebe-3
   managedFields:
   - apiVersion: v1
@@ -7672,7 +7672,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   annotations:
-    camunda.io/config-hash: 3c73096c78b3dbe3
+    camunda.io/config-hash: scenario
     camunda.io/service-account-hash: 2331a04272fc5c78
     company.com/cluster-preset: medium
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -7684,7 +7684,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-6e48a0c4bf164646b5709e4ecdceaccd96b5efcc
     company.com/team: automation-ops
-    controller-revision-hash: camundacluster-sample-zeebe-a850423ac9
+    controller-revision-hash: camundacluster-sample-zeebe-7ab2db49d4
     statefulset.kubernetes.io/pod-name: camundacluster-sample-zeebe-4
   managedFields:
   - apiVersion: v1
