@@ -21,9 +21,9 @@ import {
 /**
  * DeleteClusterData is what the delete page reads once on the server.
  * cluster is undefined once the CamundaCluster is gone, or when its read
- * failed. environment is the
- * Environment that the label of the namespace names. requests are the
- * PluginRequests of the claim. presets and releases give the merged spec
+ * failed. environment is the Environment that the label of the namespace
+ * names. requests are the PluginRequests of the namespace. The model takes
+ * those that the claim controls. presets and releases give the merged spec
  * of the cluster. errors holds each read that failed.
  */
 export type DeleteClusterData = {
@@ -125,13 +125,22 @@ export function deleteClusterModel(
   const name = claim.metadata?.name ?? "";
   const namespace = claim.metadata?.namespace ?? "";
   const choice = clusterDeletionChoice(data);
+  const claimUid = claim.metadata?.uid;
+  const controlled = (o: Owned) =>
+    claimUid !== undefined &&
+    (o.metadata?.ownerReferences ?? []).some(
+      (r) => r.controller === true && r.uid === claimUid,
+    );
+  // The operator deletes the requests that the claim controls, whatever
+  // their labels.
+  const requests = data.requests.filter(controlled);
   // A claim holds the parameters of a selection as unknown, because the
   // CRD schema does not give them a shape. deletionGroups reads none.
   const groups = deletionGroups({
     claim: claim as SectionClaim,
     sections: data.sections,
     registrations: data.registrations,
-    requests: data.requests,
+    requests,
     policy: picked,
   });
   const ofCluster = (o: { spec: { clusterRef: { name: string } } }) =>
@@ -144,7 +153,6 @@ export function deleteClusterModel(
   });
   const sectionOf = (request: string) =>
     claim.status?.requests?.find((r) => r.name === request)?.section;
-  const claimUid = claim.metadata?.uid;
   const attachments = (
     kind: "CamundaOptimize" | "BackupSchedule",
     objects: readonly Attachment[],
@@ -153,11 +161,7 @@ export function deleteClusterModel(
     // The claim finalizer deletes only <name>-optimize and <name>-backups,
     // and only when the claim is their controller.
     const goes = (o: Attachment) =>
-      o.metadata?.name === generated &&
-      claimUid !== undefined &&
-      (o.metadata.ownerReferences ?? []).some(
-        (r) => r.controller === true && r.uid === claimUid,
-      );
+      o.metadata?.name === generated && controlled(o);
     const mine = objects.filter(
       (o) => ofCluster(o) || o.metadata?.name === generated,
     );
@@ -192,7 +196,7 @@ export function deleteClusterModel(
           ? "Volumes kept for a cluster of the same name"
           : "Volumes deleted",
     ),
-    ...data.requests.map((r) => {
+    ...requests.map((r) => {
       const requestName = r.metadata?.name ?? "";
       const section = sectionOf(requestName);
       const label = groups.find((g) => g.section === section)?.label;
@@ -235,15 +239,17 @@ function volumesOf(data: DeleteClusterData): string {
   );
 }
 
-// Attachment is the part of a CamundaOptimize or a BackupSchedule that the
-// model reads.
-type Attachment = {
+// Owned is the part of an object that names its controller.
+type Owned = {
   metadata?: {
     name?: string;
     ownerReferences?: { controller?: boolean; uid: string }[];
   };
-  spec: { clusterRef: { name: string } };
 };
+
+// Attachment is the part of a CamundaOptimize or a BackupSchedule that the
+// model reads.
+type Attachment = Owned & { spec: { clusterRef: { name: string } } };
 
 /**
  * initialPolicy is the pick that the delete page opens on: the policy of
@@ -253,6 +259,29 @@ export function initialPolicy(choice: DeletionChoice): DeletionPolicy {
   return choice.policy === "Orphan" && !choice.keepAllowed
     ? "Delete"
     : choice.policy;
+}
+
+const TARGET_ORDER: readonly KindName[] = [
+  "CamundaOptimize",
+  "BackupSchedule",
+  "CamundaCluster",
+  "PluginRequest",
+  "CamundaClusterClaim",
+];
+
+/**
+ * mergeTargets returns kept with each target of found that it lacks, in
+ * the order in which the kinds go.
+ */
+export function mergeTargets(
+  kept: readonly DeleteTarget[],
+  found: readonly DeleteTarget[],
+): DeleteTarget[] {
+  const added = found.filter(
+    (f) => !kept.some((k) => k.kind === f.kind && k.name === f.name),
+  );
+  const rank = (t: DeleteTarget) => TARGET_ORDER.indexOf(t.kind);
+  return [...kept, ...added].sort((a, b) => rank(a) - rank(b));
 }
 
 /** DeleteState is where one target of a delete is. */

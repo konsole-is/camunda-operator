@@ -104,7 +104,11 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
     ],
     requests: [
       {
-        metadata: { namespace: "team-a", name: "orders-backup-storage" },
+        metadata: {
+          namespace: "team-a",
+          name: "orders-backup-storage",
+          ownerReferences: [{ controller: true, uid: "uid-1" }],
+        },
         status: {
           resources: [
             { kind: "S3Bucket", name: "orders-backups", onOrphan: "Kept" },
@@ -202,7 +206,6 @@ const clusterWatch: WatchSpec = {
 const requestsWatch: WatchSpec = {
   kind: "PluginRequest",
   namespace: "team-a",
-  labelSelector: "fleet.camunda.io/claim=orders",
 };
 
 // readAll sends a snapshot of the objects of initial on each watch of the
@@ -361,7 +364,7 @@ describe("DeleteCluster", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        /The commit of the deletion policy is in the repository\./,
+        "The cluster is not deleted. The repository holds the commit that sets the deletion policy of orders to Keep.",
       ),
     ).toBeTruthy();
     // The new claim version makes the review preview again, so the page
@@ -520,6 +523,27 @@ describe("DeleteCluster", () => {
       within(list).getByText("CamundaCluster orders").closest("li")!
         .textContent,
     ).toContain("Not known");
+  });
+
+  it("a delete in progress adds a target that a later snapshot finds", async () => {
+    const initial = data();
+    page(
+      data({
+        claim: claim({ deletionTimestamp: "2026-11-15T10:00:00Z" }),
+        requests: [],
+        errors: [{ kind: "PluginRequest", message: "forbidden" }],
+      }),
+    );
+    const list = screen.getByRole("region", { name: "Delete progress" });
+    expect(
+      within(list).queryByText("Backup storage request orders-backup-storage"),
+    ).toBeNull();
+    await snapshot(requestsWatch, initial.requests);
+    expect(
+      await within(list).findByText(
+        "Backup storage request orders-backup-storage",
+      ),
+    ).toBeTruthy();
   });
 
   it("changes are off without a write mode", () => {

@@ -78,7 +78,7 @@ const registration = (
 
 const request = (name: string, resources: object[]) =>
   object("PluginRequest", {
-    metadata: { namespace: "team-orders", name },
+    metadata: { namespace: "team-orders", name, ...controlled },
     status: { resources },
   });
 

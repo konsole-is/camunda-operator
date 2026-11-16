@@ -184,11 +184,7 @@ export function DeleteClusterView({
           )}
           {stage.policyWritten && (
             <p role="status" className="text-sm text-warn">
-              The deletion policy of {name} is now{" "}
-              {stage.policyWritten === "Orphan" ? "Keep" : "Delete"}, and the
-              cluster is not deleted.
-              {mode === "git" &&
-                " The commit of the deletion policy is in the repository."}
+              {policyNote(name, stage.policyWritten, mode)}
             </p>
           )}
           {mode === undefined ? (
@@ -413,6 +409,20 @@ function Progress({
       </ol>
     </section>
   );
+}
+
+// policyNote says that the delete did not happen after the write of
+// policy. In Git mode the claim gets the policy only once GitOps applies
+// the commit.
+function policyNote(
+  name: string,
+  policy: DeletionPolicy,
+  mode: WriteMode | undefined,
+): string {
+  const label = policy === "Orphan" ? "Keep" : "Delete";
+  return mode === "git"
+    ? `The cluster is not deleted. The repository holds the commit that sets the deletion policy of ${name} to ${label}.`
+    : `The deletion policy of ${name} is now ${label}, and the cluster is not deleted.`;
 }
 
 function ReadErrors({ errors }: { errors: readonly ReadError[] }) {

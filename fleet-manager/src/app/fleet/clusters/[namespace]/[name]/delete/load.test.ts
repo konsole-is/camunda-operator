@@ -50,14 +50,12 @@ describe("loadDeleteClusterPage", () => {
     expect(data?.cluster).toBeUndefined();
   });
 
-  it("lists the requests of the claim by the claim label", async () => {
+  it("lists the requests of the namespace", async () => {
     k8s.objects["CamundaClusterClaim/orders"] = claim;
     await loadDeleteClusterPage("team-a", "orders");
     expect(
       k8s.calls.filter((c) => c.kind === "PluginRequest").map((c) => c.opts),
-    ).toEqual([
-      { namespace: "team-a", labelSelector: "fleet.camunda.io/claim=orders" },
-    ]);
+    ).toEqual([{ namespace: "team-a" }]);
   });
 
   it("takes the Environment that the label of the namespace names", async () => {

@@ -7,6 +7,7 @@ import {
   deleteProgress,
   initialPolicy,
   KEPT_ATTACHMENT,
+  mergeTargets,
 } from "./delete-cluster-model";
 
 const object = <K extends Parameters<typeof cast>[0]>(
@@ -92,6 +93,7 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   ],
   requests: [
     object("PluginRequest", "orders-backup-storage", {
+      ...made("orders-backup-storage"),
       status: {
         resources: [
           { kind: "S3Bucket", name: "orders-backups", onOrphan: "Kept" },
@@ -220,6 +222,33 @@ describe("deleteClusterModel", () => {
     );
   });
 
+  it("takes the requests that the claim controls, whatever their labels", () => {
+    const model = deleteClusterModel(
+      data({
+        requests: [
+          object("PluginRequest", "orders-backup-storage", {
+            metadata: {
+              namespace: "team-a",
+              name: "orders-backup-storage",
+              ownerReferences: [{ controller: true, uid: "plane-uid" }],
+            },
+            status: {
+              resources: [
+                { kind: "S3Bucket", name: "other", onOrphan: "Kept" },
+              ],
+            },
+          }),
+        ],
+      }),
+      "Delete",
+    );
+    expect(model.groups[0].rows).toEqual([]);
+    expect(model.targets.map((t) => t.kind)).not.toContain("PluginRequest");
+    expect(
+      deleteClusterModel(data(), "Delete").targets.map((t) => t.kind),
+    ).toContain("PluginRequest");
+  });
+
   it("counts the backups of this cluster only", () => {
     const model = deleteClusterModel(
       data({
@@ -279,6 +308,33 @@ describe("clusterDeletionChoice and initialPolicy", () => {
       ),
     ).toBe("Orphan");
     expect(initialPolicy(clusterDeletionChoice(data()))).toBe("Delete");
+  });
+});
+
+describe("mergeTargets", () => {
+  it("keeps each target and adds the new ones in the order in which the kinds go", () => {
+    const t = (
+      kind: "CamundaCluster" | "PluginRequest" | "BackupSchedule",
+      name: string,
+    ) => ({
+      kind,
+      name,
+      label: `${kind} ${name}`,
+    });
+    expect(
+      mergeTargets(
+        [t("CamundaCluster", "orders"), t("PluginRequest", "gone")],
+        [
+          t("PluginRequest", "orders-access"),
+          t("BackupSchedule", "orders-backups"),
+        ],
+      ).map((x) => x.label),
+    ).toEqual([
+      "BackupSchedule orders-backups",
+      "CamundaCluster orders",
+      "PluginRequest gone",
+      "PluginRequest orders-access",
+    ]);
   });
 });
 

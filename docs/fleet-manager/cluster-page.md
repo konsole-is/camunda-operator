@@ -169,7 +169,7 @@ The page reads the requests, the registrations, and the other objects of the del
 
 ### Delete in Git mode
 
-When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file. To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again and says "The commit of the deletion policy is in the repository."
+When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file. To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again and says "The cluster is not deleted. The repository holds the commit that sets the deletion policy of my-cluster to Keep."
 
 After the delete commit, the page shows "Waiting for GitOps to delete my-cluster" until the cluster starts to delete the claim. Your GitOps tool must prune: it deletes the claim only when it removes the objects of deleted files. [Waiting for GitOps](settings.md#waiting-for-gitops) shows how the fleet manager follows a push.
 

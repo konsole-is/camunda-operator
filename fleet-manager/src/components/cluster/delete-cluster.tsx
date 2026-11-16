@@ -9,7 +9,6 @@ import {
   useClaimDelete,
 } from "@/components/fleet/use-claim-delete";
 import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import { CLAIM_LABEL } from "@/lib/labels";
 import type { WriteMode } from "@/lib/write/types";
 import {
   clusterDeletionChoice,
@@ -18,6 +17,7 @@ import {
   deleteProgress,
   type DeleteTarget,
   initialPolicy,
+  mergeTargets,
 } from "./delete-cluster-model";
 import { type DeleteStage, DeleteClusterView } from "./delete-cluster-view";
 
@@ -55,7 +55,7 @@ export function DeleteCluster({
     actions,
     show,
   });
-  const requestsOf = { namespace, labelSelector: `${CLAIM_LABEL}=${name}` };
+  const requestsOf = { namespace };
   const cluster = useResource(
     "CamundaCluster",
     { namespace, name },
@@ -111,18 +111,20 @@ export function DeleteCluster({
     picked,
     unread,
   );
-  // The targets stay as they were when the delete started, so that an
-  // object that is gone shows as Deleted instead of leaving the list.
+  // A target stays once the delete started, so that an object that is gone
+  // shows as Deleted instead of leaving the list.
   const [targets, setTargets] = useState<DeleteTarget[]>();
-  if (run.stage.kind === "deleting" && targets === undefined)
-    setTargets(model.targets);
+  if (run.stage.kind === "deleting") {
+    const merged = mergeTargets(targets ?? [], model.targets);
+    if (merged.length !== targets?.length) setTargets(merged);
+  }
 
   let stage: DeleteStage;
   if (run.stage.kind === "deleting") {
     stage = {
       kind: "deleting",
       progress: deleteProgress(
-        targets ?? model.targets,
+        mergeTargets(targets ?? [], model.targets),
         {
           CamundaCluster: cluster.item ? [cluster.item] : [],
           CamundaOptimize: optimizes.items,

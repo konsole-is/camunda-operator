@@ -3,7 +3,7 @@ import type { DeleteClusterData } from "@/components/cluster/delete-cluster-mode
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
-import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 
 /**
  * loadDeleteClusterPage reads the first snapshot of the delete page of a
@@ -47,10 +47,7 @@ export async function loadDeleteClusterPage(
     listed("Environment"),
     listed("PluginSection"),
     listed("PluginRegistration"),
-    listed("PluginRequest", {
-      namespace,
-      labelSelector: `${CLAIM_LABEL}=${name}`,
-    }),
+    listed("PluginRequest", inNamespace),
     listed("CamundaOptimize", inNamespace),
     listed("BackupSchedule", inNamespace),
     listed("LogicalBackupElasticsearch", inNamespace),
