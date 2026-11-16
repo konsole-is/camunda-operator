@@ -243,3 +243,96 @@ The public URL comes from the URL of the app on the plane. It is the scheme and 
 ### A tab with a list that the page did not read
 
 A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
+
+## Change a management plane
+
+The **Claim** tab of the plane page shows the claim of the plane, one section at a time. Select **Edit** on a section to change it. The fleet manager changes only the claim. The operator then changes the plane. A page without a write mode shows the sections with no **Edit**. A plane that no claim made has no claim to show. While the page cannot read the plane or its claim, the tab offers no **Edit** and names that list.
+
+### What stays fixed
+
+These values do not change after the plane is created:
+
+| Value | The tab shows |
+| --- | --- |
+| Name and namespace | `Set at creation` |
+| The option of **Databases** and of **Access** | `Chosen at creation`. A parameter that the policy of the environment lets the claim set stays open. |
+| The claim name and the claim value of the first administrator, in OIDC mode, after Management Identity started | `Fixed after Identity started`. Management Identity keeps the first administrator in its database. |
+
+The **Access** section also shows the host of the plane and the URL of each app. A plane with **No access from outside** shows the URL of each app as a field that you can change.
+
+### Change the platform config
+
+**Basics** has a list of the platform configs. The first entry, **From the environment**, removes the platform config from the claim, so that the plane takes the platform config of its environment. Management Identity, Console, and Web Modeler restart on a move. OIDC sign-in needs a platform config with OIDC authentication. While the plane signs in with OIDC, the tab refuses a platform config with basic authentication.
+
+### Change where users sign in
+
+**Identity** has the three options of the create form. A pick moves the claim to the new option in one change. A move between OIDC and a Keycloak option asks for the first administrator of the new option:
+
+- After a move to OIDC, enter the **Claim name** and the **Claim value**. The move removes the username and the **Password Secret** from the claim.
+- After a move to a Keycloak option, enter the **Username**, and the **Email** when Web Modeler runs. The move removes the claim name and the claim value.
+
+The first administrator stays. Management Identity keeps the one in its database. A new username in a Keycloak option creates a second user. The first user keeps its access.
+
+A move of the sign-in shows where the login callbacks of Optimize go. [Change the identity provider](../crds/camundamanagementcluster.md#change-the-identity-provider) explains the move of the callbacks. After a move to OIDC, add the callback of each Optimize to the application at your identity provider. The **Optimize** tab lists the callbacks.
+
+This claim moves a plane from OIDC to an External Keycloak:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaManagementClusterClaim
+metadata:
+  name: my-plane
+  namespace: my-plane-ns
+spec:
+  management:
+    identityProvider:
+      externalKeycloak:
+        url: https://keycloak.example.com/auth
+        adminCredentialsSecretRef:
+          name: my-keycloak-admin
+    identity:
+      admin:
+        username: admin
+        email: admin@example.com
+  # ... the rest of your claim
+```
+
+### Change the clusters served
+
+**Environments served** has one checkbox for each environment, and the **Cluster labels** of the cluster selector. Match expressions of the selector show as text. Change them in the claim YAML. A change of the labels keeps the match expressions.
+
+Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches loses its Console settings and restarts once. **Expected clusters** shows the result that each cluster can expect. These are expected results. The operator decides when the plane runs.
+
+In OIDC mode, the list needs the issuer URL of the platform config. Without it, the section says that the preview needs the issuer and lists no cluster.
+
+### Turn Console and Web Modeler on or off
+
+**Components** has **Run Console** and **Run Web Modeler**. When Console stops, the served clusters lose their Console settings and restart once. When Web Modeler stops, its database stays. An app that you turn off loses its version in the claim. An app that you turn on needs a version in **Versions**.
+
+### Change the versions
+
+**Versions** has one version for each app that runs. The checks of the create form apply, with the Keycloak range on its own. A version that the operator refuses blocks **Review**.
+
+A warning does not block **Review**. The section warns in these cases:
+
+- A version of Management Identity, Console, or Web Modeler goes down. Camunda documents no downgrade.
+- A version skips a minor, for example from 8.9 to 8.11. Move one minor at a time.
+- Management Identity, Console, and Web Modeler run on different minors. The [component version matrix](https://docs.camunda.io/docs/reference/supported-environments/#component-version-matrix) of Camunda lists the versions that work together. The tab compares the minor only, because each app has its own patch line.
+- The Keycloak version changes. Sign-in stops while Keycloak restarts.
+
+### Review and save the change
+
+The bar at the bottom of the page shows the number of unsaved changes, with **Discard** and **Review**. **Review** shows the change of the claim and what it does:
+
+- The move of the platform config and of the sign-in, and where the callbacks go.
+- Each cluster that attaches or detaches.
+- What Console off and Web Modeler off do, and each version move with its warnings.
+- The apps that restart, and the Optimize of each served cluster when its sign-in settings change. An app that restarts only in some cases shows as `may restart`, with the case. A database parameter and the access host are such cases, because the option decides.
+
+A move of the sign-in needs the name of the plane typed before **Save** turns on. In Git mode, the button is **Push to Git**.
+
+The save carries the version of the claim that the page read. When the claim changed since then, the save writes nothing and says so. Review the change and save it again.
+
+The fleet manager does not take over a field that another tool wrote. A change of such a field fails in the review. A field that you clear stays in the claim, and the review says so. Change that field with the tool that wrote it.
+
+While the page cannot read a list that the review needs, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
