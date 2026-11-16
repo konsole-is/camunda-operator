@@ -51,18 +51,20 @@ export function useResources<K extends KindName>(
  * snapshot on the current connection, in the order of lists. It is false
  * until then, and again after a reconnect until the next snapshot. It opens
  * no watch of its own, so each list needs useResources with the same kind
- * and options in the same tree.
+ * and options in the same tree, or useResource of the same object for a
+ * list with a name.
  */
 export function useWatchesFresh(
-  lists: readonly { kind: KindName; opts: ListOptions }[],
+  lists: readonly { kind: KindName; opts: ListOptions; name?: string }[],
 ): boolean[] {
   const client = useQueryClient();
   return useQueries({
-    queries: lists.map(({ kind, opts }) => {
+    queries: lists.map(({ kind, opts, name }) => {
       const key = freshKey({
         kind,
         namespace: opts.namespace,
         labelSelector: opts.labelSelector,
+        name,
       });
       return {
         queryKey: key,
