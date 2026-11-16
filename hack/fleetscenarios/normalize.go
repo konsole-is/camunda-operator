@@ -91,12 +91,7 @@ const (
 func normalize(addresses *serviceIPs, objs []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
 	objs = normalizeEvents(objs)
 
-	uids := map[string]string{}
-	for i := range objs {
-		if uid := string(objs[i].GetUID()); uid != "" {
-			uids[uid] = scenarioUID(objs[i].GetKind(), objs[i].GetNamespace(), objs[i].GetName())
-		}
-	}
+	uids := scenarioUIDs(objs)
 
 	ips, err := addresses.assign(objs)
 	if err != nil {
@@ -122,6 +117,18 @@ func normalize(addresses *serviceIPs, objs []unstructured.Unstructured) ([]unstr
 	})
 
 	return out, nil
+}
+
+// scenarioUIDs returns the scenario UID of each object of objs, by its real
+// UID.
+func scenarioUIDs(objs []unstructured.Unstructured) map[string]string {
+	uids := map[string]string{}
+	for i := range objs {
+		if uid := string(objs[i].GetUID()); uid != "" {
+			uids[uid] = scenarioUID(objs[i].GetKind(), objs[i].GetNamespace(), objs[i].GetName())
+		}
+	}
+	return uids
 }
 
 // scenarioUID returns the UID that an object of kind, namespace, and name

@@ -29,8 +29,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -288,47 +290,96 @@ func TestTemplateHashIgnoresTheValueOfTheConfigHash(t *testing.T) {
 	}
 
 	first := withConfigHash("0429b9eafb6e532c")
-	assert.Equal(t, templateHash(first), templateHash(withConfigHash("8b18034a08aa4335")))
+	assert.Equal(t, templateHash(first, nil), templateHash(withConfigHash("8b18034a08aa4335"), nil))
 	assert.Equal(t, "0429b9eafb6e532c", first.Annotations[camundamanagementcluster.ConfigHashAnnotation],
 		"the template keeps its own config hash")
 
 	newImage := withConfigHash("0429b9eafb6e532c")
 	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
-	assert.NotEqual(t, templateHash(first), templateHash(newImage))
+	assert.NotEqual(t, templateHash(first, nil), templateHash(newImage, nil))
 }
 
-func TestTemplateHashIgnoresTheUIDOfAnObjectThatIsNotAnOwner(t *testing.T) {
+func TestTemplateHashMapsTheUIDOfAKnownObjectInALabel(t *testing.T) {
 	d := webapp()
 	withClusterUID := func(uid string) corev1.PodTemplateSpec {
 		template := *d.Spec.Template.DeepCopy()
 		template.Labels[operatorlabels.ClusterUIDKey] = uid
 		return template
 	}
+	cluster := scenarioUID("CamundaCluster", "team-a", "orders")
+	run1 := map[string]string{"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": cluster}
+	run2 := map[string]string{"d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605": cluster}
 
 	first := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
-	assert.Equal(t, templateHash(first), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605")))
+	assert.Equal(t, templateHash(first, run1), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), run2))
 	assert.Equal(t, "6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71", first.Labels[operatorlabels.ClusterUIDKey],
 		"the template keeps its own UID")
 
 	newImage := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
 	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
-	assert.NotEqual(t, templateHash(first), templateHash(newImage))
+	assert.NotEqual(t, templateHash(first, run1), templateHash(newImage, run1))
 }
 
-func TestTemplateHashIgnoresAUIDInTheValueOfAnEnvironmentVariable(t *testing.T) {
+func TestTemplateHashMapsTheUIDOfAKnownObjectInAnEnvironmentVariable(t *testing.T) {
 	d := webapp()
 	withEnvUID := func(uid string) corev1.PodTemplateSpec {
 		template := *d.Spec.Template.DeepCopy()
 		template.Spec.Containers[0].Env = []corev1.EnvVar{{Name: "CAMUNDA_MODELER_CLUSTERS_0_ID", Value: uid}}
 		return template
 	}
+	cluster := scenarioUID("CamundaCluster", "team-b", "orders")
+	run1 := map[string]string{"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": cluster}
+	run2 := map[string]string{"d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605": cluster}
 
 	first := withEnvUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
-	assert.Equal(t, templateHash(first), templateHash(withEnvUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605")))
+	assert.Equal(t, templateHash(first, run1), templateHash(withEnvUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), run2))
 
-	newImage := withEnvUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
-	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.25"
-	assert.NotEqual(t, templateHash(first), templateHash(newImage))
+	otherCluster := map[string]string{"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": scenarioUID("CamundaCluster", "team-b", "billing")}
+	assert.NotEqual(t, templateHash(first, run1), templateHash(first, otherCluster),
+		"the env var names another object")
+}
+
+func TestTemplateHashKeepsAUUIDThatIsNotTheUIDOfAKnownObject(t *testing.T) {
+	d := webapp()
+	withClientID := func(id string) corev1.PodTemplateSpec {
+		template := *d.Spec.Template.DeepCopy()
+		template.Spec.Containers[0].Env = []corev1.EnvVar{{Name: "OAUTH2_CLIENT_ID", Value: id}}
+		return template
+	}
+	uids := map[string]string{"6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71": scenarioUID("CamundaCluster", "team-a", "orders")}
+
+	assert.NotEqual(t,
+		templateHash(withClientID("0f1e2d3c-4b5a-4987-8a6b-5c4d3e2f1a0b"), uids),
+		templateHash(withClientID("9a8b7c6d-5e4f-4321-9fed-cba987654321"), uids),
+	)
+}
+
+func TestSimulatorNamesTheReplicaSetTheSameWhenAKnownUIDDiffers(t *testing.T) {
+	replicaSetName := func(uid string) string {
+		d := webapp()
+		d.Spec.Template.Labels[operatorlabels.ClusterUIDKey] = uid
+		c := fakeClient(t, d)
+		sim := newSimulator(c)
+		sim.watch("team-a")
+		cluster := unstructured.Unstructured{}
+		cluster.SetKind("CamundaCluster")
+		cluster.SetNamespace("team-a")
+		cluster.SetName("orders")
+		cluster.SetUID(types.UID(uid))
+		sim.recordUIDs([]unstructured.Unstructured{cluster})
+
+		_, err := sim.pass(context.Background())
+		require.NoError(t, err)
+		var sets appsv1.ReplicaSetList
+		require.NoError(t, c.List(context.Background(), &sets, client.InNamespace("team-a")))
+		require.Len(t, sets.Items, 1)
+		return sets.Items[0].Name
+	}
+
+	assert.Equal(t,
+		replicaSetName("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71"),
+		replicaSetName("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"),
+	)
 }
 
 func TestSimulatorKeepsTheReplicaSetWhenOnlyTheConfigHashChanges(t *testing.T) {
@@ -517,13 +568,15 @@ func TestSimulatorReadsAgainAfterAStatusWriteLosesARace(t *testing.T) {
 	sim := newSimulator(c)
 	sim.watch("team-a")
 
-	writes, err := sim.pass(context.Background())
-	require.NoError(t, err)
-	assert.Positive(t, writes, "a lost race counts as a write, so the scenario is not quiet")
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err, "a lost race ends the round without an error")
+	assert.True(t, apierrors.IsConflict(sim.conflict), "the simulator keeps the conflict")
+	var d appsv1.Deployment
+	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "optimize"}, &d))
+	assert.Zero(t, d.Status.ReadyReplicas)
 
 	_, err = sim.pass(context.Background())
 	require.NoError(t, err)
-	var d appsv1.Deployment
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "optimize"}, &d))
-	assert.Equal(t, int32(2), d.Status.ReadyReplicas)
+	assert.Equal(t, int32(2), d.Status.ReadyReplicas, "the next round read the Deployment again")
 }

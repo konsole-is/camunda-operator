@@ -84,17 +84,31 @@ func settle(
 		if seen.IsZero() {
 			return fmt.Errorf("the scenario did not settle within %s: no tick read the whole scenario", timeout)
 		}
+		conflict := "none"
+		if sim.conflict != nil {
+			conflict = sim.conflict.Error()
+		}
 		return fmt.Errorf(
 			"the scenario did not settle within %s: objects that kept changing: %s; "+
 				"objects that did not observe their generation: %s; controllers that kept reconciling: %s; "+
-				"controllers whose last reconcile failed: %s",
+				"controllers whose last reconcile failed: %s; the last write of the simulator that lost a race: %s",
 			timeout,
 			listOrNone(recentlyChanged(objectChanged, seen), true),
 			listOrNone(unobserved, false),
 			listOrNone(recentlyChanged(controllerChanged, seen), false),
 			listOrNone(failing, false),
+			conflict,
 		)
 	}
+
+	// A pod template can hold the UID of an object made before this settle,
+	// so the first pass needs the UIDs too.
+	objs, err := sc.list(ctx)
+	if err != nil {
+		return notSettled(err)
+	}
+	sim.recordUIDs(objs)
+	sim.conflict = nil
 
 	for {
 		now := time.Now()
@@ -104,10 +118,11 @@ func settle(
 		}
 		busy := writes > 0
 
-		objs, err := sc.list(ctx)
+		objs, err = sc.list(ctx)
 		if err != nil {
 			return notSettled(err)
 		}
+		sim.recordUIDs(objs)
 		current := map[string]string{}
 		for i := range objs {
 			current[objs[i].GetAPIVersion()+" "+describe(&objs[i])] = objs[i].GetResourceVersion()

@@ -25,11 +25,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
@@ -118,6 +121,57 @@ func TestSettle(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "did not settle within 1s")
 		assert.Less(t, time.Since(start), timeout+time.Second)
+	})
+
+	t.Run("names the last write of the simulator that lost a race", func(t *testing.T) {
+		labels := map[string]string{"app": "racing"}
+		racing := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "fight", Name: "racing"},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: labels},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "app:1"}}},
+				},
+			},
+		}
+		require.NoError(t, c.Create(ctx, racing))
+		t.Cleanup(func() { _ = c.Delete(context.Background(), racing) })
+
+		// Each status write of the Deployment loses, as against a controller
+		// that never agrees with the simulator.
+		watching, err := client.NewWithWatch(cfg, client.Options{Mapper: c.RESTMapper()})
+		require.NoError(t, err)
+		losing := interceptor.NewClient(watching, interceptor.Funcs{
+			SubResourceUpdate: func(
+				ctx context.Context,
+				c client.Client,
+				subResource string,
+				obj client.Object,
+				opts ...client.SubResourceUpdateOption,
+			) error {
+				if _, ok := obj.(*appsv1.Deployment); ok {
+					return apierrors.NewConflict(
+						schema.GroupResource{Group: "apps", Resource: "deployments"}, obj.GetName(), nil,
+					)
+				}
+				return c.SubResource(subResource).Update(ctx, obj, opts...)
+			},
+		})
+		losingSim := newSimulator(losing)
+		losingSim.watch("fight")
+		deployments := &scope{
+			client:     sc.client,
+			namespaced: []schema.GroupVersionResource{{Group: "apps", Version: "v1", Resource: "deployments"}},
+			observed:   sc.observed,
+			namespaces: []string{"fight"},
+		}
+
+		err = settle(ctx, losingSim, deployments, 3*time.Second, before)
+		require.Error(t, err)
+		assert.ErrorContains(t, err,
+			"the last write of the simulator that lost a race: simulating Deployment fight/racing: writing the status: "+
+				`Operation cannot be fulfilled on deployments.apps "racing"`)
 	})
 }
 
