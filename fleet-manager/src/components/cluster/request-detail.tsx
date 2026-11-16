@@ -207,9 +207,9 @@ function Connected({
     <table className="w-full text-sm">
       <TableHeader>
         <TableRow>
-          <TableHead>Kind</TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Ready</TableHead>
+          <Head>Kind</Head>
+          <Head>Name</Head>
+          <Head>Ready</Head>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -333,9 +333,9 @@ function Outputs({
     <table className="w-full text-sm">
       <TableHeader>
         <TableRow>
-          <TableHead>Output</TableHead>
-          <TableHead>Value</TableHead>
-          <TableHead>Fills</TableHead>
+          <Head>Output</Head>
+          <Head>Value</Head>
+          <Head>Fills</Head>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -366,9 +366,9 @@ function Inputs({ detail }: { detail: RequestDetail }) {
     <table className="w-full text-sm">
       <TableHeader>
         <TableRow>
-          <TableHead>Input</TableHead>
-          <TableHead>From</TableHead>
-          <TableHead>Value</TableHead>
+          <Head>Input</Head>
+          <Head>From</Head>
+          <Head>Value</Head>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -411,12 +411,12 @@ function Resources({
       <table className="w-full text-sm">
         <TableHeader>
           <TableRow>
-            <TableHead>Kind</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>ID</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>After the claim is deleted</TableHead>
+            <Head>Kind</Head>
+            <Head>Name</Head>
+            <Head>ID</Head>
+            <Head>Location</Head>
+            <Head>Role</Head>
+            <Head>After the claim is deleted</Head>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -458,6 +458,16 @@ function Cell({
     >
       {children}
     </TableCell>
+  );
+}
+
+// Head wraps the words of a long column name, so that a table fits a
+// narrow screen.
+function Head({ children }: { children: ReactNode }) {
+  return (
+    <TableHead className="h-auto py-2 align-bottom whitespace-normal">
+      {children}
+    </TableHead>
   );
 }
 
