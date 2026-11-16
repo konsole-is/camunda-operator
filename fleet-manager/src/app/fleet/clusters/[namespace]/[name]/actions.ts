@@ -2,9 +2,10 @@
 
 import {
   claimChangeSchema,
-  claimDeleteSchema,
+  previewClaimDelete as previewDelete,
   runBackupChange,
   runChange,
+  runClaimDelete,
   runPreview,
 } from "@/lib/write/run-change";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
@@ -19,14 +20,14 @@ export async function applyClaimChange(change: Change): Promise<WriteResult> {
   return runChange(change, claimChangeSchema);
 }
 
-/** previewClaimDelete is the dry run of the delete of one claim. */
+/** previewClaimDelete is the dry run of the delete of one claim, as previewClaimDelete of run-change gives it. */
 export async function previewClaimDelete(change: Change): Promise<Preview> {
-  return runPreview(change, claimDeleteSchema);
+  return previewDelete(change);
 }
 
-/** applyClaimDelete deletes one claim with the writer of the settings. */
+/** applyClaimDelete deletes one claim with runClaimDelete. */
 export async function applyClaimDelete(change: Change): Promise<WriteResult> {
-  return runChange(change, claimDeleteSchema);
+  return runClaimDelete(change);
 }
 
 /**

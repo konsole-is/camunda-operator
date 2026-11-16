@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { expect, type Page } from "@playwright/test";
+import { type Browser, expect, type Page } from "@playwright/test";
 
 /** GIT_REPOSITORY is the in-cluster repository of the harness. */
 export const GIT_REPOSITORY = "https://git.fleet-harness.svc:8443/fleet.git";
@@ -66,6 +66,22 @@ export async function switchToDirectMode(page: Page): Promise<void> {
   ).not.toBeChecked();
 }
 
+/**
+ * restoreDirectMode turns Git mode off on a new page of browser, for an
+ * afterAll hook. A hook gets no baseURL fixture, so the page takes the
+ * address that journeys.sh sets.
+ */
+export async function restoreDirectMode(browser: Browser): Promise<void> {
+  const page = await browser.newPage({
+    baseURL: process.env.FLEET_JOURNEYS_BASE_URL,
+  });
+  try {
+    await switchToDirectMode(page);
+  } finally {
+    await page.close();
+  }
+}
+
 // saveChange saves the form of the Settings page when it holds a change.
 // Save is off when the form holds none.
 async function saveChange(page: Page): Promise<void> {
@@ -89,4 +105,63 @@ export async function committedFile(path: string): Promise<string | undefined> {
     return undefined;
   }
   return gitInPod("show", `main:${path}`);
+}
+
+/**
+ * removeCommittedFile commits the removal of the file at path to the branch
+ * main of the in-cluster repository, so that a later apply of the folder
+ * no longer applies it. The object that GitOps applied from the file stays
+ * in the cluster. It throws when main has no such file, or when kubectl or
+ * git fails.
+ */
+export function removeCommittedFile(path: string): void {
+  execFileSync(
+    "kubectl",
+    [
+      "exec",
+      "-n",
+      "fleet-harness",
+      "deploy/git",
+      "--",
+      "sh",
+      "-c",
+      `set -eu
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+git clone -q --branch main /srv/git/fleet.git "$work"
+git -C "$work" rm -q -- "$1"
+git -C "$work" -c user.name="Fleet journeys" -c user.email=journeys@fleet-harness.test commit -q -m "Remove $1"
+git -C "$work" push -q origin main`,
+      "sh",
+      path,
+    ],
+    { encoding: "utf8" },
+  );
+}
+
+/**
+ * pauseApplyLoop stops apply-loop.sh, which must run on this host, and
+ * returns the function that lets it go on. It throws when no loop runs.
+ */
+export function pauseApplyLoop(): () => void {
+  const pids = execFileSync("pgrep", ["-f", "harness/apply-loop.sh"], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .map(Number);
+  for (const pid of pids) signal(pid, "SIGSTOP");
+  return () => {
+    for (const pid of pids) signal(pid, "SIGCONT");
+  };
+}
+
+// The $(…) subshells of the loop match the pattern too, and one can exit
+// before it gets the signal.
+function signal(pid: number, name: NodeJS.Signals): void {
+  try {
+    process.kill(pid, name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
 }

@@ -1,6 +1,6 @@
 # The fleet view
 
-The **Fleet** page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button **New cluster** opens the create flow.
+The **Fleet** page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button **New cluster** opens the create flow, which [Create a cluster](create-a-cluster.md) describes.
 
 The page updates live. A new cluster, a change of status, or a new backup shows without a reload. The warnings of the pods update every 15 seconds.
 

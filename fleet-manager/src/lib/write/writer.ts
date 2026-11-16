@@ -405,6 +405,14 @@ function modeOf(settings: Settings): WriteMode {
 }
 
 /**
+ * readLive is readObject with kubeConfig(): a read from the API server, not
+ * from the watch cache.
+ */
+export function readLive(ref: ObjectRef): Promise<KubeObject | undefined> {
+  return readObject(kubeConfig(), ref);
+}
+
+/**
  * readObject returns the object of ref from the API server of kc, or
  * undefined when it does not exist. ref must pass refusalOf.
  */

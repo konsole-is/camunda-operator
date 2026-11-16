@@ -47,8 +47,8 @@ export const KEEP_REFUSED_ON_DELETE =
 /**
  * DeleteStage is what the delete page shows. choose holds the errors of a
  * delete refused after the policy write, and the policy of the claim after
- * a policy write that no delete followed. waiting: the policy write waits
- * for GitOps, or for the operator to read it. deleting holds the state of
+ * a policy write that no delete followed. waiting: the delete waits for
+ * the policy write, and blocked says why the options do not get it. deleting holds the state of
  * each target, whether the delete commit waits for GitOps, the live claim,
  * and what to do when the operator refuses the delete because an option
  * cannot keep. deleted: the claim is gone. replaced: the claim was made
@@ -60,7 +60,7 @@ export type DeleteStage =
       errors?: ApiError[];
       afterPolicyWrite?: PolicyAfterWrite;
     }
-  | { kind: "waiting" }
+  | { kind: "waiting"; blocked?: string }
   | {
       kind: "deleting";
       progress: { target: DeleteTarget; state: DeleteState }[];
@@ -170,10 +170,15 @@ export function DeleteClusterView({
       ) : stage.kind === "waiting" ? (
         <>
           <ReadErrors errors={errors} />
+          {stage.blocked && (
+            <p role="status" className="text-sm text-warn">
+              {stage.blocked}
+            </p>
+          )}
           <WaitingPanel
             text={
               mode === "git"
-                ? "Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
+                ? "Waiting for GitOps to apply the deletion policy. The operator then reads it, and the fleet manager removes the claim file."
                 : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
             }
             onStopWaiting={onStopWaiting}

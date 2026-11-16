@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { blockingViolations } from "../axe";
 import { JOURNEYS_DIR, shot } from "../shot";
@@ -12,8 +13,9 @@ function kubectl(...args: string[]): string {
 }
 
 // The journey deletes a claim of its own and never touches the claim of the
-// harness. Its cluster names the SecondaryStorageConfig of that claim, so
-// the operator holds it back; the journey checks only the delete.
+// harness. Its cluster takes backups to a SecondaryStorageConfig without a
+// snapshot repository, so the operator refuses it. The journey checks only
+// the delete.
 const claim = `apiVersion: fleet.camunda.io/v1alpha1
 kind: CamundaClusterClaim
 metadata:
@@ -74,6 +76,45 @@ test.beforeAll(async () => {
       { timeout: 300_000 },
     )
     .toBe("True");
+});
+
+// afterAll deletes the claim, and the job reads the cluster only after
+// the journeys end, so a failed journey keeps the state of its objects and
+// the text of the page here, in the Playwright output.
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  const read = (...args: string[]) => {
+    try {
+      return kubectl(...args);
+    } catch (error) {
+      return String(error);
+    }
+  };
+  const text = await page
+    .locator("body")
+    .innerText({ timeout: 5_000 })
+    .catch((error: unknown) => String(error));
+  writeFileSync(
+    testInfo.outputPath("state.txt"),
+    [
+      `=== page ${page.url()}`,
+      text,
+      "=== objects",
+      read(
+        "get",
+        `camundaclusterclaim/${name}`,
+        `camundacluster/${name}`,
+        "-n",
+        namespace,
+        "--ignore-not-found",
+        "-o",
+        "yaml",
+      ),
+      read("get", "pluginrequests", "-n", namespace, "-o", "yaml"),
+      "=== events",
+      read("get", "events", "-n", namespace, "--sort-by=.lastTimestamp"),
+    ].join("\n"),
+  );
 });
 
 // The resources that Keep leaves behind carry the request label.
