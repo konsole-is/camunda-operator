@@ -142,8 +142,12 @@ function ownFields(
       if (
         field.state.kind === "filled" &&
         field.target.kind === "CamundaCluster"
-      )
-        own.set(belowSpec(field.path), field.state.sectionLabel);
+      ) {
+        const path = belowSpec(field.path);
+        for (const key of own.keys())
+          if (isAtOrUnder(key, path)) own.delete(key);
+        own.set(path, field.state.sectionLabel);
+      }
     }
   } else if (object.kind === "ElasticsearchCluster") {
     add(

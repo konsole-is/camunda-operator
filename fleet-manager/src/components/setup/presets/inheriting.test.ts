@@ -29,6 +29,37 @@ describe("inheritingRows", () => {
     });
   });
 
+  it("shows a map that a slot fills as one field, without its keys", () => {
+    const fixtures = presetFixtures();
+    fixtures.clusters[0].spec.connectors = {
+      serviceAccount: {
+        annotations: { "eks.amazonaws.com/role-arn": "arn:aws:iam::1:role/c" },
+      },
+    };
+    fixtures.clusterClaims[0].spec.plugins?.push({
+      section: "connectors-identity",
+      registration: "aws-identity",
+    });
+    fixtures.sections.push({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginSection",
+      metadata: { name: "connectors-identity" },
+      spec: {
+        label: "Connectors identity",
+        slot: "connectorsIdentity",
+        appliesTo: ["CamundaClusterClaim"],
+        selection: "One",
+      },
+    } as Resource<"PluginSection">);
+    const own = inheritingRows(medium, fixtures)[0].ownFields;
+    expect(own.filter((f) => f.path.startsWith("connectors."))).toEqual([
+      {
+        path: "connectors.serviceAccount.annotations",
+        filledBy: "Connectors identity",
+      },
+    ]);
+  });
+
   it("leaves out the instance-bound fields that every resource sets", () => {
     const paths = inheritingRows(medium, presetFixtures())[0].ownFields.map(
       (f) => f.path,
