@@ -38,6 +38,7 @@ export function ImagesSection({
   errors,
   usersKnown = true,
   unreadMinorKinds = [],
+  versionsUnresolved = false,
   onChange,
 }: {
   images: PlatformDraft["images"];
@@ -45,6 +46,7 @@ export function ImagesSection({
   errors: ValidationError[];
   usersKnown?: boolean;
   unreadMinorKinds?: readonly string[];
+  versionsUnresolved?: boolean;
   onChange: (images: PlatformDraft["images"]) => void;
 }): ReactNode {
   const ranged = defaults.minors.length > 1;
@@ -70,7 +72,9 @@ export function ImagesSection({
         <p className="text-sm text-muted">
           {!usersKnown
             ? "The users of this config are not known. "
-            : unreadMinorKinds.length === 0
+            : versionsUnresolved
+              ? "No Camunda version is known for the clusters and management planes that use this config. "
+              : unreadMinorKinds.length === 0
               ? "No cluster or management plane uses this config. "
               : ""}
           The defaults are those of Camunda {defaults.minors[0]}, the newest in

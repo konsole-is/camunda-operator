@@ -169,6 +169,26 @@ describe("defaultRepositories", () => {
     ]);
   });
 
+  it("does not join minors across a requested minor that the table does not hold", () => {
+    const hole = parseImagesTable({
+      schemaVersion: 1,
+      minors: {
+        "8.9": { console: { repository: "camunda/console", version: "8.9.1" } },
+        "8.11": {
+          console: { repository: "camunda/console", version: "8.11.1" },
+        },
+      },
+    });
+    const d = defaultRepositories(hole, ["8.9", "8.10", "8.11"]);
+
+    expect(d.missing).toEqual(["8.10"]);
+    expect(d.minors).toEqual(["8.9", "8.11"]);
+    expect(d.fields.console).toEqual([
+      { repository: "camunda/console", from: "8.9", to: "8.9" },
+      { repository: "camunda/console", from: "8.11", to: "8.11" },
+    ]);
+  });
+
   it("gives no default for a field whose image the table does not hold", () => {
     expect(defaultRepositories(twoMinors, ["8.9"]).fields.console).toEqual([]);
   });

@@ -15,6 +15,7 @@ function setup(
   errors: ValidationError[] = [],
   usersKnown = true,
   unreadMinorKinds: string[] = [],
+  versionsUnresolved = false,
 ) {
   const onChange = vi.fn<(images: PlatformDraft["images"]) => void>();
   render(
@@ -24,6 +25,7 @@ function setup(
       errors={errors}
       usersKnown={usersKnown}
       unreadMinorKinds={unreadMinorKinds}
+      versionsUnresolved={versionsUnresolved}
       onChange={onChange}
     />,
   );
@@ -99,6 +101,19 @@ describe("ImagesSection", () => {
     expect(
       screen.getByText(
         "The users of this config are not known. The defaults are those of Camunda 8.10, the newest in the images table.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not call the config unused when its users have no known version", () => {
+    setup([], {}, [], true, [], true);
+
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "No Camunda version is known for the clusters and management planes that use this config. The defaults are those of Camunda 8.10, the newest in the images table.",
       ),
     ).toBeDefined();
   });

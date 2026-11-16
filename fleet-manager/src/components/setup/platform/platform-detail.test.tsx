@@ -428,6 +428,29 @@ describe("PlatformDetail", () => {
     ]);
   });
 
+  it("does not call the config unused when its users have no known version", () => {
+    const base = platformFixtures();
+    setup({
+      sources: {
+        ...base,
+        clusters: base.clusters.map((c) => ({ ...c, status: undefined })),
+        planes: base.planes.map((p) => ({
+          ...p,
+          spec: { ...p.spec, identity: undefined },
+        })),
+      },
+    });
+
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "No Camunda version is known for the clusters and management planes that use this config. The defaults are those of Camunda 8.10, the newest in the images table.",
+      ),
+    ).toBeDefined();
+  });
+
   it("says that the minors can be incomplete while the clusters cannot be read", () => {
     setup({
       sources: { ...platformFixtures(), clusters: [] },

@@ -100,10 +100,11 @@ export function defaultRepositories(
   const newest = Object.keys(table.minors).sort(byMinor).at(-1);
   const fromUsers = unique.length > 0 || newest === undefined;
   const shown = fromUsers ? held : [newest];
+  const bounds = fromUsers ? unique : [newest];
   const fields = Object.fromEntries(
     (Object.keys(IMAGE_FIELDS) as ImageField[]).map((field) => [
       field,
-      groups(table, IMAGE_FIELDS[field], shown),
+      groups(table, IMAGE_FIELDS[field], bounds),
     ]),
   ) as Record<ImageField, RepositoryDefault[]>;
   return { minors: shown, missing, fromUsers, fields };
