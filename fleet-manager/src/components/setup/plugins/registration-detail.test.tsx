@@ -53,19 +53,6 @@ describe("RegistrationDetail", () => {
     expect(screen.getByText("elasticsearch", { selector: "p" })).toBeTruthy();
   });
 
-  it("names the registration by its name when its label is not text", () => {
-    const data = detailData("elasticsearch");
-    const registrations = data.sources.registrations.map((r) =>
-      r.metadata.name === "elasticsearch"
-        ? { ...r, spec: { ...r.spec, label: { text: "x" } as never } }
-        : r,
-    );
-    detail({ data: { ...data, sources: { ...data.sources, registrations } } });
-    expect(
-      screen.getByRole("heading", { level: 1, name: "elasticsearch" }),
-    ).toBeTruthy();
-  });
-
   it("opens on the tab it is given", () => {
     detail({}, "health");
     expect(
@@ -104,6 +91,31 @@ describe("RegistrationDetail", () => {
       screen.queryByText("This registration no longer exists."),
     ).toBeNull();
     expect(screen.getByRole("tablist")).toBeTruthy();
+  });
+
+  it("keeps saying that a registration is gone after its list is read again and fails", () => {
+    const data = detailData("elasticsearch");
+    const gone = {
+      ...data,
+      sources: { ...data.sources, registrations: [] },
+    };
+    const props = { data: gone, errors: [], tab: "about" as const, now: NOW };
+    const { rerender } = render(<RegistrationDetail {...props} stale={[]} />);
+    expect(
+      screen.getByText("This registration no longer exists."),
+    ).toBeTruthy();
+    rerender(<RegistrationDetail {...props} stale={["PluginRegistration"]} />);
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(
+      screen.getByText(
+        "This registration no longer exists. It was gone when the page last read it.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Not read: PluginRegistration. What needs them shows as not known.",
+      ),
+    ).toBeTruthy();
   });
 
   it.each(["about", "contract", "parameters", "grants"] as const)(

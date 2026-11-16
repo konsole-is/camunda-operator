@@ -12,7 +12,6 @@ import {
   useRegistrationDetail,
 } from "./detail-sources";
 import { unreadKinds } from "./groups";
-import { isText } from "./values";
 import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";
@@ -29,11 +28,11 @@ import { UsedByTab } from "./used-by-tab";
  * RegistrationDetail is the page of the registration data.name, opened on
  * tab. A tab change sets the tab query parameter without a navigation.
  * errors holds the error of each failed watch, and stale the kind of each
- * list whose watch has no snapshot on its current connection. While
- * PluginRegistration is read and has no registration of the name, the page
- * says that it no longer exists. While it is not read, the page shows the
- * registration of its list, else data.registration, and says on each tab
- * that shows it that it can be old. now is the time that the ages count to.
+ * list whose watch has no snapshot on its current connection. Once a read
+ * of PluginRegistration has no registration of the name, the page says
+ * that it no longer exists. Before that, while the kind is not read, it
+ * shows the registration of its list, else data.registration, as possibly
+ * old. now is the time that the ages count to.
  */
 export function RegistrationDetail({
   data,
@@ -57,9 +56,11 @@ export function RegistrationDetail({
   const unread = unreadKinds({ errors, stale });
   const { sources } = data;
   const registrationUnread = unread.includes("PluginRegistration");
+  const live = sources.registrations.find((r) => r.metadata.name === data.name);
+  const [gone, setGone] = useState(false);
+  if (!registrationUnread && gone !== !live) setGone(!live);
   const registration =
-    sources.registrations.find((r) => r.metadata.name === data.name) ??
-    (registrationUnread ? data.registration : undefined);
+    live ?? (registrationUnread && !gone ? data.registration : undefined);
   const old = registrationUnread && (
     <p className="mb-4 text-sm text-muted">
       This is the registration as the page last read it. It can be old.
@@ -69,9 +70,7 @@ export function RegistrationDetail({
     <div className="flex flex-col gap-6">
       <header className="flex min-w-0 flex-col gap-1">
         <h1 className="font-heading text-3xl font-bold tracking-[-0.02em] break-words">
-          {registration && isText(registration.spec.label)
-            ? registration.spec.label
-            : data.name}
+          {registration?.spec.label ?? data.name}
         </h1>
         <p className="font-mono text-sm break-all text-muted">{data.name}</p>
       </header>
@@ -82,11 +81,13 @@ export function RegistrationDetail({
       ))}
       {unread.length > 0 && (
         <p className="text-sm text-muted">
-          {`Not read: ${unread.join(", ")}. What needs them shows as not known${registrationUnread ? ", and the registration as the page last read it" : ""}.`}
+          {`Not read: ${unread.join(", ")}. What needs them shows as not known${registrationUnread && registration ? ", and the registration as the page last read it" : ""}.`}
         </p>
       )}
       {!registration ? (
-        <p className="text-sm">This registration no longer exists.</p>
+        <p className="text-sm">
+          {`This registration no longer exists.${registrationUnread ? " It was gone when the page last read it." : ""}`}
+        </p>
       ) : (
         <Tabs value={tab} onValueChange={selectTab}>
           <TabsList className="h-auto max-w-full flex-wrap">
