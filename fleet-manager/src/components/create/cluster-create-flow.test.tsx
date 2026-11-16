@@ -1457,6 +1457,44 @@ describe("ClusterCreateFlow write", () => {
     expect(screen.queryByText(/This create did not make it/)).toBeNull();
   });
 
+  it("follows a claim that the first lost write made, after a later write of it is refused", async () => {
+    let clock = Date.parse("2026-11-16T12:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+    vi.spyOn(fakeWriter, "apply")
+      .mockImplementationOnce(async (change) => {
+        fakeWriter.applied.push(structuredClone(change));
+        throw new Error("the connection to the API server was lost");
+      })
+      .mockImplementationOnce(async (change) => {
+        fakeWriter.applied.push(structuredClone(change));
+        live.objects.CamundaClusterClaim = [
+          liveClaim("team-a", "2026-11-16T12:00:01Z"),
+        ];
+        return {
+          ok: false,
+          errors: [
+            {
+              code: "Conflict",
+              message: "CamundaClusterClaim team-a/orders exists already.",
+            },
+          ],
+        };
+      });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Try again" }),
+    );
+    await waitFor(() => expect(create().disabled).toBe(false));
+    clock += 10 * 60_000;
+    await userEvent.click(create());
+    expect(
+      await screen.findByRole("button", { name: "Follow the claim" }),
+    ).toBeTruthy();
+  });
+
   it("does not offer to follow a claim of the same spec that was made before the click", async () => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));

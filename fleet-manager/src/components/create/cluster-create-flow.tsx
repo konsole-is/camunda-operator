@@ -496,11 +496,12 @@ export function ClusterCreateFlow({
   const [refused, setRefused] = useState<{
     claim: ClusterClaimObject;
     unavailable: boolean;
-    startedAt: number;
   }>();
-  // The claims, by namespace and name, whose write lost its answer. A later
-  // refusal of the same claim does not show that the lost write failed.
-  const [lostClaims, setLostClaims] = useState<ReadonlySet<string>>(new Set());
+  // Each write of a claim after one lost its answer. A later refusal does
+  // not show that an earlier write failed.
+  const [lostWrites, setLostWrites] = useState<
+    ReadonlyMap<string, readonly { spec: unknown; startedAt: number }[]>
+  >(new Map());
   // After a lost answer, Create waits for Try again, which runs the dry run
   // again by mounting the review step again.
   const [waitsForRetry, setWaitsForRetry] = useState(false);
@@ -534,15 +535,15 @@ export function ClusterCreateFlow({
     const claim = clusterClaimOf(flow.draft, environment, deletion);
     const key = `${claim.metadata.namespace}/${claim.metadata.name}`;
     const lost = result.errors.some((e) => e.code === "Unavailable");
-    if (lost) {
-      setLostClaims(new Set([...lostClaims, key]));
-      setWaitsForRetry(true);
+    if (lost) setWaitsForRetry(true);
+    if (lost || lostWrites.has(key)) {
+      const writes = [
+        ...(lostWrites.get(key) ?? []),
+        { spec: claim.spec, startedAt: startedAt.current },
+      ];
+      setLostWrites(new Map([...lostWrites, [key, writes]]));
     }
-    setRefused({
-      claim,
-      unavailable: lost || lostClaims.has(key),
-      startedAt: startedAt.current,
-    });
+    setRefused({ claim, unavailable: lost || lostWrites.has(key) });
     const now = latest.current.namespace;
     if (
       result.createdNamespace !== undefined &&
@@ -573,8 +574,10 @@ export function ClusterCreateFlow({
   // A write whose answer was lost can have landed.
   const landed =
     taken &&
-    refused?.unavailable &&
-    isWrittenClaim(taken, refused.claim.spec, refused.startedAt)
+    refusedRef &&
+    (lostWrites.get(`${refusedRef.namespace}/${refusedRef.name}`) ?? []).some(
+      (w) => isWrittenClaim(taken, w.spec, w.startedAt),
+    )
       ? taken
       : undefined;
   const earlier = steps
