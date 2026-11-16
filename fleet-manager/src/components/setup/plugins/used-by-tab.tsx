@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { resourceFate } from "@/lib/claims/resources";
 import { ConditionBadge } from "./condition-badge";
 import { LINK, NotKnown, ValueError } from "./tab-parts";
 import type { UsedByRow } from "./used-by";
@@ -128,7 +129,7 @@ export function UsedByTab({
                             </span>
                           )}
                           <span className={MUTED}>
-                            {`On Orphan: ${resource.onOrphan}`}
+                            {`On delete: ${row.deletionPolicy ? resourceFate(resource, row.deletionPolicy) : "Not known"}`}
                           </span>
                         </li>
                       ),
@@ -161,7 +162,11 @@ export function UsedByTab({
                   </ul>
                 )}
               </Term>
-              <Term label="Deletion policy">{row.deletionPolicy}</Term>
+              <Term label="Deletion policy">
+                {row.deletionPolicy ?? (
+                  <ValueError text="The deletion policy is not Delete or Orphan." />
+                )}
+              </Term>
             </Terms>
           </Panel>
         ))}

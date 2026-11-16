@@ -105,7 +105,7 @@ A Grant whose template the registration no longer has shows in the last panel, *
 - **Environment**: the environment of the namespace, or `No environment`.
 - **Outputs** and **Ready**: the conditions `OutputsReady` and `Ready` of the request. A condition that is not `True` shows its message. When `Ready` has the reason `GrantRejected`, the line `Grants with Ready False:` names each Grant of the request whose `Ready` is `False`. Open the tab **Grants** to read the reason of each one.
 - **Headline**: the first fact that the controller of the option reports about the request, for example `SecondaryStorageConfig: orders-storage, Ready`.
-- **Resources**: each resource that the controller made for the request, with its role and location. `On Orphan: Kept` says that the resource stays when the request is deleted with the deletion policy `Orphan`. `On Orphan: Deleted` says that it is deleted then too. With `Delete`, every resource is deleted.
+- **Resources**: each resource that the controller made for the request, with its role and location. `On delete: Kept` or `On delete: Deleted` says what happens to the resource when the request is deleted with its **Deletion policy**. With `Delete`, every resource is deleted. With `Orphan`, a resource stays unless the controller of the option deletes it then too.
 - **Grants**: each Grant of the request, with its `Ready` condition.
 - **Deletion policy**: `Delete` or `Orphan`.
 

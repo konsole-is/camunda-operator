@@ -94,9 +94,33 @@ describe("UsedByTab", () => {
     expect(
       within(resources).getByText("ElasticsearchCluster orders-es"),
     ).toBeTruthy();
-    expect(within(resources).getByText("On Orphan: Kept")).toBeTruthy();
-    expect(within(resources).getByText("On Orphan: Deleted")).toBeTruthy();
+    expect(within(resources).getByText("On delete: Kept")).toBeTruthy();
+    expect(within(resources).getByText("On delete: Deleted")).toBeTruthy();
     expect(termOf(panel, "Deletion policy").textContent).toBe("Orphan");
+  });
+
+  it("says that the delete policy deletes a resource that Orphan keeps", () => {
+    const rows = usedByRows(
+      "elasticsearch",
+      registrationSources({
+        requests: [
+          {
+            ...esRequest,
+            spec: { ...esRequest.spec, deletionPolicy: "Delete" },
+          },
+        ],
+      }),
+      [],
+    );
+    render(<UsedByTab rows={rows} unread={[]} />);
+    const resources = termOf(
+      "team-orders/orders-secondary-storage",
+      "Resources",
+    );
+    expect(within(resources).getAllByText("On delete: Deleted")).toHaveLength(
+      2,
+    );
+    expect(within(resources).queryByText("On delete: Kept")).toBeNull();
   });
 
   it("names the Grant with Ready False of a request whose Ready is GrantRejected", () => {
@@ -214,6 +238,29 @@ describe("UsedByTab", () => {
     expect(termOf("team-orders/bad", "Claim").textContent).toBe(
       "The claim or the target of the request is not valid.",
     );
+  });
+
+  it("shows the error of a deletion policy that is not Delete or Orphan", () => {
+    const rows = usedByRows(
+      "elasticsearch",
+      registrationSources({
+        requests: [
+          {
+            ...esRequest,
+            spec: { ...esRequest.spec, deletionPolicy: { x: 1 } as never },
+          },
+        ],
+      }),
+      [],
+    );
+    render(<UsedByTab rows={rows} unread={[]} />);
+    const panel = "team-orders/orders-secondary-storage";
+    expect(termOf(panel, "Deletion policy").textContent).toBe(
+      "The deletion policy is not Delete or Orphan.",
+    );
+    expect(
+      within(termOf(panel, "Resources")).getAllByText("On delete: Not known"),
+    ).toHaveLength(2);
   });
 
   it("shows the error of a request whose conditions are not valid", () => {
