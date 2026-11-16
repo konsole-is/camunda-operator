@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 import { presetKindOf } from "@/components/setup/presets/kinds";
+import type { PresetObject } from "@/components/setup/presets/kinds";
 import { PresetDetailLive } from "@/components/setup/presets/preset-detail";
+import { secretNamespaces } from "@/components/setup/presets/secrets";
 import { get } from "@/lib/k8s/read";
+import { listSecretRefsIn } from "@/lib/secrets";
 import { writeMode } from "@/lib/write/writer";
 import { applyPresetChange, previewPresetChange } from "../../actions";
 import { loadPresets } from "../../load";
@@ -22,9 +25,14 @@ export default async function PresetPage({
     writeMode().catch(() => undefined),
   ]);
   if (!found) notFound();
+  // The Secret lists are read once, when the page opens.
+  const secrets = await listSecretRefsIn(
+    secretNamespaces(found as PresetObject, sources),
+  );
   return (
     <PresetDetailLive
       initial={sources}
+      secrets={secrets}
       kind={kind}
       name={name}
       mode={mode}
