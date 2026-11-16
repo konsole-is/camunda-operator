@@ -53,6 +53,19 @@ describe("RegistrationDetail", () => {
     expect(screen.getByText("elasticsearch", { selector: "p" })).toBeTruthy();
   });
 
+  it("names the registration by its name when its label is not text", () => {
+    const data = detailData("elasticsearch");
+    const registrations = data.sources.registrations.map((r) =>
+      r.metadata.name === "elasticsearch"
+        ? { ...r, spec: { ...r.spec, label: { text: "x" } as never } }
+        : r,
+    );
+    detail({ data: { ...data, sources: { ...data.sources, registrations } } });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "elasticsearch" }),
+    ).toBeTruthy();
+  });
+
   it("opens on the tab it is given", () => {
     detail({}, "health");
     expect(

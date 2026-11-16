@@ -63,7 +63,7 @@ export function contractOf(
         return section
           ? {
               name: item,
-              label: section.spec.label,
+              label: isText(section.spec.label) ? section.spec.label : item,
               fields: sectionFields(section),
             }
           : { name: item, fields: [] };

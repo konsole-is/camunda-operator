@@ -190,6 +190,18 @@ describe("usedByRows", () => {
     }
   });
 
+  it("gives no deletion policy for a request whose policy is not Delete or Orphan", () => {
+    const sources = registrationSources({
+      requests: [
+        pluginRequest("team-orders", "bad", {
+          registration: "aws-s3",
+          deletionPolicy: { x: 1 } as never,
+        }),
+      ],
+    });
+    expect(usedByRows("aws-s3", sources, [])[0].deletionPolicy).toBeUndefined();
+  });
+
   it("knows no Grant while Grant is not read", () => {
     const sources = registrationSources({ requests: [s3Request] });
     const [row] = usedByRows(

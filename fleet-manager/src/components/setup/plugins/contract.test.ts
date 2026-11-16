@@ -67,6 +67,17 @@ describe("contractOf", () => {
     ]);
   });
 
+  it("names a section whose label is not text by its name", () => {
+    const sections = sources.sections.map((s) => ({
+      ...s,
+      spec: { ...s.spec, label: { text: "x" } as never },
+    }));
+    const contract = contractOf(es, sections, []);
+    const section = contract.sections[0];
+    expect(section).toMatchObject({ name: "secondary-storage" });
+    expect((section as { label?: unknown }).label).toBe("secondary-storage");
+  });
+
   it("gives no label for a section or an input source that does not exist", () => {
     const contract = contractOf(
       pluginRegistration("x", {

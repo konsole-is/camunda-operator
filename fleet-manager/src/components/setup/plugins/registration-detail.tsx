@@ -12,6 +12,7 @@ import {
   useRegistrationDetail,
 } from "./detail-sources";
 import { unreadKinds } from "./groups";
+import { isText } from "./values";
 import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";
@@ -68,7 +69,9 @@ export function RegistrationDetail({
     <div className="flex flex-col gap-6">
       <header className="flex min-w-0 flex-col gap-1">
         <h1 className="font-heading text-3xl font-bold tracking-[-0.02em] break-words">
-          {registration?.spec.label ?? data.name}
+          {registration && isText(registration.spec.label)
+            ? registration.spec.label
+            : data.name}
         </h1>
         <p className="font-mono text-sm break-all text-muted">{data.name}</p>
       </header>

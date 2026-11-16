@@ -59,7 +59,8 @@ export type UsedByRow = {
   resources: (ResourceRef | Invalid)[];
   /** grants is unset while Grant is not read. */
   grants?: GrantView[];
-  deletionPolicy: "Delete" | "Orphan";
+  /** deletionPolicy is unset when the request has a value that is not Delete or Orphan. */
+  deletionPolicy?: "Delete" | "Orphan";
 };
 
 /**
@@ -141,7 +142,10 @@ export function usedByRows(
           "Resource",
           "resources",
         ),
-        deletionPolicy: request.spec.deletionPolicy,
+        ...((request.spec.deletionPolicy === "Delete" ||
+          request.spec.deletionPolicy === "Orphan") && {
+          deletionPolicy: request.spec.deletionPolicy,
+        }),
       };
     });
 }
