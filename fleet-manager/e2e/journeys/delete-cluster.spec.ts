@@ -105,18 +105,33 @@ test.afterAll(() => {
   );
 });
 
-test("a delete with Keep the resources removes the cluster and keeps the resource of the option without its owner", async ({
+const echo = `${request}-echo`;
+
+// ownerReferences returns the owner references of the ConfigMap that the
+// option keeps.
+function ownerReferences(): unknown[] {
+  return (
+    JSON.parse(kubectl("get", "configmap", echo, "-n", namespace, "-o", "json"))
+      .metadata.ownerReferences ?? []
+  );
+}
+
+test("a delete with Keep the resources removes the cluster, keeps the ConfigMap of the option without its owner, and deletes its Ingress", async ({
   page,
 }) => {
   test.setTimeout(420_000);
+  expect(ownerReferences()).not.toEqual([]);
   await page.goto(`/fleet/clusters/${namespace}/${name}`);
   await page.getByRole("link", { name: "Delete", exact: true }).click();
   await page.getByRole("radio", { name: /Keep the resources/ }).check();
   // The option also made a StorageClass and an Ingress whose names hold
-  // the name of the ConfigMap, so the row is picked by its kind too.
+  // the name of the ConfigMap, so each row is picked by its kind too.
   await expect(
-    page.getByRole("row", { name: `ConfigMap ${request}-echo` }),
+    page.getByRole("row", { name: `ConfigMap ${echo}` }),
   ).toContainText("Kept");
+  await expect(
+    page.getByRole("row", { name: `Ingress ${echo}` }),
+  ).toContainText("Deleted");
   await page.getByLabel(`Type ${name} to confirm`).fill(name);
   const confirm = page.getByRole("button", { name: "Delete the cluster" });
   await expect(confirm).toBeEnabled({ timeout: 30_000 });
@@ -144,16 +159,24 @@ test("a delete with Keep the resources removes the cluster and keeps the resourc
     ),
   ).toBe("");
   const kept = JSON.parse(
-    kubectl(
-      "get",
-      "configmap",
-      `${request}-echo`,
-      "-n",
-      namespace,
-      "-o",
-      "json",
-    ),
+    kubectl("get", "configmap", echo, "-n", namespace, "-o", "json"),
   );
   expect(kept.metadata.labels["plugins.camunda.io/request"]).toBe(request);
   expect(kept.metadata.ownerReferences ?? []).toEqual([]);
+  await expect
+    .poll(
+      () =>
+        kubectl(
+          "get",
+          "ingress",
+          echo,
+          "-n",
+          namespace,
+          "--ignore-not-found",
+          "-o",
+          "name",
+        ),
+      { timeout: 60_000 },
+    )
+    .toBe("");
 });
