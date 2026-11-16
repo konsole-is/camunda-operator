@@ -63,12 +63,9 @@ export type ClaimDeleteStage =
 
 type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 
-// Written is a policy write, with the revision of its Git commit.
 type Written = { policy: DeletionPolicy; revision?: string };
 
-// Sent is the state that the hook keeps. waiting holds the policy write,
-// the spec before and after it, and seen once the claim showed the spec
-// after it.
+// Sent is the state that the hook keeps.
 type Sent =
   | { kind: "choose"; errors?: ApiError[]; written?: Written }
   | (Written & {
@@ -224,8 +221,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   if (written && sent.kind === "waiting" && !sent.seen)
     setSent({ ...sent, seen: true });
   // The review showed the claim before or after the policy write. Any
-  // other spec, or the spec from before after the claim showed the write,
-  // needs a new review.
+  // other spec change needs a new review.
   const changedSince =
     sent.kind === "waiting" &&
     live !== undefined &&

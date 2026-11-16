@@ -61,9 +61,8 @@ export type DeleteTarget = {
  * keepRefused says that the claim keeps its resources and an option cannot.
  * targets are the objects that always go, in the order in which they go,
  * the requests included. kept are the CamundaCluster, CamundaOptimize, and
- * BackupSchedule objects of the cluster that the claim does not control,
- * each with the reason in note. backups counts the backups of the cluster
- * of both kinds. warning is the backupWarning of groups, unset while
+ * BackupSchedule objects of the cluster that stay, each with the reason in
+ * note. backups counts the backups of the cluster of both kinds. warning is the backupWarning of groups, unset while
  * fatesKnown is false. unread are the kinds that the page could not read;
  * fatesKnown is false when the fates of groups depend on one.
  */
@@ -92,10 +91,7 @@ const VOLUME_KINDS: readonly string[] = [
   "CamundaRelease",
 ];
 
-/**
- * KEPT_ATTACHMENT is the note of a cluster or an attachment that the claim
- * did not make.
- */
+/** KEPT_ATTACHMENT is the note of each object in kept. */
 export const KEPT_ATTACHMENT = "Kept: the claim did not make it";
 
 /** clusterDeletionChoice is claimDeletionChoice of the claim of data. */
