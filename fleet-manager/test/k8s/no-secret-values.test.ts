@@ -21,7 +21,9 @@ import {
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
   applyPlaneClaimChange,
+  applyPlaneClaimDelete,
   previewPlaneClaimChange,
+  previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import {
   createPlane,
@@ -384,6 +386,16 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         },
       }),
     ),
+  // The precondition is older than the live plane claim, so the dry run and
+  // the delete reach the writer, refuse with Stale, and remove nothing.
+  "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimDelete":
+    refused("Stale", async () =>
+      previewPlaneClaimDelete(await stalePlaneClaimDelete()),
+    ),
+  "app/fleet/planes/[namespace]/[name]/actions.ts#applyPlaneClaimDelete":
+    refused("Stale", async () =>
+      applyPlaneClaimDelete(await stalePlaneClaimDelete()),
+    ),
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": previewed(() =>
     previewPlaneCreate(planeCreate(planeSpec())),
   ),
@@ -622,6 +634,32 @@ async function staleClaimDelete() {
       {
         apiVersion: "fleet.camunda.io/v1alpha1",
         kind: "CamundaClusterClaim",
+        namespace,
+        name,
+      },
+    ],
+    uids: { [key]: live.metadata?.uid ?? "" },
+    preconditions: { [key]: "1" },
+  };
+}
+// stalePlaneClaimDelete makes a plane claim and returns the change that
+// deletes it, with its UID and a resourceVersion that it no longer has.
+async function stalePlaneClaimDelete() {
+  const name = `delete-${randomUUID().slice(0, 8)}`;
+  const live: KubernetesObject = await api.create({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name, namespace },
+    spec: planeSpec(),
+  });
+  const key = `CamundaManagementClusterClaim/${namespace}/${name}`;
+  return {
+    intent: `Delete the management plane ${name}`,
+    apply: [],
+    delete: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
         namespace,
         name,
       },

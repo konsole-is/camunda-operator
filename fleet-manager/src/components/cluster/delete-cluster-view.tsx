@@ -182,7 +182,7 @@ export function DeleteClusterView({
       ) : stage.kind === "deleting" ? (
         <>
           <ReadErrors errors={errors} />
-          <Progress name={name} stage={stage} />
+          <DeleteProgress name={name} stage={stage} />
         </>
       ) : (
         <>
@@ -200,7 +200,7 @@ export function DeleteClusterView({
           )}
           <ReadErrors errors={errors} />
           {stage.errors && stage.errors.length > 0 && (
-            <Alert texts={stage.errors.map((e) => e.message)} />
+            <DeleteAlert texts={stage.errors.map((e) => e.message)} />
           )}
           {stage.afterPolicyWrite && (
             <p role="status" className="text-sm text-warn">
@@ -321,7 +321,11 @@ function effectsOf(
         ]
       : []),
     ...model.groups.map((group) => (
-      <GroupTable key={group.id} group={group} known={model.fatesKnown} />
+      <DeletionGroupTable
+        key={group.id}
+        group={group}
+        known={model.fatesKnown}
+      />
     )),
     ...(model.backups > 0
       ? [
@@ -338,7 +342,12 @@ function effectsOf(
 
 // The fate is the one emphasis of the page: Deleted in the bad tone, so
 // that a reader sees at a glance what goes.
-function GroupTable({
+
+/**
+ * DeletionGroupTable shows the resources of one option of a claim with the
+ * fate of each. While known is false, each fate reads Not known.
+ */
+export function DeletionGroupTable({
   group,
   known,
 }: {
@@ -409,12 +418,22 @@ function GroupTable({
   );
 }
 
-function Progress({
+/**
+ * DeleteProgress shows a delete of the claim name that is under way: the
+ * wait for GitOps, why the claim controller refuses the delete, and the
+ * state of each target.
+ */
+export function DeleteProgress({
   name,
   stage,
 }: {
   name: string;
-  stage: Extract<DeleteStage, { kind: "deleting" }>;
+  stage: {
+    progress: { target: DeleteTarget; state: DeleteState }[];
+    gitWaiting: boolean;
+    claim?: Parameters<typeof PrecheckLine>[0]["claim"];
+    keepRefused?: string;
+  };
 }) {
   return (
     <section aria-label="Delete progress" className="flex flex-col gap-3">
@@ -466,7 +485,8 @@ function policyNote(name: string, after: PolicyAfterWrite): string {
     : `The cluster is not deleted. ${held}`;
 }
 
-function ReadErrors({ errors }: { errors: readonly ReadError[] }) {
+/** ReadErrors names each read that failed, as an alert. */
+export function ReadErrors({ errors }: { errors: readonly ReadError[] }) {
   return errors.map((e, i) => (
     <p key={i} role="alert" className="text-sm text-bad">
       Could not read {e.kind}: {e.message}
@@ -474,7 +494,8 @@ function ReadErrors({ errors }: { errors: readonly ReadError[] }) {
   ));
 }
 
-function Alert({ texts }: { texts: string[] }) {
+/** DeleteAlert shows the refusals of a write as one alert. */
+export function DeleteAlert({ texts }: { texts: string[] }) {
   return (
     <div
       role="alert"
