@@ -494,6 +494,21 @@ describe("sectionCards", () => {
     ]);
   });
 
+  it("says that a summary or resources of the wrong type are not valid", () => {
+    const [card] = sectionCards([
+      section({
+        request: request({
+          summary: "orders-backups",
+          resources: { kind: "Bucket" },
+        } as never),
+      }),
+    ]);
+    expect(card.numbers).toEqual([
+      { label: "Summary", value: "Not valid", severity: "Warning" },
+      { label: "Resources", value: "Not valid", severity: "Warning" },
+    ]);
+  });
+
   it("says that the request is not made yet when the section has none", () => {
     const [card] = sectionCards([section()]);
     expect(card.numbers).toEqual([{ label: "Request", value: "Not made yet" }]);

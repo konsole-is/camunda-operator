@@ -274,6 +274,21 @@ describe("SectionComponentDetail", () => {
     expect(screen.queryByText(/has not made the request/)).toBeNull();
   });
 
+  it("names conditions of the wrong type and shows none of them", () => {
+    render(
+      <SectionComponentDetail
+        component={backupStorage({
+          request: request({ conditions: "Ready" } as never),
+        })}
+        registrations={[]}
+        namespace="team-a"
+        now={now}
+      />,
+    );
+    expect(detail.seen.conditions).toEqual([]);
+    expect(screen.getByText("The conditions are not a list.")).toBeTruthy();
+  });
+
   it("passes the settings and the children of the section", () => {
     render(
       <SectionComponentDetail

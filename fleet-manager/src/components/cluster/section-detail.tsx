@@ -5,6 +5,7 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { labelSelectorString } from "@/lib/labels";
 import { ComponentDetail } from "./component-detail";
 import { NotRead } from "./not-read";
+import { conditionsOf } from "./requests";
 
 /**
  * SectionComponentDetail is the component detail of a selection of the
@@ -16,7 +17,8 @@ import { NotRead } from "./not-read";
  * with either, the detail shows the state and the conditions of the
  * request as not known, and says why in place of children. A request
  * whose pod selector has an operator that is not valid shows no pods, and
- * says so. The Overview ends with children, and the Settings tab holds
+ * says so. Conditions of the wrong type show as an error, not as
+ * conditions. The Overview ends with children, and the Settings tab holds
  * settings. It needs a QueryClientProvider above it.
  */
 export function SectionComponentDetail({
@@ -82,6 +84,7 @@ export function SectionComponentDetail({
 
   const name = request.metadata?.name ?? "";
   const pods = podSelectorOf(request);
+  const read = conditionsOf(request.status?.conditions);
   return (
     <ComponentDetail
       title={component.label}
@@ -101,12 +104,13 @@ export function SectionComponentDetail({
           uid: request.metadata?.uid,
         },
       ]}
-      conditions={(request.status?.conditions ?? []) as ConditionRow[]}
+      conditions={"conditions" in read ? read.conditions : []}
       ready={ready}
       {...(unread && { unread: "PluginRequest" })}
       settings={settings}
       now={now}
     >
+      {"error" in read && <p className="text-sm text-bad">{read.error}</p>}
       {pods.error !== undefined && (
         <p className="text-sm text-warn">
           The pod selector of the request is not valid: {pods.error}.

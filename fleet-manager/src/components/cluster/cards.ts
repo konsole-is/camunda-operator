@@ -11,6 +11,7 @@ import {
   conditionsAt,
 } from "@/lib/conditions";
 import type { Resource } from "@/lib/k8s/kinds";
+import { isObject } from "@/lib/policy";
 import {
   COMPONENT_LABEL,
   OPTIMIZE_COMPONENTS,
@@ -169,7 +170,8 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
  * request is the state of the card. With requestsError, the error of the
  * read of the PluginRequests, or with requestsStale, when their list is out
  * of date, no card shows a request or a state: each says that the request
- * could not be read, or is not known.
+ * could not be read, or is not known. A summary or resources of the wrong
+ * type, which a watch can give, show "Not valid".
  */
 export function sectionCards(
   components: readonly SectionComponent[],
@@ -203,22 +205,34 @@ function sectionNumbers(
     return [{ label: "Request", value: unread, severity: "Warning" }];
   }
   if (!request) return [{ label: "Request", value: "Not made yet" }];
-  const first = request.status?.summary?.[0];
-  const severity = first?.severity;
-  const headline: CardNumber = first
-    ? {
-        label: first.label,
-        value: first.value,
-        ...(severity === "Warning" || severity === "Error" ? { severity } : {}),
-      }
-    : { label: "Summary", value: "Not written yet" };
+  const summary: unknown = request.status?.summary;
+  const resources: unknown = request.status?.resources ?? [];
+  const first: unknown = Array.isArray(summary) ? summary[0] : undefined;
+  const severity = isObject(first) ? first.severity : undefined;
+  const headline: CardNumber =
+    summary === undefined || (Array.isArray(summary) && first === undefined)
+      ? { label: "Summary", value: "Not written yet" }
+      : isObject(first) &&
+          typeof first.label === "string" &&
+          typeof first.value === "string"
+        ? {
+            label: first.label,
+            value: first.value,
+            ...(severity === "Warning" || severity === "Error"
+              ? { severity }
+              : {}),
+          }
+        : notValid("Summary");
   return [
     headline,
-    {
-      label: "Resources",
-      value: String(request.status?.resources?.length ?? 0),
-    },
+    Array.isArray(resources)
+      ? { label: "Resources", value: String(resources.length) }
+      : notValid("Resources"),
   ];
+}
+
+function notValid(label: string): CardNumber {
+  return { label, value: "Not valid", severity: "Warning" };
 }
 
 /**
