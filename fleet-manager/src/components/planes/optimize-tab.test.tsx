@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ConditionLike } from "@/components/fleet/status";
 import { OptimizeTab } from "./optimize-tab";
 import type { OptimizeRow } from "./plane-optimize";
 
@@ -20,11 +21,7 @@ const row2: OptimizeRow = {
   callbackUrl:
     "https://billing.example.com/optimize/api/authentication/callback",
 };
-const healthy = {
-  type: "OptimizeCallbacksReady",
-  status: "True",
-  reason: "Healthy",
-};
+const healthy: ConditionLike = { status: "True", reason: "Healthy" };
 const empty =
   "No Optimize with an external URL reads the contract of this plane.";
 const oidcSentence = "Add the callbacks to your identity provider.";
@@ -63,7 +60,6 @@ describe("OptimizeTab", () => {
       <OptimizeTab
         rows={[row, row2]}
         callbacks={{
-          type: "OptimizeCallbacksReady",
           status: "False",
           reason: "ConnectionFailed",
           message: "Keycloak did not answer",
