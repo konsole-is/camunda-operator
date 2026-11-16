@@ -123,7 +123,11 @@ export const PartialWrite: Story = {
     const confirm = await canvas.findByRole("button", { name: "Move" });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
-    await expect(await canvas.findByText(/^team-pay\/fresh: /)).toBeVisible();
+    await expect(
+      await canvas.findByText(
+        "team-pay/fresh: The CamundaClusterClaim fresh changed since you opened it.",
+      ),
+    ).toBeVisible();
   },
 };
 

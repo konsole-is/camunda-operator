@@ -10,22 +10,25 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
 }) => {
   // The seed applies the claim as kubectl, which then owns
   // spec.releaseRef, and the fleet manager never takes a field from another
-  // field manager. A claim that the fleet manager made has this field as
-  // its own, so the spec hands the field over first.
+  // field manager. A claim that the fleet manager made owns this field
+  // alone. A forced apply of the same value only shares the field, so the
+  // spec applies another value first, then the value of the seed.
   const claimPath =
     "/apis/fleet.camunda.io/v1alpha1/namespaces/team-orders/camundaclusterclaims/orders";
-  await kubeRequest(
-    scenario.admin,
-    "PATCH",
-    `${claimPath}?fieldManager=fleet-manager&force=true`,
-    {
-      apiVersion: "fleet.camunda.io/v1alpha1",
-      kind: "CamundaClusterClaim",
-      metadata: { name: "orders", namespace: "team-orders" },
-      spec: { releaseRef: "camunda-8-9-0" },
-    },
-    "application/apply-patch+yaml",
-  );
+  for (const releaseRef of ["camunda-8-9-1", "camunda-8-9-0"]) {
+    await kubeRequest(
+      scenario.admin,
+      "PATCH",
+      `${claimPath}?fieldManager=fleet-manager&force=true`,
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        metadata: { name: "orders", namespace: "team-orders" },
+        spec: { releaseRef },
+      },
+      "application/apply-patch+yaml",
+    );
+  }
 
   await page.goto("/setup/environments/production");
   await page
