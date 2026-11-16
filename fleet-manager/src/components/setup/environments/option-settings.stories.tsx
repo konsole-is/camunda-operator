@@ -26,9 +26,11 @@ function OptionSettingsHarness({
   const [spec, setSpec] = useState(environment.spec);
   return (
     <OptionSettingsSection
-      settings={optionSettings(sources.registrations, spec).filter(
-        (s) => s.registration === registration,
-      )}
+      settings={optionSettings(
+        sources.registrations,
+        spec,
+        sources.sections,
+      ).filter((s) => s.registration === registration)}
       sources={sources}
       environment={{ ...environment, spec }}
       errors={[]}
@@ -62,4 +64,28 @@ type Story = StoryObj<typeof meta>;
 export const ConnectorsRoleWithAllowedValues: Story = {
   name: "Connectors role with allowed values",
   args: { registration: "aws-connectors-role" },
+};
+
+// requiredBucket gives RustFS a required bucket without a value and an
+// optional region.
+const requiredBucket = sectionFixtures();
+const rustfs = requiredBucket.registrations.find(
+  (r) => r.metadata.name === "rustfs",
+)!;
+rustfs.spec.parameters = {
+  type: "object",
+  required: ["bucket"],
+  properties: {
+    bucket: { type: "string", minLength: 1, title: "Bucket" },
+    region: { type: "string", title: "Region" },
+  },
+};
+
+export const RequiredParameterWithoutValue: Story = {
+  name: "Required parameter without a value",
+  args: {
+    sources: requiredBucket,
+    environment: requiredBucket.environments[0],
+    registration: "rustfs",
+  },
 };
