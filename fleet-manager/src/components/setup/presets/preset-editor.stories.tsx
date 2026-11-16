@@ -17,6 +17,7 @@ const meta = {
     draft: presetDraftOf(medium),
     live: medium.spec.cluster,
     secrets: {},
+    secretsUnread: [],
     onDraft: fn(),
     onErrors: fn(),
   },
@@ -66,5 +67,15 @@ export const AMissingSecretKey: Story = {
       "team-a": [{ name: "snapshot-credentials", keys: ["secret"] }],
       "team-b": [{ name: "snapshot-credentials", keys: ["access"] }],
     },
+  },
+};
+
+export const SecretsNotKnown: Story = {
+  name: "Secrets not known",
+  args: {
+    kind: "ElasticsearchClusterPreset",
+    draft: presetDraftOf(es),
+    live: es.spec.cluster,
+    secretsUnread: ["ElasticsearchCluster"],
   },
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { presetFixtures } from "./fixtures";
-import { missingSecrets, secretNamespaces } from "./secrets";
+import { missingSecrets, secretNamespaces, secretsUnread } from "./secrets";
 
 describe("secretNamespaces", () => {
   it("takes the namespaces of the users", () => {
@@ -34,9 +34,43 @@ describe("secretNamespaces", () => {
     ]);
   });
 
+  it("takes no namespace while a list of the users cannot be read, not the allowing environments", () => {
+    const sources = presetFixtures();
+    sources.environments[0].spec.presets = { camundaCluster: ["medium"] };
+    sources.clusters = [];
+    sources.clusterClaims = [];
+    expect(
+      secretNamespaces(sources.clusterPresets[0], sources, [
+        { kind: "CamundaCluster", message: "forbidden" },
+      ]),
+    ).toEqual([]);
+  });
+
   it("is empty when nothing uses the preset and no environment allows it", () => {
     const sources = presetFixtures();
     expect(secretNamespaces(sources.clusterPresets[1], sources)).toEqual([]);
+  });
+});
+
+describe("secretsUnread", () => {
+  it("names each list of the users or the namespaces that cannot be read", () => {
+    const errors = [
+      { kind: "Namespace", message: "forbidden" },
+      { kind: "CamundaCluster", message: "forbidden" },
+      { kind: "DatabaseServer", message: "forbidden" },
+    ];
+    expect(secretsUnread("CamundaClusterPreset", errors)).toEqual([
+      "CamundaCluster",
+      "Namespace",
+    ]);
+  });
+
+  it("names nothing when every list that it needs is read", () => {
+    expect(
+      secretsUnread("ElasticsearchClusterPreset", [
+        { kind: "CamundaRelease", message: "forbidden" },
+      ]),
+    ).toEqual([]);
   });
 });
 

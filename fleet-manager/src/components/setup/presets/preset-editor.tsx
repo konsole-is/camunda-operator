@@ -47,7 +47,9 @@ const GROUPS: readonly SettingsGroup[] = [
  * sets. An Elasticsearch or PostgreSQL preset edits its body as YAML, with
  * no schema: the dry run of the review checks it. secrets are the Secret
  * refs of each namespace whose Secrets the body can name, and a Secret key
- * that one of them lacks shows as missing there. onDraft gets a function
+ * that one of them lacks shows as missing there. The editor names each
+ * list of secretsUnread: the lists that secrets needs and that were not
+ * read. onDraft gets a function
  * that applies each valid edit to a draft. onErrors gets every error that
  * the editors show, and an empty list once they show none. While the YAML
  * of the body has an error, the draft keeps its last valid body. The
@@ -59,6 +61,7 @@ export function PresetEditor({
   draft,
   live,
   secrets,
+  secretsUnread,
   onDraft,
   onErrors,
 }: {
@@ -67,6 +70,7 @@ export function PresetEditor({
   /** live is the body of the preset before the pending changes. */
   live?: Record<string, unknown>;
   secrets: Readonly<Record<string, SecretRefs>>;
+  secretsUnread: readonly string[];
   onDraft: (update: (draft: PresetDraft) => PresetDraft) => void;
   onErrors: (errors: string[]) => void;
 }): ReactNode {
@@ -133,6 +137,13 @@ export function PresetEditor({
             The review checks each field against the CRD before the save.
           </p>
         </EditorSection>
+      )}
+      {secretsUnread.length > 0 && (
+        <p role="alert" className="text-sm text-bad">
+          The Secrets of the users are not known while the fleet manager cannot
+          read {secretsUnread.join(", ")}. Reload the page when it can read
+          them.
+        </p>
       )}
       {missing.length > 0 && (
         <ul

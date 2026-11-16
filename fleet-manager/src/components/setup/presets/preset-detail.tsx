@@ -18,7 +18,7 @@ import { presetChangeCount, presetDraftOf, presetUpdateChange } from "./draft";
 import { FactsList } from "./facts-list";
 import { impactUnread, presetImpact } from "./impact";
 import { ImpactPreview } from "./impact-preview";
-import { inheritingRows } from "./inheriting";
+import { inheritingRows, inheritingUnread } from "./inheriting";
 import { InheritingTable } from "./inheriting-table";
 import {
   type PresetObject,
@@ -51,13 +51,15 @@ import {
  * preset that can be deleted offers a delete after a typed confirm and a
  * review. The delete review closes before its write starts when the preset
  * can no longer be deleted. secrets are the Secret refs of each namespace
- * whose Secrets the body can name. Without mode nothing can change.
+ * whose Secrets the body can name, and secretsUnread the lists that they
+ * need and that were not read. Without mode nothing can change.
  */
 export function PresetDetail({
   sources,
   kind,
   name,
   secrets,
+  secretsUnread,
   mode,
   actions,
 }: {
@@ -65,6 +67,7 @@ export function PresetDetail({
   kind: PresetKind;
   name: string;
   secrets: Readonly<Record<string, SecretRefs>>;
+  secretsUnread: readonly string[];
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
@@ -186,6 +189,7 @@ export function PresetDetail({
           draft={draft}
           live={presetBody(shown)}
           secrets={secrets}
+          secretsUnread={secretsUnread}
           onDraft={editor.setDraft}
           onErrors={setEditorErrors}
         />
@@ -196,7 +200,10 @@ export function PresetDetail({
         <PresetSettings kind={kind} body={draft.body} />
       )}
       <EditorSection title="Inheriting resources">
-        <InheritingTable rows={inheritingRows(shown, sources)} />
+        <InheritingTable
+          rows={inheritingRows(shown, sources)}
+          unread={inheritingUnread(kind, sources.errors, sources.pending)}
+        />
       </EditorSection>
       {live?.kind === "CamundaClusterPreset" && (
         <EditorSection title="Admin password">
@@ -362,6 +369,7 @@ export function PresetDetailLive({
   kind,
   name,
   secrets,
+  secretsUnread,
   mode,
   actions,
 }: {
@@ -369,6 +377,7 @@ export function PresetDetailLive({
   kind: PresetKind;
   name: string;
   secrets: Readonly<Record<string, SecretRefs>>;
+  secretsUnread: readonly string[];
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
@@ -379,6 +388,7 @@ export function PresetDetailLive({
       kind={kind}
       name={name}
       secrets={secrets}
+      secretsUnread={secretsUnread}
       mode={mode}
       actions={actions}
     />

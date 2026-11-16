@@ -24,6 +24,7 @@ function setup(
   preset: PresetObject,
   secrets: Readonly<Record<string, SecretRefs>> = {},
   draft: PresetDraft = presetDraftOf(preset),
+  secretsUnread: readonly string[] = [],
 ) {
   const drafts = vi.fn<(draft: PresetDraft) => void>();
   const errors = vi.fn<(errors: string[]) => void>();
@@ -34,6 +35,7 @@ function setup(
         kind={preset.kind as PresetKind}
         draft={current}
         secrets={secrets}
+        secretsUnread={secretsUnread}
         onDraft={(update) =>
           setCurrent((d) => {
             const next = update(d);
@@ -117,6 +119,13 @@ describe("PresetEditor of a cluster preset", () => {
     const { last, errors } = setup(fixtures.clusterPresets[0]);
     const brokers = screen.getByRole("group", { name: "Brokers" });
     const yaml = within(brokers).getByLabelText("extraEnvFrom of Brokers");
+    const envFrom = () =>
+      (last()?.body.zeebe as Record<string, unknown> | undefined)?.extraEnvFrom;
+    const valid = [{ configMapRef: { name: "app" } }];
+    fireEvent.change(yaml, {
+      target: { value: "- configMapRef:\n    name: app\n" },
+    });
+    await waitFor(() => expect(envFrom()).toEqual(valid));
     fireEvent.change(yaml, { target: { value: "- configMapRef: [" } });
     await waitFor(() => expect(errors.mock.calls.at(-1)?.[0]).not.toEqual([]));
     const toggle = within(brokers).getByRole("button", { name: /Brokers/ });
@@ -130,11 +139,7 @@ describe("PresetEditor of a cluster preset", () => {
       ).value,
     ).toBe("- configMapRef: [");
     expect(within(brokers).getByText(/Line 1/)).toBeTruthy();
-    const env = (last()?.body.zeebe as Record<string, unknown> | undefined)
-      ?.extraEnv;
-    expect(
-      env ?? fixtures.clusterPresets[0].spec.cluster.zeebe?.extraEnv,
-    ).toEqual(fixtures.clusterPresets[0].spec.cluster.zeebe?.extraEnv);
+    expect(envFrom()).toEqual(valid);
   });
 });
 
@@ -203,5 +208,12 @@ describe("PresetEditor description", () => {
       target: { value: "For the plane" },
     });
     await waitFor(() => expect(last()?.description).toBe("For the plane"));
+  });
+
+  it("names the lists that it cannot read in place of the Secret lists", () => {
+    setup(fixtures.elasticsearchPresets[0], {}, undefined, ["CamundaCluster"]);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The Secrets of the users are not known while the fleet manager cannot read CamundaCluster. Reload the page when it can read them.",
+    );
   });
 });

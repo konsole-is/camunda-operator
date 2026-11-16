@@ -12,7 +12,7 @@ const rows = inheritingRows(sources.clusterPresets[0], sources);
 
 describe("InheritingTable", () => {
   it("shows each resource with its environment, namespace, own fields, and Ready", () => {
-    render(<InheritingTable rows={rows} />);
+    render(<InheritingTable rows={rows} unread={[]} />);
     const cells = within(screen.getByRole("row", { name: /orders/ }))
       .getAllByRole("cell")
       .map((c) => c.textContent);
@@ -23,21 +23,29 @@ describe("InheritingTable", () => {
   });
 
   it("shows a slot-filled field as Filled by its section", () => {
-    render(<InheritingTable rows={rows} />);
+    render(<InheritingTable rows={rows} unread={[]} />);
     expect(
       screen.getByText("zeebe.storageClassName").closest("li")?.textContent,
     ).toContain("Filled by Volume encryption");
   });
 
   it("links a cluster to its cluster page", () => {
-    render(<InheritingTable rows={rows} />);
+    render(<InheritingTable rows={rows} unread={[]} />);
     expect(
       screen.getByRole("link", { name: /orders/ }).getAttribute("href"),
     ).toBe("/fleet/clusters/team-orders/orders");
   });
 
   it("says that no resource inherits the preset", () => {
-    render(<InheritingTable rows={[]} />);
+    render(<InheritingTable rows={[]} unread={[]} />);
     expect(screen.getByText("No resource inherits this preset.")).toBeTruthy();
+  });
+
+  it("names the kind it cannot read and never says that no resource inherits", () => {
+    render(<InheritingTable rows={[]} unread={["CamundaCluster"]} />);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The inheriting resources are not known while the fleet manager cannot read CamundaCluster.",
+    );
+    expect(screen.queryByText("No resource inherits this preset.")).toBeNull();
   });
 });

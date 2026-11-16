@@ -1,22 +1,41 @@
 import type { V1Namespace } from "@kubernetes/client-node";
+import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { byCodeUnit, environmentOf, isObject } from "@/lib/policy";
-import { allowedIn, presetUsers } from "@/lib/usage";
+import type { KindName } from "@/lib/k8s/kinds";
+import { allowedIn, type PresetKind, presetUsers } from "@/lib/usage";
 import type { PresetObject } from "./kinds";
+import { GUARD_KINDS } from "./rows";
 import type { PresetSources } from "./sources";
+
+/**
+ * secretsUnread returns each list in errors that secretNamespaces reads for
+ * a preset of kind.
+ */
+export function secretsUnread(
+  kind: PresetKind,
+  errors: readonly ReadError[],
+): KindName[] {
+  const kinds: readonly KindName[] = GUARD_KINDS[kind].includes("Namespace")
+    ? GUARD_KINDS[kind]
+    : [...GUARD_KINDS[kind], "Namespace"];
+  return kinds.filter((k) => errors.some((e) => e.kind === k));
+}
 
 /**
  * secretNamespaces returns the namespaces whose Secrets the body of preset
  * can name, each once and sorted: the namespaces of the users of the
  * preset, or, when nothing uses it, the namespaces of the Environments that
  * allow it. It is empty when nothing uses the preset and no Environment
- * allows it.
+ * allows it, and while secretsUnread of errors is not empty.
  */
 export function secretNamespaces(
   preset: PresetObject,
   sources: PresetSources,
+  errors: readonly ReadError[] = [],
 ): string[] {
+  if (secretsUnread(preset.kind as PresetKind, errors).length > 0) return [];
   const name = preset.metadata.name ?? "";
   // A Resource is plain JSON, so it differs from its model type only in its
   // timestamps, which presetUsers and allowedIn do not read.

@@ -12,6 +12,7 @@ const meta = {
     kind: "CamundaClusterPreset",
     name: "medium",
     secrets: {},
+    secretsUnread: [],
     mode: "direct",
     actions: {
       // The dry run keeps exactly the applied spec.

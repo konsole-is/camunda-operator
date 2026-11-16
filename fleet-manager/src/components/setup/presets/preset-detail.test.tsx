@@ -65,6 +65,7 @@ function setup(
         kind={kind}
         name={name}
         secrets={{}}
+        secretsUnread={[]}
         mode={mode}
         actions={actions}
       />
@@ -238,6 +239,19 @@ describe("PresetDetail", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByLabelText("Type spare to confirm")).toBeNull();
+  });
+
+  it("says that the inheriting resources are not known while their kind cannot be read", () => {
+    setup({
+      name: "spare",
+      errors: [{ kind: "CamundaCluster", message: "forbidden" }],
+    });
+    expect(
+      screen.getByText(
+        "The inheriting resources are not known while the fleet manager cannot read CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("No resource inherits this preset.")).toBeNull();
   });
 
   it("says Unknown for Used by and Allowed in while their lists cannot be read", () => {
