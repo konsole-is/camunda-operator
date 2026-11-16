@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReadError } from "@/components/planes/planes-table";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
 import { useGitSync, useResource, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { DeletableClaim, DeletionPolicy } from "@/lib/policy";
+import {
+  type DeletableClaim,
+  type DeletionPolicy,
+  equalJSON,
+} from "@/lib/policy";
 import { refKey } from "@/lib/write/refs";
 import type {
   ApiError,
@@ -45,10 +49,15 @@ export type ClaimDeleteStage =
 type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 
 // Sent is the state that the hook keeps. waiting holds the written policy,
-// and in Git mode the revision of its commit.
+// the written spec, and in Git mode the revision of its commit.
 type Sent =
   | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
-  | { kind: "waiting"; policy: DeletionPolicy; revision?: string }
+  | {
+      kind: "waiting";
+      policy: DeletionPolicy;
+      spec: unknown;
+      revision?: string;
+    }
   | { kind: "deleting" };
 
 /**
@@ -58,7 +67,7 @@ type Sent =
  * without a write when the preview of the delete fails. After a policy
  * write it returns that result, and the hook sends the delete once the
  * claim controller read the policy. It sends nothing for a claim with
- * another UID. reads holds the failed or stale watch of the claim: the
+ * another UID, and refuses with Stale when another spec change came in. reads holds the failed or stale watch of the claim: the
  * policy step needs a current claim. It needs a QueryClientProvider above
  * it.
  */
@@ -136,6 +145,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       setSent({
         kind: "waiting",
         policy,
+        spec: steps.policy.apply[0].spec,
         ...(result.mode === "git" && {
           revision: result.revisions[refKey(claimRef)] ?? "",
         }),
@@ -174,13 +184,23 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     sentFor.current = sent;
     const { live, intent, actions, show, pushedMessage } = latest.current;
     if (!live || !isOriginal(live)) return;
+    // The review showed the claim as written with the policy: another
+    // change needs a new review.
+    if (!equalJSON(live.spec, sent.spec)) {
+      setSent({
+        kind: "choose",
+        errors: [changed(name)],
+        policyWritten: sent.policy,
+      });
+      return;
+    }
+    setSent({ kind: "deleting" });
     void actions
       .remove(deleteClaimSteps(live, sent.policy, intent).remove)
       .catch(unavailable)
       .then((result) => {
         if (result.ok) {
           if (result.mode === "git") show(result, pushedMessage);
-          setSent({ kind: "deleting" });
         } else
           setSent({
             kind: "choose",
@@ -230,6 +250,13 @@ function unavailable(error: unknown): WriteResult {
   return {
     ok: false,
     errors: [{ code: "Unavailable", message: String(error) }],
+  };
+}
+
+function changed(name: string): ApiError {
+  return {
+    code: "Stale",
+    message: `The claim ${name} changed after the review. Review the delete again.`,
   };
 }
 

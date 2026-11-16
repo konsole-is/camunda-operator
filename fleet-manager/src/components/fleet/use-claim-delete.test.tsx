@@ -85,7 +85,11 @@ const read = (resourceVersion: string, policy: DeletionPolicy = "Orphan") => {
 
 function mount(
   initial: Claim,
-  props: { policy?: DeletionPolicy; mode?: WriteMode } = {},
+  props: {
+    policy?: DeletionPolicy;
+    mode?: WriteMode;
+    actions?: Partial<ClaimDeleteActions>;
+  } = {},
 ) {
   const shown: [WriteResult, string][] = [];
   const client = new QueryClient();
@@ -102,7 +106,7 @@ function mount(
         mode: props.mode ?? "direct",
         intent: "Delete the plane plane-a",
         pushedMessage: "Pushed the delete of plane-a.",
-        actions,
+        actions: { ...actions, ...props.actions },
         show: (result, message) => shown.push([result, message]),
       }),
     { wrapper, initialProps: { policy: props.policy ?? "Delete" } },
@@ -245,6 +249,48 @@ describe("useClaimDelete", () => {
       policyWritten: "Orphan",
     });
     expect(fakeWriter.applied).toHaveLength(2);
+  });
+
+  it("refuses with Stale and sends no delete when the claim changed beyond the policy during the wait", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    await confirm(hook);
+    const edited = read("42");
+    edited.spec.releaseRef = "camunda-8-9-2";
+    await live(edited);
+    await waitFor(() =>
+      expect(hook.result.current.stage).toEqual({
+        kind: "choose",
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The claim plane-a changed after the review. Review the delete again.",
+          },
+        ],
+        policyWritten: "Orphan",
+      }),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("leaves the wait before the delete returns, so that the wait cannot be stopped during the write", async () => {
+    let finish: (result: WriteResult) => void = () => {};
+    const remove = vi.fn(
+      () => new Promise<WriteResult>((resolve) => (finish = resolve)),
+    );
+    const { hook } = mount(claim(), { policy: "Orphan", actions: { remove } });
+    await confirm(hook);
+    await live(read("42"));
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+    });
+    await act(async () => finish({ ok: true, mode: "direct" }));
+    expect(hook.result.current.stage).toEqual({
+      kind: "deleting",
+      gitWaiting: false,
+    });
   });
 
   it("returns a refused policy write and sends no delete", async () => {
