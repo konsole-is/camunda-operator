@@ -57,7 +57,7 @@ test("a move of the identity mode names the fields that kubectl keeps, and write
 
   const dialog = page.getByRole("dialog", { name: "Review the change" });
   const caution = dialog.getByRole("note", { name: "Caution" });
-  await expect(caution).toContainText("another tool also set them");
+  await expect(caution).toContainText("another field manager also set them");
   await expect(caution).toContainText(
     "spec.management.identityProvider.oidc (kubectl)",
   );

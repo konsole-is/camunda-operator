@@ -21,6 +21,7 @@ export function isClaimManager(manager: string): boolean {
 export type ManagedFieldsEntry = {
   manager?: string;
   operation?: string;
+  subresource?: string;
   time?: Date | string;
   fieldsV1?: object;
 };
@@ -73,8 +74,8 @@ export type KeptField = { path: FieldPath; managers: string[] };
 
 /**
  * keptRemovals returns each field of before that after leaves out while a
- * manager other than applier owns it in live.metadata.managedFields, with
- * every such manager. An apply of after without force keeps these fields,
+ * manager other than the Apply entry of applier owns it in
+ * live.metadata.managedFields, with every such manager. An apply of after without force keeps these fields,
  * so result is after with each of them back. An item of a list is one
  * field. A field that a manager owns as a whole names no field below it.
  * The fields are in the order of before.
@@ -87,8 +88,10 @@ export function keptRemovals(
 ): { kept: KeptField[]; result: object } {
   const tree = newOwners();
   for (const entry of live.metadata?.managedFields ?? []) {
-    if (!entry.manager || entry.manager === applier || !entry.fieldsV1)
-      continue;
+    // An Update entry of the same name is another manager to the API
+    // server, and an entry of a subresource owns no field of the object.
+    const own = entry.manager === applier && entry.operation === "Apply";
+    if (!entry.manager || own || entry.subresource || !entry.fieldsV1) continue;
     addOwner(tree, entry.fieldsV1 as Record<string, unknown>, entry.manager);
   }
   const kept: KeptField[] = [];
@@ -132,28 +135,58 @@ function addOwner(
   }
 }
 
-function own(at: Owners, manager: string): void {
+// inOrderOf puts the items of before first, in their order in before, as
+// the API server keeps a list item that an apply leaves out in its place.
+function inOrderOf(
+  before: unknown[],
+  items: unknown[],
+  owners: Owners,
+): unknown[] {
+  const keys = [...owners.children.keys()].find((k) => k.startsWith("k:"));
+  let names: string[] | undefined;
+  try {
+    names = keys ? Object.keys(JSON.parse(keys.slice(2)) as object) : undefined;
+  } catch {
+    names = undefined;
+  }
+  const same = (a: unknown, b: unknown) =>
+    names
+      ? isRecord(a) && isRecord(b) && names.every((n) => sameJSON(a[n], b[n]))
+      : sameJSON(a, b);
+  const rank = (item: unknown) => {
+    const i = before.findIndex((b) => same(b, item));
+    return i < 0 ? before.length : i;
+  };
+  return items
+    .map((item, i) => ({ item, i, r: rank(item) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map(({ item }) => item);
+}
+
+function own(at: { managers: string[] }, manager: string): void {
   if (!at.managers.includes(manager)) at.managers.push(manager);
 }
 
 // restore returns after with each value of before that owners own and
-// after leaves out put back, and adds each such value to kept unless quiet.
+// after leaves out put back, and adds it to kept, or its managers to into.
 function restore(
   owners: Owners,
   before: unknown,
   after: unknown,
   path: FieldPath,
   kept: KeptField[],
-  quiet = false,
+  into?: KeptField,
   seed?: unknown,
 ): unknown {
   if (after === undefined && owners.managers.length > 0) {
-    if (!quiet) kept.push({ path, managers: [...owners.managers] });
+    let entry = into;
+    if (entry) owners.managers.forEach((m) => own(entry!, m));
+    else kept.push((entry = { path, managers: [...owners.managers] }));
     // A node owned only by "." is owned for its presence: of its
     // children, only those that other managers own stay.
     if (owners.whole) return before;
     const empty = Array.isArray(before) ? [] : (seed ?? {});
-    return restore(owners, before, empty, path, kept, true);
+    return restore(owners, before, empty, path, kept, entry);
   }
   if (Array.isArray(before)) {
     let items = Array.isArray(after) ? after : undefined;
@@ -170,7 +203,7 @@ function restore(
         current,
         found.path(path),
         kept,
-        quiet,
+        into,
         found.seed,
       );
       if (next === current) continue;
@@ -180,7 +213,7 @@ function restore(
           ? [...(items ?? []), next]
           : items!.map((x, i) => (i === index ? next : x));
     }
-    return changed ? items : after;
+    return changed ? inOrderOf(before, items!, owners) : after;
   }
   if (isRecord(before)) {
     let fields = isRecord(after) ? after : undefined;
@@ -189,14 +222,7 @@ function restore(
       const below = owners.children.get(`f:${key}`);
       if (below === undefined) continue;
       const current = fields?.[key];
-      const next = restore(
-        below,
-        value,
-        current,
-        child(path, key),
-        kept,
-        quiet,
-      );
+      const next = restore(below, value, current, child(path, key), kept, into);
       if (next === current) continue;
       changed = true;
       fields = { ...(fields ?? {}), [key]: next };

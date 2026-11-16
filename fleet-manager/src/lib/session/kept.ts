@@ -1,11 +1,9 @@
-import { LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION } from "@/lib/labels";
 import {
   APP_FIELD_MANAGER,
-  child,
-  fieldManagers,
+  gitOpsManager,
   type KeptField,
   keptRemovals,
-  type ManagedFieldsEntry,
+  type LiveObject,
   type ManagedObject,
 } from "@/lib/merge";
 import type { WriteMode } from "@/lib/write/types";
@@ -51,29 +49,43 @@ export function appliedSession<C extends ClaimObject>(
 /**
  * saveManager returns the field manager of the apply that a save of claim
  * in writeMode makes: the fleet manager, or in Git mode the GitOps tool
- * that applied the revision annotation of claim, as the Git writer finds
- * it. It is undefined in Git mode for a claim that the GitOps tool applies
- * client side, which keeps no field for another manager.
+ * that applied the revision annotation of claim with server-side apply. It
+ * is undefined in Git mode while no GitOps tool did so yet.
  */
 export function saveManager(
   claim: ClaimObject,
   writeMode: WriteMode | undefined,
 ): string | undefined {
   if (writeMode !== "git") return APP_FIELD_MANAGER;
-  const metadata = claim.metadata as ManagedObject["metadata"] & {
-    annotations?: Record<string, string>;
+  return gitOpsManager(claim as LiveObject);
+}
+
+/**
+ * Saved is what a save keeps: the fields that it leaves out while other
+ * field managers own them, and a session whose change gives the claim that
+ * the save leaves. firstSync says that the manager of the save is not
+ * known yet. kept then names every owned field that the change leaves out,
+ * because the first sync of the GitOps tool can keep each of them.
+ */
+export type Saved<C extends ClaimObject> = {
+  kept: KeptField[];
+  applied: Session<C>;
+  firstSync: boolean;
+};
+
+/** savedOf returns what a save of s in writeMode keeps. */
+export function savedOf<C extends ClaimObject>(
+  s: Session<C>,
+  writeMode: WriteMode | undefined,
+): Saved<C> {
+  const manager = saveManager(s.claim, writeMode);
+  // An applier that owns no entry keeps every owned field.
+  const applier = manager ?? "";
+  return {
+    kept: keptFields(s, applier),
+    applied: appliedSession(s, applier),
+    firstSync: manager === undefined,
   };
-  const applied = (metadata?.managedFields ?? []).filter(
-    (e: ManagedFieldsEntry) =>
-      e.operation === "Apply" && e.manager !== APP_FIELD_MANAGER,
-  );
-  const gitOps = fieldManagers({ metadata: { managedFields: applied } })[
-    child(child("metadata", "annotations"), REVISION_ANNOTATION)
-  ];
-  if (gitOps !== undefined) return gitOps;
-  return metadata?.annotations?.[LAST_APPLIED_ANNOTATION] === undefined
-    ? APP_FIELD_MANAGER
-    : undefined;
 }
 
 function kept<C extends ClaimObject>(s: Session<C>, applier: string) {

@@ -5,7 +5,7 @@ import {
   LAST_APPLIED_ANNOTATION,
   REVISION_ANNOTATION,
 } from "@/lib/labels";
-import { appliedSession, keptFields, saveManager } from "./kept";
+import { appliedSession, keptFields, savedOf, saveManager } from "./kept";
 import {
   claimAfter,
   openSession,
@@ -157,8 +157,8 @@ describe("saveManager", () => {
     expect(saveManager(claimOf([gitOps]), "git")).toBe("argocd-controller");
   });
 
-  it("is the fleet manager in Git mode while no tool applied a revision", () => {
-    expect(saveManager(claimOf([kubectl]), "git")).toBe("fleet-manager");
+  it("is undefined in Git mode while no GitOps tool applied a revision", () => {
+    expect(saveManager(claimOf([kubectl, app]), "git")).toBeUndefined();
   });
 
   it("is undefined in Git mode for a claim that the GitOps tool applies client side", () => {
@@ -187,5 +187,31 @@ describe("saveManager", () => {
     expect(claimAfter(appliedSession(s, "argocd-controller")).spec).toEqual(
       claimAfter(s).spec,
     );
+  });
+});
+
+describe("savedOf", () => {
+  const changedPolicy = (managedFields: unknown[]) => {
+    let s = session(claimOf(managedFields));
+    const reset = resetValue(s, at("spec", "deletionPolicy"));
+    if ("session" in reset) s = reset.session;
+    return s;
+  };
+
+  it("keeps no field that only the fleet manager set in direct mode", () => {
+    const saved = savedOf(changedPolicy([app]), "direct");
+    expect(saved.kept).toEqual([]);
+    expect(saved.firstSync).toBe(false);
+  });
+
+  it("names a field that the fleet manager set before the first GitOps sync", () => {
+    const saved = savedOf(changedPolicy([app]), "git");
+    expect(saved.kept).toEqual([
+      { path: "spec.deletionPolicy", managers: ["fleet-manager"] },
+    ]);
+    expect(saved.firstSync).toBe(true);
+    expect(claimAfter(saved.applied).spec).toMatchObject({
+      deletionPolicy: "Delete",
+    });
   });
 });

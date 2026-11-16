@@ -1,26 +1,11 @@
 import "server-only";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { lastAppliedOf } from "@/lib/merge";
 import type { KubeObject } from "./types";
 
-type JsonMap = Record<string, unknown>;
+export { lastAppliedOf };
 
-/**
- * lastAppliedOf returns the last applied file of kubectl in the annotation
- * LAST_APPLIED_ANNOTATION of live. It returns undefined when live is
- * undefined, has no such annotation, or the annotation is not a JSON object.
- */
-export function lastAppliedOf(
-  live: KubeObject | undefined,
-): JsonMap | undefined {
-  const text = annotationsOf(live)?.[LAST_APPLIED_ANNOTATION];
-  if (typeof text !== "string") return undefined;
-  try {
-    const value: unknown = JSON.parse(text);
-    return isMap(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
+type JsonMap = Record<string, unknown>;
 
 /**
  * clientSideApplyPatch returns the JSON merge patch (RFC 7386) that kubectl

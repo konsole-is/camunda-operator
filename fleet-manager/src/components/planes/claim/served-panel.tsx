@@ -12,13 +12,12 @@ import {
   servedChangeLines,
   servedChanges,
 } from "@/lib/planes/impacts";
-import { claimAfter } from "@/lib/session";
+import { claimAfter, savedOf } from "@/lib/session";
 import { FieldErrors } from "./fields";
 import { selectorText } from "./plane-claim-tab";
 import {
   changesWaitText,
   planeChangeInput,
-  savedOf,
   usePlaneClaimEdit,
 } from "./plane-claim-edit";
 

@@ -8,6 +8,12 @@ export {
 } from "./storage";
 export { authRules, clusterRules, mergeCluster } from "./cluster";
 export {
+  appliedClientSide,
+  gitOpsManager,
+  lastAppliedOf,
+  type LiveObject,
+} from "./gitops";
+export {
   byMinor,
   defaultImages,
   defaultRepositories,

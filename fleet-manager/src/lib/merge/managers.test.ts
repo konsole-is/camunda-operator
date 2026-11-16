@@ -447,6 +447,82 @@ describe("keptRemovals", () => {
     });
   });
 
+  it("keeps a field of an Update entry that has the name of the applier, and skips a status entry", () => {
+    const entries = [
+      {
+        manager: "argocd-controller",
+        operation: "Update",
+        fieldsV1: { "f:spec": { "f:x": {} } },
+      },
+      {
+        manager: "argocd-controller",
+        operation: "Apply",
+        fieldsV1: { "f:spec": { "f:x": {} } },
+      },
+      {
+        manager: "manager",
+        operation: "Update",
+        subresource: "status",
+        fieldsV1: { "f:spec": { "f:y": {} } },
+      },
+    ];
+    const { kept } = keptRemovals(
+      { metadata: { managedFields: entries } },
+      { spec: { x: 1, y: 2 } },
+      { spec: {} },
+      "argocd-controller",
+    );
+    expect(kept).toEqual([{ path: "spec.x", managers: ["argocd-controller"] }]);
+  });
+
+  it("names the manager of a kept child of a list item that another manager owns by its presence", () => {
+    const entries = [
+      {
+        manager: "a",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:env": {
+              'k:{"name":"n"}': { ".": {}, "f:name": {}, "f:host": {} },
+            },
+          },
+        },
+      },
+      {
+        manager: "b",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": { "f:env": { 'k:{"name":"n"}': { "f:port": {} } } },
+        },
+      },
+    ];
+    const { kept, result } = keptRemovals(
+      { metadata: { managedFields: entries } },
+      { spec: { env: [{ name: "n", host: "h", port: 25, user: "u" }] } },
+      { spec: { env: [] } },
+    );
+    expect(kept).toEqual([{ path: "spec.env[name=n]", managers: ["a", "b"] }]);
+    expect(result).toEqual({
+      spec: { env: [{ name: "n", host: "h", port: 25 }] },
+    });
+  });
+
+  it("keeps a kept item of a list in its place", () => {
+    const entries = [
+      {
+        manager: "b",
+        operation: "Apply",
+        fieldsV1: { "f:spec": { "f:environments": { 'v:"qa"': {} } } },
+      },
+    ];
+    const { result } = keptRemovals(
+      { metadata: { managedFields: entries } },
+      { spec: { environments: ["qa", "prod"] } },
+      { spec: { environments: ["prod"] } },
+    );
+    expect(result).toEqual({ spec: { environments: ["qa", "prod"] } });
+  });
+
   it("keeps nothing for a change that removes nothing, or without managed fields", () => {
     const after = { ...spec(), deletionPolicy: "Orphan" };
     expect(keptRemovals(live, { spec: spec() }, { spec: after })).toEqual({

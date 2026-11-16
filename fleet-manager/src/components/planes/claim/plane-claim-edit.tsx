@@ -34,7 +34,7 @@ import {
 } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
-import type { FieldPath, KeptField } from "@/lib/merge";
+import { APP_FIELD_MANAGER, type FieldPath, type KeptField } from "@/lib/merge";
 import { identityMoveEdits } from "@/lib/planes/edits";
 import {
   type ExternalKeycloakDraft,
@@ -49,7 +49,6 @@ import {
 } from "@/lib/planes/impacts";
 import { environmentNameOf, equalJSON } from "@/lib/policy";
 import {
-  appliedSession,
   claimAfter,
   type FieldError,
   type LockProvider,
@@ -57,8 +56,7 @@ import {
   type PlaneClaimContext,
   planeLocks,
   type Session,
-  keptFields,
-  saveManager,
+  savedOf,
   validatePlaneClaim,
   valueAt,
 } from "@/lib/session";
@@ -266,7 +264,7 @@ export function PlaneClaimEditProvider({
   // The impacts read the claim that the save leaves: a field that another
   // field manager keeps stays.
   const review = (s: Session<PlaneClaim>): ClaimReviewInput => {
-    const { kept, applied } = savedOf(s, writeMode);
+    const { kept, applied, firstSync } = savedOf(s, writeMode);
     const nothing =
       kept.length > 0 && equalJSON(claimAfter(applied).spec, s.claim.spec);
     const input = planeChangeInput(sources, applied);
@@ -274,7 +272,9 @@ export function PlaneClaimEditProvider({
       impacts: [...planeImpacts(input), ...planeRestarts(input)],
       ...(planeSignInMoves(input) && { confirm: { typed: name } }),
       ...(kept.length > 0 && {
-        caution: <KeptFields kept={kept} nothing={nothing} />,
+        caution: (
+          <KeptFields kept={kept} nothing={nothing} firstSync={firstSync} />
+        ),
       }),
     };
   };
@@ -316,7 +316,15 @@ export function PlaneClaimEditProvider({
  * while another field manager owns them.
  */
 export const KEPT_FIELDS_NOTE =
-  "The save keeps these fields, because another tool also set them, and the fleet manager does not take a field over. Remove them with that tool:";
+  "The save keeps these fields, because another field manager also set them, and a save does not take a field over:";
+/** OTHER_TOOL_FIELDS is the note on a kept field of another tool. */
+export const OTHER_TOOL_FIELDS =
+  "Remove such a field with the tool that set it.";
+/** DIRECT_MODE_FIELDS is the note on a kept field of the fleet manager in Git mode. */
+export const DIRECT_MODE_FIELDS = `The fleet manager set the fields of ${APP_FIELD_MANAGER} in direct mode. A save in direct mode removes them.`;
+/** FIRST_SYNC is the note on the kept fields of a Git save before the first sync of the GitOps tool. */
+export const FIRST_SYNC =
+  "The GitOps tool has not applied this claim with server-side apply yet. If its first sync applies server side, these fields stay. If it applies client side, it removes a field that the last applied file holds.";
 /** NOTHING_CHANGES is the note of a save that every kept field undoes. */
 export const NOTHING_CHANGES =
   "This save changes nothing, because each field that it removes stays.";
@@ -325,10 +333,13 @@ export const NOTHING_CHANGES =
 function KeptFields({
   kept,
   nothing,
+  firstSync,
 }: {
   kept: readonly KeptField[];
   nothing: boolean;
+  firstSync: boolean;
 }) {
+  const managers = new Set(kept.flatMap((k) => k.managers));
   return (
     <div className="flex flex-col gap-1">
       {nothing && <p>{NOTHING_CHANGES}</p>}
@@ -340,34 +351,24 @@ function KeptFields({
           </li>
         ))}
       </ul>
+      {[...managers].some((m) => m !== APP_FIELD_MANAGER) && (
+        <p>{OTHER_TOOL_FIELDS}</p>
+      )}
+      {managers.has(APP_FIELD_MANAGER) && <p>{DIRECT_MODE_FIELDS}</p>}
+      {firstSync && <p>{FIRST_SYNC}</p>}
     </div>
   );
 }
 
-/** usePlaneClaimEdit returns the claim edit state of the plane page. It throws without a PlaneClaimEditProvider above it. */
+/**
+ * usePlaneClaimEdit returns the claim edit state of the plane page. It
+ * throws without a PlaneClaimEditProvider above it.
+ */
 export function usePlaneClaimEdit(): PlaneClaimEdit {
   const edit = useContext(PlaneClaimEditContext);
   if (!edit)
     throw new Error("usePlaneClaimEdit needs a PlaneClaimEditProvider.");
   return edit;
-}
-
-/**
- * savedOf returns the fields that a save of s in writeMode keeps for
- * another field manager, and a session whose change gives the claim that
- * the save leaves. It keeps no field when the manager of the save is not
- * known.
- */
-export function savedOf(
-  s: Session<PlaneClaim>,
-  writeMode: WriteMode | undefined,
-): { kept: KeptField[]; applied: Session<PlaneClaim> } {
-  const manager = saveManager(s.claim, writeMode);
-  if (manager === undefined) return { kept: [], applied: s };
-  return {
-    kept: keptFields(s, manager),
-    applied: appliedSession(s, manager),
-  };
 }
 
 /** planeClaimContext returns what validatePlaneClaim reads of sources. */

@@ -20,7 +20,11 @@ import {
 } from "@/components/fleet/namespaced-secret-ref-picker";
 import { IDENTITY_INITIAL_CLAIM_ANNOTATION } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
+import {
+  CLAIM_LABEL,
+  ENVIRONMENT_LABEL,
+  REVISION_ANNOTATION,
+} from "@/lib/labels";
 import {
   CALLBACKS_MOVE,
   CONSOLE_OFF,
@@ -35,6 +39,8 @@ import type { PlaneClaimTabData } from "./data";
 import { RECORDED_PAIR } from "./identity-panel";
 import {
   changesWaitText,
+  DIRECT_MODE_FIELDS,
+  FIRST_SYNC,
   KEPT_FIELDS_NOTE,
   NOTHING_CHANGES,
   PlaneClaimEditProvider,
@@ -929,6 +935,60 @@ describe("PlaneClaimEditor writes", () => {
       'spec.environments[="staging"] (kubectl)',
     );
     expect(within(dialog()).queryByText(/detaches/)).toBeNull();
+  });
+
+  it("in Git mode lets the GitOps tool remove a list item that only it set", () => {
+    const claim = claimOf({
+      platformConfigRef: "sso",
+      environments: ["production", "staging"],
+    });
+    (claim.metadata as { managedFields?: unknown }).managedFields = [
+      {
+        manager: "argocd-controller",
+        operation: "Apply",
+        fieldsV1: {
+          "f:metadata": {
+            "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+          },
+          "f:spec": {
+            "f:environments": { 'v:"production"': {}, 'v:"staging"': {} },
+          },
+        },
+      },
+    ];
+    editor({ claim, writeMode: "git" });
+    open("Environments served");
+    fireEvent.click(screen.getByRole("checkbox", { name: "staging" }));
+    expect(
+      screen.getByText(
+        "team-qa/qa detaches. It loses its Console settings and restarts once.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("in Git mode before the first sync names the fields of the fleet manager and says what the sync can do", () => {
+    const claim = claimOf({ environments: ["production", "staging"] });
+    (claim.metadata as { managedFields?: unknown }).managedFields = [
+      {
+        manager: "fleet-manager",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:environments": { 'v:"production"': {}, 'v:"staging"': {} },
+          },
+        },
+      },
+    ];
+    editor({ claim, writeMode: "git" });
+    open("Environments served");
+    fireEvent.click(screen.getByRole("checkbox", { name: "staging" }));
+    fireEvent.click(reviewButton());
+    const caution = within(dialog()).getByRole("note", { name: "Caution" });
+    expect(caution.textContent).toContain(
+      'spec.environments[="staging"] (fleet-manager)',
+    );
+    expect(caution.textContent).toContain(DIRECT_MODE_FIELDS);
+    expect(caution.textContent).toContain(FIRST_SYNC);
   });
 
   it("closes an open review and turns Review off while a list that the checks read is unread", () => {
