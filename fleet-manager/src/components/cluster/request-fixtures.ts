@@ -236,7 +236,10 @@ export function fixtureRequest(
       target: {
         kind: "CamundaCluster",
         name: CLAIM,
-        serviceAccountName: `${CLAIM}-camunda`,
+        serviceAccountName:
+          section === "connectors-permissions"
+            ? `${CLAIM}-connectors`
+            : `${CLAIM}-camunda`,
       },
       ...(selection?.parameters && { parameters: selection.parameters }),
       ...(inputs && { inputs }),

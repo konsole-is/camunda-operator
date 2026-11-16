@@ -179,7 +179,7 @@ describe("BuiltinStorage", () => {
     const box = screen.getByRole("region", { name: "ElasticsearchCluster" });
     expect(
       within(box).getByText(
-        "Not known: the page could not read ElasticsearchCluster.",
+        "Not known: the page has no current list of ElasticsearchCluster.",
       ),
     ).toBeTruthy();
     expect(within(box).getByText("Ready: Not known")).toBeTruthy();
@@ -200,7 +200,7 @@ describe("BuiltinStorage", () => {
     );
     expect(
       screen.getByText(
-        "Not known: the page could not read ElasticsearchCluster.",
+        "Not known: the page has no current list of ElasticsearchCluster.",
       ),
     ).toBeTruthy();
     rerender(<BuiltinStorage storage={storage} unread={[]} now={requestNow} />);

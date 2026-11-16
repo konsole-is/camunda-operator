@@ -3,7 +3,6 @@ import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
-import type { ConditionLike } from "@/components/fleet/status";
 import type { ContractKind } from "@/lib/usage";
 
 /** ContractObject is a contract of any kind of CONTRACT_KINDS. */
@@ -161,11 +160,6 @@ function keyValues(contract: ContractObject): string[] {
     case "ManagementAuthConfig":
       return [contract.spec.issuerUrl, contract.spec.clientId];
   }
-}
-
-/** readyOf returns the Ready condition of contract, or undefined when its status has none. */
-export function readyOf(contract: ContractObject): ConditionLike | undefined {
-  return contract.status?.conditions?.find((c) => c.type === "Ready");
 }
 
 function objectStorageFacts(spec: ObjectStorageConfig["spec"]): Fact[] {

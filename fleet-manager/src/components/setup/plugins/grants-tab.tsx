@@ -1,22 +1,22 @@
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import { ConditionList } from "@/components/fleet/condition-list";
-import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { ConditionBadge } from "./condition-badge";
 import {
+  GRANT_CONDITIONS,
   GRANT_REASON_TEXT,
   type GrantTemplateView,
   type GrantView,
   type InvalidTemplate,
   TEMPLATE_GONE,
   WITHOUT_TEMPLATE,
+  grantConditions,
   grantTemplates,
+  refusalText,
 } from "./grants";
 import { NotKnown, ValueError } from "./tab-parts";
-
-const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
 
 /**
  * GrantsTab shows each grant template of registration with its Grants of
@@ -189,18 +189,14 @@ function Grants({
             </Term>
           </Terms>
           {unread ? (
-            <span className="flex flex-wrap gap-1.5">
-              {GRANT_CONDITIONS.map((type) => (
-                <ConditionBadge key={type} type={type} unknown />
-              ))}
-            </span>
+            <GrantConditionsNotKnown />
           ) : grant.error ? (
             <ValueError text={grant.error} />
           ) : (
             <>
               <ConditionList
                 label={`Conditions of ${grant.name}`}
-                conditions={conditionsOf(grant)}
+                conditions={grantConditions(grant)}
                 now={now}
               />
               {grant.state === "oldTemplate" && !templateGone && (
@@ -208,8 +204,8 @@ function Grants({
                   {GRANT_REASON_TEXT.TemplateChanged}
                 </p>
               )}
-              {refusal(grant) && (
-                <p className="text-sm text-warn">{refusal(grant)}</p>
+              {refusalText(grant) && (
+                <p className="text-sm text-warn">{refusalText(grant)}</p>
               )}
             </>
           )}
@@ -219,18 +215,13 @@ function Grants({
   );
 }
 
-function conditionsOf(grant: GrantView): ConditionRow[] {
-  return [grant.applied, grant.matchesTemplate, grant.ready].filter(
-    (c): c is ConditionRow => c !== undefined,
+/** GrantConditionsNotKnown shows each condition of GRANT_CONDITIONS as Not known. */
+export function GrantConditionsNotKnown() {
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {GRANT_CONDITIONS.map((type) => (
+        <ConditionBadge key={type} type={type} unknown />
+      ))}
+    </span>
   );
-}
-
-// refusal gives the meaning of the reason of the first False condition of a
-// refused Grant, when GRANT_REASON_TEXT has one.
-function refusal(grant: GrantView): string | undefined {
-  if (grant.state !== "refused") return undefined;
-  const reason = conditionsOf(grant).find((c) => c.status === "False")?.reason;
-  return reason && Object.hasOwn(GRANT_REASON_TEXT, reason)
-    ? GRANT_REASON_TEXT[reason as keyof typeof GRANT_REASON_TEXT]
-    : undefined;
 }

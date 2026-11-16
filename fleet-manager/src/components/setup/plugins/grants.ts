@@ -59,6 +59,30 @@ export type GrantView = {
   error?: string;
 };
 
+/** GRANT_CONDITIONS are the condition types of a Grant, in the order its status lists them. */
+export const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
+
+/** grantConditions returns the conditions of grant of GRANT_CONDITIONS that it has. */
+export function grantConditions(grant: GrantView): ConditionRow[] {
+  return [grant.applied, grant.matchesTemplate, grant.ready].filter(
+    (c): c is ConditionRow => c !== undefined,
+  );
+}
+
+/**
+ * refusalText gives the meaning of the reason of the first False condition
+ * of a refused Grant, when GRANT_REASON_TEXT has one.
+ */
+export function refusalText(grant: GrantView): string | undefined {
+  if (grant.state !== "refused") return undefined;
+  const reason = grantConditions(grant).find(
+    (c) => c.status === "False",
+  )?.reason;
+  return reason && Object.hasOwn(GRANT_REASON_TEXT, reason)
+    ? GRANT_REASON_TEXT[reason as keyof typeof GRANT_REASON_TEXT]
+    : undefined;
+}
+
 /** GrantTemplateView is one grant template of a registration with its Grants. */
 export type GrantTemplateView = {
   name: string;

@@ -116,6 +116,17 @@ describe("RequestOverview", () => {
     ).toBeTruthy();
   });
 
+  it("gives each summary value of a list its term, also when the first item has the wrong type", () => {
+    const request = fixtureRequest("encryption-key", {
+      summary: ["Rotation", { label: "Key", value: "alias/orders" }] as never,
+    });
+    const { container } = show("encryption-key", { request });
+    const list = container.querySelector("dl")!;
+    expect(list.querySelectorAll("dt")).toHaveLength(1);
+    expect(list.querySelectorAll("dd")).toHaveLength(1);
+    expect(list.textContent).not.toContain("Summary item 1");
+  });
+
   it("shows each resource with its fate and the policy", () => {
     show("backup-storage", { deletionPolicy: "Orphan" });
     const resources = region("Resources");
@@ -152,6 +163,19 @@ describe("RequestOverview", () => {
     expect(within(resources).queryByText("Kept")).toBeNull();
     expect(within(resources).queryByText("Deleted")).toBeNull();
     expect(within(resources).getByText(/CamundaClusterClaim/)).toBeTruthy();
+  });
+
+  it("shows the fate of a request that is being deleted while the claim is not read, from the policy of the request", () => {
+    const request = fixtureRequest("backup-storage", {
+      resources: [{ kind: "Bucket", name: "orders-backups", onOrphan: "Kept" }],
+    });
+    request.metadata!.deletionTimestamp = "2026-11-16T10:00:00Z";
+    request.spec.deletionPolicy = "Orphan";
+    show("backup-storage", { request, unread: ["CamundaClusterClaim"] });
+    const resources = region("Resources");
+    expect(
+      cells(within(resources).getByRole("row", { name: /^Bucket/ })).at(-1),
+    ).toBe("Kept");
   });
 
   it("shows the inputs with their section and the outputs with their field", () => {
@@ -195,7 +219,11 @@ describe("RequestOverview", () => {
     const grants = region("Grants");
     expect(within(grants).getByText("orders-read")).toBeTruthy();
     expect(within(grants).getAllByText("Rejected").length).toBeGreaterThan(0);
-    expect(within(grants).getByText(/^Refused/)).toBeTruthy();
+    expect(
+      within(grants).getByText(
+        "The identity or the cloud refused it. The message says why.",
+      ),
+    ).toBeTruthy();
     expect(
       within(grants).getByLabelText("Statement of orders-read").textContent,
     ).toContain('"s3:GetObject"');
@@ -273,11 +301,59 @@ describe("RequestOverview", () => {
     expect(within(grants).queryByText("Healthy")).toBeNull();
   });
 
+  it("names the Grant kind in the Grants box of a section without grants while the grants are not read", () => {
+    show("backup-storage", { unread: ["Grant"] });
+    expect(
+      within(region("Grants")).getByText(
+        "Not known: the page has no current list of Grant.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows only the error of a grant whose conditions have the wrong type", () => {
+    const grant = fixtureGrant("orders-read", "backup-storage");
+    grant.status = {
+      conditions: [{ type: "Ready", status: "Maybe" }] as never,
+    };
+    show("backup-storage", { grants: [grant] });
+    const grants = region("Grants");
+    expect(
+      within(grants).getByText("Condition 1 is not a valid condition."),
+    ).toBeTruthy();
+    expect(within(grants).queryByText("Not applied yet.")).toBeNull();
+    expect(within(grants).queryByText("No conditions")).toBeNull();
+  });
+
+  it("says that the claim selects no option for the section of an input", () => {
+    const claim = fixtureClaim(
+      fixtureSelections.filter((s) => s.section !== "encryption-key"),
+    );
+    const components = fixtureComponents(claim, fixtureRequests);
+    const detail = requestDetail({
+      component: components.find((c) => c.section === "backup-storage")!,
+      claim,
+      cluster: "orders",
+      sections: coreSections,
+      registrations: fixtureRegistrations,
+      components,
+      grants: [],
+      contracts: {},
+    })!;
+    render(<RequestOverview detail={detail} unread={[]} now={requestNow} />);
+    const inputs = region("Inputs");
+    expect(
+      within(inputs).getByText(
+        "The claim selects no option for Encryption key.",
+      ),
+    ).toBeTruthy();
+    expect(within(inputs).queryByText("Waiting")).toBeNull();
+  });
+
   it("names the Grant kind, never that there are no grants, while the grants of the cloud identity are not read", () => {
     show("cloud-identity", { unread: ["Grant"] });
     expect(
       within(region("Grants")).getByText(
-        "Not known: the page could not read Grant.",
+        "Not known: the page has no current list of Grant.",
       ),
     ).toBeTruthy();
   });
@@ -345,7 +421,7 @@ describe("RequestOverview", () => {
     show("encryption-key", { unread: ["PluginRegistration"] });
     expect(
       within(region("Used by")).getByText(
-        "Not known: the page could not read PluginRegistration.",
+        "Not known: the page has no current list of PluginRegistration.",
       ),
     ).toBeTruthy();
   });

@@ -1,7 +1,7 @@
 // This module runs in the browser and on the server.
 import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
-import { byCodeUnit, isObject, type PluginSelection } from "@/lib/policy";
+import { byCodeUnit, type PluginSelection, readyOf } from "@/lib/policy";
 
 /** SectionComponentId is the component id of a selection of a section. */
 export type SectionComponentId = `section:${string}`;
@@ -103,19 +103,4 @@ export function sectionComponents({
         byCodeUnit(a.section, b.section) ||
         byCodeUnit(a.selection.registration, b.selection.registration),
     );
-}
-
-// readyOf returns the Ready condition of conditions, which a watch can give
-// with any shape.
-function readyOf(conditions: unknown): ConditionLike | undefined {
-  if (!Array.isArray(conditions)) return undefined;
-  const ready: unknown = conditions.find(
-    (c) => isObject(c) && c.type === "Ready",
-  );
-  return isObject(ready) &&
-    (ready.status === "True" ||
-      ready.status === "False" ||
-      ready.status === "Unknown")
-    ? (ready as ConditionLike)
-    : undefined;
 }

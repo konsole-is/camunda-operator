@@ -5,7 +5,7 @@
 export function NotRead({ kinds }: { kinds: readonly string[] }) {
   return (
     <p className="text-sm text-muted">
-      Not known: the page could not read {kinds.join(", ")}.
+      Not known: the page has no current list of {kinds.join(", ")}.
     </p>
   );
 }

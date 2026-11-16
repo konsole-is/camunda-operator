@@ -157,6 +157,15 @@ describe("loadClusterPage", () => {
     ).toEqual([]);
   });
 
+  it("names the kind and the error of each read that fails, so the page never shows its empty list as read", async () => {
+    named("orders");
+    expect((await loadClusterPage("team-a", "orders"))?.readErrors).toEqual([]);
+    k8s.failing = "PluginRequest";
+    expect((await loadClusterPage("team-a", "orders"))?.readErrors).toEqual([
+      { kind: "PluginRequest", message: "PluginRequest is forbidden" },
+    ]);
+  });
+
   it("gives the docs of the fields of the cluster", async () => {
     k8s.cluster = {
       kind: "CamundaCluster",

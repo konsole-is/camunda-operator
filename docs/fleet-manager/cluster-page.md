@@ -60,12 +60,12 @@ Below the conditions, the **Overview** tab of a section shows a box for each par
 | **Principal** | For **Connectors permissions** only: the cloud role of the Connectors from the output `principal`, and their ServiceAccount, for example `my-cluster-connectors`. |
 | **Grants** | The Grants of the request. See [Grants](#grants). |
 | **Outputs** | Each output of the request, its value, and the field that it fills, for example `CamundaCluster spec.zeebe.storageClassName`. An output that fills no field shows **No field**. |
-| **Inputs** | Each input of the option, the section and the output that it comes from, for example **Encryption key / keyRef**, and its value. The value shows **Waiting** until the claim controller gives it. |
+| **Inputs** | Each input of the option, the section and the output that it comes from, for example **Encryption key / keyRef**, and its value. The value shows **Waiting** until the claim controller gives it. When the claim selects no option for that section, the value says so, and the input does not wait. |
 | **Used by** | The sections whose options take an output of this section as an input. For example, **Encryption key** shows **Volume encryption** and **Backup storage** when both take its key. |
 | **Links** | The links of the request, for example to an app of the cluster. |
 | **Resources** | Each resource that the plugin made: its kind, name, ID, location, and role. The last column shows what happens to it when the claim is deleted. |
 
-The column **After the claim is deleted** shows **Kept** or **Deleted**. The line above the table names the deletion policy of the claim. With **Delete the resources**, each resource shows **Deleted**. With **Keep the resources**, each resource shows what its plugin reports, because a plugin can delete a resource in both cases, for example a route. After the delete of the claim starts, a request keeps the policy that it had then. A request that the claim does not control shows "Not controlled by this claim" in this column. For example, an older claim of the same name made it. [Keep or delete the resources](#keep-or-delete-the-resources) shows how to choose the policy.
+The column **After the claim is deleted** shows **Kept** or **Deleted**. The line above the table names the deletion policy of the claim. With **Delete the resources**, each resource shows **Deleted**. With **Keep the resources**, each resource shows what its plugin reports, because a plugin can delete a resource in both cases, for example a route. After the delete of the claim starts, a request keeps the policy that it had then. Its resources then show their fate also when the page has no current list of claims. A request that the claim does not control shows "Not controlled by this claim" in this column. For example, you made the request by hand. [Keep or delete the resources](#keep-or-delete-the-resources) shows how to choose the policy.
 
 A value of the wrong type in the status of a request shows as an error on its row. For example: "Summary item 2 is not a valid summary item." The other rows still show.
 
@@ -78,7 +78,7 @@ A line under the name of a Grant says what its conditions mean:
 | Line | What it means | What to do |
 | --- | --- | --- |
 | None | `Ready` is `True`: the identity has the permission. | Nothing. |
-| **Refused. The conditions say why.** | `Applied` is `False`, for example with the reason `OverCeiling`, `OverSizeLimit`, or `Rejected`. The identity does not have the permission. | Read the message of `Applied`. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. For `Rejected`, the message says what the cloud refused. |
+| The meaning of the reason, for example **The identity or the cloud refused it. The message says why.** | `Applied` is `False` with the reason `OverCeiling`, `OverSizeLimit`, or `Rejected`. The identity does not have the permission. A reason that the page does not know shows no line. | Read the message of `Applied`. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. For `Rejected`, the message says what the cloud refused. |
 | **The role still has the statement that this Grant holds.** | `MatchesTemplate` is `False` with the reason `TemplateChanged`. The identity still has the permission of the old template, so the Grant is applied, not refused. | After a chart upgrade, wait. The controller of the option writes the Grant from its own template at its next reconcile. If the line stays, the registration was changed outside its controller, and the old statement stays. |
 | **Not applied yet.** | `Ready` has no value yet. | Wait for the identity to apply the Grant. |
 
@@ -88,7 +88,7 @@ While a Grant of the request has `Ready` `False`, the request shows `Ready` `Fal
 
 ### Existing contracts
 
-An option that connects a contract that you made makes no resources. The options **Existing secondary storage**, **Existing bucket**, and **Existing databases** show the box **Connected** in place of **Resources**. It lists the kind and the name of each contract that the selection names, for example `SecondaryStorageConfig` `my-storage`, and its `Ready`. A contract that is not in the namespace of the cluster shows **Not in the namespace**.
+An option that connects a contract that you made makes no resources. The options **Existing secondary storage** and **Existing bucket** show the box **Connected** in place of **Resources**. It lists the kind and the name of each contract that the selection names, for example `SecondaryStorageConfig` `my-storage`, and its `Ready`. A contract that is not in the namespace of the cluster shows **Not in the namespace**.
 
 ### Built-in storage
 
@@ -109,7 +109,7 @@ The **Logs** tab of a section shows the lines of its controller about its reques
 
 ### When the page cannot read a list
 
-Sometimes the page cannot read a list, or its list is out of date, for example after the page lost its connection. Then the boxes that need the list show "Not known: the page could not read" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page could not read Grant." and the conditions of each Grant show **Not known**. Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
+Sometimes the page cannot read a list, or its list is out of date, for example after the page lost its connection. Then the boxes that need the list show "Not known: the page has no current list of" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page has no current list of Grant." and the conditions of each Grant show **Not known**. Without the claim, the sections, the registrations, or the Environments, the **Settings** tab of a section shows only that line. Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
 
 ## Logs
 

@@ -8,8 +8,10 @@ import {
   GRANT_REASON_TEXT,
   TEMPLATE_GONE,
   WITHOUT_TEMPLATE,
+  refusalText,
 } from "@/components/setup/plugins/grants";
-import type { Invalid } from "@/components/setup/plugins/values";
+import { GrantConditionsNotKnown } from "@/components/setup/plugins/grants-tab";
+import { type Invalid, isInvalid } from "@/components/setup/plugins/values";
 import {
   TableBody,
   TableCell,
@@ -28,9 +30,6 @@ import type {
   RequestDetail,
   SummaryRow,
 } from "./requests";
-
-/** GRANT_CONDITIONS are the condition types of a Grant, in the order its status lists them. */
-const GRANT_CONDITIONS = ["Applied", "MatchesTemplate", "Ready"];
 
 /**
  * RequestOverview shows detail below the conditions of a request: one box
@@ -54,8 +53,7 @@ export function RequestOverview({
   const unreadKind = (kind: string) => unread.includes(kind);
   const registrationUnread = unreadKind("PluginRegistration");
   const grantsUnread = unreadKind("Grant");
-  const showGrants =
-    detail.grants.length > 0 || (grantsUnread && detail.clusterGrants);
+  const showGrants = detail.grants.length > 0 || grantsUnread;
   return (
     <div className="flex flex-col gap-4">
       {detail.summary.length > 0 && (
@@ -83,7 +81,7 @@ export function RequestOverview({
             </Term>
             <Term label="ServiceAccount">
               <span className="font-mono text-xs break-all">
-                {detail.connectors.serviceAccount}
+                {detail.connectors.serviceAccount ?? "Not set"}
               </span>
             </Term>
           </Terms>
@@ -181,18 +179,22 @@ export function RequestOverview({
 }
 
 function Summary({ rows }: { rows: readonly (SummaryRow | Invalid)[] }) {
+  const items = rows.filter((row): row is SummaryRow => !isInvalid(row));
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-      {rows.map((row, i) =>
-        "error" in row ? (
-          <dd key={i} className="col-span-2">
-            <RowError row={row} />
-          </dd>
-        ) : (
-          <SummaryItem key={i} row={row} />
-        ),
+    <>
+      {rows.filter(isInvalid).map((row, i) => (
+        <p key={i} className="text-sm text-bad">
+          {row.error}
+        </p>
+      ))}
+      {items.length > 0 && (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          {items.map((row, i) => (
+            <SummaryItem key={i} row={row} />
+          ))}
+        </dl>
       )}
-    </dl>
+    </>
   );
 }
 
@@ -284,7 +286,7 @@ function Grants({
               </Term>
             )}
           </Terms>
-          {!unread && <GrantStateLine grant={grant} />}
+          {!unread && !grant.error && <GrantStateLine grant={grant} />}
           {grant.errors.map((error) => (
             <p key={error} className="text-sm text-bad">
               {error}
@@ -300,17 +302,15 @@ function Grants({
             </pre>
           )}
           {unread ? (
-            <span className="flex flex-wrap gap-1.5">
-              {GRANT_CONDITIONS.map((type) => (
-                <ConditionBadge key={type} type={type} unknown />
-              ))}
-            </span>
+            <GrantConditionsNotKnown />
           ) : (
-            <ConditionList
-              label={`Conditions of ${grant.name}`}
-              conditions={grant.conditions}
-              now={now}
-            />
+            !grant.error && (
+              <ConditionList
+                label={`Conditions of ${grant.name}`}
+                conditions={grant.conditions}
+                now={now}
+              />
+            )
           )}
         </li>
       ))}
@@ -330,10 +330,10 @@ function GrantStateLine({ grant }: { grant: GrantRow }) {
           {GRANT_REASON_TEXT.TemplateChanged}
         </p>
       );
-    case "refused":
-      return (
-        <p className="text-sm text-warn">Refused. The conditions say why.</p>
-      );
+    case "refused": {
+      const text = refusalText(grant);
+      return text ? <p className="text-sm text-warn">{text}</p> : null;
+    }
     case "waiting":
       return <p className="text-sm text-muted">Not applied yet.</p>;
     default:
@@ -396,7 +396,9 @@ function Inputs({ detail }: { detail: RequestDetail }) {
             <Cell mono>{input.name}</Cell>
             <Cell>{`${input.sectionLabel} / ${input.output}`}</Cell>
             <Cell mono={input.value !== undefined}>
-              {input.value ?? "Waiting"}
+              {input.selected
+                ? (input.value ?? "Waiting")
+                : `The claim selects no option for ${input.sectionLabel}.`}
             </Cell>
           </TableRow>
         ))}
@@ -412,8 +414,11 @@ function Resources({
   detail: RequestDetail;
   claimUnread: boolean;
 }) {
+  // A request that is being deleted keeps its own policy, which does not
+  // depend on the claim.
+  const fatesUnknown = claimUnread && !detail.deleting;
   const fateOf = (fate: string | undefined) =>
-    claimUnread
+    fatesUnknown
       ? "Not known"
       : detail.controlled
         ? (fate ?? "-")
@@ -421,8 +426,8 @@ function Resources({
   return (
     <>
       <p className="text-xs text-muted">
-        {claimUnread
-          ? "Not known: the page could not read CamundaClusterClaim, so it cannot say what happens to each resource when the claim is deleted."
+        {fatesUnknown
+          ? "Not known: the page has no current list of CamundaClusterClaim, so it cannot say what happens to each resource when the claim is deleted."
           : detail.controlled
             ? `When the claim is deleted: ${DELETION_LABELS[detail.policy]}.`
             : "The claim does not control this request, so its deletion does not decide what happens to these resources."}

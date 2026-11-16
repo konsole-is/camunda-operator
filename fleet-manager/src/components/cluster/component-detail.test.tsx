@@ -429,7 +429,9 @@ describe("ComponentDetailView", () => {
     expect(within(header).getByText("Ready: Not known")).toBeTruthy();
     expect(within(header).queryByText("Ready")).toBeNull();
     expect(
-      screen.getByText("Not known: the page could not read PluginRequest."),
+      screen.getByText(
+        "Not known: the page has no current list of PluginRequest.",
+      ),
     ).toBeTruthy();
     expect(
       screen.queryByRole("list", { name: "Operate conditions" }),

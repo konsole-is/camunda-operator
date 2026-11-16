@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
 import { useClock } from "@/components/fleet/use-clock";
 import { unreadKinds } from "@/components/setup/releases/rows";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
@@ -47,6 +48,7 @@ import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
 import { ComponentSettings } from "./component-settings";
+import { NotRead } from "./not-read";
 import { endpointRows } from "./endpoints";
 import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
@@ -80,6 +82,8 @@ import { TopologyView } from "./topology-view";
  * platformConfigs and managementAuthConfigs are cluster-scoped. grants and
  * elasticsearchClusters hold the Grants and ElasticsearchClusters of the
  * namespace. fieldDocs holds the help of the settings fields by field key.
+ * readErrors names each kind whose first read failed: its list is then
+ * empty, and the page says so until the watch of the kind answers.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -117,6 +121,7 @@ export type ClusterPageData = {
   grants: Resource<"Grant">[];
   elasticsearchClusters: Resource<"ElasticsearchCluster">[];
   fieldDocs: Record<string, FieldDoc>;
+  readErrors?: { kind: string; message: string }[];
 };
 
 /**
@@ -291,8 +296,8 @@ export function ClusterView({
     { namespace: ns },
     initial.elasticsearchClusters,
   );
-  // The detail of a section reads these lists. A list whose watch has no
-  // snapshot on its current connection can be out of date.
+  // The detail of a section reads these lists. A list whose watch answered
+  // and then lost its connection can be out of date.
   const sectionLists = [
     { kind: "PluginRequest", opts: requestsOpts },
     { kind: "CamundaClusterClaim", opts: { namespace: ns } },
@@ -304,8 +309,31 @@ export function ClusterView({
     { kind: "SecondaryStorageConfig", opts: { namespace: ns } },
     { kind: "ObjectStorageConfig", opts: { namespace: ns } },
     { kind: "DatabaseConfig", opts: { namespace: ns } },
+    { kind: "Environment", opts: {} },
   ] as const;
   const sectionFresh = useWatchesFresh(sectionLists);
+  const answered = useAnswered([
+    ...sectionLists,
+    { kind: "CamundaCluster", opts: { namespace: ns, name: name ?? "" } },
+    { kind: "Namespace", opts: { name: ns } },
+    "CamundaClusterPreset",
+    "CamundaRelease",
+    {
+      kind: "Pod",
+      opts: { namespace: ns, labelSelector: initial.podSelector },
+    },
+    { kind: "LogicalBackupElasticsearch", opts: { namespace: ns } },
+    { kind: "LogicalBackupRDBMS", opts: { namespace: ns } },
+    { kind: "LogicalRestoreElasticsearch", opts: { namespace: ns } },
+    { kind: "LogicalRestoreRDBMS", opts: { namespace: ns } },
+    { kind: "PointInTimeRestore", opts: { namespace: ns } },
+    { kind: "DatabaseServerConfig", opts: { namespace: ns } },
+    "DatabaseServerPreset",
+    { kind: "BackupSchedule", opts: { namespace: ns } },
+    { kind: "CamundaOptimize", opts: { namespace: ns } },
+    "CamundaPlatformConfig",
+    "ManagementAuthConfig",
+  ]);
   useEffect(() => {
     const selector = focusNext.current;
     if (!selector) return;
@@ -328,7 +356,7 @@ export function ClusterView({
     return <p className="text-sm text-muted">This cluster no longer exists.</p>;
   }
 
-  const errors = (
+  const liveErrors = (
     [
       ["CamundaCluster", cluster],
       ["Namespace", namespaceObject],
@@ -361,6 +389,16 @@ export function ClusterView({
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
   );
+  // Until the watch of a kind answers, the page shows the read of the
+  // server, and a failed read stays an error.
+  const errors = [
+    ...liveErrors,
+    ...(initial.readErrors ?? []).filter(
+      (e) =>
+        !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
+    ),
+  ];
+  const requestsError = errors.find((e) => e.kind === "PluginRequest")?.message;
 
   const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
@@ -419,8 +457,10 @@ export function ClusterView({
     }),
     ...sectionCards(
       sectionList,
-      requests.error,
-      !sectionFresh[0] && requests.error === undefined,
+      requestsError,
+      answered.has("PluginRequest") &&
+        !sectionFresh[0] &&
+        requestsError === undefined,
     ),
   ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
@@ -482,7 +522,7 @@ export function ClusterView({
   const unread = unreadKinds({
     errors,
     stale: sectionLists
-      .filter((_, i) => !sectionFresh[i])
+      .filter(({ kind }, i) => answered.has(kind) && !sectionFresh[i])
       .map(({ kind }) => kind),
   });
   const requestsStale = unread.includes("PluginRequest");
@@ -567,6 +607,7 @@ export function ClusterView({
         }).sections.find((s) => s.id === openSection.id)
       : undefined;
   const sectionBlocks = claimSection ? sectionSettings(claimSection) : [];
+  const settingsUnread = unread.filter((kind) => SETTINGS_KINDS.includes(kind));
 
   const content = (
     <div className="flex flex-col gap-4">
@@ -627,18 +668,22 @@ export function ClusterView({
                     component={openSection}
                     registrations={registrations.items}
                     namespace={ns}
-                    requestsError={requests.error}
+                    requestsError={requestsError}
                     requestsStale={requestsStale}
                     settings={
                       <div className="flex flex-col gap-4">
-                        <ComponentSettings
-                          groups={sectionBlocks}
-                          docs={initial.fieldDocs}
-                          operatorVersion={operatorVersionOf(
-                            registrations.items,
-                          )}
-                          cluster={{ namespace: ns, name: name ?? "" }}
-                        />
+                        {settingsUnread.length > 0 ? (
+                          <NotRead kinds={settingsUnread} />
+                        ) : (
+                          <ComponentSettings
+                            groups={sectionBlocks}
+                            docs={initial.fieldDocs}
+                            operatorVersion={operatorVersionOf(
+                              registrations.items,
+                            )}
+                            cluster={{ namespace: ns, name: name ?? "" }}
+                          />
+                        )}
                         {slot("component.settings.editor")}
                       </div>
                     }
@@ -754,6 +799,15 @@ export function ClusterView({
     content
   );
 }
+
+// SETTINGS_KINDS are the kinds that the parameters of a selection come
+// from, through claimView.
+const SETTINGS_KINDS: readonly string[] = [
+  "CamundaClusterClaim",
+  "PluginSection",
+  "PluginRegistration",
+  "Environment",
+];
 
 function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
   return (

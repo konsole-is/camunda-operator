@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { cloneElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import {
@@ -1962,6 +1963,13 @@ describe("The detail of a section", () => {
       requests: fixtureRequests,
       ...over,
     });
+  // renderOutOfDate renders ui with every watch answered, then again while
+  // the watches of kinds have lost their connection.
+  const renderOutOfDate = (ui: ReactElement, kinds: string[]) => {
+    const page = render(ui);
+    live.stale = kinds;
+    page.rerender(cloneElement(ui));
+  };
 
   it("shows the Overview blocks of the request of an open section", () => {
     open("section:backup-storage");
@@ -2059,12 +2067,11 @@ describe("The detail of a section", () => {
   });
 
   it("names the Grant kind and shows no grant state while the Grants are not read", () => {
-    live.stale = ["Grant"];
     open("section:cloud-identity");
-    render(view({ initial: withClaim() }));
+    renderOutOfDate(view({ initial: withClaim() }), ["Grant"]);
     expect(
       within(detail("Grants")).getByText(
-        "Not known: the page could not read Grant.",
+        "Not known: the page has no current list of Grant.",
       ),
     ).toBeTruthy();
   });
@@ -2079,14 +2086,13 @@ describe("The detail of a section", () => {
   });
 
   it("shows nothing of a request that is out of date, and names its kind", () => {
-    live.stale = ["PluginRequest"];
     open("section:backup-storage");
-    render(view({ initial: withClaim() }));
+    renderOutOfDate(view({ initial: withClaim() }), ["PluginRequest"]);
     const backup = detail("Backup storage");
     expect(within(backup).getByText("Ready: Not known")).toBeTruthy();
     expect(
       within(backup).getAllByText(
-        "Not known: the page could not read PluginRequest.",
+        "Not known: the page has no current list of PluginRequest.",
       ).length,
     ).toBeGreaterThan(0);
     expect(
@@ -2096,8 +2102,7 @@ describe("The detail of a section", () => {
   });
 
   it("shows no state and no headline on a section card while the requests are out of date", () => {
-    live.stale = ["PluginRequest"];
-    render(view({ initial: withClaim() }));
+    renderOutOfDate(view({ initial: withClaim() }), ["PluginRequest"]);
     const card = within(
       screen.getByRole("region", { name: "Components" }),
     ).getByRole("article", { name: "Backup storage" });
@@ -2106,5 +2111,69 @@ describe("The detail of a section", () => {
         ?.textContent,
     ).toBe("Warning: Not known");
     expect(within(card).queryByText("orders-backups")).toBeNull();
+  });
+
+  it("shows the read of the server on a section card until the watch of the requests answers", () => {
+    live.stale = ["PluginRequest"];
+    render(view({ initial: withClaim() }));
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(within(card).getByText("orders-backups")).toBeTruthy();
+    expect(within(card).queryByText(/Not known/)).toBeNull();
+  });
+
+  it("says that the first read of the requests failed until their watch answers", () => {
+    live.stale = ["PluginRequest"];
+    const ui = view({
+      initial: withClaim({
+        requests: [],
+        readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+      }),
+    });
+    const page = render(ui);
+    const card = () =>
+      within(screen.getByRole("region", { name: "Components" })).getByRole(
+        "article",
+        { name: "Backup storage" },
+      );
+    expect(
+      screen.getByText("Could not read PluginRequest: forbidden"),
+    ).toBeTruthy();
+    expect(
+      within(card()).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Could not read");
+
+    live.stale = [];
+    page.rerender(cloneElement(ui));
+    expect(
+      screen.queryByText("Could not read PluginRequest: forbidden"),
+    ).toBeNull();
+  });
+
+  it("shows no parameter in the Settings tab while the claim is out of date, and names its kind", async () => {
+    open("section:secondary-storage");
+    renderOutOfDate(view({ initial: withClaim() }), ["CamundaClusterClaim"]);
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("table", { name: /settings$/ })).toBeNull();
+  });
+
+  it("shows the Not known line of the Settings tab, not No settings, when the registrations could not be read", async () => {
+    live.errors.PluginRegistration = "forbidden";
+    open("section:secondary-storage");
+    render(view({ initial: withClaim({ registrations: [] }) }));
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("No settings.")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of PluginRegistration.",
+      ),
+    ).toBeTruthy();
   });
 });

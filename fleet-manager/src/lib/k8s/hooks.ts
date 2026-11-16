@@ -48,8 +48,8 @@ export function useResources<K extends KindName>(
 
 /**
  * useWatchesFresh says for each list of lists whether its watch got its
- * snapshot on the current connection, in the order of lists. It is false
- * until then, and again after a reconnect until the next snapshot. It opens
+ * snapshot, in the order of lists. It is false until then, and again after
+ * an error of the connection until the next snapshot. It opens
  * no watch of its own, so each list needs useResources with the same kind
  * and options in the same tree, or, for a list without labelSelector,
  * useResource with the same kind, namespace, and name.

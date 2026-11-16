@@ -45,8 +45,9 @@ export function failureKey(spec: WatchSpec) {
 }
 
 /**
- * freshKey is the query key that is true once the watch got its snapshot on
- * the current connection. A list from before that can be out of date.
+ * freshKey is the query key that is true once the watch got its snapshot,
+ * until an error of the connection or the end of the watch. A list from
+ * before that can be out of date.
  */
 export function freshKey(spec: WatchSpec) {
   return [
@@ -85,10 +86,11 @@ export interface SharedWatch {
    * snapshot, so the initial data of a query stays. The function it returns
    * removes the subscriber once, also when it is called again. A change of
    * the set of watches opens a new connection in a microtask, so the
-   * subscribes of one render share one connection. A new connection, and an
-   * error of the connection, set freshKey of each watch to false until its
-   * snapshot. A watch without subscribers leaves its list in the cache, sets
-   * its failure to null, and sets freshKey to false.
+   * subscribes of one render share one connection. A watch that was fresh
+   * stays fresh on that new connection. An error of the connection sets
+   * freshKey of each watch to false until its next snapshot. A watch without
+   * subscribers leaves its list in the cache, sets its failure to null, and
+   * sets freshKey to false.
    */
   subscribe(spec: WatchSpec): () => void;
 }
@@ -156,7 +158,6 @@ class Connection implements SharedWatch {
     clearTimeout(this.reopen);
     this.openIds = ids;
     this.source = undefined;
-    this.markNotFresh();
     if (ids.length === 0) return;
     const params = new URLSearchParams(ids.map((id) => ["watch", id]));
     const source = new EventSource(`/api/watch?${params}`);

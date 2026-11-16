@@ -7,7 +7,6 @@ import {
 } from "@/components/setup/plugins/grants";
 import {
   type Invalid,
-  conditionsOf,
   isInvalid,
   isRecord,
   isText,
@@ -15,7 +14,6 @@ import {
 } from "@/components/setup/plugins/values";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import type { PluginSection } from "@/generated/crds/pluginsection";
 import { controlledBy, requestPolicy } from "@/lib/claims/deletion";
 import { resourceFate, type ResourceRow } from "@/lib/claims/resources";
 import type { SectionComponent } from "@/lib/claims/sections";
@@ -24,11 +22,12 @@ import type { Resource } from "@/lib/k8s/kinds";
 import {
   BUILTIN_OPTIONS,
   byCodeUnit,
+  conditionsOf,
   deletionPolicyOf,
   type DeletionPolicy,
   own,
+  readyOf,
   splitFrom,
-  targetServiceAccount,
 } from "@/lib/policy";
 import { REGISTRATION_LABEL } from "@/lib/labels";
 
@@ -45,13 +44,15 @@ export type OutputRow = { key: string; value: string; fills: string[] };
 /**
  * InputRow is one input of the registration of a request: the section and
  * output it comes from, and its value, which is absent until the claim
- * controller resolved it.
+ * controller resolved it. selected is false when the claim selects no
+ * option for that section: the input then gets no value and does not wait.
  */
 export type InputRow = {
   name: string;
   section: string;
   sectionLabel: string;
   output: string;
+  selected: boolean;
   value?: string;
 };
 
@@ -66,9 +67,10 @@ export type ResourceFateRow = ResourceRow & { fate?: "Kept" | "Deleted" };
  * spec.fragment as indented JSON. request is set only in the grants of the
  * cloud identity. templateGone is true when the registration of the Grant
  * is in the page data and no longer has its template. errors name each
- * value of the wrong type, and a value that has one is absent.
+ * value of the wrong type, and a value that has one is absent: error, the
+ * error of the conditions, is one of them.
  */
-export type GrantRow = Omit<GrantView, "error"> & {
+export type GrantRow = GrantView & {
   template: string;
   statement?: string;
   conditions: ConditionRow[];
@@ -102,7 +104,8 @@ export type ContractObject = {
  * RequestDetail is what the Overview of a request shows. A status list or
  * item of the wrong type is an Invalid row. controlled is false when the
  * claim does not control the request: its resources then have no fate.
- * policy is the deletion policy that decides the fates. grants are the
+ * policy is the deletion policy that decides the fates: the policy of the
+ * request itself while deleting is true, else that of the claim. grants are the
  * Grants of the request, or for the cloud identity every Grant of the
  * cluster, by name. connected is set only for an option that connects
  * existing contracts, and resources are then empty. connectors is set only
@@ -117,11 +120,12 @@ export type RequestDetail = {
   links: (LinkRow | Invalid)[];
   resources: (ResourceFateRow | Invalid)[];
   controlled: boolean;
+  deleting: boolean;
   policy: DeletionPolicy;
   grants: GrantRow[];
   clusterGrants: boolean;
   connected?: ConnectedRef[];
-  connectors?: { principal?: string; serviceAccount: string };
+  connectors?: { principal?: string; serviceAccount?: string };
   usedBy: string[];
 };
 
@@ -177,7 +181,7 @@ export function requestDetail(input: {
     request,
     deletionPolicyOf(claim.spec.deletionPolicy, claim.status?.resolvedPolicy),
   );
-  const connected = connectedRefs(component, claim, input.contracts);
+  const connected = connectedRefs(request, input.contracts);
   const registration = registrations.find(
     (r) => r.metadata?.name === request.spec.registration,
   );
@@ -201,9 +205,16 @@ export function requestDetail(input: {
     ...(typeof status?.summaryTime === "string" && {
       summaryTime: status.summaryTime,
     }),
-    outputs: outputRows(outputs, slot),
+    outputs: outputRows(
+      outputs,
+      slot,
+      claim.spec.attachments?.optimize !== undefined,
+    ),
     inputs: (registration?.spec.inputs ?? []).map((i) => {
       const from = splitFrom(i.from);
+      const selected = (claim.spec.plugins ?? []).some(
+        (p) => p.section === from.section,
+      );
       const value = isRecord(request.spec.inputs)
         ? request.spec.inputs[i.name]
         : undefined;
@@ -212,7 +223,8 @@ export function requestDetail(input: {
         section: from.section,
         sectionLabel: labelOf(from.section),
         output: from.output,
-        ...(typeof value === "string" && { value }),
+        selected,
+        ...(selected && typeof value === "string" && { value }),
       };
     }),
     links: itemsOf(status?.links, isLink, "Link", "links").map((item) =>
@@ -227,6 +239,7 @@ export function requestDetail(input: {
               : { ...row, fate: resourceFate(row, policy) },
         ),
     controlled,
+    deleting: Boolean(request.metadata?.deletionTimestamp),
     policy,
     grants: grantRows(
       input.grants,
@@ -243,16 +256,12 @@ export function requestDetail(input: {
           typeof outputs.principal === "string" && {
             principal: outputs.principal,
           }),
-        serviceAccount: targetServiceAccount(
-          "CamundaClusterClaim",
-          claim.metadata?.name ?? "",
-          // The cache object differs from the generated type only in its
-          // timestamps, which targetServiceAccount does not read.
-          section as unknown as PluginSection | undefined,
-        ),
+        ...(request.spec.target.serviceAccountName && {
+          serviceAccount: request.spec.target.serviceAccountName,
+        }),
       },
     }),
-    usedBy: usedBy(component, input.components, registrations),
+    usedBy: usedBy(component, claim, input.components, registrations),
   };
 }
 
@@ -351,15 +360,23 @@ export function storageFacts(storage: BuiltinStorage): StorageFacts {
         "archive start",
       );
       const boundary = read.archive.boundary;
+      const boundaryText =
+        isRecord(boundary) &&
+        typeof boundary.at === "string" &&
+        typeof boundary.location === "string"
+          ? `${boundary.at}, ${boundary.location}`
+          : undefined;
+      if (boundary !== undefined && boundaryText === undefined)
+        errors.push("The archive boundary is not valid.");
       facts.archive = {
         ...(reachableFrom !== undefined && { reachableFrom }),
-        ...(isRecord(boundary) &&
-          typeof boundary.at === "string" &&
-          typeof boundary.location === "string" && {
-            boundary: `${boundary.at}, ${boundary.location}`,
-          }),
+        ...(boundaryText !== undefined && { boundary: boundaryText }),
       };
+    } else if (read.archive !== undefined) {
+      errors.push("The archive is not an object.");
     }
+    if (read.recovery !== undefined && !isRecord(read.recovery))
+      errors.push("The recovery is not an object.");
     if (isRecord(read.recovery)) {
       const requestID = text(read.recovery, "requestID", "recovery request");
       const targetTime = text(read.recovery, "targetTime", "recovery target");
@@ -393,14 +410,6 @@ function isVolume(
   );
 }
 
-/** readyOf returns the valid Ready condition of a status, if it has one. */
-export function readyOf(conditions: unknown): ConditionRow | undefined {
-  const read = conditionsOf(conditions);
-  return "conditions" in read
-    ? read.conditions.find((c) => c.type === "Ready")
-    : undefined;
-}
-
 const SEVERITIES: readonly unknown[] = ["Info", "Warning", "Error", null];
 
 function isSummaryItem(item: unknown): item is {
@@ -432,9 +441,13 @@ function isResource(item: unknown): item is ResourceRow {
   );
 }
 
+// outputRows names the fields that each output fills. The field of the
+// CamundaOptimize is filled only while the claim attaches an Optimize
+// (optimize of pkg/components/camundaclusterclaim).
 function outputRows(
   outputs: unknown,
   slot: string | undefined,
+  optimizeAttached: boolean,
 ): (OutputRow | Invalid)[] {
   if (outputs === undefined || outputs === null) return [];
   if (!isRecord(outputs)) return [{ error: "The outputs are not an object." }];
@@ -451,7 +464,8 @@ function outputRows(
           (f) =>
             f.claimKind === "CamundaClusterClaim" &&
             f.slot === slot &&
-            f.output === key,
+            f.output === key &&
+            (f.kind !== "CamundaOptimize" || optimizeAttached),
         ).map((f) => `${f.kind} ${f.path}`),
       };
     });
@@ -485,7 +499,7 @@ function grantRow(
   // The cache objects differ from the generated types only in their
   // timestamps, which grantView and grantTemplates do not read.
   const generated = grant as unknown as Grant;
-  const { error, request, ...view } = grantView(generated);
+  const { request, ...view } = grantView(generated);
   const fragment: unknown = grant.spec?.fragment;
   const template: unknown = grant.spec?.template;
   const read = conditionsOf(grant.status?.conditions);
@@ -508,20 +522,21 @@ function grantRow(
         .withoutTemplate.length > 0,
     errors: [
       ...(isRecord(fragment) ? [] : ["The statement is not a JSON object."]),
-      ...(error ? [error] : []),
+      ...(view.error ? [view.error] : []),
     ],
   };
 }
 
+// connectedRefs reads the resolved parameters of the request, as the
+// built-in controller does (existing.go of internal/controller/plugins/builtin).
 function connectedRefs(
-  component: SectionComponent,
-  claim: Resource<"CamundaClusterClaim">,
+  request: Resource<"PluginRequest">,
   contracts: Partial<Record<ContractKind, readonly ContractObject[]>>,
 ): ConnectedRef[] | undefined {
-  const { registration, parameters } = component.selection;
+  const { registration, parameters } = request.spec;
   if (!CONNECTING.includes(registration)) return undefined;
   const lists = own(BUILTIN_OPTIONS, registration)?.lists ?? {};
-  const namespace = claim.metadata?.namespace;
+  const namespace = request.metadata?.namespace;
   return Object.entries(lists).flatMap(([parameter, kind]) => {
     const name = isRecord(parameters) ? parameters[parameter] : undefined;
     if (typeof name !== "string") return [];
@@ -541,11 +556,19 @@ function connectedRefs(
   });
 }
 
+// usedBy gives no user for a selection that is not the first of its
+// section in claim order: an input reads only the first (Inputs of
+// pkg/claimpolicy).
 function usedBy(
   component: SectionComponent,
+  claim: Resource<"CamundaClusterClaim">,
   components: readonly SectionComponent[],
   registrations: readonly Resource<"PluginRegistration">[],
 ): string[] {
+  const first = (claim.spec.plugins ?? []).find(
+    (p) => p.section === component.section,
+  );
+  if (first?.registration !== component.selection.registration) return [];
   const labels = components
     .filter((c) => c.id !== component.id)
     .filter((c) =>

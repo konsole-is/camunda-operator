@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
-import { conditionsOf } from "@/components/setup/plugins/values";
 import type { SectionComponent } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
 import { labelSelectorString } from "@/lib/labels";
+import { conditionsOf } from "@/lib/policy";
 import { ComponentDetail } from "./component-detail";
 import { NotRead } from "./not-read";
 

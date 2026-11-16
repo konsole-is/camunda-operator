@@ -12,12 +12,7 @@ import {
   fixtureRequests,
   fixtureSelections,
 } from "./request-fixtures";
-import {
-  builtinStorageOf,
-  readyOf,
-  requestDetail,
-  storageFacts,
-} from "./requests";
+import { builtinStorageOf, requestDetail, storageFacts } from "./requests";
 
 type Over = {
   deletionPolicy?: "Delete" | "Orphan";
@@ -124,6 +119,7 @@ describe("requestDetail", () => {
         section: "encryption-key",
         sectionLabel: "Encryption key",
         output: "keyRef",
+        selected: true,
         value: "arn:aws:kms:eu-west-1:1:key/1234",
       },
     ]);
@@ -136,6 +132,22 @@ describe("requestDetail", () => {
         section: "encryption-key",
         sectionLabel: "Encryption key",
         output: "keyRef",
+        selected: true,
+      },
+    ]);
+  });
+
+  it("says that an input does not wait when the claim selects no option for its section", () => {
+    const claim = fixtureClaim(
+      fixtureSelections.filter((s) => s.section !== "encryption-key"),
+    );
+    expect(detail("backup-storage", { claim }).inputs).toEqual([
+      {
+        name: "keyRef",
+        section: "encryption-key",
+        sectionLabel: "Encryption key",
+        output: "keyRef",
+        selected: false,
       },
     ]);
   });
@@ -382,9 +394,14 @@ describe("requestDetail", () => {
         parameters: { keycloak: "kc-db", identity: "id-db", webModeler: 4 },
       },
     ]);
-    const components = fixtureComponents(claim, [
-      fixtureRequest("secondary-storage"),
-    ]);
+    const request = fixtureRequest("secondary-storage");
+    request.spec.registration = "existing-database-configs";
+    request.spec.parameters = {
+      keycloak: "kc-db",
+      identity: "id-db",
+      webModeler: 4,
+    };
+    const components = fixtureComponents(claim, [request]);
     const found = requestDetail({
       component: components[0],
       claim,
@@ -401,6 +418,24 @@ describe("requestDetail", () => {
     ]);
   });
 
+  it("connects the contract that the request names, also when the claim sets no parameter", () => {
+    const claim = fixtureClaim(
+      fixtureSelections.map((s) =>
+        s.section === "secondary-storage"
+          ? { section: s.section, registration: s.registration }
+          : s,
+      ),
+    );
+    expect(
+      detail("secondary-storage", {
+        claim,
+        contracts: {
+          SecondaryStorageConfig: [fixtureContract("orders-storage")],
+        },
+      }).connected?.map((c) => [c.kind, c.name, c.found]),
+    ).toEqual([["SecondaryStorageConfig", "orders-storage", true]]);
+  });
+
   it("connects nothing for an option that makes its resources", () => {
     expect(detail("backup-storage").connected).toBeUndefined();
   });
@@ -413,12 +448,70 @@ describe("requestDetail", () => {
     expect(detail("cloud-identity").connectors).toBeUndefined();
   });
 
+  it("gives the ServiceAccount that the request targets", () => {
+    const request = fixtureRequest("connectors-permissions");
+    request.spec.target.serviceAccountName = "orders-jobs";
+    expect(
+      detail("connectors-permissions", { requests: withRequest(request) })
+        .connectors?.serviceAccount,
+    ).toBe("orders-jobs");
+  });
+
   it("lists the sections that take an output of this section as an input", () => {
     expect(detail("encryption-key").usedBy).toEqual([
       "Volume encryption",
       "Backup storage",
     ]);
     expect(detail("backup-storage").usedBy).toEqual([]);
+  });
+
+  it("lists no users for a selection that is not the first of its section", () => {
+    const claim = fixtureClaim([
+      { section: "encryption-key", registration: "aws-kms-key-old" },
+      ...fixtureSelections,
+    ]);
+    expect(detail("encryption-key", { claim }).usedBy).toEqual([]);
+  });
+
+  it("names the field of the CamundaOptimize only while the claim attaches an Optimize", () => {
+    const request = fixtureRequest("access", {
+      outputs: {
+        externalUrl: "https://orders.example.com",
+        optimizeUrl: "https://orders.example.com/optimize",
+      },
+    });
+    const fillsOf = (claim: Resource<"CamundaClusterClaim">) =>
+      detail("access", { claim, requests: withRequest(request) }).outputs;
+    expect(fillsOf(fixtureClaim())).toEqual([
+      {
+        key: "externalUrl",
+        value: "https://orders.example.com",
+        fills: ["CamundaCluster spec.externalUrl"],
+      },
+      {
+        key: "optimizeUrl",
+        value: "https://orders.example.com/optimize",
+        fills: [],
+      },
+    ]);
+    const attached = fixtureClaim();
+    attached.spec.attachments = { optimize: {} } as never;
+    expect(fillsOf(attached)[1]).toMatchObject({
+      fills: ["CamundaOptimize spec.externalUrl"],
+    });
+  });
+
+  it("says that a request that is being deleted keeps its own policy", () => {
+    const request = fixtureRequest("backup-storage");
+    request.metadata!.deletionTimestamp = "2026-11-16T10:00:00Z";
+    request.spec.deletionPolicy = "Orphan";
+    const found = detail("backup-storage", {
+      deletionPolicy: "Delete",
+      requests: withRequest(request),
+    });
+    expect(found.deleting).toBe(true);
+    expect(found.policy).toBe("Orphan");
+    expect(detail("backup-storage").deleting).toBe(false);
   });
 
   it("gives no detail for a section without a request", () => {
@@ -499,16 +592,6 @@ describe("builtinStorageOf", () => {
   });
 });
 
-describe("readyOf", () => {
-  it("gives the Ready condition, and nothing for conditions of the wrong type", () => {
-    const ready = fixtureCondition("Ready", "False", "Unreachable");
-    expect(readyOf([fixtureCondition("Other", "True", "Healthy"), ready])).toBe(
-      ready,
-    );
-    expect(readyOf("Ready")).toBeUndefined();
-  });
-});
-
 describe("storageFacts", () => {
   it("gives the version, snapshot repository, volumes, and conditions of an ElasticsearchCluster", () => {
     const object = elasticsearch("orders-es");
@@ -573,6 +656,25 @@ describe("storageFacts", () => {
         object: databaseServer("orders-db"),
       }),
     ).toEqual({ volumes: [], conditions: [], errors: [] });
+  });
+
+  it("names an archive, an archive boundary, or a recovery of the wrong type", () => {
+    const object = databaseServer("orders-db");
+    object.status = { archive: "s3://orders", recovery: 3 } as never;
+    expect(
+      storageFacts({ kind: "DatabaseServer", name: "orders-db", object })
+        .errors,
+    ).toEqual([
+      "The archive is not an object.",
+      "The recovery is not an object.",
+    ]);
+    object.status = { archive: { boundary: { at: 5 } } } as never;
+    expect(
+      storageFacts({ kind: "DatabaseServer", name: "orders-db", object }),
+    ).toMatchObject({
+      archive: {},
+      errors: ["The archive boundary is not valid."],
+    });
   });
 
   it("names each value of the wrong type", () => {

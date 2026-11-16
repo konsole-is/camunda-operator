@@ -253,6 +253,19 @@ describe("sharedWatch", () => {
     expect(client.getQueryData(freshKey(team))).toBe(true);
   });
 
+  it("keeps a fresh watch fresh when another watch joins the connection", async () => {
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    watch.subscribe(other);
+    await flush();
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    expect(client.getQueryData(freshKey(other)) ?? false).toBe(false);
+  });
+
   it("marks its watches not fresh on a new connection until their snapshot", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     sharedWatch(client).subscribe(team);
