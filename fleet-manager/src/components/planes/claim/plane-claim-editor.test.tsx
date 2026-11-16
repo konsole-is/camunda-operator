@@ -32,7 +32,11 @@ import { FakeEventSource } from "../../../../test/fakes/event-source";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { PlanePageData } from "../plane-view";
 import type { PlaneClaimTabData } from "./data";
-import { changesWaitText, PlaneClaimEditProvider } from "./plane-claim-edit";
+import {
+  changesWaitText,
+  KEPT_FIELDS_NOTE,
+  PlaneClaimEditProvider,
+} from "./plane-claim-edit";
 import { PlaneClaimEditor } from "./plane-claim-editor";
 import { EXPRESSIONS_READ_ONLY } from "./served-panel";
 
@@ -681,6 +685,40 @@ describe("PlaneClaimEditor writes", () => {
       radio,
     );
     expect(screen.getByRole("button", { name: "Edit Basics" })).toBeTruthy();
+  });
+
+  it("the review names each field that another field manager keeps", () => {
+    const claim = oidcClaim();
+    (claim.metadata as { managedFields?: unknown }).managedFields = [
+      {
+        manager: "kubectl",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:management": { "f:identityProvider": { "f:oidc": {} } },
+          },
+        },
+      },
+    ];
+    editor({ claim });
+    open("Identity");
+    fireEvent.click(screen.getByRole("radio", { name: /External Keycloak/ }));
+    fireEvent.change(screen.getByLabelText("Keycloak URL"), {
+      target: { value: "https://kc.example.com" },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Administrator credentials Secret"),
+      { target: { value: "kc-admin" } },
+    );
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "admin" },
+    });
+    fireEvent.click(reviewButton());
+    const caution = within(dialog()).getByRole("note", { name: "Caution" });
+    expect(caution.textContent).toContain(KEPT_FIELDS_NOTE);
+    expect(caution.textContent).toContain(
+      "spec.management.identityProvider.oidc (kubectl)",
+    );
   });
 
   it("closes an open review and turns Review off while a list that the checks read is unread", () => {

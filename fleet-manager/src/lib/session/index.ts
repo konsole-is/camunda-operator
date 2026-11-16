@@ -31,3 +31,4 @@ export {
   type SetResult,
 } from "./session";
 export { valueAt, without, withValue } from "./steps";
+export { keptFields, type KeptField } from "./kept";

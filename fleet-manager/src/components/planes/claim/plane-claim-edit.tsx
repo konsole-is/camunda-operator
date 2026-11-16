@@ -16,6 +16,7 @@ import {
   type ClaimActions,
   type ClaimEdit,
   type ClaimEditHost,
+  type ClaimReviewInput,
 } from "@/components/fleet/claim-edit";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
@@ -50,6 +51,8 @@ import {
   type PlaneClaimContext,
   planeLocks,
   type Session,
+  keptFields,
+  type KeptField,
   validatePlaneClaim,
   valueAt,
 } from "@/lib/session";
@@ -216,6 +219,15 @@ export function PlaneClaimEditProvider({
       ? [{ message: changesWaitText(unread) }]
       : validatePlaneClaim(s, context);
 
+  const review = (s: Session<PlaneClaim>): ClaimReviewInput => {
+    const input = planeChangeInput(sources, s);
+    const kept = keptFields(s);
+    return {
+      impacts: [...planeImpacts(input), ...planeRestarts(input)],
+      ...(planeModeMove(s) && { confirm: { typed: name } }),
+      ...(kept.length > 0 && { caution: <KeptFields kept={kept} /> }),
+    };
+  };
   const host: ClaimEditHost<PlaneClaim> = {
     claim,
     resource:
@@ -224,13 +236,7 @@ export function PlaneClaimEditProvider({
     writeMode: actions ? writeMode : undefined,
     locks,
     validate,
-    review: (s) => ({
-      impacts: [
-        ...planeImpacts(planeChangeInput(sources, s)),
-        ...planeRestarts(planeChangeInput(sources, s)),
-      ],
-      ...(planeModeMove(s) && { confirm: { typed: name } }),
-    }),
+    review,
   };
 
   if (!actions)
@@ -247,6 +253,29 @@ export function PlaneClaimEditProvider({
         {children}
       </EditBridge>
     </ClaimEditProvider>
+  );
+}
+
+/**
+ * KEPT_FIELDS_NOTE leads the list of the fields that a change leaves out
+ * while another field manager owns them.
+ */
+export const KEPT_FIELDS_NOTE =
+  "These fields stay in the claim, because another tool set them. The fleet manager does not take a field over. Change them with that tool:";
+
+// KeptFields shows each field of kept with its field manager.
+function KeptFields({ kept }: { kept: readonly KeptField[] }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p>{KEPT_FIELDS_NOTE}</p>
+      <ul className="list-disc pl-5">
+        {kept.map((k) => (
+          <li key={k.path}>
+            <code className="text-xs">{k.path}</code> ({k.manager})
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -63,7 +63,11 @@ test("a move of the identity mode shows what it does, and a field that kubectl o
   await expect(effects).toContainText("The first administrator stays.");
   await expect(effects).toContainText("restart");
   await expect(dialog.getByLabel(/to confirm/)).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText("kubectl");
+  const caution = dialog.getByRole("note", { name: "Caution" });
+  await expect(caution).toContainText("another tool set them");
+  await expect(caution).toContainText(
+    "spec.management.identityProvider.oidc (kubectl)",
+  );
   await checkPage(page, "plane-claim-review");
 
   await dialog.getByLabel(/to confirm/).fill("plane-a");
