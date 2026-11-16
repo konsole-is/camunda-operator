@@ -1,0 +1,58 @@
+import "server-only";
+import type { PlanePageData } from "@/components/planes/plane-view";
+import type { ReadError } from "@/components/planes/planes-table";
+import type { KindName } from "@/lib/k8s/kinds";
+import { get, list } from "@/lib/k8s/read";
+import { CLAIM_LABEL } from "@/lib/labels";
+
+/**
+ * loadPlanePage reads the first snapshot of the plane page. It returns
+ * undefined only when it read both the CamundaManagementCluster and the
+ * claim of that name and neither exists. It returns the claim while no
+ * CamundaManagementCluster is known, or when the CamundaManagementCluster
+ * carries CLAIM_LABEL with the value name. When it returns a page, a failed
+ * read of a kind gives no objects of that kind and an entry in readErrors.
+ */
+export async function loadPlanePage(
+  namespace: string,
+  name: string,
+): Promise<PlanePageData | undefined> {
+  const readErrors: ReadError[] = [];
+  const failed =
+    <T>(kind: KindName, empty: T) =>
+    (err: unknown): T => {
+      readErrors.push({
+        kind,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return empty;
+    };
+  const [plane, claim, namespaces, environments] = await Promise.all([
+    get("CamundaManagementCluster", namespace, name).catch(
+      failed("CamundaManagementCluster", undefined),
+    ),
+    get("CamundaManagementClusterClaim", namespace, name).catch(
+      failed("CamundaManagementClusterClaim", undefined),
+    ),
+    list("Namespace", {}).catch(failed("Namespace", [])),
+    list("Environment", {}).catch(failed("Environment", [])),
+  ]);
+  const objectUnread = readErrors.some(
+    (e) =>
+      e.kind === "CamundaManagementCluster" ||
+      e.kind === "CamundaManagementClusterClaim",
+  );
+  if (!plane && !claim && !objectUnread) return undefined;
+  const joined =
+    claim && (!plane || plane.metadata?.labels?.[CLAIM_LABEL] === name);
+  return {
+    namespace,
+    name,
+    now: new Date().toISOString(),
+    ...(plane && { plane }),
+    ...(joined && { claim }),
+    namespaces,
+    environments,
+    readErrors,
+  };
+}
