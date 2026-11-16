@@ -4,20 +4,32 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { UnmanagedBanner } from "@/components/cluster/banners";
+import { EndpointsTab } from "@/components/cluster/endpoints-tab";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
+import {
+  type SourceReads,
+  unreadKinds,
+} from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { environmentNameOf } from "@/lib/policy";
 import type { WriteMode } from "@/lib/write/types";
+import { ContractTab } from "./contract-tab";
+import { OptimizeTab } from "./optimize-tab";
 import { planesOf } from "./plane";
 import { PlaneConditions } from "./plane-conditions";
+import { planeEndpointRows } from "./plane-endpoints";
+import { contractReaders, isOidc, optimizeRows } from "./plane-optimize";
 import { PlaneHeader } from "./plane-header";
 import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
 import type { ReadError } from "./planes-table";
+import { servedClusters } from "./served-clusters";
+import { ServedClustersTab } from "./served-clusters-tab";
+import { unreadText } from "./unread-note";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined
@@ -25,6 +37,7 @@ import type { ReadError } from "./planes-table";
  * plane that no claim made, whose claim is not in the namespace, or whose
  * read failed. When the plane read failed, claim is the claim of that name,
  * which the page does not join to the plane. now is the time of the server.
+ * optimizes holds every CamundaOptimize, for the readers of the contract.
  * readErrors holds the kinds whose first read failed.
  */
 export type PlanePageData = {
@@ -35,6 +48,8 @@ export type PlanePageData = {
   claim?: Resource<"CamundaManagementClusterClaim">;
   namespaces: Resource<"Namespace">[];
   environments: Resource<"Environment">[];
+  optimizes: Resource<"CamundaOptimize">[];
+  managementAuthConfigs: Resource<"ManagementAuthConfig">[];
   readErrors?: ReadError[];
 };
 
@@ -78,6 +93,12 @@ export function PlaneView({
   );
   const namespaces = useResources("Namespace", {}, data.namespaces);
   const environments = useResources("Environment", {}, data.environments);
+  const optimizes = useResources("CamundaOptimize", {}, data.optimizes);
+  const managementAuthConfigs = useResources(
+    "ManagementAuthConfig",
+    {},
+    data.managementAuthConfigs,
+  );
   const clock = useClock(data.now, tab === "overview");
 
   const watched = [
@@ -85,20 +106,37 @@ export function PlaneView({
     ["CamundaManagementClusterClaim", claimResult],
     ["Namespace", namespaces],
     ["Environment", environments],
+    ["CamundaOptimize", optimizes],
+    ["ManagementAuthConfig", managementAuthConfigs],
   ] as const;
   const liveErrors = watched.flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
   );
-  const answered = useAnswered([
+  const followed = [
     { kind: "CamundaManagementCluster", opts: { namespace, name } },
     { kind: "CamundaManagementClusterClaim", opts: { namespace, name } },
     { kind: "Namespace", opts: {} },
     { kind: "Environment", opts: {} },
-  ]);
+    { kind: "CamundaOptimize", opts: {} },
+    { kind: "ManagementAuthConfig", opts: {} },
+  ] as const;
+  const answered = useAnswered(followed);
+  const fresh = useWatchesFresh(followed);
   const firstErrors = (data.readErrors ?? []).filter(
     (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
   );
   const errors = [...liveErrors, ...firstErrors];
+  // A watch that answered once and then lost its connection keeps its last
+  // items, which can be out of date. Before its first answer, the page
+  // shows the read of the server.
+  const reads: SourceReads = {
+    errors,
+    stale: followed
+      .filter(({ kind }, i) => answered.has(kind) && !fresh[i])
+      .map(({ kind }) => kind),
+  };
+  const unreadOf = (kinds: readonly KindName[]) =>
+    unreadKinds(reads).filter((k) => kinds.includes(k as KindName));
   const unread = (kind: KindName) => errors.some((e) => e.kind === kind);
   const alerts = errors.map((e, i) => (
     <p key={i} role="alert" className="text-sm text-bad">
@@ -157,6 +195,11 @@ export function PlaneView({
       environments.items.find((e) => e.metadata?.name === environmentName)?.spec
         .platformConfigRef;
 
+  const contractName = textOf(plane?.status?.managementAuthConfig);
+  const oidc = isOidc(plane);
+  const endpointRows = planeEndpointRows(plane);
+  const endpointsUnread = unreadOf(["CamundaManagementCluster"]);
+
   const selectTab = (value: string) => {
     const next = planeTabOf(value);
     setTab(next);
@@ -209,6 +252,69 @@ export function PlaneView({
             />
           </div>
         </TabsContent>
+        <TabsContent value="clusters">
+          <ServedClustersTab
+            rows={servedClusters({
+              plane,
+              namespaces: namespaces.items,
+              environments: environments.items,
+              environmentsUnread:
+                unreadOf(["Namespace", "Environment"]).length > 0,
+            })}
+            unread={unreadOf([
+              "CamundaManagementCluster",
+              "Namespace",
+              "Environment",
+            ])}
+          />
+        </TabsContent>
+        <TabsContent value="optimize">
+          <OptimizeTab
+            rows={optimizeRows({ plane, optimizes: optimizes.items })}
+            callbacks={
+              plane?.status?.conditions?.find(
+                (c) => c.type === "OptimizeCallbacksReady",
+              ) as ConditionLike | undefined
+            }
+            oidc={oidc}
+            unread={unreadOf(
+              plane && !oidc
+                ? ["CamundaManagementCluster"]
+                : ["CamundaManagementCluster", "CamundaOptimize"],
+            )}
+          />
+        </TabsContent>
+        <TabsContent value="contract">
+          <ContractTab
+            name={contractName}
+            contract={managementAuthConfigs.items.find(
+              (c) => c.metadata?.name === contractName,
+            )}
+            readers={contractReaders(optimizes.items, contractName)}
+            unread={unreadOf([
+              "CamundaManagementCluster",
+              "ManagementAuthConfig",
+              "CamundaOptimize",
+            ])}
+          />
+        </TabsContent>
+        <TabsContent value="endpoints">
+          <div className="flex flex-col gap-2">
+            {endpointRows.length > 0 && endpointsUnread.length > 0 && (
+              <p className="text-sm text-muted">
+                {unreadText(endpointsUnread)}
+              </p>
+            )}
+            <EndpointsTab
+              rows={endpointRows}
+              emptyText={
+                endpointsUnread.length > 0
+                  ? unreadText(endpointsUnread)
+                  : "This plane reports no endpoints yet."
+              }
+            />
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -230,6 +336,10 @@ function useAnswered(
     .map(({ kind }) => kind);
   if (added.length > 0) setAnswered(new Set([...answered, ...added]));
   return answered;
+}
+
+function textOf(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 // conditionRows gives the conditions of a status as the table rows. The

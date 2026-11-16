@@ -6,17 +6,22 @@ import { PROCESS_LABEL, type Process, topologyOf } from "./topology";
 export const GRPC_HOST_OUTPUT = "grpcHost";
 
 /**
- * EndpointRow is one route of a cluster or of its Optimize. key is unique in
- * one result. url is undefined when the route has no public URL. servedBy is
- * undefined for a route name that the app does not know.
+ * EndpointRow is one route of a cluster, of its Optimize, or of a plane.
+ * key is unique in one result. path is the path that a route of a plane
+ * matches. url is undefined when the route has no public URL, and
+ * urlInvalid is true when the URL that it comes from is not valid. port is
+ * undefined when the status gives no number. servedBy is undefined for a
+ * route name that the app does not know.
  */
 export type EndpointRow = {
   key: string;
-  owner: "CamundaCluster" | "CamundaOptimize";
+  owner: "CamundaCluster" | "CamundaOptimize" | "CamundaManagementCluster";
   name: string;
+  path?: string;
   url?: string;
+  urlInvalid?: true;
   service: string;
-  port: number;
+  port?: number;
   protocol: "HTTP" | "GRPC";
   servedBy?: { label: string; embedded: boolean };
 };

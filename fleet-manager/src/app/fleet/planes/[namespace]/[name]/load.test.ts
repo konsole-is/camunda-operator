@@ -145,4 +145,26 @@ describe("loadPlanePage", () => {
       { kind: "Environment", message: "Environment is forbidden" },
     ]);
   });
+
+  it("lists every CamundaOptimize and ManagementAuthConfig, and a failed list gives none and a read error", async () => {
+    k8s.objects = [claim("plane-a")];
+    k8s.failing = ["ManagementAuthConfig"];
+    const data = await loadPlanePage("platform", "plane-a");
+    expect(listOf("CamundaOptimize")).toEqual({});
+    expect(listOf("ManagementAuthConfig")).toEqual({});
+    expect(data?.optimizes).toEqual([]);
+    expect(data?.managementAuthConfigs).toEqual([]);
+    expect(data?.readErrors).toEqual([
+      {
+        kind: "ManagementAuthConfig",
+        message: "ManagementAuthConfig is forbidden",
+      },
+    ]);
+  });
+
+  it("reads no Secret", async () => {
+    k8s.objects = [claim("plane-a")];
+    await loadPlanePage("platform", "plane-a");
+    expect(k8s.lists.map((l) => l.kind)).not.toContain("Secret");
+  });
 });
