@@ -61,16 +61,14 @@ export type ContractActions = {
 /**
  * ConnectionDetail is the page of one contract: its own Ready, its writer,
  * its settings, and the objects that use it. A contract that sources does
- * not hold shows as missing, unless its kind could not be read. Each of the
- * read errors shows above.
+ * not hold shows as missing, unless its kind is not read. One that leaves
+ * sources while the page shows it keeps its last copy and shows as deleted.
+ * Each of the read errors shows above.
  *
  * With actions, a contract that a person may change (writerEditable) has a
  * form with the form state of useSetupEditor, and a delete. A save and a
- * delete each show a review with a dry run before the write. Both wait
- * until each kind that can use the contract is read, and the delete also
- * until nothing uses it; an open review closes when that stops being true
- * or when the contract gets a writer. Without mode the form is disabled.
- * Any other contract keeps the read view.
+ * delete each show a review with a dry run before the write. Without mode
+ * the form is disabled. Any other contract keeps the read view.
  */
 export function ConnectionDetail({
   target,
