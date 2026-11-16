@@ -22,9 +22,9 @@ import { SectionPanel } from "./section-panel";
  * ComponentSettingsEditor fills component.settings.editor: an "Edit
  * settings" button that opens the editors of each settings group of the
  * open component. For a selection of the claim, the button opens the
- * editor of its section on the Claim tab. Changes go to the session of the
- * edit host. The values are those after the pending changes. After the
- * pending changes are discarded or written, the editors show the live
+ * editor that the Claim tab has for its section. Changes go to the session
+ * of the edit host. The values are those after the pending changes. After
+ * the pending changes are discarded or written, the editors show the live
  * values again. It renders nothing without an open component, without a
  * session, or for a selection that the claim no longer has after the
  * pending changes.
