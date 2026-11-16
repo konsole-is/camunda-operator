@@ -350,4 +350,20 @@ describe("storedYaml", () => {
     expect(stored.status).toEqual(claim.status);
     expect(claim.metadata.managedFields).toHaveLength(1);
   });
+
+  it("shows a plane claim without its managed fields", () => {
+    const yaml = storedYaml({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaManagementClusterClaim",
+      metadata: {
+        name: "mgmt",
+        namespace: "mgmt-ns",
+        managedFields: [{ manager: "fleet-manager" }],
+      },
+      spec: { environments: ["production"] },
+    });
+    expect(yaml).toContain("kind: CamundaManagementClusterClaim");
+    expect(yaml).toContain("- production");
+    expect(yaml).not.toContain("managedFields");
+  });
 });

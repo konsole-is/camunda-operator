@@ -1,4 +1,5 @@
 import "server-only";
+import type { PlaneClaimTabData } from "@/components/planes/claim/data";
 import type { PlanePageData } from "@/components/planes/plane-view";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName } from "@/lib/k8s/kinds";
@@ -17,6 +18,7 @@ export async function loadPlanePage(
   namespace: string,
   name: string,
 ): Promise<PlanePageData | undefined> {
+  const claimTab = loadClaimTab(namespace, name);
   const readErrors: ReadError[] = [];
   const failed =
     <T>(kind: KindName, empty: T) =>
@@ -64,6 +66,42 @@ export async function loadPlanePage(
     environments,
     optimizes,
     managementAuthConfigs,
+    readErrors,
+    claimTab: await claimTab,
+  };
+}
+
+// loadClaimTab reads the lists of the Claim tab. Its read errors stay
+// apart from those of the page, because the tab follows these kinds.
+async function loadClaimTab(
+  namespace: string,
+  name: string,
+): Promise<PlaneClaimTabData> {
+  const readErrors: ReadError[] = [];
+  const failed = (kind: KindName) => (err: unknown) => {
+    readErrors.push({
+      kind,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  };
+  const [clusters, platformConfigs, sections, registrations, requests] =
+    await Promise.all([
+      list("CamundaCluster", {}).catch(failed("CamundaCluster")),
+      list("CamundaPlatformConfig", {}).catch(failed("CamundaPlatformConfig")),
+      list("PluginSection", {}).catch(failed("PluginSection")),
+      list("PluginRegistration", {}).catch(failed("PluginRegistration")),
+      list("PluginRequest", {
+        namespace,
+        labelSelector: `${CLAIM_LABEL}=${name}`,
+      }).catch(failed("PluginRequest")),
+    ]);
+  return {
+    clusters,
+    platformConfigs,
+    sections,
+    registrations,
+    requests,
     readErrors,
   };
 }

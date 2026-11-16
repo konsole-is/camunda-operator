@@ -18,6 +18,7 @@ import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { environmentNameOf } from "@/lib/policy";
 import type { WriteMode } from "@/lib/write/types";
+import type { PlaneClaimTabData } from "./claim/data";
 import { ContractTab } from "./contract-tab";
 import { OptimizeTab } from "./optimize-tab";
 import { planesOf } from "./plane";
@@ -40,6 +41,7 @@ import { unreadText } from "./unread-note";
  * optimizes holds every CamundaOptimize, or none when its read failed.
  * managementAuthConfigs holds every ManagementAuthConfig, or none when its
  * read failed. readErrors holds the kinds whose first read failed.
+ * claimTab holds the lists of the Claim tab.
  */
 export type PlanePageData = {
   namespace: string;
@@ -52,6 +54,7 @@ export type PlanePageData = {
   optimizes: Resource<"CamundaOptimize">[];
   managementAuthConfigs: Resource<"ManagementAuthConfig">[];
   readErrors?: ReadError[];
+  claimTab?: PlaneClaimTabData;
 };
 
 /**
