@@ -39,8 +39,9 @@ const EDITORS: Record<PlaneClaimPanel, () => ReactNode> = {
  * each panel. One panel is in edit at a time, in place of its read panel,
  * and Done closes it and keeps its pending changes. The read view shows the
  * claim after the pending changes. Without a session it is read only. While
- * the page could not read the plane or its claim, it offers no edit and
- * says why. requested opens its panel on mount. It needs a
+ * the page could not read the plane or its claim, or its copy is not
+ * current, it offers no Edit button and says why. A panel that is open
+ * then stays open, and the session refuses review. requested opens its panel on mount. It needs a
  * PlaneClaimEditProvider above it.
  */
 export function PlaneClaimEditor({
@@ -70,13 +71,15 @@ export function PlaneClaimEditor({
   const note = plane.claimUnread && (
     <p className="text-sm text-muted">{changesWaitText(plane.unread)}</p>
   );
-  if (!session || plane.claimUnread)
-    return (
-      <div className="flex flex-col gap-4">
-        {note}
-        <PlaneClaimTab fields={fields} stored={stored} urls={urls} />
-      </div>
-    );
+  // The tree stays the same while the plane or the claim is not current,
+  // so that an open panel keeps its state through a reconnect of the watch.
+  const view = (edit?: PlaneClaimTabEdit) => (
+    <div className="flex flex-col gap-4">
+      {note}
+      <PlaneClaimTab fields={fields} stored={stored} urls={urls} edit={edit} />
+    </div>
+  );
+  if (!session) return view();
 
   const edit: Required<PlaneClaimTabEdit> = { panels: {}, actions: {} };
   for (const { id, label } of PLANE_CLAIM_PANELS) {
@@ -94,7 +97,7 @@ export function PlaneClaimEditor({
           }}
         />
       );
-    else
+    else if (!plane.claimUnread)
       edit.actions[id] = (
         <EditButton
           name={label}
@@ -107,7 +110,5 @@ export function PlaneClaimEditor({
         />
       );
   }
-  return (
-    <PlaneClaimTab fields={fields} stored={stored} urls={urls} edit={edit} />
-  );
+  return view(edit);
 }

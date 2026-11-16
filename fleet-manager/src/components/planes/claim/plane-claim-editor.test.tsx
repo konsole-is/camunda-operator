@@ -667,6 +667,22 @@ describe("PlaneClaimEditor writes", () => {
     );
   });
 
+  it("keeps an open panel while the plane is not current, and offers no other Edit", () => {
+    const { rerender } = editor();
+    open("Identity");
+    const radio = screen.getByRole("radio", { name: /External Keycloak/ });
+    rerender(tree({ pageUnread: ["CamundaManagementCluster"] }));
+    expect(screen.getByRole("radio", { name: /External Keycloak/ })).toBe(
+      radio,
+    );
+    expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+    rerender(tree({}));
+    expect(screen.getByRole("radio", { name: /External Keycloak/ })).toBe(
+      radio,
+    );
+    expect(screen.getByRole("button", { name: "Edit Basics" })).toBeTruthy();
+  });
+
   it("closes an open review and turns Review off while a list that the checks read is unread", () => {
     const { rerender } = editor();
     open("When the plane is deleted");
