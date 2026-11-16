@@ -7,7 +7,11 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/claims/names",
   "@/lib/drafts",
   "@/lib/environments",
+  "@/lib/fields",
   "@/lib/fields/slots",
   "@/lib/labels",
+  "@/lib/merge",
   "@/lib/policy",
+  "@/lib/session/locks",
+  "@/lib/session/steps",
 ]);

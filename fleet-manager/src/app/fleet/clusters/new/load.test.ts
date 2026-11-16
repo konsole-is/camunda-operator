@@ -42,6 +42,9 @@ describe("loadCreateCluster", () => {
       "DatabaseServerPreset",
       "SecondaryStorageConfig",
       "ObjectStorageConfig",
+      "CamundaRelease",
+      "CamundaPlatformConfig",
+      "ManagementAuthConfig",
     ]) {
       expect(listOf(kind)).toEqual({});
     }
@@ -52,6 +55,25 @@ describe("loadCreateCluster", () => {
     const data = await loadCreateCluster();
     expect(data.clusters).toEqual([]);
     expect(data.claims).toHaveLength(1);
+  });
+
+  it("gives no read errors when every list reads", async () => {
+    const data = await loadCreateCluster();
+    expect(data.readErrors).toEqual([]);
+  });
+
+  it("gives the read error of each list that steps 3 and 4 check against", async () => {
+    for (const kind of [
+      "CamundaRelease",
+      "CamundaPlatformConfig",
+      "ManagementAuthConfig",
+    ]) {
+      k8s.failing = kind;
+      const data = await loadCreateCluster();
+      expect(data.readErrors).toEqual([
+        { kind, message: `${kind} is forbidden` },
+      ]);
+    }
   });
 
   it("gives the presets and storage configs that step 2 lists", async () => {
@@ -68,6 +90,19 @@ describe("loadCreateCluster", () => {
         "SecondaryStorageConfig",
         "ObjectStorageConfig",
       ].map((kind) => [{ kind, metadata: { name: "x" } }]),
+    );
+  });
+
+  it("gives the releases, platform configs, and ManagementAuthConfigs that steps 3 and 4 list", async () => {
+    const data = await loadCreateCluster();
+    expect([
+      data.releases,
+      data.platformConfigs,
+      data.managementAuthConfigs,
+    ]).toEqual(
+      ["CamundaRelease", "CamundaPlatformConfig", "ManagementAuthConfig"].map(
+        (kind) => [{ kind, metadata: { name: "x" } }],
+      ),
     );
   });
 });
