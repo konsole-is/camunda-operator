@@ -619,10 +619,8 @@ function planeSpec() {
   };
 }
 
-// "<file under src>#<export>". The loaders of a page that reads every
-// namespace, so a careless loader would reach the Secret leak. An answer
-// that read nothing holds no Secret value only because nothing ran, so each
-// call fails on it.
+// "<file under src>#<export>". An answer that read nothing holds no Secret
+// value, so each call fails on it.
 const LOADER_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/plugins/load.ts#loadRegistrations": async () => {
     const sources = await pluginLoads.loadRegistrations();
