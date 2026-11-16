@@ -126,11 +126,11 @@ The page lists each resource that an option made, under the name of its section.
 
 The delete always removes these objects, whatever you choose:
 
-- The `CamundaCluster`.
+- The `CamundaCluster`, when the claim made it.
 - The `CamundaOptimize` `<name>-optimize` and the `BackupSchedule` `<name>-backups`, when the claim made them.
 - The claim.
 
-A `CamundaOptimize` or a `BackupSchedule` of the cluster that the claim did not make stays. The page lists it under **Kept**, with "Kept: the claim did not make it".
+A `CamundaCluster`, a `CamundaOptimize`, or a `BackupSchedule` of the cluster that the claim did not make stays. The page lists it under **Kept**, with "Kept: the claim did not make it". When the `CamundaCluster` stays, the page ends with "The claim my-cluster is deleted. The cluster my-cluster stays: the claim did not make it."
 
 By default, the broker volumes go with the `CamundaCluster`, and the page says "Volumes deleted" next to it. The choice between keeping and deleting the resources does not change this. To keep the volumes for a later cluster of the same name, set `whenDeleted: Retain` in the claim. Apply this change to the claim before you open the delete page. In Git mode, wait until GitOps applied it:
 
@@ -161,15 +161,23 @@ The backups of the cluster stay, and their artifacts stay in the bucket. When th
 
 You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. The page shows "Waiting for the operator to read the deletion policy." Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
 
-If the claim changed after the page read it, the delete fails, and the page shows the claim again for a new review. If the delete fails after the fleet manager wrote your choice, the claim keeps that deletion policy. The page then says, for example, "The deletion policy of my-cluster is now Keep, and the cluster is not deleted."
+The wait ends only when the operator reads the deletion policy. If the operator does not run, select **Stop waiting**. The fleet manager then sends no delete. The deletion policy that the fleet manager wrote stays in the claim. The page shows the deletion policy that the claim has, also after another change.
+
+If the claim changed after the page read it, the delete fails, and the page shows the claim again for a new review. This also applies when someone else changes the claim during the wait. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
 
 ### When the page cannot read a list
 
-The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The review comes back when the fleet manager can read every list again. While the delete runs, an object of a kind that the page cannot read shows **Not known** in place of **Waiting**, **Deleting**, or **Deleted**.
+The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The page reads each list again by itself, and the review comes back when the fleet manager can read every list.
+
+When the page cannot read the `CamundaOptimize` or the `BackupSchedule` objects, it lists each of them under **Not known**. This includes an object that the claim did not make.
+
+While the delete runs, an object of a kind that the page cannot read shows **Not known** in place of **Waiting**, **Deleting**, or **Deleted**.
 
 ### Delete in Git mode
 
-When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file. To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again and says "The cluster is not deleted. The repository holds the commit that sets the deletion policy of my-cluster to Keep."
+When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file.
+
+To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again. Until GitOps applies the commit, the page says "The cluster is not deleted. The repository holds the commit that sets the deletion policy of my-cluster to Keep, and GitOps has not applied it yet. The claim my-cluster has the deletion policy Delete." After GitOps applies the commit, the page says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
 
 After the delete commit, the page shows "Waiting for GitOps to delete my-cluster" until the cluster starts to delete the claim. Your GitOps tool must prune: it deletes the claim only when it removes the objects of deleted files. [Waiting for GitOps](settings.md#waiting-for-gitops) shows how the fleet manager follows a push.
 
