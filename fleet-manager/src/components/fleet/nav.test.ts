@@ -91,10 +91,46 @@ describe("setupBreadcrumb", () => {
     expect(setupBreadcrumb("/setup/presets/%E0%A4%A")?.name).toBe("%E0%A4%A");
   });
 
+  it("names the preset, not its kind, on a preset detail page", () => {
+    expect(setupBreadcrumb("/setup/presets/elasticsearch/standard")).toEqual({
+      item: SETUP_ITEMS[1],
+      name: "standard",
+    });
+  });
+
+  it("decodes the preset name and keeps a bad segment as it is", () => {
+    expect(setupBreadcrumb("/setup/presets/cluster/8.9%20lts")?.name).toBe(
+      "8.9 lts",
+    );
+    expect(setupBreadcrumb("/setup/presets/cluster/%E0%A4%A")?.name).toBe(
+      "%E0%A4%A",
+    );
+  });
+
+  it("names the namespace and the object on a namespaced detail page", () => {
+    expect(setupBreadcrumb("/setup/connections/kind/team%20a/orders")).toEqual({
+      item: SETUP_ITEMS[4],
+      name: "team a/orders",
+    });
+  });
+
+  it("names a contract by its namespace and name, and a Management Identity contract by its name", () => {
+    expect(
+      setupBreadcrumb("/setup/connections/object-storage/team-a/backups"),
+    ).toEqual({ item: SETUP_ITEMS[4], name: "team-a/backups" });
+    expect(
+      setupBreadcrumb(
+        "/setup/connections/management-identity/plane-a-optimize",
+      ),
+    ).toEqual({ item: SETUP_ITEMS[4], name: "plane-a-optimize" });
+  });
+
   it.each([
     "/setup",
     "/setup/presets",
     "/setup/presets/",
+    "/setup/presets/cluster/",
+    "/setup/connections/kind/team-a/",
     "/setup/unknown/x",
     "/fleet/presets/gold",
   ])("has no breadcrumb on %s", (pathname) => {

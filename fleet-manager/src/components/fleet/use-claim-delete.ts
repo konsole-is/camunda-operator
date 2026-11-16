@@ -118,7 +118,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     { namespace, name },
     initial as never,
   );
-  const [fresh] = useWatchesFresh([{ kind, opts: { namespace }, name }]);
+  const [fresh] = useWatchesFresh([{ kind, opts: { namespace, name } }]);
   const live = item as C | undefined;
   const [sent, setSent] = useState<Sent>({ kind: "choose" });
 

@@ -1,13 +1,16 @@
 // This module runs in the browser and on the server, so it imports only types.
 import type { CoreComponent } from "@/lib/observe/types";
 
+/** PlaneComponent is a component of a management plane. */
+export type PlaneComponent = "keycloak" | "identity" | "console" | "webModeler";
+
 /**
  * Placement is where a condition shows on a page: the page header, a
- * component of the cluster, the claim group, the Optimize component, or the
- * Conditions section (resource).
+ * component of a cluster or of a plane, the claim group, the Optimize
+ * component, or the Conditions section (resource).
  */
 export type Placement =
-  "header" | "resource" | "claim" | "optimize" | CoreComponent;
+  "header" | "resource" | "claim" | "optimize" | CoreComponent | PlaneComponent;
 
 /** PlacementMap places each condition type of one kind. */
 export type PlacementMap<T extends string> = Readonly<Record<T, Placement>>;

@@ -360,6 +360,24 @@ describe("useWatchesFresh", () => {
   });
 });
 
+describe("useWatchesFresh of one name", () => {
+  it("is true once the watch of useResource with the same name got its snapshot", async () => {
+    const { result } = renderHook(
+      () => ({
+        item: useResource("Pod", { namespace: "team", name: "a" }),
+        fresh: useWatchesFresh([
+          { kind: "Pod", opts: { namespace: "team", name: "a" } },
+        ])[0],
+      }),
+      { wrapper },
+    );
+    expect(result.current.fresh).toBe(false);
+    const s = await source();
+    s.emit("snapshot", { watch: s.ids()[0], kind: "Pod", objects: [] });
+    await waitFor(() => expect(result.current.fresh).toBe(true));
+  });
+});
+
 describe("useResource", () => {
   it("watches one name and follows its changes", async () => {
     const { result } = renderHook(

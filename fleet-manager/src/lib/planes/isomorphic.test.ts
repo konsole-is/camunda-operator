@@ -11,6 +11,7 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/fields/slots",
   "@/lib/policy",
   "@/lib/schema",
+  "@/lib/session",
   "@/lib/session/precheck",
   "@/lib/text",
   "@/lib/write/create",

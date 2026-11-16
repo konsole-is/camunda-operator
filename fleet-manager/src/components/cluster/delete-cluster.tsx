@@ -98,8 +98,8 @@ export function DeleteCluster({
     initial.backups.rdbms,
   );
   const watched = [
-    { kind: "CamundaCluster", opts: inNamespace, name, ...cluster },
-    { kind: "Namespace", opts: all, name: namespace, ...namespaceObject },
+    { kind: "CamundaCluster", opts: { namespace, name }, ...cluster },
+    { kind: "Namespace", opts: { name: namespace }, ...namespaceObject },
     { kind: "PluginRequest", opts: inNamespace, ...requests },
     { kind: "CamundaOptimize", opts: inNamespace, ...optimizes },
     { kind: "BackupSchedule", opts: inNamespace, ...schedules },

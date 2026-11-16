@@ -5,12 +5,16 @@ import type { BackupRef, RestoreRef } from "@/lib/policy/backups";
 const BANNER =
   "rounded-md border border-l-4 border-border bg-panel px-4 py-3 text-sm text-text-2";
 
-/** UnmanagedBanner says that the fleet manager does not change this cluster. */
-export function UnmanagedBanner() {
+/** UnmanagedBanner says that the fleet manager does not change this subject. */
+export function UnmanagedBanner({
+  subject = "cluster",
+}: {
+  subject?: "cluster" | "management plane";
+}) {
   return (
     <p role="status" className={`${BANNER} border-l-info`}>
-      Not managed by the fleet manager. You can read this cluster but not change
-      it here.
+      Not managed by the fleet manager. You can read this {subject} but not
+      change it here.
     </p>
   );
 }
