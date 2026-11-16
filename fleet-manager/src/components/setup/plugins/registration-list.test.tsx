@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import catalog from "../../../../catalog/official-plugins.json";
 import type { CatalogChart } from "@/startup/bundled-data";
@@ -418,6 +418,29 @@ describe("RegistrationListLive", () => {
     expect(within(row).getByText("Ready: Not known")).toBeTruthy();
     expect(within(row).queryByText(/Ready: True/)).toBeNull();
     expect(within(row).queryByText(/Healthy since/)).toBeNull();
+  });
+
+  it("counts Healthy since on from the time of the server", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "Date"] });
+    vi.setSystemTime(new Date("2026-11-13T09:00:00Z"));
+    try {
+      render(
+        <RegistrationListLive
+          initial={sources}
+          catalog={{ charts: [] }}
+          now="2026-11-13T09:00:00Z"
+        />,
+      );
+      const healthy = () =>
+        within(
+          rowOf("Secondary storage", "existing-secondary-storage"),
+        ).getByText(/Healthy since/).textContent;
+      expect(healthy()).toBe("Healthy since 3d ago");
+      act(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000));
+      expect(healthy()).toBe("Healthy since 4d ago");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hides the catalog panel for an empty catalog while PluginRegistration is not read", () => {

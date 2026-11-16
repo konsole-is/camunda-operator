@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Panel } from "@/components/cluster/claim-tab";
 import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
@@ -22,6 +22,7 @@ import {
 import { type RegistrationSources, useRegistrationSources } from "./sources";
 
 const MUTED = "block text-xs text-muted";
+const NOW_INTERVAL_MS = 30_000;
 
 /**
  * RegistrationList is the Plugins page: the registrations in the groups of
@@ -94,7 +95,8 @@ export function RegistrationList({
 /**
  * RegistrationListLive is RegistrationList on the live sources, starting
  * from initial. catalog is the whole catalog: the panel offers the charts
- * that no registration names as its controller.
+ * that no registration names as its controller. now is the time of the
+ * render.
  */
 export function RegistrationListLive({
   initial,
@@ -106,6 +108,7 @@ export function RegistrationListLive({
   now: string;
 }): ReactNode {
   const sources = useRegistrationSources(initial);
+  const clock = useClock(now);
   const registrationsUnread =
     unreadKinds(sources).includes("PluginRegistration");
   return (
@@ -123,9 +126,23 @@ export function RegistrationListLive({
       sections={sources.sections}
       errors={sources.errors}
       stale={sources.stale}
-      now={now}
+      now={clock}
     />
   );
+}
+
+// useClock starts at the time of the server, so that the first render in
+// the browser matches the render of the server.
+function useClock(initial: string): string {
+  const [clock, setClock] = useState(initial);
+  useEffect(() => {
+    const timer = setInterval(
+      () => setClock(new Date().toISOString()),
+      NOW_INTERVAL_MS,
+    );
+    return () => clearInterval(timer);
+  }, []);
+  return clock;
 }
 
 function Group({ group, now }: { group: RegistrationGroup; now: string }) {
