@@ -27,7 +27,13 @@ export function fixtureCondition(
   status: "True" | "False" | "Unknown",
   reason: string,
   message = "",
-): ConditionRow & { lastTransitionTime: string; message: string } {
+): {
+  type: string;
+  status: "True" | "False" | "Unknown";
+  reason: string;
+  message: string;
+  lastTransitionTime: string;
+} {
   return { type, status, reason, message, lastTransitionTime: SINCE };
 }
 

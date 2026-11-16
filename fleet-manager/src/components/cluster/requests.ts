@@ -275,6 +275,95 @@ export function builtinStorageOf(
   return { kind: "DatabaseServer", name: row.name, ...(object && { object }) };
 }
 
+/** VolumeRow is one volume of built-in storage, with its capacity as text. */
+export type VolumeRow = { name: string; capacity: string };
+
+/**
+ * StorageFacts is what the status of built-in storage holds: a field that
+ * the status does not hold is absent. The snapshot repository is set only
+ * for an ElasticsearchCluster, and the archive and recovery only for a
+ * DatabaseServer. errors name each value of the wrong type, and that value
+ * is absent.
+ */
+export type StorageFacts = {
+  version?: string;
+  snapshotRepository?: string;
+  archive?: { reachableFrom?: string; boundary?: string };
+  recovery?: { requestID?: string; targetTime?: string; startedAt?: string };
+  volumes: (VolumeRow | Invalid)[];
+  conditions: ConditionRow[];
+  errors: string[];
+};
+
+/** storageFacts returns the facts of the status of the object of storage, which must be set. */
+export function storageFacts(storage: BuiltinStorage): StorageFacts {
+  const status: unknown = storage.object?.status;
+  const read = isObject(status) ? status : {};
+  const errors: string[] = [];
+  const text = (
+    record: Record<string, unknown>,
+    key: string,
+    noun: string,
+  ): string | undefined => {
+    const value = record[key];
+    if (value === undefined) return undefined;
+    if (typeof value === "string") return value;
+    errors.push(`The ${noun} is not a text.`);
+    return undefined;
+  };
+  const version = text(read, "version", "version");
+  const facts: StorageFacts = {
+    ...(version !== undefined && { version }),
+    volumes: [],
+    conditions: [],
+    errors,
+  };
+  if (storage.kind === "ElasticsearchCluster") {
+    const repository = text(read, "snapshotRepository", "snapshot repository");
+    if (repository !== undefined) facts.snapshotRepository = repository;
+  } else {
+    if (isObject(read.archive)) {
+      const reachableFrom = text(
+        read.archive,
+        "reachableFrom",
+        "archive start",
+      );
+      const boundary = read.archive.boundary;
+      facts.archive = {
+        ...(reachableFrom !== undefined && { reachableFrom }),
+        ...(isObject(boundary) &&
+          typeof boundary.at === "string" &&
+          typeof boundary.location === "string" && {
+            boundary: `${boundary.at}, ${boundary.location}`,
+          }),
+      };
+    }
+    if (isObject(read.recovery)) {
+      const requestID = text(read.recovery, "requestID", "recovery request");
+      const targetTime = text(read.recovery, "targetTime", "recovery target");
+      const startedAt = text(read.recovery, "startedAt", "recovery start");
+      facts.recovery = {
+        ...(requestID !== undefined && { requestID }),
+        ...(targetTime !== undefined && { targetTime }),
+        ...(startedAt !== undefined && { startedAt }),
+      };
+    }
+  }
+  facts.volumes = itemsOf(read.volumes, volumeRow, "Volume", "volumes");
+  const conditions = conditionsOf(read.conditions);
+  if ("error" in conditions) errors.push(conditions.error);
+  else facts.conditions = conditions.conditions;
+  return facts;
+}
+
+function volumeRow(item: unknown): VolumeRow | undefined {
+  return isObject(item) &&
+    typeof item.name === "string" &&
+    (typeof item.capacity === "string" || typeof item.capacity === "number")
+    ? { name: item.name, capacity: String(item.capacity) }
+    : undefined;
+}
+
 const STATUSES: readonly unknown[] = ["True", "False", "Unknown"];
 
 /**

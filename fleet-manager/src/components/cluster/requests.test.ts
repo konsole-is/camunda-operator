@@ -17,6 +17,7 @@ import {
   conditionsOf,
   readyOf,
   requestDetail,
+  storageFacts,
 } from "./requests";
 
 type Over = {
@@ -510,5 +511,88 @@ describe("readyOf", () => {
       ready,
     );
     expect(readyOf("Ready")).toBeUndefined();
+  });
+});
+
+describe("storageFacts", () => {
+  it("gives the version, snapshot repository, volumes, and conditions of an ElasticsearchCluster", () => {
+    const object = elasticsearch("orders-es");
+    object.status = {
+      version: "8.19.2",
+      snapshotRepository: "camunda",
+      volumes: [{ name: "data-orders-es-0", capacity: "32Gi" }],
+      conditions: [fixtureCondition("Ready", "True", "Healthy")],
+    };
+    expect(
+      storageFacts({ kind: "ElasticsearchCluster", name: "orders-es", object }),
+    ).toEqual({
+      version: "8.19.2",
+      snapshotRepository: "camunda",
+      volumes: [{ name: "data-orders-es-0", capacity: "32Gi" }],
+      conditions: [fixtureCondition("Ready", "True", "Healthy")],
+      errors: [],
+    });
+  });
+
+  it("gives the version, archive, recovery, and volumes of a DatabaseServer", () => {
+    const object = databaseServer("orders-db");
+    object.status = {
+      version: "17.5",
+      archive: {
+        reachableFrom: "2026-11-10T09:58:00Z",
+        boundary: { at: "2026-11-15T08:00:00Z", location: "s3://orders/db" },
+      },
+      recovery: {
+        requestID: "3f2b1c4d",
+        targetTime: "2026-11-15T07:30:00Z",
+        startedAt: "2026-11-15T07:31:00Z",
+        contract: "orders-db",
+        requestedBy: "orders",
+      },
+      volumes: [{ name: "orders-db-1", capacity: 10737418240 }],
+    };
+    expect(
+      storageFacts({ kind: "DatabaseServer", name: "orders-db", object }),
+    ).toEqual({
+      version: "17.5",
+      archive: {
+        reachableFrom: "2026-11-10T09:58:00Z",
+        boundary: "2026-11-15T08:00:00Z, s3://orders/db",
+      },
+      recovery: {
+        requestID: "3f2b1c4d",
+        targetTime: "2026-11-15T07:30:00Z",
+        startedAt: "2026-11-15T07:31:00Z",
+      },
+      volumes: [{ name: "orders-db-1", capacity: "10737418240" }],
+      conditions: [],
+      errors: [],
+    });
+  });
+
+  it("leaves out each field that the status does not hold", () => {
+    expect(
+      storageFacts({
+        kind: "DatabaseServer",
+        name: "orders-db",
+        object: databaseServer("orders-db"),
+      }),
+    ).toEqual({ volumes: [], conditions: [], errors: [] });
+  });
+
+  it("names each value of the wrong type", () => {
+    const object = elasticsearch("orders-es");
+    object.status = {
+      version: 8,
+      volumes: [{ name: "data-0" }],
+      conditions: "Ready",
+    } as never;
+    expect(
+      storageFacts({ kind: "ElasticsearchCluster", name: "orders-es", object }),
+    ).toEqual({
+      volumes: [{ error: "Volume 1 is not a valid volume." }],
+      conditions: [],
+      errors: ["The version is not a text.", "The conditions are not a list."],
+    });
   });
 });

@@ -124,7 +124,11 @@ function ComponentCard<Id extends string>({
   );
 }
 
-function SeverityMark({ severity }: { severity: "Warning" | "Error" }) {
+/**
+ * SeverityMark is the mark in front of a value with a Warning or Error
+ * severity: an icon, and the severity in words for a screen reader.
+ */
+export function SeverityMark({ severity }: { severity: "Warning" | "Error" }) {
   const Icon = severity === "Error" ? CircleAlert : TriangleAlert;
   return (
     <>
