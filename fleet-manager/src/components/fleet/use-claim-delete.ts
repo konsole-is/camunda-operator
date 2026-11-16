@@ -48,13 +48,14 @@ export type ClaimDeleteStage =
 
 type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 
-// Sent is the state that the hook keeps. waiting holds the written policy,
-// the written spec, and in Git mode the revision of its commit.
+// Sent is the state that the hook keeps. waiting holds the policy write:
+// the spec before and after it, and the revision of a Git commit.
 type Sent =
   | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
   | {
       kind: "waiting";
       policy: DeletionPolicy;
+      before: unknown;
       spec: unknown;
       revision?: string;
     }
@@ -145,6 +146,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       setSent({
         kind: "waiting",
         policy,
+        before: live.spec,
         spec: steps.policy.apply[0].spec,
         ...(result.mode === "git" && {
           revision: result.revisions[refKey(claimRef)] ?? "",
@@ -172,28 +174,35 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     claimRef,
     sent.kind === "waiting" ? (sent.revision ?? "") : "",
   );
+  const written =
+    sent.kind === "waiting" &&
+    live !== undefined &&
+    equalJSON(live.spec, sent.spec);
+  // The review showed the claim before or after the policy write. Any
+  // other spec needs a new review.
+  const changedSince =
+    sent.kind === "waiting" &&
+    live !== undefined &&
+    !written &&
+    !equalJSON(live.spec, sent.before);
   const settled =
+    written &&
     sent.kind === "waiting" &&
     live !== undefined &&
     (sent.revision === undefined || sync === "applied") &&
-    live.spec?.deletionPolicy === sent.policy &&
     observed(live);
+  if (changedSince && live !== undefined && isOriginal(live))
+    setSent({
+      kind: "choose",
+      errors: [changed(name)],
+      policyWritten: sent.policy,
+    });
   const sentFor = useRef<Sent | undefined>(undefined);
   useEffect(() => {
     if (!settled || sent.kind !== "waiting" || sentFor.current === sent) return;
     sentFor.current = sent;
     const { live, intent, actions, show, pushedMessage } = latest.current;
     if (!live || !isOriginal(live)) return;
-    // The review showed the claim as written with the policy: another
-    // change needs a new review.
-    if (!equalJSON(live.spec, sent.spec)) {
-      setSent({
-        kind: "choose",
-        errors: [changed(name)],
-        policyWritten: sent.policy,
-      });
-      return;
-    }
     setSent({ kind: "deleting" });
     void actions
       .remove(deleteClaimSteps(live, sent.policy, intent).remove)

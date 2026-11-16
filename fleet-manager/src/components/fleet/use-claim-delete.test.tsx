@@ -273,6 +273,31 @@ describe("useClaimDelete", () => {
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
+  it("refuses with Stale when another change takes the policy back during the wait", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    await confirm(hook);
+    await live(read("42", "Delete"));
+    await waitFor(() =>
+      expect(hook.result.current.stage).toMatchObject({
+        kind: "choose",
+        errors: [{ code: "Stale" }],
+        policyWritten: "Orphan",
+      }),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("keeps waiting while the claim still shows the spec from before the write", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.stage).toEqual({ kind: "waiting" });
+  });
+
   it("leaves the wait before the delete returns, so that the wait cannot be stopped during the write", async () => {
     let finish: (result: WriteResult) => void = () => {};
     const remove = vi.fn(
