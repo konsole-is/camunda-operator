@@ -314,7 +314,9 @@ function issuerOf(
   const provider = claim.spec?.management?.identityProvider;
   const mode = identityModeOf(provider);
   const running = plane?.spec?.identityProvider?.keycloak;
-  const publicUrl = provider?.keycloak?.externalUrl || running?.externalUrl;
+  const pending = provider?.keycloak?.externalUrl;
+  const publicUrl =
+    (typeof pending === "string" && pending) || running?.externalUrl;
   if (mode === "keycloak" && running && publicUrl) {
     const service = plane.status?.endpoints?.find((e) => e.name === "keycloak");
     const namespace = plane.metadata?.namespace;
