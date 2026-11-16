@@ -200,17 +200,23 @@ function modeErrors(
   const mode = identityModeOf(spec.management?.identityProvider);
   if (mode === undefined)
     return [{ path: PROVIDER, message: "Pick where users sign in." }];
-  if (
-    mode !== "oidc" ||
-    identityModeOf(live.management?.identityProvider) === "oidc"
-  )
-    return [];
-  const ref = spec.platformConfigRef || ctx.environment?.spec.platformConfigRef;
+  const refOf = (s: Spec) =>
+    s.platformConfigRef || ctx.environment?.spec.platformConfigRef;
+  const ref = refOf(spec);
+  const modeMoved =
+    identityModeOf(live.management?.identityProvider) !== "oidc";
+  if (mode !== "oidc" || (!modeMoved && refOf(live) === ref)) return [];
   const config = ctx.platformConfigs.find((c) => c.metadata?.name === ref);
   const reason = oidcDisabledReason(
     generated<CamundaPlatformConfig | undefined>(config),
   );
-  return reason === undefined ? [] : [{ path: PROVIDER, message: reason }];
+  if (reason === undefined) return [];
+  return [
+    {
+      path: modeMoved ? PROVIDER : "spec.platformConfigRef",
+      message: reason,
+    },
+  ];
 }
 
 // The CEL rules of ManagementOverrides and IdentityAdminSpec, which the API

@@ -853,9 +853,7 @@ describe("planeRestarts", () => {
       at("spec", "versions", "identity"),
       "8.9.15",
     ]);
-    expect(planeRestarts(input(s))).toEqual([
-      "Management Identity restarts.",
-    ]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
   });
 
   it("restarts Keycloak when its version moves", () => {
@@ -867,7 +865,10 @@ describe("planeRestarts", () => {
   });
 
   it("restarts the plane apps on a move of the platform config, and Keycloak may restart", () => {
-    const s = changed(withWebModeler(), [at("spec", "platformConfigRef"), "sso"]);
+    const s = changed(withWebModeler(), [
+      at("spec", "platformConfigRef"),
+      "sso",
+    ]);
     expect(planeRestarts(input(s))).toEqual([
       "Management Identity, Console, and Web Modeler restart.",
       "Keycloak may restart when the platform config sets another image.",

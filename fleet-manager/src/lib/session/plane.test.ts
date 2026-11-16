@@ -958,7 +958,9 @@ describe("validatePlaneClaim with a null value in the claim", () => {
 
 describe("validatePlaneClaim and the claim that Management Identity recorded", () => {
   const recorded = {
-    metadata: { annotations: { [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "sub=42" } },
+    metadata: {
+      annotations: { [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "sub=42" },
+    },
   } as unknown as PlaneClaimContext["plane"];
 
   it("refuses another claim pair while the mode stays OIDC and the plane records a claim", () => {
@@ -1023,6 +1025,41 @@ describe("validatePlaneClaim and the claim that Management Identity recorded", (
 
   it("gives nothing without the annotation", () => {
     const s = changed(oidcClaim(), [at(...ADMIN, "claimValue"), "43"]);
-    expect(validatePlaneClaim(s, ctx({ plane: { metadata: {} } as never }))).toEqual([]);
+    expect(
+      validatePlaneClaim(s, ctx({ plane: { metadata: {} } as never })),
+    ).toEqual([]);
+  });
+});
+
+describe("validatePlaneClaim and a move of the platform config", () => {
+  it("refuses a platform config with basic authentication while the plane stays in OIDC mode", () => {
+    const s = changed(oidcClaim(), [at("spec", "platformConfigRef"), "basic"]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([
+      {
+        path: "spec.platformConfigRef",
+        message:
+          "OIDC needs a platform config with OIDC authentication. basic uses basic authentication.",
+      },
+    ]);
+  });
+
+  it("lets a Keycloak plane move to a platform config with basic authentication", () => {
+    const s = changed(planeClaim({ platformConfigRef: "sso" }), [
+      at("spec", "platformConfigRef"),
+      "basic",
+    ]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
+  it("lets a plane move to OIDC together with a move to an OIDC platform config", () => {
+    const live = planeClaim();
+    const s = changed(
+      live,
+      [at("spec", "platformConfigRef"), "sso"],
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+      [at(...ADMIN, "claimName"), "sub"],
+      [at(...ADMIN, "claimValue"), "42"],
+    );
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
   });
 });

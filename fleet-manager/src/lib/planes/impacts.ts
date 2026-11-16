@@ -246,6 +246,19 @@ function servedLines(
       );
     return moved ? [PREVIEW_NEEDS_ISSUER] : [];
   }
+  return servedChangeLines(changes, live, spec);
+}
+
+/**
+ * servedChangeLines returns one line for each cluster of changes that
+ * attaches, then one for each that detaches, as planeImpacts lists them.
+ * live and spec are the claim specs before and after the change.
+ */
+export function servedChangeLines(
+  changes: { attach: PreviewRow[]; detach: PreviewRow[] },
+  live: Partial<PlaneClaim["spec"]>,
+  spec: Partial<PlaneClaim["spec"]>,
+): string[] {
   // The plane writes the Console settings only while it runs Console.
   return [
     ...changes.attach.map((r) =>
@@ -410,13 +423,15 @@ function adminLines(
   return before && after && before !== after ? [SECOND_USER] : [];
 }
 
-function accessLines(input: PlaneChangeInput, live: Spec, spec: Spec): string[] {
+function accessLines(
+  input: PlaneChangeInput,
+  live: Spec,
+  spec: Spec,
+): string[] {
   const keycloak = (s: Spec) =>
     identityModeOf(s.management?.identityProvider) === "keycloak";
   if (!keycloak(live) || !keycloak(spec)) return [];
-  const changed = changedSelections(live, spec).some((p) =>
-    isAccess(p, input),
-  );
+  const changed = changedSelections(live, spec).some((p) => isAccess(p, input));
   return changed ? [ACCESS_ISSUER_MOVES] : [];
 }
 
@@ -463,12 +478,7 @@ export function planeRestarts(input: PlaneChangeInput): string[] {
 }
 
 type App =
-  | "keycloak"
-  | "identity"
-  | "console"
-  | "webModeler"
-  | "database"
-  | "optimize";
+  "keycloak" | "identity" | "console" | "webModeler" | "database" | "optimize";
 
 const APPS: readonly App[] = [
   "keycloak",
@@ -486,7 +496,8 @@ const APP_LABEL: Record<App, string> = {
 };
 
 const IMAGE_REASON = "when the platform config sets another image";
-const DATABASE_REASON = "when the database settings change, as the option decides";
+const DATABASE_REASON =
+  "when the database settings change, as the option decides";
 const ACCESS_REASON = "when the access host changes";
 const PATH_REASON = "when the path of the URL changes";
 const SECTION_REASON = "as the option of the changed section decides";
@@ -663,7 +674,10 @@ function selectionsOf(spec: Spec): PluginSelection[] {
     : [];
 }
 
-function isAccess(selection: PluginSelection, input: PlaneChangeInput): boolean {
+function isAccess(
+  selection: PluginSelection,
+  input: PlaneChangeInput,
+): boolean {
   const section = input.sections?.find(
     (s) => s.metadata?.name === selection.section,
   );
