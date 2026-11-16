@@ -531,6 +531,29 @@ describe("PlaneClaimEditor sections, deletion, and the platform config", () => {
     ).toBeTruthy();
   });
 
+  it("a plane without access from outside edits the URL of each app", () => {
+    editor();
+    open("Access");
+    fireEvent.change(screen.getByLabelText("Console URL"), {
+      target: { value: "https://other.example.com/console" },
+    });
+    expect(
+      within(region("Unsaved changes")).getByText("1 unsaved change"),
+    ).toBeTruthy();
+  });
+
+  it("a move to the keycloak mode asks for the Keycloak URL of a plane without access", () => {
+    editor();
+    open("Identity");
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Keycloak, run by this plane/ }),
+    );
+    expect(
+      (screen.getByLabelText("Keycloak URL") as HTMLInputElement).required,
+    ).toBe(true);
+    expect(screen.getByText("Enter the Keycloak URL.")).toBeTruthy();
+  });
+
   it("the deletion panel offers the deletion policy of a management plane", () => {
     editor();
     open("When the plane is deleted");

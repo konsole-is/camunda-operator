@@ -9,6 +9,8 @@ import { type ClusterField, lockLabel, type PlaneField } from "@/lib/fields";
 import { child } from "@/lib/merge";
 import type { OpenAPISchema } from "@/lib/schema";
 import { claimAfter } from "@/lib/session";
+import { errorsAt } from "@/components/cluster/settings-editor";
+import { ClaimTextField } from "./fields";
 import { planeFieldsOf, usePlaneClaimEdit } from "./plane-claim-edit";
 
 type Choice = { name: string; value: unknown };
@@ -33,14 +35,17 @@ export function PlaneSectionPanel({
   const after = claimAfter(session);
   const fields = planeFieldsOf(after, plane).filter((f) => f.group === group);
   const options = fields.filter((f) => f.label === "Option" && f.lock);
-  if (options.length === 0)
+  if (options.length === 0 && group === "access")
     return (
-      <p className="text-sm text-muted">
-        {group === "access"
-          ? "No access from outside. Set the URLs in the claim YAML."
-          : "No database option."}
-      </p>
+      <div className="flex min-w-0 flex-col gap-4">
+        <p className="text-sm text-muted">
+          No access from outside. The claim sets the URL of each app.
+        </p>
+        <UrlFields fields={fields} />
+      </div>
     );
+  if (options.length === 0)
+    return <p className="text-sm text-muted">No database option.</p>;
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {options.map((option) => {
@@ -101,6 +106,36 @@ export function PlaneSectionPanel({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * UrlFields edits the URL of each app among fields that the claim may set:
+ * the url fields of planeFields without a lock. It renders nothing without
+ * a session.
+ */
+export function UrlFields({ fields }: { fields: readonly PlaneField[] }) {
+  const { edit } = usePlaneClaimEdit();
+  if (!edit) return null;
+  return (
+    <>
+      {fields
+        .filter((f) => f.key.startsWith("url.") && !f.lock)
+        .map((f) => (
+          <ClaimTextField
+            key={f.key}
+            label={f.label}
+            value={typeof f.value === "string" ? f.value : ""}
+            required
+            errors={errorsAt(edit.errors, f.claimSteps)}
+            onChange={(text) =>
+              text === ""
+                ? edit.reset(f.claimSteps)
+                : edit.set(f.claimSteps, text)
+            }
+          />
+        ))}
+    </>
   );
 }
 

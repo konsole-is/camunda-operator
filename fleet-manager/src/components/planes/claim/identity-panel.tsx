@@ -22,6 +22,7 @@ import { FIRST_ADMIN_STAYS, planeModeMove } from "@/lib/planes/impacts";
 import { claimAfter } from "@/lib/session";
 import { ClaimTextField, FieldErrors } from "./fields";
 import { planeFieldsOf, usePlaneClaimEdit } from "./plane-claim-edit";
+import { UrlFields } from "./plane-section-panel";
 
 const at = (...names: string[]): Step[] => names.map((field) => ({ field }));
 const PROVIDER = at("spec", "management", "identityProvider");
@@ -133,6 +134,9 @@ export function IdentityPanel() {
           />
           <FieldErrors errors={errorsAt(edit.errors, EXTERNAL)} />
         </div>
+      )}
+      {mode === "keycloak" && (
+        <UrlFields fields={fields.filter((f) => f.key === "url.keycloak")} />
       )}
       <section className="flex min-w-0 flex-col gap-4">
         <h3 className="font-heading text-base font-semibold">
