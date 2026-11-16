@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vitest";
-import { requestName } from "./requests";
+import { backupScheduleName, optimizeName, requestName } from "./requests";
 
 const hashOf = (name: string) =>
   bytesToHex(sha256(utf8ToBytes(name))).slice(0, 8);
@@ -45,5 +45,15 @@ describe("requestName", () => {
     expect(requestName(claim, { section, registration: "" }, "One")).toBe(
       `${full.slice(0, 53)}-${hashOf(full)}`,
     );
+  });
+});
+
+describe("attachment names", () => {
+  it("names the Optimize of a claim <claim>-optimize", () => {
+    expect(optimizeName("orders")).toBe("orders-optimize");
+  });
+
+  it("names the backup schedule of a claim <claim>-backups", () => {
+    expect(backupScheduleName("orders")).toBe("orders-backups");
   });
 });

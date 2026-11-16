@@ -33,6 +33,33 @@ describe("PrecheckLine", () => {
     );
   });
 
+  it("links the Claim tab when href is given", () => {
+    render(
+      <PrecheckLine
+        claim={claim(
+          "False",
+          "WiringCycle",
+          "The sections wait for each other.",
+        )}
+        href="/fleet/clusters/team-a/orders?tab=claim"
+      />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Open the Claim tab" })
+        .getAttribute("href"),
+    ).toBe("/fleet/clusters/team-a/orders?tab=claim");
+  });
+
+  it("shows no link without href", () => {
+    render(
+      <PrecheckLine
+        claim={claim("False", "NoEnvironment", "No environment.")}
+      />,
+    );
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("shows nothing for a ready claim", () => {
     const { container } = render(
       <PrecheckLine claim={claim("True", "Ready", "The cluster is ready.")} />,

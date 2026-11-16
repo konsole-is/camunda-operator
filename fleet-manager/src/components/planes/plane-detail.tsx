@@ -12,7 +12,6 @@ import {
   planeCardSelector,
 } from "./plane-cards";
 import { PlaneSettings } from "./plane-settings";
-import { UnreadNote } from "./unread-note";
 
 /**
  * PlaneComponentDetail is the detail of one card of the plane page: the
@@ -56,11 +55,9 @@ export function PlaneComponentDetail({
       eventRefs={[{ kind: "CamundaManagementCluster", name, namespace, uid }]}
       conditions={rows}
       ready={rows[0]}
-      readyUnknown={planeUnread.length > 0}
+      unread={planeUnread[0]}
       settings={<PlaneSettings fields={planeCardFields(id, fields)} />}
       now={now}
-    >
-      <UnreadNote kinds={planeUnread} />
-    </ComponentDetail>
+    />
   );
 }

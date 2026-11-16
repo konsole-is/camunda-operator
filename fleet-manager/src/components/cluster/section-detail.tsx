@@ -3,7 +3,9 @@ import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { SectionComponent } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
 import { labelSelectorString } from "@/lib/labels";
+import { conditionsOf } from "@/lib/policy";
 import { ComponentDetail } from "./component-detail";
+import { NotRead } from "./not-read";
 
 /**
  * SectionComponentDetail is the component detail of a selection of the
@@ -11,17 +13,20 @@ import { ComponentDetail } from "./component-detail";
  * pods of its pod selector, its metrics, the lines of its controller about
  * it, and its events. A selection whose request does not exist yet shows
  * none of them, and says why. requestsError is the error of the read of the
- * PluginRequests: a selection without its request then says that the
- * request could not be read. A request whose pod selector has an operator
- * that is not valid shows no pods, and says so. The Overview ends with
- * children, and the Settings tab holds settings. It needs a
- * QueryClientProvider above it.
+ * PluginRequests, and requestsStale says that their list is out of date:
+ * with either, the detail shows the state and the conditions of the
+ * request as not known, and says why in place of children. A request
+ * whose pod selector has an operator that is not valid shows no pods, and
+ * says so. Conditions of the wrong type show as an error, not as
+ * conditions. The Overview ends with children, and the Settings tab holds
+ * settings. It needs a QueryClientProvider above it.
  */
 export function SectionComponentDetail({
   component,
   registrations,
   namespace,
   requestsError,
+  requestsStale = false,
   settings,
   now,
   children,
@@ -30,6 +35,7 @@ export function SectionComponentDetail({
   registrations: readonly Resource<"PluginRegistration">[];
   namespace: string;
   requestsError?: string;
+  requestsStale?: boolean;
   settings?: ReactNode;
   now: string;
   children?: ReactNode;
@@ -40,6 +46,15 @@ export function SectionComponentDetail({
     registration;
   const request = component.request;
   const ready = component.condition as ConditionRow | undefined;
+  const unread = requestsError !== undefined || requestsStale;
+  const why =
+    requestsError !== undefined ? (
+      <p className="text-sm text-warn">
+        Could not read PluginRequest: {requestsError}
+      </p>
+    ) : (
+      <NotRead kinds={["PluginRequest"]} />
+    );
 
   if (!request) {
     return (
@@ -50,25 +65,27 @@ export function SectionComponentDetail({
         eventRefs={[]}
         conditions={[]}
         ready={ready}
+        {...(unread && { unread: "PluginRequest" })}
         settings={settings}
         now={now}
       >
-        {requestsError === undefined ? (
-          <p className="text-sm text-muted">
-            The claim controller has not made the request of this section yet.
-          </p>
+        {unread ? (
+          why
         ) : (
-          <p className="text-sm text-warn">
-            Could not read PluginRequest: {requestsError}
-          </p>
+          <>
+            <p className="text-sm text-muted">
+              The claim controller has not made the request of this section yet.
+            </p>
+            {children}
+          </>
         )}
-        {children}
       </ComponentDetail>
     );
   }
 
   const name = request.metadata?.name ?? "";
   const pods = podSelectorOf(request);
+  const read = conditionsOf(request.status?.conditions);
   return (
     <ComponentDetail
       title={component.label}
@@ -88,17 +105,19 @@ export function SectionComponentDetail({
           uid: request.metadata?.uid,
         },
       ]}
-      conditions={(request.status?.conditions ?? []) as ConditionRow[]}
+      conditions={"conditions" in read ? read.conditions : []}
       ready={ready}
+      {...(unread && { unread: "PluginRequest" })}
       settings={settings}
       now={now}
     >
+      {"error" in read && <p className="text-sm text-bad">{read.error}</p>}
       {pods.error !== undefined && (
         <p className="text-sm text-warn">
           The pod selector of the request is not valid: {pods.error}.
         </p>
       )}
-      {children}
+      {unread ? why : children}
     </ComponentDetail>
   );
 }

@@ -26,6 +26,10 @@ import {
   previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import {
+  createCluster,
+  previewClusterCreate,
+} from "@/app/fleet/clusters/new/actions";
+import {
   createPlane,
   previewPlaneCreate,
 } from "@/app/fleet/planes/new/actions";
@@ -39,6 +43,7 @@ import {
   previewEnvironmentChange,
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
+import * as pluginLoads from "@/app/setup/plugins/load";
 import {
   applyPlatformConfigChange,
   previewPlatformConfigChange,
@@ -189,6 +194,20 @@ beforeAll(async () => {
     },
     spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
   });
+  // The page of a registration reads the registration, its Grants, and its
+  // events. The test writes no Grant and no event.
+  await api.create({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRegistration",
+    metadata: { name: namespace },
+    spec: {
+      label: "Leak",
+      sections: ["leak"],
+      mode: "Optional",
+      deletionPolicies: ["Delete"],
+      serviceAccount: { name: "leak", namespace },
+    },
+  });
   process.env.FLEET_NAMESPACE = namespace;
   Object.assign(process.env, {
     FLEET_SETTINGS_GIT_REPOSITORY: `${url}/fleet.git`,
@@ -198,6 +217,13 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
+  // A registration is cluster-scoped, so it outlives the namespace of the
+  // test and other suites of the same API server can list it.
+  await api.delete({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRegistration",
+    metadata: { name: namespace },
+  });
   await defaultCache().stop();
   await new Promise((resolve) => echo.close(resolve));
 });
@@ -423,6 +449,14 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
     refused("Stale", async () =>
       applyPlaneClaimDelete(await stalePlaneClaimDelete()),
     ),
+  "app/fleet/clusters/new/actions.ts#previewClusterCreate": previewed(() =>
+    previewClusterCreate(clusterCreate({ presetRef: "leak" })),
+  ),
+  // The claim has no presetRef, which the API server requires, so the
+  // write refuses it with Invalid and leaves nothing behind.
+  "app/fleet/clusters/new/actions.ts#createCluster": refused("Invalid", () =>
+    createCluster(clusterCreate({})),
+  ),
   "app/fleet/planes/new/actions.ts#previewPlaneCreate": previewed(() =>
     previewPlaneCreate(planeCreate(planeSpec())),
   ),
@@ -751,6 +785,14 @@ function planeClaimChange() {
     ],
   };
 }
+function clusterCreate(spec: object) {
+  return createChangeOf("Create the cluster leak", {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: { name: "leak", namespace },
+    spec,
+  });
+}
 function planeCreate(spec: object) {
   return createChangeOf("Create the management plane leak", {
     apiVersion: "fleet.camunda.io/v1alpha1",
@@ -772,6 +814,33 @@ function planeSpec() {
     versions: { identity: "8.9.14" },
   };
 }
+
+// "<file under src>#<export>". An answer that read nothing holds no Secret
+// value, so each call fails on it.
+const LOADER_CALLS: Record<string, () => Promise<unknown>> = {
+  "app/setup/plugins/load.ts#loadRegistrations": async () => {
+    const sources = await pluginLoads.loadRegistrations();
+    expect(sources.registrations.map((r) => r.metadata.name)).toContain(
+      namespace,
+    );
+    expect(sources.namespaces.map((n) => n.metadata?.name)).toContain(
+      namespace,
+    );
+    return sources;
+  },
+  "app/setup/plugins/load.ts#loadCatalog": async () => {
+    const catalog = await pluginLoads.loadCatalog();
+    expect(catalog).toMatchObject({
+      charts: expect.arrayContaining([expect.anything()]),
+    });
+    return catalog;
+  },
+  "app/setup/plugins/load.ts#loadRegistration": async () => {
+    const data = await pluginLoads.loadRegistration(namespace);
+    expect(data?.registration.metadata.name).toBe(namespace);
+    return data;
+  },
+};
 
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
@@ -842,6 +911,21 @@ describe("no response holds a Secret value", () => {
   it("every server action has a call in this test", async () => {
     expect(Object.keys(ACTION_CALLS).sort()).toEqual(await discoverActions());
   });
+
+  it("every loader of the plugins pages has a call in this test", () => {
+    expect(Object.keys(LOADER_CALLS).sort()).toEqual(
+      Object.keys(pluginLoads)
+        .map((name) => `app/setup/plugins/load.ts#${name}`)
+        .sort(),
+    );
+  });
+
+  it.each(Object.keys(LOADER_CALLS))(
+    "%s returns no Secret value",
+    async (call) => {
+      assertNoValue(JSON.stringify(await LOADER_CALLS[call]()));
+    },
+  );
 
   it("every function of settings and secrets has a call in this test", () => {
     expect(Object.keys(LIBRARY_CALLS).sort()).toEqual(libraryFunctions());

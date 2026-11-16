@@ -16,7 +16,7 @@ export type EnvironmentName = { name: string; label: string };
 /**
  * SourceReads says which lists of ReleasesData are not read: errors holds
  * the error of each failed watch, and stale the kind of each list whose
- * watch has no snapshot on its current connection.
+ * watch is not fresh (freshKey).
  */
 export type SourceReads = {
   errors?: readonly ReadError[];

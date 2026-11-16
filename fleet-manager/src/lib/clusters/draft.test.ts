@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
@@ -5,7 +7,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL } from "@/lib/labels";
+import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   NO_MANAGEMENT_AUTH_CONFIG,
   OPTIMIZE_NEEDS_ELASTICSEARCH,
@@ -17,11 +19,16 @@ import {
   attachmentsErrors,
   basicsErrors,
   clusterClaimOf,
+  clusterCreateChange,
   draftCluster,
   draftOptimize,
   draftSelections,
+  holdsWrittenSpec,
+  isWrittenClaim,
   offeredPresets,
   pickerEnvironment,
+  secretErrors,
+  secretReferences,
   settingsErrors,
   syncedNamespace,
   withClaimValue,
@@ -1046,5 +1053,378 @@ describe("draftOptimize", () => {
 
   it("gives nothing while Optimize is off", () => {
     expect(draftOptimize(draftWith({ presetRef: "small" }))).toBeUndefined();
+  });
+});
+
+describe("clusterCreateChange", () => {
+  const deletion: DeletionChoice = {
+    defaultPolicy: "Delete",
+    keepAllowed: true,
+    alwaysDeleted: [],
+    policy: "Delete",
+  };
+  const creating = environment("prod", {
+    namespaceCreation: {
+      allowed: true,
+      requiredLabelKeys: ["team"],
+      labels: { tier: "prod" },
+    },
+  });
+  const draft: ClusterDraft = {
+    environment: "prod",
+    namespace: { kind: "new", name: "team-new", labels: { team: "orders" } },
+    claim: { metadata: { name: "orders" }, spec: { presetRef: "small" } },
+    storage: { access: [{ section: "access", registration: "gateway" }] },
+  };
+
+  it("creates the new namespace with the environment labels, then the claim", () => {
+    expect(clusterCreateChange(draft, creating, deletion)).toEqual({
+      intent: "Create the cluster orders in team-new",
+      apply: [
+        {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: {
+            name: "team-new",
+            labels: {
+              tier: "prod",
+              team: "orders",
+              [ENVIRONMENT_LABEL]: "prod",
+            },
+          },
+        },
+        clusterClaimOf(draft, creating, deletion),
+      ],
+      create: ["Namespace//team-new", "CamundaClusterClaim/team-new/orders"],
+    });
+  });
+
+  it("creates only the claim in an existing namespace", () => {
+    const existing: ClusterDraft = {
+      ...draft,
+      namespace: { kind: "existing", name: "team-a" },
+    };
+    expect(clusterCreateChange(existing, creating, deletion)).toEqual({
+      intent: "Create the cluster orders in team-a",
+      apply: [clusterClaimOf(existing, creating, deletion)],
+      create: ["CamundaClusterClaim/team-a/orders"],
+    });
+  });
+
+  it("writes no environment label without an Environment", () => {
+    const change = clusterCreateChange(
+      { ...draft, environment: undefined },
+      undefined,
+      deletion,
+    );
+    expect(change.apply[0]).toEqual({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "team-new", labels: { team: "orders" } },
+    });
+  });
+});
+
+describe("Secret references", () => {
+  const ref = { name: "orders-oidc", key: "secret" };
+  const withSecrets = (namespace: string): ClusterDraft => ({
+    ...draftWith({
+      presetRef: "small",
+      cluster: {
+        auth: { clientId: "orders", clientSecretRef: ref },
+        zeebe: {
+          extraEnv: [
+            { name: "A", value: "a" },
+            { name: "B", valueFrom: { secretKeyRef: ref } },
+            {
+              name: "C",
+              valueFrom: { configMapKeyRef: { name: "settings", key: "mode" } },
+            },
+          ],
+          extraEnvFrom: [{ secretRef: { name: "orders-env" } }],
+        },
+      } as unknown as CamundaClusterSpec,
+    }),
+    namespace: { kind: "existing", name: namespace },
+  });
+
+  it("finds each Secret reference of the claim, and nothing else", () => {
+    expect(secretReferences(withSecrets("team-a")).map((r) => r.path)).toEqual([
+      "auth.clientSecretRef",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+      "zeebe.extraEnvFrom[0].secretRef",
+    ]);
+    expect(secretReferences(draftWith({ presetRef: "small" }))).toEqual([]);
+  });
+
+  const read = (namespace: string, error?: string) => ({
+    namespace,
+    secrets: [
+      { name: "orders-oidc", keys: ["secret"] },
+      { name: "orders-env", keys: ["A"] },
+    ],
+    ...(error !== undefined && { error }),
+  });
+  const pathsOf = (errors: string[]) => errors.map((e) => e.split(": ")[0]);
+
+  it("refuses nothing while each Secret and key exists in the namespace of the draft", () => {
+    expect(secretErrors(withSecrets("team-a"), read("team-a"))).toEqual([]);
+  });
+
+  it("names a Secret that the namespace does not hold, however the reference got there", () => {
+    const errors = secretErrors(withSecrets("team-b"), {
+      namespace: "team-b",
+      secrets: [{ name: "orders-env", keys: [] }],
+    });
+    expect(pathsOf(errors)).toEqual([
+      "auth.clientSecretRef",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+    ]);
+    expect(errors[0]).toBe(
+      "auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+    );
+  });
+
+  it("names a key that the Secret does not hold", () => {
+    const errors = secretErrors(withSecrets("team-b"), {
+      namespace: "team-b",
+      secrets: [
+        { name: "orders-oidc", keys: ["other"] },
+        { name: "orders-env", keys: [] },
+      ],
+    });
+    expect(errors).toEqual([
+      "auth.clientSecretRef: The Secret orders-oidc of team-b holds no key secret. Pick a key of it, or reset the field.",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef: The Secret orders-oidc of team-b holds no key secret. Pick a key of it, or reset the field.",
+    ]);
+  });
+
+  it("accepts a reference that the new namespace holds, also when it did not change", () => {
+    expect(secretErrors(withSecrets("team-b"), read("team-b"))).toEqual([]);
+  });
+
+  it("says that a reference cannot be checked while the Secrets of the namespace are not read", () => {
+    expect(secretErrors(withSecrets("team-b"), read("team-a"))).toContain(
+      "auth.clientSecretRef: The Secrets of team-b are not read yet, so the fleet manager cannot check this reference.",
+    );
+    expect(secretErrors(withSecrets("team-b"), undefined)).toHaveLength(3);
+    expect(
+      secretErrors(withSecrets("team-b"), read("team-b", "forbidden")),
+    ).toContain(
+      "auth.clientSecretRef: The fleet manager could not read the Secrets of team-b, so it cannot check this reference: forbidden",
+    );
+  });
+
+  it("checks a reference of an attachment under its attachments path", () => {
+    const attached: ClusterDraft = {
+      ...draftWith({
+        presetRef: "small",
+        attachments: {
+          optimize: {
+            webapp: {
+              extraEnv: [{ name: "A", valueFrom: { secretKeyRef: ref } }],
+            },
+          },
+        },
+      } as unknown as ClusterDraft["claim"]["spec"]),
+      namespace: { kind: "existing", name: "team-b" },
+    };
+    expect(
+      secretErrors(attached, { namespace: "team-b", secrets: [] }),
+    ).toEqual([
+      "attachments.optimize.webapp.extraEnv[0].valueFrom.secretKeyRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+    ]);
+  });
+
+  it("checks no reference that is optional", () => {
+    const optional = withClaimValue(
+      {
+        ...withSecrets("team-b"),
+        namespace: { kind: "new", name: "team-new", labels: {} },
+      },
+      [
+        { field: "spec" },
+        { field: "cluster" },
+        { field: "zeebe" },
+        { field: "extraEnvFrom" },
+        { index: 0 },
+        { field: "secretRef" },
+      ],
+      { name: "orders-env", optional: true },
+    );
+    expect(pathsOf(secretErrors(optional, undefined))).toEqual([
+      "auth.clientSecretRef",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+    ]);
+  });
+
+  it("refuses each reference in a new namespace, which holds no Secret", () => {
+    const fresh: ClusterDraft = {
+      ...withSecrets("team-a"),
+      namespace: { kind: "new", name: "team-new", labels: {} },
+    };
+    const errors = secretErrors(fresh, read("team-a"));
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toBe(
+      "auth.clientSecretRef: The new namespace team-new holds no Secret yet. Reset the field.",
+    );
+  });
+
+  it("refuses nothing without a reference or a namespace", () => {
+    expect(secretErrors(draftWith({ presetRef: "small" }), undefined)).toEqual(
+      [],
+    );
+    expect(
+      secretErrors(
+        { ...withSecrets("team-a"), namespace: undefined },
+        undefined,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("holdsWrittenSpec", () => {
+  const sent = {
+    presetRef: "small",
+    plugins: [{ section: "access", registration: "gateway" }],
+    cluster: {
+      zeebe: {
+        extraEnv: [{ name: "A", valueFrom: { secretKeyRef: { key: "k" } } }],
+      },
+    },
+    attachments: { backupSchedule: { schedule: "@daily", retained: {} } },
+  };
+
+  const retained = (value: object) => ({
+    ...sent,
+    attachments: { backupSchedule: { schedule: "@daily", retained: value } },
+  });
+
+  it("accepts the sent spec with the defaults of the API server", () => {
+    const live = {
+      ...retained({ completed: 7, failed: 3 }),
+      cluster: {
+        zeebe: {
+          extraEnv: [
+            { name: "A", valueFrom: { secretKeyRef: { key: "k", name: "" } } },
+          ],
+        },
+      },
+    };
+    expect(holdsWrittenSpec(live, sent)).toBe(true);
+  });
+
+  it("refuses a spec with a field that the write did not send", () => {
+    expect(holdsWrittenSpec({ ...sent, suspend: true }, sent)).toBe(false);
+    expect(holdsWrittenSpec(retained({ completed: 30, failed: 3 }), sent)).toBe(
+      false,
+    );
+  });
+
+  it("allows no default inside the parameters of a selection, or at another place", () => {
+    const withParameters = {
+      ...sent,
+      plugins: [{ section: "access", registration: "gateway", parameters: {} }],
+    };
+    expect(
+      holdsWrittenSpec(
+        {
+          ...withParameters,
+          plugins: [
+            {
+              section: "access",
+              registration: "gateway",
+              parameters: { whenDeleted: "Delete" },
+            },
+          ],
+        },
+        withParameters,
+      ),
+    ).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, failed: 3 }, sent)).toBe(false);
+  });
+
+  it("refuses a spec with another value or a missing field", () => {
+    expect(holdsWrittenSpec({ ...sent, presetRef: "large" }, sent)).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, cluster: undefined }, sent)).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, plugins: [] }, sent)).toBe(false);
+  });
+
+  // The CRD is the source of the defaults. A new default fails here.
+  it("knows each default of the claim CRD", () => {
+    const crd = parse(
+      readFileSync(
+        new URL(
+          "../../../../config/crd/bases/fleet.camunda.io_camundaclusterclaims.yaml",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    // A step is a field name, or "[]" for a list item or a map value.
+    const defaults: { path: string[]; value: unknown }[] = [];
+    const walk = (node: unknown, path: string[]) => {
+      if (typeof node !== "object" || node === null) return;
+      const schema = node as {
+        default?: unknown;
+        properties?: Record<string, unknown>;
+        items?: unknown;
+        additionalProperties?: unknown;
+      };
+      if ("default" in schema) defaults.push({ path, value: schema.default });
+      for (const [name, child] of Object.entries(schema.properties ?? {}))
+        walk(child, [...path, name]);
+      walk(schema.items, [...path, "[]"]);
+      walk(schema.additionalProperties, [...path, "{}"]);
+    };
+    walk(crd.spec.versions[0].schema.openAPIV3Schema.properties.spec, []);
+    // at builds the object that holds leaf at the end of path.
+    const at = (path: string[], leaf: unknown): unknown => {
+      if (path.length === 0) return leaf;
+      const [step, ...rest] = path;
+      if (step === "[]") return [at(rest, leaf)];
+      return { [step === "{}" ? "key" : step]: at(rest, leaf) };
+    };
+    for (const { path, value } of defaults) {
+      const live = at(path, value);
+      const sent = at(path.slice(0, -1), {});
+      expect(holdsWrittenSpec(live, sent), path.join(".")).toBe(true);
+    }
+    expect(defaults.length).toBeGreaterThan(0);
+  });
+});
+
+describe("isWrittenClaim", () => {
+  const spec = { presetRef: "small" };
+  const started = Date.parse("2026-11-16T12:00:00Z");
+  const made = (creationTimestamp?: string) => ({
+    metadata: creationTimestamp === undefined ? {} : { creationTimestamp },
+    spec,
+  });
+
+  it("accepts a claim made after the write started, or a minute before it", () => {
+    expect(isWrittenClaim(made("2026-11-16T12:00:05Z"), spec, started)).toBe(
+      true,
+    );
+    expect(isWrittenClaim(made("2026-11-16T11:59:30Z"), spec, started)).toBe(
+      true,
+    );
+  });
+
+  it("refuses a claim made earlier, or with no creation time", () => {
+    expect(isWrittenClaim(made("2026-11-16T11:58:00Z"), spec, started)).toBe(
+      false,
+    );
+    expect(isWrittenClaim(made(), spec, started)).toBe(false);
+  });
+
+  it("refuses a claim with another spec", () => {
+    expect(
+      isWrittenClaim(
+        { ...made("2026-11-16T12:00:05Z"), spec: { presetRef: "large" } },
+        spec,
+        started,
+      ),
+    ).toBe(false);
   });
 });

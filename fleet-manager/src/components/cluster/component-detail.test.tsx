@@ -390,19 +390,6 @@ describe("ComponentDetailView", () => {
     ).toBeTruthy();
   });
 
-  it("shows the state as Not known, not as the old condition, with readyUnknown", () => {
-    render(
-      view({
-        ready: { type: "OperateReady", status: "True", reason: "Healthy" },
-        readyUnknown: true,
-      }),
-    );
-    const header = screen.getByRole("heading", { name: "Operate" })
-      .parentElement as HTMLElement;
-    expect(within(header).getByText("Not known")).toBeTruthy();
-    expect(within(header).queryByText("Ready")).toBeNull();
-  });
-
   it("shows the state of the component beside the title on every tab", async () => {
     render(
       view({
@@ -421,6 +408,34 @@ describe("ComponentDetailView", () => {
     expect(within(header).getByText("Not ready · Degraded")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
     expect(within(header).getByText("Not ready · Degraded")).toBeTruthy();
+  });
+
+  it("shows the state as Not known and names the kind in place of the conditions while the object is not read", () => {
+    render(
+      view({
+        unread: "PluginRequest",
+        ready: {
+          type: "Ready",
+          status: "True",
+          reason: "Healthy",
+          lastTransitionTime: "2026-10-30T11:52:00Z",
+        },
+        conditions: [{ type: "Ready", status: "True", reason: "Healthy" }],
+      }),
+    );
+    const header = screen.getByRole("heading", {
+      name: "Operate",
+    }).parentElement!;
+    expect(within(header).getByText("Ready: Not known")).toBeTruthy();
+    expect(within(header).queryByText("Ready")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("list", { name: "Operate conditions" }),
+    ).toBeNull();
   });
 
   it("says No status beside the title when no condition decides the state", () => {

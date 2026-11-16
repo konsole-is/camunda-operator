@@ -1,12 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { Panel } from "@/components/cluster/claim-tab";
 import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
+import { useClock } from "@/components/fleet/use-clock";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import type { SlotField } from "@/lib/fields/slots";
 import type { CatalogChart } from "@/startup/bundled-data";
 import { type CatalogRead, missingCharts } from "./catalog";
 import { CatalogPanel } from "./catalog-panel";
@@ -15,6 +15,7 @@ import {
   type RegistrationGroup,
   type RegistrationRow,
   type SectionHeader,
+  fillsText,
   registrationGroups,
   registrationSummary,
   unreadKinds,
@@ -31,7 +32,7 @@ const NOW_INTERVAL_MS = 30_000;
  * While it is not read, charts must not be empty when the catalog has a
  * chart. catalogError is the error of the read of the catalog. Each of
  * errors shows above the groups, and the groups stay. stale holds the kinds
- * whose watch has no snapshot on its current connection, as
+ * whose watch is not fresh (freshKey), as
  * useRegistrationSources gives them. While PluginRegistration is not read,
  * the page shows no health count and no chart as not installed. now is the
  * time that "Healthy since" counts to.
@@ -108,7 +109,7 @@ export function RegistrationListLive({
   now: string;
 }): ReactNode {
   const sources = useRegistrationSources(initial);
-  const clock = useClock(now);
+  const clock = useClock(now, true, NOW_INTERVAL_MS);
   const registrationsUnread =
     unreadKinds(sources).includes("PluginRegistration");
   return (
@@ -129,20 +130,6 @@ export function RegistrationListLive({
       now={clock}
     />
   );
-}
-
-// useClock starts at the time of the server, so that the first render in
-// the browser matches the render of the server.
-function useClock(initial: string): string {
-  const [clock, setClock] = useState(initial);
-  useEffect(() => {
-    const timer = setInterval(
-      () => setClock(new Date().toISOString()),
-      NOW_INTERVAL_MS,
-    );
-    return () => clearInterval(timer);
-  }, []);
-  return clock;
 }
 
 function Group({ group, now }: { group: RegistrationGroup; now: string }) {
@@ -166,6 +153,7 @@ function Group({ group, now }: { group: RegistrationGroup; now: string }) {
           rows={group.rows.map((row) => ({
             id: row.name,
             label: row.label,
+            href: `/setup/plugins/${encodeURIComponent(row.name)}`,
             cells: cellsOf(row, now),
           }))}
         />
@@ -211,21 +199,13 @@ function SectionFacts({ section }: { section: SectionHeader }) {
   );
 }
 
-function fillsText(field: SlotField): string {
-  const plane =
-    field.claimKind === "CamundaManagementClusterClaim"
-      ? " for a management plane"
-      : "";
-  return `Fills ${field.kind} ${field.path}${plane}`;
-}
-
 function cellsOf(row: RegistrationRow, now: string): Record<string, ReactNode> {
   return {
     option: (
-      <>
+      <span className="flex min-w-0 flex-col">
         <span className="font-medium">{row.label}</span>
-        <span className={`${MUTED} font-mono`}>{row.name}</span>
-      </>
+        <span className="font-mono text-xs text-muted">{row.name}</span>
+      </span>
     ),
     controller: row.controller
       ? [row.controller.name, row.controller.version].filter(Boolean).join(" ")

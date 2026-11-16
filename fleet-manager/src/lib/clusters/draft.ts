@@ -9,7 +9,12 @@ import type {
 } from "@/components/fleet/namespace-picker";
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
-import { type ClusterField, lockLabel, type Step } from "@/lib/fields";
+import {
+  type ClusterField,
+  lockLabel,
+  pathFrom,
+  type Step,
+} from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster, type Merged } from "@/lib/merge";
@@ -21,6 +26,8 @@ import {
 } from "@/lib/policy";
 import { filledClaimSteps } from "@/lib/session/locks";
 import { valueAt, without, withValue } from "@/lib/session/steps";
+import { createChangeOf } from "@/lib/write/create";
+import type { Change } from "@/lib/write/types";
 import {
   MANAGEMENT_AUTH_CONFIGS_UNREAD,
   optimizeBlocked,
@@ -223,6 +230,29 @@ export function clusterClaimOf(
       ...(plugins.length > 0 && { plugins }),
     },
   };
+}
+
+/**
+ * clusterCreateChange returns the change that creates the cluster of
+ * draft: the new namespace first, with the labels of syncedNamespace, then
+ * the claim of clusterClaimOf. Without an Environment the new namespace
+ * keeps the labels of the draft.
+ */
+export function clusterCreateChange(
+  draft: ClusterDraft,
+  environment: Environment | undefined,
+  deletion: DeletionChoice,
+): Change {
+  const claim = clusterClaimOf(draft, environment, deletion);
+  const { name, namespace } = claim.metadata;
+  const choice = syncedNamespace(draft.namespace, environment);
+  return createChangeOf(
+    `Create the cluster ${name} in ${namespace}`,
+    claim,
+    choice?.kind === "new"
+      ? { name: choice.name, labels: choice.labels }
+      : undefined,
+  );
 }
 
 /**
@@ -500,4 +530,170 @@ export function withoutClaimValue(
 ): ClusterDraft {
   const claim = without(draft.claim, steps);
   return { ...draft, claim: { ...claim, spec: claim.spec ?? {} } };
+}
+
+// CLAIM_DEFAULTS holds each default of the CRD of the claim. The API server
+// adds one to an object that a write sent without it.
+const CLAIM_DEFAULTS: Record<string, unknown> = {
+  "secretKeyRef.name": "",
+  "configMapKeyRef.name": "",
+  "secretRef.name": "",
+  "configMapRef.name": "",
+  "fileKeyRef.optional": false,
+  "retained.completed": 7,
+  "retained.failed": 3,
+  "persistentVolumeClaimRetentionPolicy.whenDeleted": "Delete",
+};
+
+// The clocks of the browser and of the API server can differ by this much.
+const CLOCK_ALLOWANCE_MS = 60_000;
+
+/**
+ * isWrittenClaim says whether live is the claim that a write sent at
+ * startedAt, a time in milliseconds of the browser: it was made after the
+ * write started, and holdsWrittenSpec holds for its spec.
+ */
+export function isWrittenClaim(
+  live: { metadata?: { creationTimestamp?: string }; spec?: unknown },
+  sent: unknown,
+  startedAt: number,
+): boolean {
+  const created = Date.parse(live.metadata?.creationTimestamp ?? "");
+  return (
+    created >= startedAt - CLOCK_ALLOWANCE_MS &&
+    holdsWrittenSpec(live.spec, sent)
+  );
+}
+
+/**
+ * holdsWrittenSpec says whether live, the spec of a live claim, is the spec
+ * sent with the defaults that the API server adds, and nothing else.
+ */
+export function holdsWrittenSpec(live: unknown, sent: unknown): boolean {
+  return holdsSent(live, sent, "spec");
+}
+
+function holdsSent(live: unknown, sent: unknown, parent: string): boolean {
+  if (Array.isArray(sent))
+    return (
+      Array.isArray(live) &&
+      live.length === sent.length &&
+      sent.every((item, i) => holdsSent(live[i], item, parent))
+    );
+  if (typeof sent !== "object" || sent === null) return live === sent;
+  if (typeof live !== "object" || live === null || Array.isArray(live))
+    return false;
+  const fields = sent as Record<string, unknown>;
+  // The parameters of a selection are free JSON and get no default.
+  const defaults = parent === "plugins" ? {} : CLAIM_DEFAULTS;
+  return (
+    Object.entries(live).every(([key, value]) =>
+      Object.hasOwn(fields, key)
+        ? holdsSent(value, fields[key], parent === "plugins" ? parent : key)
+        : Object.hasOwn(defaults, `${parent}.${key}`) &&
+          value === defaults[`${parent}.${key}`],
+    ) && Object.keys(fields).every((key) => Object.hasOwn(live, key))
+  );
+}
+
+/**
+ * SecretReference is one Secret reference of a draft claim. path is the
+ * path under spec.cluster, or under spec and starting with "attachments."
+ * for an attachment. steps lead from the root of the claim to it.
+ */
+export type SecretReference = { path: string; steps: Step[] };
+
+/**
+ * secretReferences returns each Secret reference in spec.cluster and
+ * spec.attachments of the draft claim, in document order: a secretKeyRef or
+ * a secretRef, and an object whose name ends in Ref with exactly the
+ * fields name and key, other than a configMapKeyRef.
+ */
+export function secretReferences(draft: ClusterDraft): SecretReference[] {
+  const found: SecretReference[] = [];
+  const walk = (value: unknown, steps: Step[], root: string, from: number) => {
+    const entries: [Step, unknown][] = Array.isArray(value)
+      ? value.map((item, index) => [{ index }, item])
+      : typeof value === "object" && value !== null
+        ? Object.entries(value).map(([field, item]) => [{ field }, item])
+        : [];
+    for (const [step, item] of entries) {
+      const at = [...steps, step];
+      if ("field" in step && isSecretReference(step.field, item))
+        found.push({ path: pathFrom(root, at.slice(from)), steps: at });
+      else walk(item, at, root, from);
+    }
+  };
+  const spec = draft.claim.spec;
+  walk(spec.cluster, [{ field: "spec" }, { field: "cluster" }], "", 2);
+  walk(
+    spec.attachments,
+    [{ field: "spec" }, { field: "attachments" }],
+    "attachments",
+    2,
+  );
+  return found;
+}
+
+function isSecretReference(field: string, value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  if (field === "secretKeyRef" || field === "secretRef") return true;
+  const keys = Object.keys(value).sort();
+  return (
+    field.endsWith("Ref") &&
+    field !== "configMapKeyRef" &&
+    keys.join() === "key,name"
+  );
+}
+
+/**
+ * SecretsRead is the last answer of the read of the Secrets of namespace:
+ * the name and the keys of each Secret, or the error of the read.
+ */
+export type SecretsRead = {
+  namespace: string;
+  secrets: { name: string; keys: string[] }[];
+  error?: string;
+};
+
+/**
+ * secretErrors returns one error for each Secret reference of draft whose
+ * Secret, or key, the namespace of draft does not hold. A new namespace
+ * holds no Secret. read must be the answer for the namespace of draft: for
+ * an existing namespace, without it or with its error, each reference is
+ * an error that says it cannot be checked. An optional reference is never
+ * an error.
+ */
+export function secretErrors(
+  draft: ClusterDraft,
+  read: SecretsRead | undefined,
+): string[] {
+  const namespace = draft.namespace;
+  if (namespace === undefined) return [];
+  return secretReferences(draft).flatMap(({ path, steps }) => {
+    const { name, key, optional } = valueAt(draft.claim, steps) as {
+      name?: string;
+      key?: string;
+      optional?: boolean;
+    };
+    // The pod starts without a Secret or a key that is optional.
+    if (optional === true) return [];
+    const ns = namespace.name;
+    let error: string | undefined;
+    if (namespace.kind === "new")
+      error = `The new namespace ${ns} holds no Secret yet. Reset the field.`;
+    else if (read?.namespace !== ns)
+      error = `The Secrets of ${ns} are not read yet, so the fleet manager cannot check this reference.`;
+    else if (read.error !== undefined)
+      error = `The fleet manager could not read the Secrets of ${ns}, so it cannot check this reference: ${read.error}`;
+    else {
+      const secret = read.secrets.find((s) => s.name === name);
+      if (secret === undefined)
+        error = `The namespace ${ns} holds no Secret ${name}. Pick a Secret of ${ns}, or reset the field.`;
+      else if (key !== undefined && !secret.keys.includes(key))
+        error = `The Secret ${name} of ${ns} holds no key ${key}. Pick a key of it, or reset the field.`;
+    }
+    return error === undefined ? [] : [`${path}: ${error}`];
+  });
 }

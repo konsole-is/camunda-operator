@@ -494,6 +494,21 @@ describe("sectionCards", () => {
     ]);
   });
 
+  it("says that a summary or resources of the wrong type are not valid", () => {
+    const [card] = sectionCards([
+      section({
+        request: request({
+          summary: "orders-backups",
+          resources: { kind: "Bucket" },
+        } as never),
+      }),
+    ]);
+    expect(card.numbers).toEqual([
+      { label: "Summary", value: "Not valid", severity: "Warning" },
+      { label: "Resources", value: "Not valid", severity: "Warning" },
+    ]);
+  });
+
   it("says that the request is not made yet when the section has none", () => {
     const [card] = sectionCards([section()]);
     expect(card.numbers).toEqual([{ label: "Request", value: "Not made yet" }]);
@@ -507,15 +522,41 @@ describe("sectionCards", () => {
     ]);
   });
 
-  it("shows a request that the page holds although the read of the requests failed", () => {
+  it("shows no headline and no state of a request that the page holds when the read of the requests failed", () => {
+    const rejected = { status: "False" as const, reason: "GrantRejected" };
     const [card] = sectionCards(
-      [section({ request: request({ resources: [row("Bucket")] }) })],
+      [
+        section({
+          request: request({ resources: [row("Bucket")] }),
+          condition: rejected,
+        }),
+      ],
       "watch broke",
     );
     expect(card.numbers).toEqual([
-      { label: "Summary", value: "Not written yet" },
-      { label: "Resources", value: "1" },
+      { label: "Request", value: "Could not read", severity: "Warning" },
     ]);
+    expect(card.condition).toBeUndefined();
+  });
+
+  it("says that the request is not known, with no state, while the requests are out of date", () => {
+    const [made, missing] = sectionCards(
+      [
+        section({
+          request: request({ resources: [row("Bucket")] }),
+          condition: { status: "True", reason: "Healthy" },
+        }),
+        section({ id: "section:access", section: "access", label: "Access" }),
+      ],
+      undefined,
+      true,
+    );
+    for (const card of [made, missing]) {
+      expect(card.numbers).toEqual([
+        { label: "Request", value: "Not known", severity: "Warning" },
+      ]);
+      expect(card.condition).toBeUndefined();
+    }
   });
 
   it("takes the Ready condition of the request as the state of the card", () => {

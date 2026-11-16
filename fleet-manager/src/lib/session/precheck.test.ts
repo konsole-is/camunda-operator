@@ -70,12 +70,15 @@ describe("precheckOf", () => {
     ).toBeUndefined();
   });
 
-  it("lists the four precheck reasons", () => {
+  it("lists the seven precheck reasons of the claim controllers", () => {
     expect(PRECHECK_REASONS).toEqual([
+      "NoEnvironment",
+      "UnknownEnvironment",
       "NotAllowed",
-      "SlotConflict",
       "MissingInput",
       "InvalidReference",
+      "SlotConflict",
+      "WiringCycle",
     ]);
   });
 });

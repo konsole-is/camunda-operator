@@ -3,21 +3,26 @@ import { cn } from "@/lib/utils";
 
 /**
  * DetailSection is one titled box of a component detail. note is a short
- * fact after the title, such as a count.
+ * fact after the title, such as a count. With region, the box is a region
+ * named by its title.
  */
 export function DetailSection({
   title,
   note,
+  region = false,
   className,
   children,
 }: {
   title: string;
   note?: string;
+  region?: boolean;
   className?: string;
   children: ReactNode;
 }) {
+  const Box = region ? "section" : "div";
   return (
-    <div
+    <Box
+      aria-label={region ? title : undefined}
       className={cn(
         "flex min-w-0 flex-col gap-2 rounded-md border border-border p-3",
         className,
@@ -30,6 +35,6 @@ export function DetailSection({
         {note && <span className="text-xs text-muted">{note}</span>}
       </div>
       {children}
-    </div>
+    </Box>
   );
 }

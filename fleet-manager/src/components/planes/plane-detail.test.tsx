@@ -125,11 +125,7 @@ describe("PlaneComponentDetail", () => {
 
   it("states no condition while the page cannot read the plane, and names the kind", () => {
     const props = detailOf(planeOf(), "identity", ["CamundaManagementCluster"]);
-    expect(props.readyUnknown).toBe(true);
+    expect(props.unread).toBe("CamundaManagementCluster");
     expect(props.conditions).toEqual([]);
-    render(props.children as ReactElement);
-    expect(
-      screen.getByText(/could not read CamundaManagementCluster/),
-    ).toBeTruthy();
   });
 });

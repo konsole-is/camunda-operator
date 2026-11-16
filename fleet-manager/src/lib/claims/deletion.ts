@@ -105,13 +105,7 @@ export function deletionGroups(input: {
 }): DeletionGroup[] {
   const { claim, sections, registrations, policy } = input;
   const uid = claim.metadata?.uid;
-  const requests = input.requests.filter(
-    (r) =>
-      uid !== undefined &&
-      (r.metadata?.ownerReferences ?? []).some(
-        (o) => o.controller === true && o.uid === uid,
-      ),
-  );
+  const requests = input.requests.filter((r) => controlledBy(r, uid));
   return sectionComponents({ claim, sections, requests }).map((component) => {
     const { registration } = component.selection;
     const request =
@@ -138,18 +132,45 @@ export function deletionGroups(input: {
         deletionPolicies !== undefined && !deletionPolicies.includes("Orphan"),
       rows: (request?.status?.resources ?? []).map((row) => ({
         ...row,
-        // The claim finalizer writes the policy only on requests that are
-        // not being deleted yet (writeDeletionPolicy of
-        // internal/claimdeletion).
         fate: resourceFate(
           row,
-          request?.metadata?.deletionTimestamp
-            ? request.spec.deletionPolicy
-            : policy,
+          request ? requestPolicy(request, policy) : policy,
         ),
       })),
     };
   });
+}
+
+/**
+ * controlledBy says whether the claim with uid is the controller of
+ * request. A claim without a UID controls no request.
+ */
+export function controlledBy(
+  request: Resource<"PluginRequest">,
+  uid: string | undefined,
+): boolean {
+  return (
+    uid !== undefined &&
+    (request.metadata?.ownerReferences ?? []).some(
+      (o) => o.controller === true && o.uid === uid,
+    )
+  );
+}
+
+/**
+ * requestPolicy returns the deletion policy that decides the fate of the
+ * resources of request: policy, the policy of its claim, until the request
+ * is being deleted, and then the policy of the request itself.
+ */
+export function requestPolicy(
+  request: Resource<"PluginRequest">,
+  policy: DeletionPolicy,
+): DeletionPolicy {
+  // The claim finalizer writes the policy only on requests that are not
+  // being deleted yet (writeDeletionPolicy of internal/claimdeletion).
+  return request.metadata?.deletionTimestamp
+    ? request.spec.deletionPolicy
+    : policy;
 }
 
 /**
