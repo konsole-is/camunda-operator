@@ -7,7 +7,8 @@ test("the plane page shows the header and the conditions of a ready OIDC plane",
   page,
 }) => {
   await page.goto("/fleet/planes");
-  await page.getByRole("link", { name: "plane-a", exact: true }).click();
+  // The link of a plane names the plane and its namespace.
+  await page.getByRole("link", { name: "plane-a platform" }).click();
   await expect(page).toHaveURL(/\/fleet\/planes\/platform\/plane-a$/);
 
   const header = page
@@ -39,13 +40,15 @@ test("the plane page shows the header and the conditions of a ready OIDC plane",
     "RequestsReady",
     "ManagementClusterReady",
   ]) {
-    await expect(table.getByRole("rowheader", { name: type })).toBeVisible();
+    await expect(
+      table.getByRole("rowheader", { name: type, exact: true }),
+    ).toBeVisible();
   }
   await expect(
     table.getByRole("row", { name: /OptimizeCallbacksReady/ }),
   ).toContainText("Disabled");
   await expect(
-    table.getByRole("rowheader", { name: "IdentityReady" }),
+    table.getByRole("rowheader", { name: "IdentityReady", exact: true }),
   ).toHaveCount(0);
 
   await checkPage(page, "plane-overview");
