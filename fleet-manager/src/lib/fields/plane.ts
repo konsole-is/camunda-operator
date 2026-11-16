@@ -76,10 +76,9 @@ const URLS = {
  * Keycloak mode. Versions and URLs show only for the apps that the claim
  * runs, Keycloak only in the keycloak mode.
  *
- * Locks: the name, the namespace, and the platform config are Set at
- * creation. The option of each selection is Chosen at creation, and a
- * parameter is Set by your admin unless its policy makes it
- * claim-editable. The policy is the one that the claim recorded in its
+ * Locks: the name and the namespace are Set at creation. The option of
+ * each selection is Chosen at creation, and a parameter is Set by your
+ * admin unless its policy makes it claim-editable. The policy is the one that the claim recorded in its
  * status, else the one of the registration and environment. In OIDC mode the
  * administrator claim is Fixed after Identity started once plane carries
  * IDENTITY_INITIAL_CLAIM_ANNOTATION. The typed URLs are Set by a section
@@ -145,10 +144,7 @@ export function planeFields(input: {
     "Platform config",
     spec.platformConfigRef || environment?.spec.platformConfigRef,
     fieldSteps("spec", "platformConfigRef"),
-    {
-      ...atCreation,
-      ...(!spec.platformConfigRef && { note: "From the environment" }),
-    },
+    spec.platformConfigRef ? {} : { note: "From the environment" },
   );
 
   add(
@@ -167,7 +163,10 @@ export function planeFields(input: {
       IDENTITY_INITIAL_CLAIM_ANNOTATION,
     );
     const lock = started
-      ? { lock: { reason: "immutableAfterStart" } as const }
+      ? {
+          lock: { reason: "immutableAfterStart" } as const,
+          note: "Management Identity keeps the first administrator in its database, so a change here has no effect.",
+        }
       : {};
     add(
       "admin.claimName",

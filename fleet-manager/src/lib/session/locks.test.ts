@@ -228,6 +228,7 @@ describe("planeLocks", () => {
       ),
     ).toEqual({ reason: "chosenAtCreation" });
     expect(locks("spec.versions.identity")).toBeUndefined();
+    expect(locks("spec.platformConfigRef")).toBeUndefined();
     expect(
       locks(
         "spec.plugins[section=management-database,registration=existing-database-configs]",
@@ -293,6 +294,10 @@ describe("planeLocks", () => {
           ],
           "mail.example.com",
         ),
+    ).toBe(true);
+    expect(
+      "session" in
+        setValue(s, [{ field: "spec" }, { field: "platformConfigRef" }], "x"),
     ).toBe(true);
   });
 });

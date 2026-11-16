@@ -148,7 +148,7 @@ describe("planeFields", () => {
     );
   });
 
-  it("locks the name, the namespace, and the platform config at creation", () => {
+  it("locks the name and the namespace at creation", () => {
     const fields = planeFields({
       claim: oidcClaim,
       registrations,
@@ -156,15 +156,24 @@ describe("planeFields", () => {
     });
     expect(byKey(fields, "name").lock).toEqual({ reason: "atCreation" });
     expect(byKey(fields, "namespace").lock).toEqual({ reason: "atCreation" });
-    expect(byKey(fields, "platformConfig")).toMatchObject({
-      claimPath: "spec.platformConfigRef",
-      value: "oidc-platform",
-      lock: { reason: "atCreation" },
-      note: "From the environment",
-    });
   });
 
-  it("gives the platform config of the claim without a note when the claim sets it", () => {
+  it("leaves the platform config open and gives the one of the environment when the claim names none", () => {
+    const fields = planeFields({
+      claim: oidcClaim,
+      registrations,
+      environment,
+    });
+    const field = byKey(fields, "platformConfig");
+    expect(field).toMatchObject({
+      claimPath: "spec.platformConfigRef",
+      value: "oidc-platform",
+      note: "From the environment",
+    });
+    expect(field.lock).toBeUndefined();
+  });
+
+  it("gives the platform config of the claim, open and without a note, when the claim sets it", () => {
     const fields = planeFields({
       claim: claimOf({ platformConfigRef: "other" }),
       registrations,
@@ -172,6 +181,7 @@ describe("planeFields", () => {
     });
     expect(byKey(fields, "platformConfig").value).toBe("other");
     expect(byKey(fields, "platformConfig").note).toBeUndefined();
+    expect(byKey(fields, "platformConfig").lock).toBeUndefined();
   });
 
   it("locks the OIDC claim pair once Identity recorded it", () => {
@@ -184,8 +194,9 @@ describe("planeFields", () => {
       environment,
     });
     for (const key of ["admin.claimName", "admin.claimValue"]) {
-      expect(byKey(fields, key).lock).toEqual({
-        reason: "immutableAfterStart",
+      expect(byKey(fields, key)).toMatchObject({
+        lock: { reason: "immutableAfterStart" },
+        note: "Management Identity keeps the first administrator in its database, so a change here has no effect.",
       });
     }
   });
@@ -200,6 +211,7 @@ describe("planeFields", () => {
       });
       expect(byKey(fields, "admin.claimName").lock).toBeUndefined();
       expect(byKey(fields, "admin.claimValue").lock).toBeUndefined();
+      expect(byKey(fields, "admin.claimName").note).toBeUndefined();
     }
   });
 
