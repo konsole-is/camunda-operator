@@ -2,11 +2,13 @@
 
 import type { ReadError } from "@/components/planes/planes-table";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ContractUserSources } from "@/lib/usage";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
@@ -21,6 +23,8 @@ export type ConnectionSources = ContractUserSources & {
   databaseServerConfigs: DatabaseServerConfig[];
   managementAuthConfigs: ManagementAuthConfig[];
   requests: PluginRequest[];
+  planeClaims: CamundaManagementClusterClaim[];
+  registrations: PluginRegistration[];
 };
 
 /**
@@ -36,11 +40,12 @@ export type ConnectionPageData = ConnectionSources & {
  * error of each failed watch, with the kind of CONNECTION_SOURCE_KINDS, and
  * the error of initial.readErrors of each other kind until the watch of that
  * kind answers. The list of a failed watch keeps its last items, which can be
- * out of date.
+ * out of date. stale holds the kind of each list whose watch has no snapshot
+ * on its current connection.
  */
 export function useConnectionSources(
   initial: ConnectionPageData,
-): ConnectionSources & { errors: ReadError[] } {
+): ConnectionSources & { errors: ReadError[]; stale: string[] } {
   const namespaces = useLive("Namespace", initial.namespaces);
   const environments = useLive("Environment", initial.environments);
   const clusters = useLive("CamundaCluster", initial.clusters);
@@ -88,6 +93,11 @@ export function useConnectionSources(
     initial.managementAuthConfigs,
   );
   const requests = useLive("PluginRequest", initial.requests);
+  const planeClaims = useLive(
+    "CamundaManagementClusterClaim",
+    initial.planeClaims,
+  );
+  const registrations = useLive("PluginRegistration", initial.registrations);
   const results = {
     namespaces,
     environments,
@@ -109,6 +119,8 @@ export function useConnectionSources(
     databaseServerConfigs,
     managementAuthConfigs,
     requests,
+    planeClaims,
+    registrations,
   };
   const liveErrors = (
     Object.keys(results) as (keyof ConnectionSources)[]
@@ -118,7 +130,9 @@ export function useConnectionSources(
       ? [{ kind: CONNECTION_SOURCE_KINDS[key], message: error }]
       : [];
   });
-  const answered = useAnswered(Object.values(CONNECTION_SOURCE_KINDS));
+  const kinds = Object.values(CONNECTION_SOURCE_KINDS);
+  const answered = useAnswered(kinds);
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
   const firstErrors = (initial.readErrors ?? []).filter(
     (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
   );
@@ -144,7 +158,10 @@ export function useConnectionSources(
     databaseServerConfigs: databaseServerConfigs.items,
     managementAuthConfigs: managementAuthConfigs.items,
     requests: requests.items,
+    planeClaims: planeClaims.items,
+    registrations: registrations.items,
     errors,
+    stale: kinds.filter((_, i) => !fresh[i]),
   };
 }
 

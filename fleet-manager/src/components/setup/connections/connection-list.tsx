@@ -6,7 +6,10 @@ import { DataTable } from "@/components/fleet/data-table";
 import { type ConditionLike, describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import type { ReadError } from "@/components/planes/planes-table";
-import { unreadKinds } from "@/components/setup/releases/rows";
+import {
+  type SourceReads,
+  unreadKinds,
+} from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { byCodeUnit } from "@/lib/policy";
 import {
@@ -51,15 +54,17 @@ export type ContractRow = {
  * contractRows returns a row for each contract of kind in sources, sorted
  * by namespace and name. While errors holds an error of PluginRequest, the
  * request list is not known, so a contract with the plugin labels stays
- * with its registration. usage must be contractUsage of sources.
+ * with its registration. Only errors count as unread, not stale lists.
+ * usage must be contractUsage of sources.
  */
 export function contractRows(
   sources: ConnectionSources & { errors?: readonly ReadError[] },
   kind: ContractKind,
   usage = contractUsage(sources),
 ): ContractRow[] {
-  const requests = requestsOf(sources);
-  const unread = unreadUserKinds(kind, unreadKinds(sources));
+  const reads = { errors: sources.errors };
+  const requests = requestsOf({ ...sources, ...reads, stale: [] });
+  const unread = unreadUserKinds(kind, unreadKinds(reads));
   return contractsOf(sources, kind)
     .map((contract) => {
       const ref: ContractRef = {
@@ -86,11 +91,11 @@ export function contractRows(
     );
 }
 
-/** requestsOf returns the requests of sources, or undefined while errors holds an error of PluginRequest. */
+/** requestsOf returns the requests of sources, or undefined while the PluginRequest list failed or is stale. */
 export function requestsOf(
-  sources: ConnectionSources & { errors?: readonly ReadError[] },
+  sources: ConnectionSources & SourceReads,
 ): ConnectionSources["requests"] | undefined {
-  return sources.errors?.some((e) => e.kind === "PluginRequest")
+  return unreadKinds(sources).includes("PluginRequest")
     ? undefined
     : sources.requests;
 }

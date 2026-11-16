@@ -24,7 +24,7 @@ function rowOf(name: string): HTMLElement {
 }
 
 describe("UsersTable", () => {
-  it("says that the list can miss users of a kind that the page could not read", () => {
+  it("says that the users are not known while a kind that can use the contract is not read", () => {
     render(
       <UsersTable
         users={[refused]}
@@ -33,7 +33,7 @@ describe("UsersTable", () => {
     );
     expect(
       screen.getByText(
-        "This list can miss users. Could not read CamundaCluster, ElasticsearchClusterPreset.",
+        "The users are not known while the fleet manager cannot read CamundaCluster, ElasticsearchClusterPreset.",
       ),
     ).toBeTruthy();
     expect(rowOf("team-a/billing")).toBeTruthy();
