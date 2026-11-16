@@ -9,8 +9,14 @@ import {
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
   MANAGEMENT_CLUSTER_ANNOTATION,
+  MANAGEMENT_CLUSTER_LABEL,
+  MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
   OPTIMIZE_COMPONENTS,
   OPTIMIZE_UID_LABEL,
+  PLUGIN_CLUSTER_LABEL,
+  REGISTRATION_LABEL,
+  REQUEST_LABEL,
+  REQUEST_NAMESPACE_LABEL,
   REVISION_ANNOTATION,
   SECTION_LABEL,
   isDNSLabel,
@@ -101,6 +107,28 @@ it.each([
     MANAGEMENT_CLUSTER_ANNOTATION,
     "pkg/labels/labels.go",
     "ManagementClusterKey",
+  ],
+  [
+    REGISTRATION_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelRegistration",
+  ],
+  [REQUEST_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelRequest"],
+  [
+    REQUEST_NAMESPACE_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelRequestNamespace",
+  ],
+  [
+    PLUGIN_CLUSTER_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelCluster",
+  ],
+  [MANAGEMENT_CLUSTER_LABEL, "pkg/labels/labels.go", "ManagementClusterKey"],
+  [
+    MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
+    "pkg/labels/labels.go",
+    "ManagementClusterNamespaceKey",
   ],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));

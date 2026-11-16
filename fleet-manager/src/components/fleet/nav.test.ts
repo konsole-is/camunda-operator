@@ -114,6 +114,17 @@ describe("setupBreadcrumb", () => {
     });
   });
 
+  it("names a contract by its namespace and name, and a Management Identity contract by its name", () => {
+    expect(
+      setupBreadcrumb("/setup/connections/object-storage/team-a/backups"),
+    ).toEqual({ item: SETUP_ITEMS[4], name: "team-a/backups" });
+    expect(
+      setupBreadcrumb(
+        "/setup/connections/management-identity/plane-a-optimize",
+      ),
+    ).toEqual({ item: SETUP_ITEMS[4], name: "plane-a-optimize" });
+  });
+
   it.each([
     "/setup",
     "/setup/presets",
