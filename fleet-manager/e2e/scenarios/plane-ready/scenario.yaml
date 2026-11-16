@@ -180,10 +180,11 @@ states:
   - name: serves-a-cluster
     description: >-
       Adds the namespace team-orders of the Environment Platform with the
-      CamundaCluster orders, which uses the platform config oidc-platform,
-      and the CamundaOptimize orders-optimize, which reads the contract of
-      the plane and sets an external URL. The plane lists the cluster, and
-      the Optimize is a reader of its contract.
+      CamundaCluster orders, which uses the platform config oidc-platform.
+      The plane lists the cluster. The state has no CamundaOptimize: the
+      pod template of Optimize carries the UID of its CamundaCluster, which
+      does not own the Optimize workloads, and envtest gives the cluster a
+      new UID on each run.
     apply:
       - apiVersion: v1
         kind: Namespace
@@ -247,14 +248,3 @@ states:
           releaseRef: camunda-8-9
           externalUrl: "https://orders.example.com"
           storageRef: orders-storage
-      - apiVersion: core.camunda.io/v1
-        kind: CamundaOptimize
-        metadata:
-          name: orders-optimize
-          namespace: team-orders
-        spec:
-          version: "8.9.23"
-          clusterRef:
-            name: orders
-          managementAuthRef: plane-a
-          externalUrl: "https://orders.example.com/optimize"

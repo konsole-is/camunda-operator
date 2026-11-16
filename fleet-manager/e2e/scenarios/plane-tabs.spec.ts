@@ -3,7 +3,7 @@ import { checkPage } from "./themes";
 
 test.use({ scenarioName: "plane-ready" });
 
-test("the tabs of a plane show its served cluster, its Optimize, its contract, and its routes", async ({
+test("the tabs of a plane show its served cluster, its callbacks, its contract, and its routes", async ({
   page,
   scenario,
 }) => {
@@ -27,11 +27,12 @@ test("the tabs of a plane show its served cluster, its Optimize, its contract, a
   ).toBeVisible();
   await checkPage(page, "plane-clusters-served");
 
+  // The scenario has no CamundaOptimize, so the plane has no callback to
+  // show, and the contract has no reader.
   await page.getByRole("tab", { name: "Optimize" }).click();
-  const optimize = page.getByRole("table", { name: "Optimize" });
   await expect(
-    optimize.getByText(
-      "https://orders.example.com/optimize/api/authentication/callback",
+    page.getByText(
+      "No Optimize with an external URL reads the contract of this plane.",
     ),
   ).toBeVisible();
   await expect(
@@ -50,7 +51,7 @@ test("the tabs of a plane show its served cluster, its Optimize, its contract, a
       .locator("xpath=following-sibling::dd"),
   ).toHaveText("optimize-credentials");
   await expect(
-    page.getByRole("table", { name: "Readers" }).getByText("orders-optimize"),
+    contract.getByText("No Optimize reads this contract."),
   ).toBeVisible();
   await checkPage(page, "plane-contract");
 
