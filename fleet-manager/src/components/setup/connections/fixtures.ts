@@ -275,5 +275,7 @@ export function connectionFixtures(): ConnectionSources {
     databaseServerConfigs,
     managementAuthConfigs,
     requests,
+    planeClaims: [],
+    registrations: [],
   };
 }

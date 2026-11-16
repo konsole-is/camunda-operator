@@ -918,7 +918,8 @@ export async function runPreview(
   }
 }
 
-function issuesOf(error: z.ZodError): ApiError[] {
+/** issuesOf gives one Invalid error for each issue of a refused input, as runChange and runPreview return them. */
+export function issuesOf(error: z.ZodError): ApiError[] {
   return error.issues.map((issue) => ({
     code: "Invalid",
     message: issue.message,

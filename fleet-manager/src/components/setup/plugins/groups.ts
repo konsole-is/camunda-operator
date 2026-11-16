@@ -68,7 +68,7 @@ export type SourceReads = {
 };
 
 /** NO_ENVIRONMENT names the requests whose namespace belongs to no Environment. */
-const NO_ENVIRONMENT = "No environment";
+export const NO_ENVIRONMENT = "No environment";
 
 /**
  * sectionFields returns the fields that the slot of section fills, for each
@@ -81,6 +81,18 @@ export function sectionFields(section: PluginSection): SlotField[] {
   return SLOT_FIELDS.filter(
     (f) => f.slot === slot && appliesTo.includes(f.claimKind),
   );
+}
+
+/**
+ * fillsText says which field of which kind field fills, and that a
+ * management plane claim fills it.
+ */
+export function fillsText(field: SlotField): string {
+  const plane =
+    field.claimKind === "CamundaManagementClusterClaim"
+      ? " for a management plane"
+      : "";
+  return `Fills ${field.kind} ${field.path}${plane}`;
 }
 
 /**
