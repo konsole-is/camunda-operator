@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
-import { backupWarning, deleteClaimSteps, deletionGroups } from "./deletion";
+import {
+  backupWarning,
+  controlledBy,
+  deleteClaimSteps,
+  deletionGroups,
+  requestPolicy,
+} from "./deletion";
 import type { ResourceRow } from "./resources";
 
 const claim = (
@@ -338,6 +344,61 @@ describe("deletionGroups", () => {
     );
     expect(groups[0].rows).toEqual([]);
     expect(backupWarning("orders", groups)).toBeUndefined();
+  });
+});
+
+// owned returns a request whose owner references are owners, under the
+// policy Delete, and being deleted when going is set.
+function owned(
+  owners: { uid: string; controller?: boolean }[],
+  going = false,
+): Resource<"PluginRequest"> {
+  return {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: {
+      namespace: "team-a",
+      name: "orders-backup-storage",
+      ...(going && { deletionTimestamp: "2026-11-16T12:00:00Z" }),
+      ownerReferences: owners.map((o) => ({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        name: "orders",
+        ...o,
+      })),
+    },
+    spec: {
+      claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+      deletionPolicy: "Delete",
+      registration: "aws-s3",
+      section: "backup-storage",
+      target: { kind: "CamundaCluster", name: "orders" },
+    },
+  } as Resource<"PluginRequest">;
+}
+
+describe("controlledBy", () => {
+  it("is true only for the claim of the controller reference", () => {
+    const request = owned([{ uid: "uid-1", controller: true }]);
+    expect(controlledBy(request, "uid-1")).toBe(true);
+    expect(controlledBy(request, "uid-2")).toBe(false);
+  });
+
+  it("is false for an owner that is not the controller, and for a claim without a UID", () => {
+    expect(controlledBy(owned([{ uid: "uid-1" }]), "uid-1")).toBe(false);
+    expect(
+      controlledBy(owned([{ uid: "uid-1", controller: true }]), undefined),
+    ).toBe(false);
+  });
+});
+
+describe("requestPolicy", () => {
+  it("gives the policy of the claim while the request is not being deleted", () => {
+    expect(requestPolicy(owned([]), "Orphan")).toBe("Orphan");
+  });
+
+  it("gives the policy of the request once it is being deleted", () => {
+    expect(requestPolicy(owned([], true), "Orphan")).toBe("Delete");
   });
 });
 
