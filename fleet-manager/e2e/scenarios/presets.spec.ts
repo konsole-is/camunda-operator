@@ -39,3 +39,24 @@ test("a preset page names the preset and lists the cluster that inherits it", as
   ).toBeVisible();
   await checkPage(page, "presets-detail");
 });
+
+test("an edit of the preset of a claim previews a roll of its cluster", async ({
+  page,
+}) => {
+  await page.goto("/setup/presets/cluster/medium");
+  const replicas = page
+    .getByRole("region", { name: "Brokers settings" })
+    .getByRole("group", { name: "replicas" })
+    .getByRole("spinbutton");
+  await replicas.fill("5");
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  const review = page.getByRole("region", { name: "Review the preset" });
+  await expect(review.getByText("team-orders/orders")).toBeVisible();
+  await expect(review.getByText("Pods roll")).toBeVisible();
+  await expect(
+    review.getByText(
+      "The brokers restart one at a time. The other processes restart.",
+    ),
+  ).toBeVisible();
+  await checkPage(page, "presets-edit-review");
+});

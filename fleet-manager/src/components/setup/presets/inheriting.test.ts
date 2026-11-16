@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { presetFixtures } from "./fixtures";
-import { inheritingRows } from "./inheriting";
+import { inheritingRows, inheritingUnread } from "./inheriting";
 
 const sources = presetFixtures();
 const medium = sources.clusterPresets[0];
@@ -111,5 +111,27 @@ describe("inheritingRows", () => {
     expect(inheritingRows(sources.clusterPresets[1], presetFixtures())).toEqual(
       [],
     );
+  });
+});
+
+describe("inheritingUnread", () => {
+  it("names the kind of the inheriting resources while it is not read", () => {
+    const errors = [{ kind: "ElasticsearchCluster", message: "forbidden" }];
+    expect(inheritingUnread("ElasticsearchClusterPreset", errors, [])).toEqual([
+      "ElasticsearchCluster",
+    ]);
+  });
+
+  it("names the kind of the inheriting resources while it is not current", () => {
+    expect(
+      inheritingUnread("CamundaClusterPreset", [], ["CamundaCluster"]),
+    ).toEqual(["CamundaCluster"]);
+  });
+
+  it("names nothing when only other kinds are not read", () => {
+    const errors = [{ kind: "CamundaCluster", message: "forbidden" }];
+    expect(
+      inheritingUnread("DatabaseServerPreset", errors, ["Environment"]),
+    ).toEqual([]);
   });
 });
