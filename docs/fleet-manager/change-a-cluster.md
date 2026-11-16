@@ -180,6 +180,10 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 
 A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
 
+## A claim made outside the fleet manager
+
+Without Git mode, a claim that you made with `kubectl apply` or a GitOps tool keeps the fields that it set. The fleet manager does not take these fields over, so it refuses a change of such a field ([#1134](https://github.com/konsole-is/camunda-operator/issues/1134)).
+
 ## The state of a field
 
 Below each editor, the page says where the value comes from, for example **From preset** or **Changed in the claim**. A field that the claim sets has the link **Reset to preset**. The link removes the value from the claim, so that the value of the preset applies again. The reset is an unsaved change, as each other change is.

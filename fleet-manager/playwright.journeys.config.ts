@@ -18,6 +18,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
   // The pages follow the theme of the system. The journeys check dark only.
+  // CI uploads outputDir when a journey fails.
   use: {
     browserName: "chromium",
     baseURL,

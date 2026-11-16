@@ -28,7 +28,7 @@ import { UsedByTab } from "./used-by-tab";
  * RegistrationDetail is the page of the registration data.name, opened on
  * tab. A tab change sets the tab query parameter without a navigation.
  * errors holds the error of each failed watch, and stale the kind of each
- * list whose watch has no snapshot on its current connection. Once a read
+ * list whose watch is not fresh (freshKey). Once a read
  * of PluginRegistration has no registration of the name, the page says
  * that it no longer exists. Before that, while the kind is not read, it
  * shows the registration of its list, else data.registration, as possibly

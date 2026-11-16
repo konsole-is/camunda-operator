@@ -38,6 +38,8 @@ describe("the Storybook stories", () => {
       "ComponentCards",
       "OverviewConditions",
       "ComponentDetail",
+      "RequestOverview",
+      "BuiltinStorage",
       "PartitionTable",
       "DetailMetrics",
       "DetailLogs",

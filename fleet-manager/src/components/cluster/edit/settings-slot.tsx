@@ -13,23 +13,32 @@ import { clusterFieldsInputOf, componentSettings } from "../settings";
 import { SettingsEditor } from "../settings-editor";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
+import { claimViewAfter } from "./claim-editor";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
 import { useEditorGeneration } from "./editor-generation";
+import { SectionPanel } from "./section-panel";
 
 /**
  * ComponentSettingsEditor fills component.settings.editor: an "Edit
  * settings" button that opens the editors of each settings group of the
- * open component. Changes go to the session of the edit host. The values
- * are those after the pending changes. After the pending changes are
- * discarded or written, the editors show the live values again. It renders
- * nothing without an open component, for a selection of the claim, or
- * without a session.
+ * open component. For a selection of the claim, the button opens the
+ * editor that the Claim tab has for its section. Changes go to the session
+ * of the edit host. The values are those after the pending changes. After
+ * the pending changes are discarded or written, the editors show the live
+ * values again. It renders nothing without an open component, without a
+ * session, or for a selection that the claim no longer has after the
+ * pending changes.
  */
 export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
   const { session, pending, set, reset } = useClusterEdit();
   const [open, setOpen] = useState(false);
   const { generation, own } = useEditorGeneration(pending);
-  if (!ctx.openId || isSectionId(ctx.openId) || !session) return null;
+  if (!ctx.openId || !session) return null;
+  const openId = ctx.openId;
+  const section = isSectionId(openId)
+    ? claimViewAfter(ctx, session).sections.find((s) => s.id === openId)
+    : undefined;
+  if (isSectionId(openId) && !section) return null;
   return (
     <div className="flex flex-col gap-3">
       <Button
@@ -41,16 +50,23 @@ export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
       >
         {open ? "Close the editors" : "Edit settings"}
       </Button>
-      {open && (
-        <Editors
-          key={generation}
-          ctx={ctx}
-          openId={ctx.openId}
-          session={session}
-          set={own(set)}
-          reset={own(reset)}
-        />
-      )}
+      {open &&
+        (section ? (
+          <div className="rounded-lg border border-border p-4">
+            <SectionPanel context={ctx} section={section} />
+          </div>
+        ) : (
+          !isSectionId(openId) && (
+            <Editors
+              key={generation}
+              ctx={ctx}
+              openId={openId}
+              session={session}
+              set={own(set)}
+              reset={own(reset)}
+            />
+          )
+        ))}
     </div>
   );
 }

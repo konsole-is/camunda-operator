@@ -1,7 +1,7 @@
 // This module runs in the browser and on the server.
 import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
-import { byCodeUnit, type PluginSelection } from "@/lib/policy";
+import { byCodeUnit, type PluginSelection, readyOf } from "@/lib/policy";
 
 /** SectionComponentId is the component id of a selection of a section. */
 export type SectionComponentId = `section:${string}`;
@@ -12,7 +12,8 @@ export type SectionComponentId = `section:${string}`;
  * found. order is spec.order of the section, or 0 when it has none, and a
  * missing section sorts last. request is the PluginRequest that
  * status.requests of the claim names for the section and the registration
- * of the selection, and condition its Ready condition.
+ * of the selection, and condition its Ready condition. A request whose
+ * conditions are not a list of conditions has no condition.
  */
 export type SectionComponent = {
   id: SectionComponentId;
@@ -85,9 +86,7 @@ export function sectionComponents({
                 r.metadata?.namespace === namespace &&
                 r.metadata?.name === requestName,
             );
-      const condition = request?.status?.conditions?.find(
-        (c) => c.type === "Ready",
-      );
+      const condition = readyOf(request?.status?.conditions);
       return {
         id: sectionComponentId(selection, many),
         section: selection.section,

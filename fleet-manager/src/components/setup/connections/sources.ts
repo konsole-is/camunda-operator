@@ -40,8 +40,8 @@ export type ConnectionPageData = ConnectionSources & {
  * error of each failed watch, with the kind of CONNECTION_SOURCE_KINDS, and
  * the error of initial.readErrors of each other kind until the watch of that
  * kind answers. The list of a failed watch keeps its last items, which can be
- * out of date. stale holds the kind of each list whose watch has no snapshot
- * on its current connection.
+ * out of date. stale holds the kind of each list whose watch is not fresh
+ * (freshKey).
  */
 export function useConnectionSources(
   initial: ConnectionPageData,

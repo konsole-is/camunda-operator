@@ -25,6 +25,7 @@ import {
   type RestoreRow,
   type ScheduleView,
 } from "./backups";
+import { NotRead } from "./not-read";
 
 const PANEL =
   "flex flex-col gap-3 rounded-lg border border-border bg-panel p-4";
@@ -35,7 +36,9 @@ const HEADING = "font-heading text-base font-semibold";
  * schedules, the backups, and the restores of one cluster. actions is the
  * node of the cluster.backups.actions slot, shown in the header. When
  * rowActions is set, the backup table has an Actions column with its node
- * for each row.
+ * for each row. unread holds the kinds that the page could not read: a
+ * list of backups or restores that depends on one of them names the kind,
+ * and never says that there are none.
  */
 export function BackupsTab({
   storage,
@@ -43,12 +46,14 @@ export function BackupsTab({
   restores,
   actions,
   rowActions,
+  unread = [],
 }: {
   storage: BackupStorage;
   backups: BackupRow[];
   restores: RestoreRow[];
   actions?: ReactNode;
   rowActions?: (row: BackupRow) => ReactNode;
+  unread?: readonly string[];
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -61,8 +66,15 @@ export function BackupsTab({
         <StorageSection storage={storage} />
         <ScheduleSection schedules={storage.schedules} />
       </div>
-      <BackupsSection rows={backups} rowActions={rowActions} />
-      <RestoresSection rows={restores} />
+      <BackupsSection
+        rows={backups}
+        rowActions={rowActions}
+        unread={unread.filter((k) => BACKUP_KINDS.includes(k))}
+      />
+      <RestoresSection
+        rows={restores}
+        unread={unread.filter((k) => RESTORE_KINDS.includes(k))}
+      />
     </div>
   );
 }
@@ -207,20 +219,35 @@ function ScheduleSection({ schedules }: { schedules: ScheduleView[] }) {
   );
 }
 
+const BACKUP_KINDS: readonly string[] = [
+  "LogicalBackupElasticsearch",
+  "LogicalBackupRDBMS",
+];
+const RESTORE_KINDS: readonly string[] = [
+  "LogicalRestoreElasticsearch",
+  "LogicalRestoreRDBMS",
+  "PointInTimeRestore",
+];
+
 function BackupsSection({
   rows,
   rowActions,
+  unread,
 }: {
   rows: BackupRow[];
   rowActions?: (row: BackupRow) => ReactNode;
+  unread: readonly string[];
 }) {
   const [open, setOpen] = useState<string | undefined>();
   const columns = rowActions ? 9 : 8;
   return (
     <section aria-label="Backups" className={PANEL}>
       <h2 className={HEADING}>Backups</h2>
+      {unread.length > 0 && <NotRead kinds={unread} />}
       {rows.length === 0 ? (
-        <p className="text-sm text-muted">No backups yet.</p>
+        unread.length === 0 && (
+          <p className="text-sm text-muted">No backups yet.</p>
+        )
       ) : (
         <Table label="Backup list">
           <TableHeader>
@@ -305,12 +332,21 @@ function BackupsSection({
   );
 }
 
-function RestoresSection({ rows }: { rows: RestoreRow[] }) {
+function RestoresSection({
+  rows,
+  unread,
+}: {
+  rows: RestoreRow[];
+  unread: readonly string[];
+}) {
   return (
     <section aria-label="Restores" className={PANEL}>
       <h2 className={HEADING}>Restores</h2>
+      {unread.length > 0 && <NotRead kinds={unread} />}
       {rows.length === 0 ? (
-        <p className="text-sm text-muted">No restores.</p>
+        unread.length === 0 && (
+          <p className="text-sm text-muted">No restores.</p>
+        )
       ) : (
         <Table label="Restore list">
           <TableHeader>

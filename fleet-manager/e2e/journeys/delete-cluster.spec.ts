@@ -13,8 +13,9 @@ function kubectl(...args: string[]): string {
 }
 
 // The journey deletes a claim of its own and never touches the claim of the
-// harness. Its cluster names the SecondaryStorageConfig of that claim, so
-// the operator holds it back; the journey checks only the delete.
+// harness. Its cluster takes backups to a SecondaryStorageConfig without a
+// snapshot repository, so the operator refuses it. The journey checks only
+// the delete.
 const claim = `apiVersion: fleet.camunda.io/v1alpha1
 kind: CamundaClusterClaim
 metadata:

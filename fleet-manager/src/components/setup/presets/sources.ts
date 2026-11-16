@@ -26,7 +26,7 @@ export type PresetActions = {
 /**
  * usePresetSources follows each list of initial live. errors holds each
  * failed watch, and a failed server read until its watch sends a list.
- * pending holds each other kind whose watch sent no list on this connection.
+ * pending holds each other kind whose watch is not fresh (freshKey).
  */
 export function usePresetSources(
   initial: PresetSnapshot,
