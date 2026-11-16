@@ -157,6 +157,22 @@ describe("ConnectionDetail", () => {
     ).toBeTruthy();
   });
 
+  it("does not say that a contract is missing while its kind cannot be read", () => {
+    render(
+      <ConnectionDetail
+        target={inTeamA("ObjectStorageConfig", "backups")}
+        sources={{
+          ...connectionFixtures(),
+          objectStorageConfigs: [],
+          errors: [{ kind: "ObjectStorageConfig", message: "forbidden" }],
+        }}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read ObjectStorageConfig: forbidden",
+    );
+  });
+
   it("shows the read errors", () => {
     render(
       <ConnectionDetail

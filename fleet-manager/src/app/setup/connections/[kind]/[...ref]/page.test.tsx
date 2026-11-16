@@ -64,6 +64,16 @@ describe("ConnectionPage", () => {
     );
   });
 
+  it("opens the page when the read of the kind fails, so that it can show the error", async () => {
+    vi.mocked(get).mockRejectedValueOnce(new Error("forbidden"));
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "orders"])),
+    );
+    expect(
+      screen.getByText("detail ObjectStorageConfig team-a orders"),
+    ).toBeTruthy();
+  });
+
   it.each<[string, string[]]>([
     ["buckets", ["team-a", "backups"]],
     ["object-storage", ["backups"]],

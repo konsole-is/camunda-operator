@@ -14,10 +14,12 @@ export default async function ConnectionPage({
   const { kind, ref } = await params;
   const target = contractRefOf(kind, ref);
   if (!target) notFound();
+  // A failed read gives null: the page shows the read error, because the
+  // contract is not known to be missing.
   const [found, sources] = await Promise.all([
-    get(target.kind, target.namespace, target.name),
+    get(target.kind, target.namespace, target.name).catch(() => null),
     loadConnections(),
   ]);
-  if (!found) notFound();
+  if (found === undefined) notFound();
   return <ConnectionDetailLive initial={sources} target={target} />;
 }

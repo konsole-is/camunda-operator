@@ -28,7 +28,8 @@ import { UsersTable } from "./users-table";
 /**
  * ConnectionDetail is the page of one contract: its own Ready, its writer,
  * its settings, and the objects that use it. A contract that sources does
- * not hold shows as missing. Each of the read errors shows above.
+ * not hold shows as missing, unless its kind could not be read. Each of the
+ * read errors shows above.
  */
 export function ConnectionDetail({
   target,
@@ -53,9 +54,11 @@ export function ConnectionDetail({
     return (
       <div className="flex flex-col gap-6">
         {errors}
-        <p role="alert" className="text-sm text-bad">
-          The contract {target.name} does not exist.
-        </p>
+        {!unreadKinds(sources).includes(target.kind) && (
+          <p role="alert" className="text-sm text-bad">
+            The contract {target.name} does not exist.
+          </p>
+        )}
       </div>
     );
   }
