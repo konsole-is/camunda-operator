@@ -25,6 +25,10 @@ import {
   previewPlaneCreate,
 } from "@/app/fleet/planes/new/actions";
 import {
+  applyContractChange,
+  previewContractChange,
+} from "@/app/setup/connections/actions";
+import {
   applyEnvironmentChange,
   applyNamespaceLabel,
   previewEnvironmentChange,
@@ -120,6 +124,29 @@ beforeAll(async () => {
     kind: "Secret",
     metadata: { name: "leak", namespace },
     stringData: values,
+  });
+  // A contract created by hand that reads its keys from the Secret leak.
+  await api.create({
+    apiVersion: "core.camunda.io/v1",
+    kind: "ObjectStorageConfig",
+    metadata: { name: "leak", namespace },
+    spec: {
+      type: "S3",
+      s3: {
+        bucketName: "leak",
+        region: "eu-west-1",
+        auth: {
+          type: "credentials",
+          credentials: {
+            secretRef: {
+              name: "leak",
+              accessKeyIdKey: "username",
+              secretAccessKeyKey: "password",
+            },
+          },
+        },
+      },
+    },
   });
   await api.create({
     apiVersion: "core.camunda.io/v1",
@@ -378,6 +405,19 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/fleet/planes/new/actions.ts#createPlane": refused("Invalid", () =>
     createPlane(planeCreate({})),
   ),
+  "app/setup/connections/actions.ts#previewContractChange": previewed(
+    async () => previewContractChange(await contractChange()),
+  ),
+  // The precondition is not the resourceVersion of the contract, so the
+  // write refuses with Stale and leaves the contract as it is.
+  "app/setup/connections/actions.ts#applyContractChange": refused(
+    "Stale",
+    async () =>
+      applyContractChange({
+        ...(await contractChange()),
+        preconditions: { [`ObjectStorageConfig/${namespace}/leak`]: "1" },
+      }),
+  ),
   "app/setup/environments/actions.ts#previewEnvironmentChange": previewed(() =>
     previewEnvironmentChange({
       ...environmentChange(),
@@ -487,6 +527,36 @@ function presetDelete() {
       },
     ],
     preconditions: { [`CamundaClusterPreset//${namespace}`]: "1" },
+  };
+}
+
+// contractChange changes the region of the contract leak, with the
+// resourceVersion of its copy in the cache of the server, which the action
+// reads.
+async function contractChange() {
+  const live = await vi.waitFor(async () => {
+    const found = await get("ObjectStorageConfig", namespace, "leak");
+    expect(found).toBeDefined();
+    expect(await get("Namespace", undefined, namespace)).toBeDefined();
+    return found!;
+  });
+  return {
+    intent: "Change the object storage contract leak",
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "ObjectStorageConfig",
+        metadata: { name: "leak", namespace },
+        spec: {
+          ...live.spec,
+          s3: { ...live.spec.s3, region: "eu-central-1" },
+        },
+      },
+    ],
+    preconditions: {
+      [`ObjectStorageConfig/${namespace}/leak`]: live.metadata.resourceVersion!,
+    },
+    force: true,
   };
 }
 
