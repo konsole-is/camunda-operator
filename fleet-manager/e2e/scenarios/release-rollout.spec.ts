@@ -8,6 +8,25 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
   page,
   scenario,
 }) => {
+  // The seed applies the claim as kubectl, which then owns
+  // spec.releaseRef, and the fleet manager never takes a field from another
+  // field manager. A claim that the fleet manager made has this field as
+  // its own, so the spec hands the field over first.
+  const claimPath =
+    "/apis/fleet.camunda.io/v1alpha1/namespaces/team-orders/camundaclusterclaims/orders";
+  await kubeRequest(
+    scenario.admin,
+    "PATCH",
+    `${claimPath}?fieldManager=fleet-manager&force=true`,
+    {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-orders" },
+      spec: { releaseRef: "camunda-8-9-0" },
+    },
+    "application/apply-patch+yaml",
+  );
+
   await page.goto("/setup/environments/production");
   await page
     .getByRole("group", { name: "Allowed releases" })
@@ -56,7 +75,7 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
   const claim = await kubeRequest<{ spec: { releaseRef?: string } }>(
     scenario.admin,
     "GET",
-    "/apis/fleet.camunda.io/v1alpha1/namespaces/team-orders/camundaclusterclaims/orders",
+    claimPath,
   );
   expect(claim.spec.releaseRef).toBe("camunda-8-9-1");
   // No controller runs during a page scenario, so the cluster keeps its
