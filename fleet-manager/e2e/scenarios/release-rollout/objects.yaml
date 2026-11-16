@@ -262,7 +262,7 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "orders-connectors-30ae65b852" has successfully progressed.
+    message: ReplicaSet "orders-connectors-042f369d83" has successfully progressed.
     reason: NewReplicaSetAvailable
     status: "True"
     type: Progressing
@@ -635,7 +635,7 @@ status:
     type: Available
   - lastTransitionTime: "2026-01-01T00:00:00Z"
     lastUpdateTime: "2026-01-01T00:00:00Z"
-    message: ReplicaSet "orders-gateway-905cb39275" has successfully progressed.
+    message: ReplicaSet "orders-gateway-f8a2b3a0de" has successfully progressed.
     reason: NewReplicaSetAvailable
     status: "True"
     type: Progressing
@@ -655,7 +655,7 @@ metadata:
     camunda.io/component: connectors
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    pod-template-hash: 30ae65b852
+    pod-template-hash: 042f369d83
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -807,7 +807,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: orders-connectors-30ae65b852
+  name: orders-connectors-042f369d83
   namespace: team-orders
   ownerReferences:
   - apiVersion: apps/v1
@@ -816,14 +816,14 @@ metadata:
     kind: Deployment
     name: orders-connectors
     uid: fd9093c2-3f80-50e0-8242-78af3c80b98a
-  uid: 45f6c276-59a7-5f61-adf5-762afb3a88ec
+  uid: 6c9ae6d9-1fa2-5248-a7b7-8316de2752fb
 spec:
   replicas: 1
   selector:
     matchLabels:
       camunda.io/cluster: orders
       camunda.io/component: connectors
-      pod-template-hash: 30ae65b852
+      pod-template-hash: 042f369d83
   template:
     metadata:
       annotations:
@@ -835,7 +835,7 @@ spec:
         camunda.io/component: connectors
         camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
         company.com/team: automation-ops
-        pod-template-hash: 30ae65b852
+        pod-template-hash: 042f369d83
     spec:
       containers:
       - env:
@@ -925,7 +925,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    pod-template-hash: 905cb39275
+    pod-template-hash: f8a2b3a0de
   managedFields:
   - apiVersion: apps/v1
     fieldsType: FieldsV1
@@ -1144,7 +1144,7 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: orders-gateway-905cb39275
+  name: orders-gateway-f8a2b3a0de
   namespace: team-orders
   ownerReferences:
   - apiVersion: apps/v1
@@ -1153,14 +1153,14 @@ metadata:
     kind: Deployment
     name: orders-gateway
     uid: dbc0e073-89ea-5e08-8b41-03e60d9222a5
-  uid: e767104f-6712-5fa7-bc76-cef6733cb0fa
+  uid: e22915dd-3a2b-5a5c-b750-00c55de5c0d9
 spec:
   replicas: 2
   selector:
     matchLabels:
       camunda.io/cluster: orders
       camunda.io/component: gateway
-      pod-template-hash: 905cb39275
+      pod-template-hash: f8a2b3a0de
   template:
     metadata:
       annotations:
@@ -1172,7 +1172,7 @@ spec:
         camunda.io/component: gateway
         camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
         company.com/team: automation-ops
-        pod-template-hash: 905cb39275
+        pod-template-hash: f8a2b3a0de
     spec:
       containers:
       - env:
@@ -1684,11 +1684,11 @@ spec:
 status:
   availableReplicas: 3
   currentReplicas: 3
-  currentRevision: orders-zeebe-d2f84a726b
+  currentRevision: orders-zeebe-34d8f1ce7d
   observedGeneration: 1
   readyReplicas: 3
   replicas: 3
-  updateRevision: orders-zeebe-d2f84a726b
+  updateRevision: orders-zeebe-34d8f1ce7d
   updatedReplicas: 3
 ---
 apiVersion: coordination.k8s.io/v1
@@ -5038,7 +5038,7 @@ metadata:
     camunda.io/component: connectors
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    pod-template-hash: 30ae65b852
+    pod-template-hash: 042f369d83
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5058,7 +5058,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"45f6c276-59a7-5f61-adf5-762afb3a88ec"}: {}
+          k:{"uid":"6c9ae6d9-1fa2-5248-a7b7-8316de2752fb"}: {}
       f:spec:
         f:containers:
           k:{"name":"connectors"}:
@@ -5203,16 +5203,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: orders-connectors-30ae65b852-wcx7h
+  name: orders-connectors-042f369d83-cw4tt
   namespace: team-orders
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: orders-connectors-30ae65b852
-    uid: 45f6c276-59a7-5f61-adf5-762afb3a88ec
-  uid: a1b8789e-79fe-53ca-919f-dad0489d9c68
+    name: orders-connectors-042f369d83
+    uid: 6c9ae6d9-1fa2-5248-a7b7-8316de2752fb
+  uid: 1e15f302-633a-508a-b617-3b15b516d388
 spec:
   containers:
   - env:
@@ -5344,7 +5344,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    pod-template-hash: 905cb39275
+    pod-template-hash: f8a2b3a0de
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5364,7 +5364,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"e767104f-6712-5fa7-bc76-cef6733cb0fa"}: {}
+          k:{"uid":"e22915dd-3a2b-5a5c-b750-00c55de5c0d9"}: {}
       f:spec:
         f:containers:
           k:{"name":"camunda"}:
@@ -5576,16 +5576,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: orders-gateway-905cb39275-fftkb
+  name: orders-gateway-f8a2b3a0de-6qkmn
   namespace: team-orders
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: orders-gateway-905cb39275
-    uid: e767104f-6712-5fa7-bc76-cef6733cb0fa
-  uid: 079d2a85-921f-5c99-a8f0-0dc602339c18
+    name: orders-gateway-f8a2b3a0de
+    uid: e22915dd-3a2b-5a5c-b750-00c55de5c0d9
+  uid: 616343a8-5889-546b-bbf2-2a71ed6fb113
 spec:
   containers:
   - env:
@@ -5761,7 +5761,7 @@ metadata:
     camunda.io/component: gateway
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    pod-template-hash: 905cb39275
+    pod-template-hash: f8a2b3a0de
   managedFields:
   - apiVersion: v1
     fieldsType: FieldsV1
@@ -5781,7 +5781,7 @@ metadata:
           f:pod-template-hash: {}
         f:ownerReferences:
           .: {}
-          k:{"uid":"e767104f-6712-5fa7-bc76-cef6733cb0fa"}: {}
+          k:{"uid":"e22915dd-3a2b-5a5c-b750-00c55de5c0d9"}: {}
       f:spec:
         f:containers:
           k:{"name":"camunda"}:
@@ -5993,16 +5993,16 @@ metadata:
     operation: Update
     subresource: status
     time: "2026-01-01T00:00:00Z"
-  name: orders-gateway-905cb39275-zf22p
+  name: orders-gateway-f8a2b3a0de-tnq25
   namespace: team-orders
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
     controller: true
     kind: ReplicaSet
-    name: orders-gateway-905cb39275
-    uid: e767104f-6712-5fa7-bc76-cef6733cb0fa
-  uid: 518152b2-4b02-5a09-8e46-6d5e88aaa6e0
+    name: orders-gateway-f8a2b3a0de
+    uid: e22915dd-3a2b-5a5c-b750-00c55de5c0d9
+  uid: 7fcdf0a1-2dc4-5820-ab2a-7971e7057d18
 spec:
   containers:
   - env:
@@ -6179,7 +6179,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    controller-revision-hash: orders-zeebe-d2f84a726b
+    controller-revision-hash: orders-zeebe-34d8f1ce7d
     statefulset.kubernetes.io/pod-name: orders-zeebe-0
   managedFields:
   - apiVersion: v1
@@ -6628,7 +6628,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    controller-revision-hash: orders-zeebe-d2f84a726b
+    controller-revision-hash: orders-zeebe-34d8f1ce7d
     statefulset.kubernetes.io/pod-name: orders-zeebe-1
   managedFields:
   - apiVersion: v1
@@ -7077,7 +7077,7 @@ metadata:
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
     company.com/team: automation-ops
-    controller-revision-hash: orders-zeebe-d2f84a726b
+    controller-revision-hash: orders-zeebe-34d8f1ce7d
     statefulset.kubernetes.io/pod-name: orders-zeebe-2
   managedFields:
   - apiVersion: v1
