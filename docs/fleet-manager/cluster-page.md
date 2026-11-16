@@ -116,7 +116,7 @@ The page asks what happens to the resources of the storage and access options wh
 
 The choice starts at the deletion policy of the claim. A claim without a deletion policy starts at the policy that it recorded when it was made. Without that, the choice starts at **Delete the resources**. The label **Default** marks the policy that the claim recorded, or **Delete the resources** when it recorded none.
 
-Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**.
+Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. Choose **Delete the resources** to delete the cluster.
 
 ### The resources of each option
 

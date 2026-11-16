@@ -76,13 +76,18 @@ const claim = (over: ClaimOver = {}) => {
   } as unknown as Resource<"CamundaClusterClaim">;
 };
 
+// controlled is the owner reference of an object that the claim made.
+const controlled = {
+  ownerReferences: [{ controller: true, uid: "uid-1" }],
+};
+
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
   ({
     claim: claim(),
     cluster: {
       apiVersion: "core.camunda.io/v1",
       kind: "CamundaCluster",
-      metadata: { namespace: "team-a", name: "orders" },
+      metadata: { namespace: "team-a", name: "orders", ...controlled },
     },
     environments: [],
     sections: [
@@ -527,6 +532,40 @@ describe("DeleteCluster", () => {
     },
   );
 
+  it("a claim on Keep opens no review once a registration that cannot keep comes in, until Delete is picked", async () => {
+    const initial = data({
+      claim: claim({ deletionPolicy: "Orphan" }),
+      registrations: [],
+      errors: [{ kind: "PluginRegistration", message: "forbidden" }],
+    });
+    page(initial);
+    await readAll(initial, ["PluginRegistration"]);
+    await snapshot({ kind: "PluginRegistration" }, [
+      {
+        metadata: { name: "aws-s3" },
+        spec: {
+          label: "Amazon S3",
+          sections: ["backup-storage"],
+          deletionPolicies: ["Delete"],
+        },
+      },
+    ]);
+    expect(
+      await screen.findByText(
+        "An option below cannot keep its resources. Choose Delete the resources to delete the cluster.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Delete the cluster" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Delete the resources/ }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Delete the cluster" }),
+    ).toBeTruthy();
+  });
+
   it("a failed watch of CamundaOptimize shows its objects as not known, also one that the claim did not make", async () => {
     const handMade = {
       metadata: { namespace: "team-a", name: "orders-optimize" },
@@ -558,7 +597,14 @@ describe("DeleteCluster", () => {
   });
 
   it("a cluster that the claim did not make shows as kept, and the end text says that it stays", async () => {
-    const initial = data({ claim: claim({ notMade: true }) });
+    const initial = data({
+      claim: claim({ notMade: true }),
+      cluster: {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaCluster",
+        metadata: { namespace: "team-a", name: "orders" },
+      } as unknown as Resource<"CamundaCluster">,
+    });
     page(initial);
     await readAll(initial);
     await screen.findByRole("button", { name: "Delete the cluster" });
@@ -591,7 +637,7 @@ describe("DeleteCluster", () => {
     const retaining = {
       apiVersion: "core.camunda.io/v1",
       kind: "CamundaCluster",
-      metadata: { namespace: "team-a", name: "orders" },
+      metadata: { namespace: "team-a", name: "orders", ...controlled },
       spec: {
         zeebe: {
           persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },

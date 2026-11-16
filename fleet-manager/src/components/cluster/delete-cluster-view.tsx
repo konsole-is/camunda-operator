@@ -69,6 +69,9 @@ export type DeleteStage =
   | { kind: "deleted" }
   | { kind: "replaced" };
 
+const KEEP_REFUSED_PICK =
+  "An option below cannot keep its resources. Choose Delete the resources to delete the cluster.";
+
 const PRUNE_NOTE =
   "Your GitOps tool must prune: the fleet manager removes the claim file, and GitOps deletes the claim.";
 
@@ -111,6 +114,10 @@ export function DeleteClusterView({
   const clusterHref = `/fleet/clusters/${namespace}/${name}`;
   const effects = effectsOf(model, mode === "git" && policyStep);
   const clusterKept = model.kept.some((t) => t.kind === "CamundaCluster");
+  // The claim finalizer refuses a policy that a registration does not
+  // support, and the claim then stays in its delete.
+  const keepRefusedPick =
+    model.choice.policy === "Orphan" && !model.choice.keepAllowed;
   const [writing, setWriting] = useState(false);
   const takes = (
     <section aria-label="What the delete takes">
@@ -209,6 +216,11 @@ export function DeleteClusterView({
               <p className="text-sm text-muted">
                 {unreadDeleteText(model.unread)}
               </p>
+              {takes}
+            </>
+          ) : keepRefusedPick && !writing ? (
+            <>
+              <p className="text-sm text-warn">{KEEP_REFUSED_PICK}</p>
               {takes}
             </>
           ) : (

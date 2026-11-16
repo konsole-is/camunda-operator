@@ -89,7 +89,7 @@ const of = (cluster: string) => ({ spec: { clusterRef: { name: cluster } } });
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
   cluster: object("CamundaCluster", {
-    metadata: { namespace: "team-orders", name: "orders" },
+    metadata: { namespace: "team-orders", name: "orders", ...controlled },
     spec: {
       zeebe: {
         persistentVolumeClaimRetentionPolicy: { whenDeleted: "Retain" },
@@ -291,6 +291,11 @@ export const PolicyWritten: Story = {
   },
 };
 
+export const KeepPickRefused: Story = {
+  name: "Keep picked, and an option cannot keep",
+  args: { model: deleteClusterModel(refused, "Orphan") },
+};
+
 export const AttachmentsNotRead: Story = {
   name: "The Optimize objects could not be read",
   args: {
@@ -304,7 +309,12 @@ export const AttachmentsNotRead: Story = {
   },
 };
 
-const notMade = data({ claim: claim(undefined, { cluster: undefined }) });
+const notMade = data({
+  claim: claim(undefined, { cluster: undefined }),
+  cluster: object("CamundaCluster", {
+    metadata: { namespace: "team-orders", name: "orders" },
+  }),
+});
 
 export const ClusterNotMade: Story = {
   name: "A cluster that the claim did not make",
