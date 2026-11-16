@@ -89,11 +89,7 @@ export async function startEnvtest(
   process.once("exit", killAll);
 
   try {
-    const [etcdPort, peerPort, apiPort] = [
-      await freePort(),
-      await freePort(),
-      await freePort(),
-    ];
+    const [etcdPort, peerPort, apiPort] = await freePorts(3);
     const etcdURL = `http://127.0.0.1:${etcdPort}`;
     const etcd = run(path.join(assetsDir, "etcd"), "etcd", [
       `--data-dir=${path.join(dir, "etcd")}`,
@@ -448,14 +444,21 @@ async function stopAll(running: Running[]): Promise<void> {
   }
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.unref();
-    probe.on("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address() as net.AddressInfo;
-      probe.close(() => resolve(port));
-    });
-  });
+// The probes stay open until every port is chosen, so that two picks never return the same port.
+async function freePorts(count: number): Promise<number[]> {
+  const probes: net.Server[] = [];
+  try {
+    for (let i = 0; i < count; i++) {
+      const probe = net.createServer();
+      probe.unref();
+      await new Promise<void>((resolve, reject) => {
+        probe.once("error", reject);
+        probe.listen(0, "127.0.0.1", resolve);
+      });
+      probes.push(probe);
+    }
+    return probes.map((p) => (p.address() as net.AddressInfo).port);
+  } finally {
+    await Promise.all(probes.map((p) => new Promise((resolve) => p.close(resolve))));
+  }
 }
