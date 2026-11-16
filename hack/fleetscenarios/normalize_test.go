@@ -247,12 +247,22 @@ func TestNormalizeGivesEveryConfigHashOneValue(t *testing.T) {
 }
 
 func TestNormalizeAddsNoConfigHash(t *testing.T) {
+	deployment := object("apps/v1", "Deployment", "team-a", "web-modeler", "deployment")
+	require.NoError(t, unstructured.SetNestedStringMap(deployment.Object, map[string]string{
+		"app": "web-modeler",
+	}, "spec", "template", "metadata", "labels"))
 	pod := object("v1", "Pod", "team-a", "web-modeler-abc", "pod")
 
-	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{pod})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{deployment, pod})
 	require.NoError(t, err)
 
-	assert.Empty(t, out[0].GetAnnotations())
+	deployment = find(t, out, "Deployment", "team-a", "web-modeler")
+	assert.Empty(t, deployment.GetAnnotations())
+	_, found, err := unstructured.NestedFieldNoCopy(deployment.Object, "spec", "template", "metadata", "annotations")
+	require.NoError(t, err)
+	assert.False(t, found, "the pod template must get no annotations")
+	pod = find(t, out, "Pod", "team-a", "web-modeler-abc")
+	assert.Empty(t, pod.GetAnnotations())
 }
 
 func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {

@@ -294,6 +294,7 @@ func TestSimulatorKeepsTheReplicaSetWhenOnlyTheConfigHashChanges(t *testing.T) {
 	_, err := sim.pass(context.Background())
 	require.NoError(t, err)
 	before := replicaSetNames(t, c)
+	require.Len(t, before, 1)
 
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(d), d))
 	d.Spec.Template.Annotations[camundamanagementcluster.ConfigHashAnnotation] = "8b18034a08aa4335"
