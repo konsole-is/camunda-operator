@@ -2268,6 +2268,7 @@ metadata:
         f:ownerReferences:
           k:{"uid":"174be989-b35a-57da-90c3-0607a676f137"}: {}
       f:spec:
+        f:clusterSelector: {}
         f:console:
           f:externalUrl: {}
           f:version: {}
@@ -2442,6 +2443,7 @@ metadata:
     uid: 174be989-b35a-57da-90c3-0607a676f137
   uid: 66f4ff8b-2106-51f3-90c1-fa36cace1eb4
 spec:
+  clusterSelector: {}
   console:
     externalUrl: https://management.example.com/console
     version: 8.9.133
@@ -3730,6 +3732,7 @@ metadata:
     fieldsType: FieldsV1
     fieldsV1:
       f:spec:
+        f:clusterSelector: {}
         f:environments:
           v:"platform": {}
         f:management:
@@ -3848,6 +3851,7 @@ metadata:
   namespace: platform
   uid: 174be989-b35a-57da-90c3-0607a676f137
 spec:
+  clusterSelector: {}
   environments:
   - platform
   management:
