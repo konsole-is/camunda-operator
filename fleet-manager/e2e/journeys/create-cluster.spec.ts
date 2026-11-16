@@ -3,6 +3,7 @@ import { blockingViolations } from "../axe";
 import { JOURNEYS_DIR, shot } from "../shot";
 import {
   HARNESS_NAMESPACE,
+  HARNESS_REFUSAL,
   bySection,
   createdSpec,
   deleteClaim,
@@ -33,9 +34,9 @@ test.afterEach(() => {
   deleteClaim(name);
 });
 
-// The new cluster names the secondary storage that camundacluster-sample
-// holds, so the operator keeps it at zero and no Camunda pod starts on kind.
-// So the journey cannot wait for the cluster to be ready.
+// The operator refuses a cluster with the options of the harness claim, so
+// no Camunda pod starts on kind, and the journey cannot wait for the
+// cluster to be ready.
 test("a cluster created through the form gets its sections, its requests, and the access URL", async ({
   page,
 }) => {
@@ -86,8 +87,6 @@ test("a cluster created through the form gets its sections, its requests, and th
       { timeout: 60_000 },
     )
     .toBe("True");
-  // The guard: a cluster that does not report StorageAlreadyAttached would
-  // start Camunda on kind.
   await expect
     .poll(
       () =>
@@ -97,7 +96,7 @@ test("a cluster created through the form gets its sections, its requests, and th
         ),
       { timeout: 180_000 },
     )
-    .toBe("StorageAlreadyAttached");
+    .toBe(HARNESS_REFUSAL.reason);
   // The fake plugin gives every access request the same URL, so the cluster
   // is compared with the output of its own request.
   const url = kubectl(
@@ -121,9 +120,10 @@ test("a cluster created through the form gets its sections, its requests, and th
       row(section).getByRole("img", { name: "Ready: Ready" }),
     ).toBeVisible({ timeout: 60_000 });
   }
-  await expect(row("Cluster")).toContainText("StorageAlreadyAttached", {
-    timeout: 60_000,
-  });
+  await expect(row("Cluster")).toContainText(
+    `${HARNESS_REFUSAL.reason}: ${HARNESS_REFUSAL.message}`,
+    { timeout: 60_000 },
+  );
   expect(
     await blockingViolations(page),
     "serious or critical axe violations in the progress",

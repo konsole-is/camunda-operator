@@ -5,12 +5,19 @@ import { CLAIM_LABEL } from "../../src/lib/labels";
 /** HARNESS_NAMESPACE is the namespace of the harness claim and of the claims that the create journeys make. */
 export const HARNESS_NAMESPACE = "fleet-smoke";
 
-/**
- * HARNESS_STORAGE is the SecondaryStorageConfig that camundacluster-sample
- * holds. A new cluster that names it stays at zero with the Ready reason
- * StorageAlreadyAttached, so no Camunda pod starts on kind.
- */
+/** HARNESS_STORAGE is the SecondaryStorageConfig of the harness claim. */
 export const HARNESS_STORAGE = "fleet-harness-storage";
+
+/**
+ * HARNESS_REFUSAL is how the operator refuses a cluster with the options of
+ * the harness claim: HARNESS_STORAGE has no snapshot repository, and the
+ * backup storage option gives the cluster a bucket. The cluster then runs
+ * no Camunda pod on kind. A cluster with another Ready reason can run one.
+ */
+export const HARNESS_REFUSAL = {
+  reason: "InvalidReference",
+  message: `SecondaryStorageConfig "${HARNESS_NAMESPACE}/${HARNESS_STORAGE}" has no elasticsearch.snapshotRepository`,
+};
 
 /** kubectl runs kubectl with args and returns its output. It throws when kubectl fails. */
 export function kubectl(...args: string[]): string {

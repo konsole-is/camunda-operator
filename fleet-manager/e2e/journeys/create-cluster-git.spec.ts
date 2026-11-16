@@ -5,6 +5,7 @@ import { blockingViolations } from "../axe";
 import { JOURNEYS_DIR, shot } from "../shot";
 import {
   HARNESS_NAMESPACE,
+  HARNESS_REFUSAL,
   bySection,
   createdSpec,
   deleteClaim,
@@ -68,8 +69,8 @@ test.afterAll(async ({ browser }) => {
   }
 });
 
-// The new cluster names the secondary storage that camundacluster-sample
-// holds, so the operator keeps it at zero and no Camunda pod starts on kind.
+// The operator refuses a cluster with the options of the harness claim, so
+// no Camunda pod starts on kind.
 test("a cluster created in Git mode waits for GitOps, then the claim appears", async ({
   page,
 }) => {
@@ -133,12 +134,12 @@ test("a cluster created in Git mode waits for GitOps, then the claim appears", a
       .filter({ hasText: `Created the cluster ${name}.` }),
   ).toBeVisible({ timeout: 60_000 });
   await expect(waiting).toHaveCount(0);
-  // The guard: a cluster that does not report StorageAlreadyAttached would
-  // start Camunda on kind.
   await expect(
     page
       .getByRole("listitem")
       .filter({ has: page.getByText("Cluster", { exact: true }) }),
-  ).toContainText("StorageAlreadyAttached", { timeout: 180_000 });
+  ).toContainText(`${HARNESS_REFUSAL.reason}: ${HARNESS_REFUSAL.message}`, {
+    timeout: 180_000,
+  });
   await shot(page, "create-git-applied", { dir: JOURNEYS_DIR });
 });
