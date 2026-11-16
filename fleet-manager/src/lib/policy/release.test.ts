@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { BackupLike } from "./backups";
-import { parseVersion, releaseMove } from "./release";
+import {
+  moveStatus,
+  parseVersion,
+  releaseMove,
+  versionCheckWait,
+} from "./release";
 
 const cluster = (version?: string, specVersion?: string) => ({
   metadata: { namespace: "team-a", name: "orders" },
@@ -18,6 +23,10 @@ const running = (name: string): BackupLike => ({
   metadata: { namespace: "team-a", name },
   spec: { clusterRef: { name: "orders" } },
   status: { phase: "Running" },
+});
+const pending = (name: string): BackupLike => ({
+  ...running(name),
+  status: { phase: "Pending" },
 });
 
 describe("releaseMove", () => {
@@ -137,5 +146,102 @@ describe("parseVersion", () => {
     for (const version of ["8.10", "8.10.2-rc1", "v8.10.2", "", undefined]) {
       expect(parseVersion(version)).toBeUndefined();
     }
+  });
+});
+
+describe("moveStatus", () => {
+  const status = (
+    c: ReturnType<typeof cluster> & { spec: { suspend?: boolean } },
+    target: string,
+    environment?: Environment,
+    backups: BackupLike[] = [],
+  ) =>
+    moveStatus(
+      releaseMove(c, release(target, target), environment, backups),
+      c,
+    );
+
+  it("can move to a newer patch that the environment allows", () => {
+    expect(status(cluster("8.9.0"), "8.9.1")).toEqual({
+      kind: "canMove",
+      text: "Can move.",
+    });
+  });
+
+  it("puts a release that the environment does not allow first", () => {
+    expect(
+      status(cluster("8.9.0"), "8.11.0", env({ allowed: ["other"] }), [
+        running("b1"),
+      ]),
+    ).toEqual({
+      kind: "notAllowed",
+      text: "The environment does not allow this release.",
+    });
+  });
+
+  it("names a pending backup and blocks on it", () => {
+    expect(
+      status(cluster("8.9.0"), "8.9.1", undefined, [pending("nightly")]),
+    ).toEqual({
+      kind: "backupRunning",
+      backup: { kind: "LogicalBackupRDBMS", namespace: "team-a", name: "nightly" },
+      text: "Backup nightly is running. The move waits until it ends.",
+    });
+  });
+
+  it("puts a running backup before a skip", () => {
+    expect(
+      status(cluster("8.9.0"), "8.11.0", undefined, [running("nightly")]).kind,
+    ).toBe("backupRunning");
+  });
+
+  it("waits for a suspended cluster to resume, also on a skip", () => {
+    const c = { ...cluster("8.9.0"), spec: { suspend: true } };
+    expect(status(c, "8.11.0")).toEqual({
+      kind: "waitsForResume",
+      text: "The version checks run when the cluster resumes.",
+    });
+  });
+
+  it("waits for a cluster that reports no version", () => {
+    expect(status(cluster(), "8.9.1")).toEqual({
+      kind: "waitsForVersion",
+      text: "The version checks run when the cluster reports its version.",
+    });
+  });
+
+  it("refuses a skip with the minor to move to first", () => {
+    expect(status(cluster("8.9.0"), "8.11.0")).toEqual({
+      kind: "skipsMinor",
+      minor: "8.10",
+      text: "Skips 8.10. Move to an 8.10 release first.",
+    });
+  });
+
+  it("gives a downgrade both versions", () => {
+    expect(status(cluster("8.9.3"), "8.9.1")).toEqual({
+      kind: "downgrade",
+      from: "8.9.3",
+      to: "8.9.1",
+      text: "8.9.3 to 8.9.1 is a downgrade.",
+    });
+  });
+
+  it("reads the running version, not spec.version", () => {
+    expect(status(cluster("8.8.3", "8.9.0"), "8.10.0").kind).toBe(
+      "skipsMinor",
+    );
+  });
+});
+
+describe("versionCheckWait", () => {
+  it("has no wait for a running cluster that reports its version", () => {
+    expect(versionCheckWait(cluster("8.9.0"))).toBeUndefined();
+  });
+
+  it("waits for a suspended cluster before one without a version", () => {
+    expect(versionCheckWait({ ...cluster(), spec: { suspend: true } })).toBe(
+      "The version checks run when the cluster resumes.",
+    );
   });
 });
