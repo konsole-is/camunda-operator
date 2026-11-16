@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { templateData } from "@/lib/claims/templates";
 import { renderJSON } from "@/lib/gotemplate";
 import { sectionFixtures } from "./fixtures";
-import { emptyPreviewText, previewClaims, templateData } from "./preview";
+import { emptyPreviewText, previewClaims } from "./preview";
 import { TemplatePreview } from "./template-preview";
 
 const sources = sectionFixtures();

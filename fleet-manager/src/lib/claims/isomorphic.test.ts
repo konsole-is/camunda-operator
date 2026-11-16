@@ -2,6 +2,7 @@ import { describeIsomorphic } from "../../../test/imports/scan";
 
 // @/lib/labels and @/lib/policy are isomorphic under their own guard.
 describeIsomorphic(new URL(".", import.meta.url), [
+  "@/lib/gotemplate",
   "@/lib/labels",
   "@/lib/policy",
   "@noble/hashes/sha2.js",
