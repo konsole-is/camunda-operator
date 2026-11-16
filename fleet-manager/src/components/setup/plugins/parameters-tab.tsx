@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import type { PolicyResult } from "@/lib/policy/types";
 import type { ParameterRow } from "./parameters";
-import { ValueError } from "./tab-parts";
+import { NotKnown, ValueError } from "./tab-parts";
 
 /**
  * ParametersTab shows each parameter of rows in its own panel: its type,
@@ -22,7 +22,9 @@ export function ParametersTab({
       <ValueError text={"error" in rows ? rows.error : rows.refusal.message} />
     );
   if (rows.value.length === 0)
-    return (
+    return unread.includes("Environment") ? (
+      <NotKnown kinds={["Environment"]} />
+    ) : (
       <p className="text-sm text-muted">This option takes no parameters.</p>
     );
   return (

@@ -171,6 +171,19 @@ describe("ParametersTab", () => {
     ).toBe("The schema of this parameter is not an object.");
   });
 
+  it("does not say that the option takes no parameters while Environment is not read", () => {
+    render(
+      <ParametersTab
+        rows={parameterRows(pluginRegistration("x", {}), [], ["Environment"])}
+        unread={["Environment"]}
+      />,
+    );
+    expect(screen.queryByText("This option takes no parameters.")).toBeNull();
+    expect(
+      screen.getByText("Not known: Environment is not read."),
+    ).toBeTruthy();
+  });
+
   it("says when the option takes no parameters", () => {
     render(
       <ParametersTab
