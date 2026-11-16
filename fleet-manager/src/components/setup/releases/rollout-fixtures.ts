@@ -180,6 +180,7 @@ export function rolloutData(over: Partial<RolloutData> = {}): RolloutData {
       clusterClaim("team-pay", "fresh"),
       clusterClaim("team-pay", "current", { releaseRef: "camunda-8-9-1" }),
     ],
+    databaseServers: [],
     clusterPresets: [
       {
         apiVersion: "core.camunda.io/v1",

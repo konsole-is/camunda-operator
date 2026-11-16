@@ -38,6 +38,43 @@ const withClaim = (claim: Resource<"CamundaClusterClaim">) => {
   };
 };
 
+// refusedOnTarget gives rolloutData with team-pay/payments moved to
+// targetRelease and refused by the operator for reason.
+const refusedOnTarget = (reason: string, claimSpec: object = {}) => {
+  const data = rolloutData();
+  return {
+    ...data,
+    clusters: data.clusters.map((c) =>
+      c.metadata?.name === "payments"
+        ? cluster("team-pay", "payments", {
+            version: "8.9.4",
+            releaseRef: "camunda-8-9-1",
+            conditions: [
+              {
+                type: "Ready",
+                status: "False",
+                reason,
+                message: "the effective version is refused",
+              },
+            ],
+          })
+        : c,
+    ),
+    claims: data.claims.map((c) =>
+      c.metadata.name === "payments"
+        ? clusterClaim("team-pay", "payments", {
+            releaseRef: "camunda-8-9-1",
+            ...claimSpec,
+          })
+        : c,
+    ),
+  };
+};
+const refusedRow = (reason: string, claimSpec: object = {}) =>
+  rolloutRows(targetRelease, refusedOnTarget(reason, claimSpec)).find(
+    (r) => r.name === "payments",
+  )!;
+
 describe("rolloutRows", () => {
   it("shows name, environment, namespace, current release, and running version", () => {
     expect(row("orders")).toMatchObject({
@@ -71,13 +108,42 @@ describe("rolloutRows", () => {
 
   it("names the backup that blocks the move", () => {
     expect(row("billing").status.text).toBe(
-      "Backup billing-nightly is running. The move waits until it ends.",
+      "Backup billing-nightly is pending. The move waits until it ends.",
     );
   });
 
   it("shows the message of a VersionSkipRefused refusal", () => {
     expect(row("ledger").refusal).toBe(VERSION_SKIP_MESSAGE);
     expect(row("orders").refusal).toBeUndefined();
+  });
+
+  it("shows a refused downgrade to the release with its message and offers Confirm downgrade", () => {
+    const payments = refusedRow("VersionDowngradeRefused");
+    expect(payments.status).toEqual({
+      kind: "downgradeRefused",
+      to: "8.9.1",
+      text: "The operator refused the move: the effective version is refused",
+    });
+    expect(payments.action).toBe("confirmDowngrade");
+    expect(payments.refusal).toBeUndefined();
+  });
+
+  it("offers no confirm for a refused downgrade that the claim already allows", () => {
+    const payments = refusedRow("VersionDowngradeRefused", {
+      allowVersionDowngrade: "8.9.1",
+    });
+    expect(payments.status.kind).toBe("refused");
+    expect(payments.action).toBeUndefined();
+  });
+
+  it("shows a refused skip to the release with its message and no action", () => {
+    const payments = refusedRow("VersionSkipRefused");
+    expect(payments.status).toEqual({
+      kind: "refused",
+      text: "The operator refused the move: the effective version is refused",
+    });
+    expect(payments.action).toBeUndefined();
+    expect(payments.refusal).toBeUndefined();
   });
 
   it("checks against status.management.version when spec.version differs from the release", () => {
@@ -168,7 +234,7 @@ describe("rolloutRows", () => {
   it("keeps the checks for a list that the move does not read", () => {
     const read = rolloutRows(targetRelease, {
       ...rolloutData(),
-      stale: ["ElasticsearchCluster", "DatabaseServer"],
+      stale: ["ElasticsearchCluster"],
     });
     expect(read.find((r) => r.name === "orders")?.status.kind).toBe("canMove");
   });
@@ -206,7 +272,11 @@ describe("unreadRolloutKinds", () => {
         ],
         stale: ["CamundaClusterClaim", "LogicalBackupElasticsearch"],
       }),
-    ).toEqual(["CamundaClusterClaim", "LogicalBackupElasticsearch"]);
+    ).toEqual([
+      "CamundaClusterClaim",
+      "DatabaseServer",
+      "LogicalBackupElasticsearch",
+    ]);
     expect(unreadRolloutKinds({})).toEqual([]);
   });
 
@@ -285,6 +355,22 @@ describe("planMove", () => {
     });
   });
 
+  it("sets only allowVersionDowngrade on a confirmed refused downgrade", () => {
+    const data = refusedOnTarget("VersionDowngradeRefused");
+    const payments = rolloutRows(targetRelease, data).find(
+      (r) => r.name === "payments",
+    )!;
+    const plan = planMove(
+      targetRelease,
+      [{ row: payments, downgrade: true }],
+      data,
+    );
+    expect(plan.errors).toEqual([]);
+    expect(plan.change?.apply[0]).toMatchObject({
+      spec: { releaseRef: "camunda-8-9-1", allowVersionDowngrade: "8.9.1" },
+    });
+  });
+
   it("refuses a downgrade that the user did not confirm", () => {
     const plan = planMove(
       targetRelease,
@@ -342,6 +428,47 @@ describe("planMove", () => {
         ],
       },
     ]);
+  });
+
+  it("says that a database server of the claim on another PostgreSQL major refuses the release", () => {
+    const pg = (version: string) =>
+      ({
+        ...targetRelease,
+        spec: { version: "8.9.1", databaseServer: { version } },
+      }) as Resource<"CamundaRelease">;
+    const data = rolloutData({
+      requests: [
+        {
+          apiVersion: "plugins.camunda.io/v1alpha1",
+          kind: "PluginRequest",
+          metadata: {
+            namespace: "team-orders",
+            name: "orders-rdbms",
+            labels: { "fleet.camunda.io/claim": "orders" },
+          },
+          spec: {},
+          status: {
+            resources: [{ kind: "DatabaseServer", name: "orders-pg" }],
+          },
+        } as unknown as Resource<"PluginRequest">,
+      ],
+      databaseServers: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "DatabaseServer",
+          metadata: { namespace: "team-orders", name: "orders-pg" },
+          spec: { releaseRef: "camunda-8-9-0" },
+          status: { version: "16" },
+        } as unknown as Resource<"DatabaseServer">,
+      ],
+    });
+    const lines = (version: string) =>
+      planMove(pg(version), [{ row: row("orders"), downgrade: false }], data)
+        .impacts[0].lines;
+    expect(lines("17")).toContain(
+      "The database server orders-pg runs PostgreSQL 16 and refuses PostgreSQL 17 of the release. It keeps PostgreSQL 16.",
+    );
+    expect(lines("16").join(" ")).not.toContain("PostgreSQL");
   });
 
   it("gives no change and names the claim when validateClusterClaim refuses it", () => {
@@ -403,7 +530,7 @@ describe("planMove", () => {
     );
     expect(plan.change).toBeUndefined();
     expect(plan.errors).toEqual([
-      "team-pay/billing: Backup billing-nightly is running. The move waits until it ends.",
+      "team-pay/billing: Backup billing-nightly is pending. The move waits until it ends.",
     ]);
   });
 
@@ -480,6 +607,37 @@ describe("namedErrors", () => {
       message: "team-pay/fresh: spec.releaseRef: Unsupported value",
       ref: expect.objectContaining({ name: "fresh" }),
     });
+  });
+
+  it("names the field manager that owns a field and the remedy for a Conflict", () => {
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-orders",
+      name: "orders",
+    };
+    const result = namedErrors({
+      ok: false,
+      errors: [
+        {
+          code: "Conflict",
+          message: 'conflict with "kubectl-client-side-apply"',
+          path: "spec.releaseRef",
+          manager: "kubectl-client-side-apply",
+          ref,
+        },
+        {
+          code: "Conflict",
+          message: "conflict",
+          path: "spec.releaseRef",
+          ref,
+        },
+      ],
+    });
+    expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
+      'team-orders/orders: spec.releaseRef belongs to the field manager "kubectl-client-side-apply". Change it with that tool, or leave this cluster out of the move.',
+      "team-orders/orders: spec.releaseRef belongs to another field manager. Change it with that tool, or leave this cluster out of the move.",
+    ]);
   });
 
   it("returns an ok result as it is", () => {

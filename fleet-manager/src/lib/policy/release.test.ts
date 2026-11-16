@@ -189,8 +189,14 @@ describe("moveStatus", () => {
         namespace: "team-a",
         name: "nightly",
       },
-      text: "Backup nightly is running. The move waits until it ends.",
+      text: "Backup nightly is pending. The move waits until it ends.",
     });
+  });
+
+  it("says that a backup in phase Running is running", () => {
+    expect(
+      status(cluster("8.9.0"), "8.9.1", undefined, [running("nightly")]).text,
+    ).toBe("Backup nightly is running. The move waits until it ends.");
   });
 
   it("puts a running backup before a skip", () => {

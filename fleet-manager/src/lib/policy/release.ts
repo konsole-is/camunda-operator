@@ -38,8 +38,21 @@ export function releaseMove(
     ...(current && { current }),
     downgrade: Boolean(want && have && versionBelow(want, have)),
     ...(skip && { skippedMinor: `${have[0]}.${have[1] + 1}` }),
-    ...(backup && { backup }),
+    ...(backup && { backup, backupState: backupStateOf(backup, backups) }),
   };
+}
+
+function backupStateOf(
+  backup: BackupRef,
+  backups: readonly BackupLike[],
+): "pending" | "running" {
+  const phase = backups.find(
+    (b) =>
+      b.kind === backup.kind &&
+      b.metadata?.namespace === backup.namespace &&
+      b.metadata?.name === backup.name,
+  )?.status?.phase;
+  return phase === "Running" ? "running" : "pending";
 }
 
 /** SuspendableCluster is the part of a CamundaCluster that moveStatus reads. */
@@ -94,7 +107,7 @@ export function moveStatus(
     return {
       kind: "backupRunning",
       backup: move.backup,
-      text: `Backup ${move.backup.name} is running. The move waits until it ends.`,
+      text: `Backup ${move.backup.name} ${move.backupState ? `is ${move.backupState}` : "has not ended"}. The move waits until it ends.`,
     };
   const wait = versionCheckWait(cluster);
   if (wait)

@@ -23,46 +23,47 @@ import {
 } from "@/lib/session";
 import type { ApiError, Change, WriteResult } from "@/lib/write/types";
 import { type SourceReads, unreadKinds } from "./rows";
-import { RELEASE_SOURCE_KINDS } from "./source-kinds";
+import { RELEASE_SOURCE_KINDS, ROLLOUT_SOURCE_KINDS } from "./source-kinds";
 
 /** ClusterClaim is a CamundaClusterClaim as the watch gives it. */
 export type ClusterClaim = Resource<"CamundaClusterClaim">;
 
-const ROLLOUT_KEYS = [
-  "releases",
-  "environments",
-  "namespaces",
-  "clusters",
-  "claims",
-  "clusterPresets",
-  "sections",
-  "registrations",
-  "requests",
-  "elasticsearchBackups",
-  "rdbmsBackups",
-] as const;
-
-type RolloutKey = (typeof ROLLOUT_KEYS)[number];
+const ROLLOUT_KINDS = {
+  releases: RELEASE_SOURCE_KINDS.releases,
+  environments: RELEASE_SOURCE_KINDS.environments,
+  namespaces: RELEASE_SOURCE_KINDS.namespaces,
+  clusters: RELEASE_SOURCE_KINDS.clusters,
+  claims: RELEASE_SOURCE_KINDS.claims,
+  databaseServers: RELEASE_SOURCE_KINDS.databaseServers,
+  ...ROLLOUT_SOURCE_KINDS,
+};
 
 /**
- * RolloutData holds the lists of ReleasesData that a move of clusters to a
- * release reads, as the watch gives them.
+ * RolloutData holds the lists that a move of clusters to a release reads,
+ * as the watch gives them: lists of ReleasesData and every list of
+ * RolloutLists.
  */
 export type RolloutData = {
-  [K in RolloutKey]: readonly Resource<(typeof RELEASE_SOURCE_KINDS)[K]>[];
+  [K in keyof typeof ROLLOUT_KINDS]: readonly Resource<
+    (typeof ROLLOUT_KINDS)[K]
+  >[];
 };
 
 /**
  * RolloutStatus is the eligibility of a cluster for a move: a MoveStatus,
  * or a cluster that no claim made, a claim label that names no claim, a
- * cluster that runs the release already, or lists that the checks need and
- * that are not read.
+ * cluster that runs the release already, a move to the release that the
+ * operator refused, or lists that the checks need and that are not read.
+ * downgradeRefused is a refused downgrade that allowVersionDowngrade set
+ * to the version to can permit.
  */
 export type RolloutStatus =
   | MoveStatus
   | { kind: "notManaged"; text: string }
   | { kind: "noClaim"; text: string }
   | { kind: "onRelease"; text: string }
+  | { kind: "refused"; text: string }
+  | { kind: "downgradeRefused"; to: string; text: string }
   | { kind: "unread"; text: string };
 
 /** RolloutAction is the action that a row offers. */
@@ -73,7 +74,8 @@ export type RolloutAction = "move" | "confirmDowngrade" | "openEnvironments";
  * "<namespace>/<name>". environment is undefined for a namespace of no
  * Environment. currentRelease is the release of the claim, else the release
  * of the cluster. refusal is the message of a Ready condition with reason
- * VersionSkipRefused. action is undefined when the row offers none.
+ * VersionSkipRefused, unless status holds it. action is undefined when the
+ * row offers none.
  */
 export type RolloutRow = {
   key: string;
@@ -95,10 +97,12 @@ export const STATUS_LABELS: Record<RolloutStatus["kind"], string> = {
   notAllowed: "Not allowed in the environment",
   downgrade: "Downgrade",
   skipsMinor: "Skips a Camunda minor",
-  backupRunning: "A backup is running",
+  backupRunning: "A backup is pending or running",
   notManaged: "Not managed by the fleet manager",
   noClaim: "Claim missing",
   onRelease: "Runs this release",
+  refused: "Refused by the operator",
+  downgradeRefused: "Refused by the operator",
   waitsForResume: "Checks wait",
   waitsForVersion: "Checks wait",
   unread: "Lists not read",
@@ -110,12 +114,15 @@ const ACTIONS: Partial<Record<RolloutStatus["kind"], RolloutAction>> = {
   waitsForResume: "move",
   waitsForVersion: "move",
   downgrade: "confirmDowngrade",
+  downgradeRefused: "confirmDowngrade",
   notAllowed: "openEnvironments",
 };
 
-// The operator sets this reason on Ready when it refuses a move that skips
-// a minor. No generated constant holds condition reasons.
+// The operator sets these reasons on Ready when it refuses a move that
+// skips a minor or that downgrades. No generated constant holds condition
+// reasons.
 const VERSION_SKIP_REFUSED = "VersionSkipRefused";
+const VERSION_DOWNGRADE_REFUSED = "VersionDowngradeRefused";
 
 /**
  * PARTIAL_MOVE_CAUTION is the caution of a move of many claims in direct
@@ -130,9 +137,7 @@ export const PARTIAL_MOVE_CAUTION =
  * can move.
  */
 export function unreadRolloutKinds(reads: SourceReads): string[] {
-  const kinds: readonly string[] = ROLLOUT_KEYS.map(
-    (key) => RELEASE_SOURCE_KINDS[key],
-  );
+  const kinds: readonly string[] = Object.values(ROLLOUT_KINDS);
   return unreadKinds(reads).filter((kind) => kinds.includes(kind));
 }
 
@@ -164,9 +169,15 @@ export function rolloutRows(
       const currentRelease =
         text(claim?.spec?.releaseRef) || text(cluster.spec?.releaseRef);
       const runningVersion = text(cluster.status?.management?.version);
+      const ready = readyOf(cluster);
       const status = statusOf();
       const action = ACTIONS[status.kind];
-      const refusal = refusalOf(cluster);
+      const refusal =
+        ready?.reason === VERSION_SKIP_REFUSED &&
+        status.kind !== "refused" &&
+        status.kind !== "downgradeRefused"
+          ? ready.message
+          : undefined;
       return {
         key: `${namespace}/${name}`,
         name,
@@ -197,8 +208,7 @@ export function rolloutRows(
             kind: "noClaim",
             text: `The claim ${cluster.metadata?.labels?.[CLAIM_LABEL]} is missing.`,
           };
-        if (currentRelease === target)
-          return { kind: "onRelease", text: "Runs this release." };
+        if (currentRelease === target) return targetStatus(claim);
         return moveStatus(
           releaseMove(
             cluster,
@@ -208,6 +218,25 @@ export function rolloutRows(
           ),
           cluster,
         );
+      }
+
+      function targetStatus(claim: ClusterClaim): RolloutStatus {
+        if (text(cluster.spec?.releaseRef) !== target || !ready?.message)
+          return { kind: "onRelease", text: "Runs this release." };
+        const refused = `The operator refused the move: ${ready.message}`;
+        const to = release.spec?.version ?? "";
+        if (
+          ready.reason === VERSION_DOWNGRADE_REFUSED &&
+          to !== "" &&
+          claim.spec?.allowVersionDowngrade !== to
+        )
+          return { kind: "downgradeRefused", to, text: refused };
+        if (
+          ready.reason === VERSION_DOWNGRADE_REFUSED ||
+          ready.reason === VERSION_SKIP_REFUSED
+        )
+          return { kind: "refused", text: refused };
+        return { kind: "onRelease", text: "Runs this release." };
       }
     })
     .sort(
@@ -222,8 +251,8 @@ export type MovePick = { row: RolloutRow; downgrade: boolean };
 /**
  * MovePlan is the write of a move and what it does. change is undefined
  * when errors is not empty. Each error starts with "<namespace>/<name>: ".
- * impacts holds, for each cluster ("<namespace>/<name>"), what restarts and
- * what moves with its claim.
+ * impacts holds, for each cluster ("<namespace>/<name>"), what the move
+ * does to it.
  */
 export type MovePlan = {
   change?: Change;
@@ -267,6 +296,11 @@ export function planMove(
     }
     const environment = environmentOf(row.namespace, data);
     const claimName = row.claim?.metadata.name;
+    const requests = data.requests.filter(
+      (r) =>
+        r.metadata?.namespace === row.namespace &&
+        r.metadata?.labels?.[CLAIM_LABEL] === claimName,
+    );
     for (const error of validateClusterClaim(session, {
       environment,
       sections: data.sections,
@@ -274,11 +308,7 @@ export function planMove(
       releases: data.releases,
       cluster: row.cluster,
       backups: [...data.elasticsearchBackups, ...data.rdbmsBackups],
-      requests: data.requests.filter(
-        (r) =>
-          r.metadata?.namespace === row.namespace &&
-          r.metadata?.labels?.[CLAIM_LABEL] === claimName,
-      ),
+      requests,
     }))
       errors.push(named(error.message));
     impacts.push({
@@ -293,6 +323,7 @@ export function planMove(
           environment,
         }),
         ...movedWithClaim(session, data.registrations),
+        ...databaseServerRefusals(release, requests, data.databaseServers),
       ],
     });
     changes.push(changeOf(session, intent));
@@ -327,7 +358,12 @@ export function namedApiErrors(errors: readonly ApiError[]): ApiError[] {
     const { path, ...rest } = error;
     // The review shows a path in front of the message, so the path moves
     // behind the claim name.
-    const message = path ? `${path}: ${error.message}` : error.message;
+    const message =
+      error.code === "Conflict" && path
+        ? `${path} belongs to ${error.manager ? `the field manager "${error.manager}"` : "another field manager"}. Change it with that tool, or leave this cluster out of the move.`
+        : path
+          ? `${path}: ${error.message}`
+          : error.message;
     return { ...rest, message: `${ref.namespace}/${ref.name}: ${message}` };
   });
 }
@@ -349,7 +385,10 @@ function movedSession(
   if (!opened) return "The claim cannot be changed.";
   let session: Session<ClusterClaim> = opened;
   const values: [string, unknown][] = [["releaseRef", target]];
-  if (downgrade && row.status.kind === "downgrade")
+  if (
+    downgrade &&
+    (row.status.kind === "downgrade" || row.status.kind === "downgradeRefused")
+  )
     values.push(["allowVersionDowngrade", row.status.to]);
   for (const [field, value] of values) {
     const set = setValue(session, [{ field: "spec" }, { field }], value);
@@ -386,6 +425,35 @@ function movedWithClaim(
   return lines;
 }
 
+function databaseServerRefusals(
+  release: Resource<"CamundaRelease">,
+  requests: readonly Resource<"PluginRequest">[],
+  servers: readonly Resource<"DatabaseServer">[],
+): string[] {
+  const target = text(release.spec?.databaseServer?.version);
+  if (!target) return [];
+  return requests.flatMap((request) => {
+    const resources: unknown = request.status?.resources;
+    return (Array.isArray(resources) ? resources : []).flatMap(
+      (ref: { kind?: unknown; name?: unknown }) => {
+        if (ref?.kind !== "DatabaseServer") return [];
+        const server = servers.find(
+          (s) =>
+            s.metadata?.namespace === request.metadata?.namespace &&
+            s.metadata?.name === ref.name,
+        );
+        const running = text(server?.status?.version);
+        // The operator refuses a change of the major of a running server.
+        if (!server || !running || running === target) return [];
+        if (text(server.spec?.version)) return [];
+        return [
+          `The database server ${server.metadata?.name} runs PostgreSQL ${running} and refuses PostgreSQL ${target} of the release. It keeps PostgreSQL ${running}.`,
+        ];
+      },
+    );
+  });
+}
+
 function claimOf(
   cluster: Resource<"CamundaCluster">,
   claims: readonly ClusterClaim[],
@@ -408,15 +476,16 @@ function environmentOf(
   return data.environments.find((e) => e.metadata?.name === name);
 }
 
-function refusalOf(cluster: Resource<"CamundaCluster">): string | undefined {
+function readyOf(
+  cluster: Resource<"CamundaCluster">,
+): { reason?: string; message?: string } | undefined {
   const conditions: unknown = cluster.status?.conditions;
   if (!Array.isArray(conditions)) return undefined;
   const ready = conditions.find(
     (c: { type?: unknown }) => c?.type === "Ready",
   ) as { reason?: unknown; message?: unknown } | undefined;
-  return ready?.reason === VERSION_SKIP_REFUSED
-    ? text(ready.message)
-    : undefined;
+  if (!ready) return undefined;
+  return { reason: text(ready.reason), message: text(ready.message) };
 }
 
 // text gives a string field of a live object, or undefined for a missing

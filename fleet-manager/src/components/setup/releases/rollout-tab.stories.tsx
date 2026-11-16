@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import type { Change, KubeObject } from "@/lib/write/types";
-import { cluster, rolloutData, targetRelease } from "./rollout-fixtures";
+import {
+  cluster,
+  clusterClaim,
+  rolloutData,
+  targetRelease,
+} from "./rollout-fixtures";
 import { RolloutTab } from "./rollout-tab";
 
 const changed = (o: KubeObject) => ({
@@ -128,6 +133,52 @@ export const PartialWrite: Story = {
         "team-pay/fresh: The CamundaClusterClaim fresh changed since you opened it.",
       ),
     ).toBeVisible();
+  },
+};
+
+export const MoveThatDidNotFinish: Story = {
+  name: "Move that did not finish",
+  args: PartialWrite.args,
+  play: async (context) => {
+    await PartialWrite.play!(context);
+    const canvas = within(context.canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Back" }));
+    await expect(
+      canvas.getByRole("alert", { name: "The move did not finish" }),
+    ).toBeVisible();
+  },
+};
+
+export const RefusedOnThisRelease: Story = {
+  name: "Refused on this release",
+  args: {
+    data: {
+      ...rolloutData(),
+      clusters: rolloutData().clusters.map((c) =>
+        c.metadata?.name === "payments"
+          ? cluster("team-pay", "payments", {
+              version: "8.9.4",
+              releaseRef: "camunda-8-9-1",
+              conditions: [
+                {
+                  type: "Ready",
+                  status: "False",
+                  reason: "VersionDowngradeRefused",
+                  message:
+                    "the effective version 8.9.1 is below the running version 8.9.4",
+                },
+              ],
+            })
+          : c,
+      ),
+      claims: rolloutData().claims.map((c) =>
+        c.metadata.name === "payments"
+          ? clusterClaim("team-pay", "payments", {
+              releaseRef: "camunda-8-9-1",
+            })
+          : c,
+      ),
+    },
   },
 };
 

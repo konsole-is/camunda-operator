@@ -234,6 +234,119 @@ describe("RolloutTab", () => {
     ).toEqual(["orders", "fresh"]);
   });
 
+  it("keeps the result of a partial write after the written claim closes the review", async () => {
+    const data = freshCanMove();
+    const { actions, rerender } = renderTab({ data });
+    actions.applyMove.mockResolvedValueOnce({
+      ok: false,
+      errors: [staleErrorOf("team-pay", "fresh")],
+    });
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-pay/fresh" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await screen.findByText(
+      "team-pay/fresh: The CamundaClusterClaim fresh changed since you opened it.",
+    );
+    rerender({
+      ...data,
+      claims: data.claims.map((c) =>
+        c.metadata.name === "orders"
+          ? { ...c, spec: { ...c.spec, releaseRef: "camunda-8-9-1" } }
+          : c,
+      ),
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
+    const result = screen.getByRole("alert", {
+      name: "The move did not finish",
+    });
+    expect(
+      within(result).getByText("team-orders/orders: moved to camunda-8-9-1."),
+    ).toBeTruthy();
+    expect(
+      within(result).getByText(
+        "team-pay/fresh: The CamundaClusterClaim fresh changed since you opened it.",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(
+      within(result).getByRole("button", { name: "Dismiss" }),
+    );
+    expect(
+      screen.queryByRole("alert", { name: "The move did not finish" }),
+    ).toBeNull();
+  });
+
+  it("keeps the boxes and Move selected in step after Back", async () => {
+    renderTab({ data: freshCanMove() });
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-pay/fresh" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }));
+    for (const name of ["Select team-orders/orders", "Select team-pay/fresh"])
+      expect(
+        screen.getByRole("checkbox", { name }).getAttribute("aria-checked"),
+      ).toBe("true");
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-pay/fresh" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    expect(
+      await screen.findByText(
+        /team-orders\/orders: .*The brokers restart one at a time/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/team-pay\/fresh: /)).toBeNull();
+  });
+
+  it("names a claim whose releaseRef another field manager owns, and writes nothing", async () => {
+    const { actions } = renderTab();
+    actions.previewMove.mockResolvedValueOnce({
+      objects: [],
+      errors: [
+        {
+          code: "Conflict",
+          message: 'conflict with "kubectl-client-side-apply"',
+          path: "spec.releaseRef",
+          manager: "kubectl-client-side-apply",
+          ref: staleErrorOf("team-orders", "orders").ref,
+        },
+      ],
+    });
+    await userEvent.click(
+      within(rowOf("orders")).getByRole("button", { name: "Move" }),
+    );
+    expect(
+      await screen.findByText(
+        'team-orders/orders: spec.releaseRef belongs to the field manager "kubectl-client-side-apply". Change it with that tool, or leave this cluster out of the move.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Review the move" })).getByRole(
+        "button",
+        { name: "Move" },
+      ),
+    ).toHaveProperty("disabled", true);
+    expect(actions.applyMove).not.toHaveBeenCalled();
+  });
+
   it("drops a selected row that a backup now blocks", async () => {
     const { rerender } = renderTab();
     await userEvent.click(
@@ -262,7 +375,7 @@ describe("RolloutTab", () => {
     ).toBeNull();
     expect(
       within(rowOf("orders")).getByText(
-        "Backup orders-now is running. The move waits until it ends.",
+        "Backup orders-now is pending. The move waits until it ends.",
       ),
     ).toBeTruthy();
   });
