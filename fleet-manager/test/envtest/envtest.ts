@@ -459,6 +459,8 @@ async function freePorts(count: number): Promise<number[]> {
     }
     return probes.map((p) => (p.address() as net.AddressInfo).port);
   } finally {
-    await Promise.all(probes.map((p) => new Promise((resolve) => p.close(resolve))));
+    await Promise.all(
+      probes.map((p) => new Promise((resolve) => p.close(resolve))),
+    );
   }
 }
