@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { Environment } from "@/generated/crds/environment";
 import type { Resource } from "@/lib/k8s/kinds";
 import { claim, cluster } from "../../../../test/fakes/slot-context";
-import { releaseChoices } from "./release-options";
+import {
+  createReleaseChoices,
+  releaseChoices,
+  releaseLabel,
+} from "./release-options";
 
 const release = (version: string) =>
   ({
@@ -141,5 +146,80 @@ describe("releaseChoices", () => {
 
   it("has no note on a cluster that reports its version", () => {
     expect(choices().note).toBeUndefined();
+  });
+});
+
+describe("releaseLabel", () => {
+  it("marks the default release", () => {
+    expect(releaseLabel({ name: "camunda-8-9", version: "8.9.9" }, true)).toBe(
+      "8.9.9 (camunda-8-9), Default",
+    );
+  });
+
+  it("names a downgrade and a disabled release as the release panel showed them", () => {
+    expect(
+      releaseLabel(
+        {
+          name: "r",
+          version: "8.8.1",
+          downgrade: { from: "8.9.0", to: "8.8.1" },
+        },
+        false,
+      ),
+    ).toBe("8.8.1 (r), downgrade");
+    expect(
+      releaseLabel(
+        { name: "r", version: "8.7.0", disabled: "Skips 8.8." },
+        true,
+      ),
+    ).toBe("8.7.0 (r): Skips 8.8.");
+  });
+});
+
+describe("createReleaseChoices", () => {
+  const named = (name: string, version: string) =>
+    ({
+      kind: "CamundaRelease",
+      metadata: { name },
+      spec: { version },
+    }) as unknown as Resource<"CamundaRelease">;
+  const all = [
+    named("camunda-8-8", "8.8.4"),
+    named("camunda-8-9", "8.9.9"),
+    named("camunda-8-7", "8.7.2"),
+  ];
+  const prod = (releases?: { allowed: string[]; default?: string }) =>
+    ({
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: { ...(releases && { releases }) },
+    }) as unknown as Environment;
+
+  it("lists the allowed releases newest first with the default marked", () => {
+    const options = createReleaseChoices(
+      all,
+      prod({ allowed: ["camunda-8-8", "camunda-8-9"], default: "camunda-8-9" }),
+    );
+    expect(options.map((o) => o.name)).toEqual(["camunda-8-9", "camunda-8-8"]);
+    expect(options.map((o) => o.isDefault)).toEqual([true, false]);
+    expect(
+      options.every(
+        (o) => !o.isCurrent && o.disabled === undefined && !o.downgrade,
+      ),
+    ).toBe(true);
+  });
+
+  it("lists every release without an Environment", () => {
+    const options = createReleaseChoices(all, undefined);
+    expect(options.map((o) => o.name)).toEqual([
+      "camunda-8-9",
+      "camunda-8-8",
+      "camunda-8-7",
+    ]);
+    expect(options.some((o) => o.isDefault)).toBe(false);
+  });
+
+  it("lists no release when the Environment allows none", () => {
+    expect(createReleaseChoices(all, prod())).toEqual([]);
   });
 });

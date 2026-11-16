@@ -343,7 +343,7 @@ function Editor({
           describedBy={describedBy}
           onChange={(size, errors) =>
             valid(
-              typeof current === "number" && /^\d+$/.test(size ?? "")
+              typeof (current ?? value) === "number" && /^\d+$/.test(size ?? "")
                 ? Number(size)
                 : size,
               errors,
