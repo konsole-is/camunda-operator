@@ -5,8 +5,8 @@ import { type ConditionLike, DOT_TONE, describeReady } from "./status";
  * StatusDot is the dot of one component in a row, for example Zeebe in the
  * fleet table. Its accessible name says the component and its Ready state.
  * off marks a component that the cluster does not use. unknown marks a
- * component whose condition the page could not read: the dot says "Not
- * known" and ignores condition.
+ * component whose condition the page could not read: unless off, the dot
+ * says "Not known" and ignores condition.
  */
 export function StatusDot({
   label,

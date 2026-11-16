@@ -90,8 +90,8 @@ export type PlanePageData = {
  * links to all management planes. The Overview tab shows a card for each
  * component of the plane, and the component query parameter opens the
  * detail of a card. With claimActions, a plane that a claim made gets
- * Suspend, Resume, and Delete in its header. It needs a GitPushesProvider
- * and a QueryClientProvider above it.
+ * Suspend or Resume, and Delete, in its header. It needs a
+ * GitPushesProvider and a QueryClientProvider above it.
  */
 export function PlaneView({
   data,

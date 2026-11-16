@@ -11,8 +11,8 @@ import {
  * and "Unknown" with the reason. readyReason shows the reason of "Ready"
  * too when it is not Healthy, such as Suspended. The message is the hover
  * text. loading wins over condition while the page has no status yet.
- * unknown says "Not known" in place of condition, for a condition that the
- * page could not read.
+ * Unless loading, unknown says "Not known" in place of condition, for a
+ * condition that the page could not read.
  */
 export function StatusChip({
   condition,
