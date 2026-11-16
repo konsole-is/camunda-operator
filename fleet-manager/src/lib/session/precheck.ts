@@ -12,10 +12,13 @@ export type ClaimCondition = {
 
 /** PRECHECK_REASONS are the reasons of a Ready=False claim whose values the claim controller refused. */
 export const PRECHECK_REASONS: readonly RefusalReason[] = [
+  "NoEnvironment",
+  "UnknownEnvironment",
   "NotAllowed",
-  "SlotConflict",
   "MissingInput",
   "InvalidReference",
+  "SlotConflict",
+  "WiringCycle",
 ];
 
 const READY: FleetCamundaClusterClaimConditionType = "Ready";
