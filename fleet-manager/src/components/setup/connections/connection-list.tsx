@@ -50,13 +50,13 @@ export type ContractRow = {
  * contractRows returns a row for each contract of kind in sources, sorted
  * by namespace and name. While errors holds an error of PluginRequest, the
  * request list is not known, so a contract with the plugin labels stays
- * with its registration.
+ * with its registration. usage must be contractUsage of sources.
  */
 export function contractRows(
   sources: ConnectionSources & { errors?: readonly ReadError[] },
   kind: ContractKind,
+  usage = contractUsage(sources),
 ): ContractRow[] {
-  const usage = contractUsage(sources);
   const requests = requestsOf(sources);
   const unread = unreadUserKinds(
     kind,
@@ -269,8 +269,9 @@ export function ConnectionListLive({
     setSeenUrlTab(urlTab);
     setTab(urlTab);
   }
+  const usage = contractUsage(sources);
   const rows = Object.fromEntries(
-    CONNECTION_TABS.map((t) => [t.value, contractRows(sources, t.kind)]),
+    CONNECTION_TABS.map((t) => [t.value, contractRows(sources, t.kind, usage)]),
   ) as Record<ConnectionTab, ContractRow[]>;
   return (
     <ConnectionList
