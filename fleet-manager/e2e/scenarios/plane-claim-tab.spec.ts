@@ -32,7 +32,9 @@ test("a move of the identity mode shows what it does and saves only the claim", 
   await page.goto(PAGE);
   await page.getByRole("button", { name: "Edit Identity" }).click();
   await page.getByRole("radio", { name: /External Keycloak/ }).click();
-  await page.getByLabel("Keycloak URL").fill("https://keycloak.example.com/auth");
+  await page
+    .getByLabel("Keycloak URL")
+    .fill("https://keycloak.example.com/auth");
   await page
     .getByLabel("Administrator credentials Secret")
     .fill("keycloak-admin");
