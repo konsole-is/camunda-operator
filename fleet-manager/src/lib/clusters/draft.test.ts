@@ -16,6 +16,7 @@ import {
   basicsErrors,
   clusterClaimOf,
   draftCluster,
+  draftOptimize,
   draftSelections,
   offeredPresets,
   pickerEnvironment,
@@ -912,5 +913,27 @@ describe("withoutClaimValue", () => {
         { field: "releaseRef" },
       ]).claim.spec,
     ).toEqual({});
+  });
+});
+
+describe("draftOptimize", () => {
+  it("gives an empty CamundaOptimize of the claim while Optimize is on", () => {
+    expect(
+      draftOptimize(
+        draftWith({
+          presetRef: "small",
+          attachments: { optimize: { managementAuthConfigRef: "central" } },
+        }),
+      ),
+    ).toEqual({
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaOptimize",
+      metadata: { name: "orders", namespace: "team-a" },
+      spec: {},
+    });
+  });
+
+  it("gives nothing while Optimize is off", () => {
+    expect(draftOptimize(draftWith({ presetRef: "small" }))).toBeUndefined();
   });
 });

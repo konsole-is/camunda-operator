@@ -329,6 +329,27 @@ export function draftCluster(
   };
 }
 
+/**
+ * draftOptimize returns the empty CamundaOptimize that the claim of draft
+ * would make while it attaches Optimize, else undefined. clusterFields
+ * gives the fields of an attachment, with the locks of the sections that
+ * fill them, only beside its object.
+ */
+export function draftOptimize(
+  draft: ClusterDraft,
+): Resource<"CamundaOptimize"> | undefined {
+  if (!draft.claim.spec.attachments?.optimize) return undefined;
+  return {
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaOptimize",
+    metadata: {
+      name: draft.claim.metadata.name,
+      namespace: draft.namespace?.name ?? "",
+    },
+    spec: {},
+  } as unknown as Resource<"CamundaOptimize">;
+}
+
 /** SettingsData is the live data that step 3 checks a draft against. */
 export type SettingsData = {
   environment: Environment | undefined;

@@ -33,6 +33,7 @@ import {
   attachmentsErrors,
   basicsErrors,
   draftCluster,
+  draftOptimize,
   offeredPresets,
   settingsErrors,
   withClaimValue,
@@ -462,24 +463,6 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       </WizardStepper>
     </div>
   );
-}
-
-// clusterFields gives the fields of an attachment, with the locks of the
-// sections that fill them, only beside its object. So the draft holds an
-// empty CamundaOptimize while Optimize is on, as the claim would make one.
-function draftOptimize(
-  draft: ClusterDraft,
-): Resource<"CamundaOptimize"> | undefined {
-  if (!draft.claim.spec.attachments?.optimize) return undefined;
-  return {
-    apiVersion: "core.camunda.io/v1",
-    kind: "CamundaOptimize",
-    metadata: {
-      name: draft.claim.metadata.name,
-      namespace: draft.namespace?.name ?? "",
-    },
-    spec: {},
-  } as unknown as Resource<"CamundaOptimize">;
 }
 
 // useShownErrors holds the error that each editor of steps 3 and 4 shows,
