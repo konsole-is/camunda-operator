@@ -396,6 +396,28 @@ describe("mergeTargets refresh", () => {
   });
 });
 
+describe("a cluster that the page cannot see", () => {
+  it("has no volume note, so that the stored note stays", () => {
+    const model = deleteClusterModel(data({ cluster: undefined }), "Delete");
+    expect(
+      model.targets.find((t) => t.kind === "CamundaCluster")?.note,
+    ).toBeUndefined();
+    expect(
+      mergeTargets(
+        [
+          {
+            kind: "CamundaCluster",
+            name: "orders",
+            label: "CamundaCluster orders",
+            note: "Volumes kept for a cluster of the same name",
+          },
+        ],
+        model.targets,
+      ).find((t) => t.kind === "CamundaCluster")?.note,
+    ).toBe("Volumes kept for a cluster of the same name");
+  });
+});
+
 describe("deleteProgress", () => {
   it("a live object is Waiting, one being deleted is Deleting, and a gone one is Deleted, in target order", () => {
     const model = deleteClusterModel(data(), "Delete");

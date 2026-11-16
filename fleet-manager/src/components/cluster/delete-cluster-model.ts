@@ -216,9 +216,11 @@ export function deleteClusterModel(
             name,
             !volumesKnown
               ? "Volumes not known"
-              : volumesOf(data) === "Retain"
-                ? "Volumes kept for a cluster of the same name"
-                : "Volumes deleted",
+              : !data.cluster
+                ? undefined
+                : volumesOf(data) === "Retain"
+                  ? "Volumes kept for a cluster of the same name"
+                  : "Volumes deleted",
           ),
         ]
       : []),
@@ -297,8 +299,8 @@ const TARGET_ORDER: readonly KindName[] = [
 
 /**
  * mergeTargets returns kept with each target of found that it lacks, in
- * the order of the kinds. A target in both takes its label and note from
- * found; one only in kept stays.
+ * the order of the kinds. A target in both takes its label from found and
+ * its note too when found has one; one only in kept stays.
  */
 export function mergeTargets(
   kept: readonly DeleteTarget[],
@@ -306,7 +308,11 @@ export function mergeTargets(
 ): DeleteTarget[] {
   const same = (a: DeleteTarget) => (b: DeleteTarget) =>
     a.kind === b.kind && a.name === b.name;
-  const refreshed = kept.map((k) => found.find(same(k)) ?? k);
+  const refreshed = kept.map((k) => {
+    const f = found.find(same(k));
+    const note = f?.note ?? k.note;
+    return f ? { ...f, ...(note && { note }) } : k;
+  });
   const added = found.filter((f) => !kept.some(same(f)));
   const rank = (t: DeleteTarget) => TARGET_ORDER.indexOf(t.kind);
   return [...refreshed, ...added].sort((a, b) => rank(a) - rank(b));
