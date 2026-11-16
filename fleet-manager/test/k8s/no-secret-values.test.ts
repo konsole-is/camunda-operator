@@ -620,11 +620,27 @@ function planeSpec() {
 }
 
 // "<file under src>#<export>". The loaders of a page that reads every
-// namespace, so a careless loader would reach the Secret leak.
+// namespace, so a careless loader would reach the Secret leak. An answer
+// that read nothing holds no Secret value only because nothing ran, so each
+// call fails on it.
 const LOADER_CALLS: Record<string, () => Promise<unknown>> = {
-  "app/setup/plugins/load.ts#loadRegistrations": () =>
-    pluginLoads.loadRegistrations(),
-  "app/setup/plugins/load.ts#loadCatalog": () => pluginLoads.loadCatalog(),
+  "app/setup/plugins/load.ts#loadRegistrations": async () => {
+    const sources = await pluginLoads.loadRegistrations();
+    expect(sources.registrations.map((r) => r.metadata.name)).toContain(
+      namespace,
+    );
+    expect(sources.namespaces.map((n) => n.metadata?.name)).toContain(
+      namespace,
+    );
+    return sources;
+  },
+  "app/setup/plugins/load.ts#loadCatalog": async () => {
+    const catalog = await pluginLoads.loadCatalog();
+    expect(catalog).toMatchObject({
+      charts: expect.arrayContaining([expect.anything()]),
+    });
+    return catalog;
+  },
   "app/setup/plugins/load.ts#loadRegistration": async () => {
     const data = await pluginLoads.loadRegistration(namespace);
     expect(data?.registration.metadata.name).toBe(namespace);
