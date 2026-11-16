@@ -54,7 +54,7 @@ export const NeedsAnInput: Story = {
         ...read,
         template: "key-use",
         description: "Lets the cluster encrypt its backups with the key.",
-        onlyWhen: ["keyArn"],
+        onlyWhen: ["Encryption key"],
         result: {
           value: {
             Effect: "Allow",

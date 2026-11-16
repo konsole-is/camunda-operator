@@ -46,8 +46,8 @@ export function GrantPreviewList({
                 {preview.onlyWhen && (
                   <p className="text-xs text-text-2">
                     {preview.onlyWhen.length === 1
-                      ? `Only when the input ${preview.onlyWhen[0]} has a value`
-                      : `Only when the inputs ${preview.onlyWhen.join(", ")} have a value`}
+                      ? `Only when ${preview.onlyWhen[0]} gives its output`
+                      : `Only when ${preview.onlyWhen.join(" and ")} give their outputs`}
                   </p>
                 )}
               </div>

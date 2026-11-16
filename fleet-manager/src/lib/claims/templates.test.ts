@@ -373,6 +373,55 @@ describe("grantPreviews", () => {
     });
   });
 
+  it("gives the first error of a template to every template of the selection", () => {
+    const two = registration("s3", {
+      ...s3.spec,
+      grantTemplates: [
+        { ...template({ Region: "{{ .parameters.region }}" }), name: "a" },
+        { ...template({ Tags: "{{ .parameters.tags }}" }), name: "b" },
+      ],
+    });
+    const previews = grantPreviews({
+      claim,
+      sections: [backup],
+      registrations: [two],
+      environment: environmentWith({
+        s3: {
+          ...environment.spec.parameters!.s3,
+          tags: { value: ["a", "b"] },
+        },
+      }),
+    });
+    expect(previews.map((p) => [p.template, p.result])).toEqual([
+      [
+        "a",
+        expect.objectContaining({ field: "parameters.tags", path: "Tags" }),
+      ],
+      [
+        "b",
+        expect.objectContaining({ field: "parameters.tags", path: "Tags" }),
+      ],
+    ]);
+  });
+
+  it("refuses an output that the registration does not declare", () => {
+    const undeclared = registration("s3", {
+      ...s3.spec,
+      grantTemplates: [template({ Resource: "{{ .outputs.keyArn }}" })],
+    });
+    const [preview] = grantPreviews({
+      claim,
+      sections: [backup],
+      registrations: [undeclared],
+      environment,
+    });
+    expect(preview.result).toEqual({
+      error: 'output "keyArn" has no value',
+      field: "outputs.keyArn",
+      path: "Resource",
+    });
+  });
+
   it("gives one preview for each template of each selection, in order", () => {
     const two = registration("s3", {
       ...s3.spec,
@@ -562,18 +611,18 @@ describe("grantPreviews", () => {
             { section: "encryption-key", registration: "kms" },
           ],
         },
-        sections: [backup],
+        sections: [backup, section("encryption-key", "Encryption key")],
         registrations: [keyed],
         environment,
       });
       expect(previews.map((p) => [p.template, p.onlyWhen])).toEqual([
         ["read", undefined],
-        ["key-use", ["keyArn"]],
+        ["key-use", ["Encryption key"]],
       ]);
     });
   });
 
-  it("hides an ARN inside an object or a list of an object parameter", () => {
+  it("refuses an object parameter, so no ARN inside it shows", () => {
     const inline = registration("s3", {
       ...s3.spec,
       grantTemplates: [template({ Policy: "{{ .parameters.policy }}" })],
@@ -596,6 +645,10 @@ describe("grantPreviews", () => {
           },
         },
       }),
+    });
+    expect(preview.result).toMatchObject({
+      field: "parameters.policy",
+      path: "Policy",
     });
     expect(JSON.stringify(preview)).not.toContain("arn:");
   });

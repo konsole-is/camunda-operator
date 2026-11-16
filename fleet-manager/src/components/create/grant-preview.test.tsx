@@ -63,18 +63,22 @@ describe("GrantPreviewList", () => {
       <GrantPreviewList
         previews={[
           picked,
-          { ...picked, template: "key-use", onlyWhen: ["keyArn"] },
-          { ...picked, template: "both", onlyWhen: ["keyArn", "queueArn"] },
+          { ...picked, template: "key-use", onlyWhen: ["Encryption key"] },
+          {
+            ...picked,
+            template: "both",
+            onlyWhen: ["Encryption key", "Queue"],
+          },
         ]}
       />,
     );
     const items = screen.getAllByRole("listitem");
     expect(items[0].textContent).not.toContain("Only when");
     expect(items[1].textContent).toContain(
-      "Only when the input keyArn has a value",
+      "Only when Encryption key gives its output",
     );
     expect(items[2].textContent).toContain(
-      "Only when the inputs keyArn, queueArn have a value",
+      "Only when Encryption key and Queue give their outputs",
     );
   });
 

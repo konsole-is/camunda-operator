@@ -4,7 +4,6 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
-  parseTemplate,
   renderJSON,
   type TemplateData,
   type TemplateError,
@@ -98,8 +97,8 @@ export function templateData(input: {
  * GrantPreview is one grant template of one selection, rendered before the
  * write. result is the rendered template, or the first error of the
  * template or of a parameter that the plugin renders first, with the path
- * of the string that failed. onlyWhen names the inputs that must have a
- * value before the plugin writes the grant.
+ * of the string that failed. onlyWhen holds the labels of the sections
+ * whose outputs must have a value before the plugin writes the grant.
  */
 export type GrantPreview = {
   section: string;
@@ -116,11 +115,14 @@ export type GrantPreview = {
  * grantPreviews renders each grant template of each selection of claim, in
  * claim order and then in template order. A selection whose section or
  * registration is missing gives nothing, and so does a template that
- * requires an input of a section that claim does not select. No ARN of a
- * parameter shows: a string, number, or boolean value that a choice gives
- * shows as <label: choice label>, any other ARN as <label: An ARN that you
- * entered> when the selection sets it, else as <label: Set by your admin>. An output, which exists only after the
- * write, shows as <description from section label>.
+ * requires an input of a section that claim does not select. When one
+ * template of a selection fails, each template of that selection carries
+ * the first error. No ARN of a parameter shows: a string, number, or
+ * boolean value that a choice gives shows as <label: choice label>, any
+ * other ARN as <label: An ARN that you entered> when the selection sets it,
+ * else as <label: Set by your admin>. An output that the registration
+ * declares, which exists only after the write, shows as <description from
+ * section label>.
  */
 export function grantPreviews(input: {
   claim: TemplateClaim;
@@ -164,48 +166,69 @@ export function grantPreviews(input: {
     const failed =
       "error" in real ? real : "error" in display ? display : undefined;
     const parameters = "error" in display ? {} : display.value;
-    return (registration.spec.grantTemplates ?? []).flatMap(
-      (template): GrantPreview[] => {
-        const onlyWhen = template.requiresInputs ?? [];
-        const selected = onlyWhen.every((name) => {
+    // The plugin writes no Grant for a template whose required input has no
+    // value, and an input of a section without a selection has none.
+    const templates = (registration.spec.grantTemplates ?? []).filter(
+      (template) =>
+        (template.requiresInputs ?? []).every((name) => {
           const from = registration.spec.inputs?.find(
             (i) => i.name === name,
           )?.from;
           const inputSection = from?.split("/")[0];
           return claim.plugins.some((p) => p.section === inputSection);
-        });
-        // The plugin writes no Grant for a template whose required input
-        // has no value, and an input of a section without a selection has
-        // none.
-        if (!selected) return [];
-        const outputs = Object.fromEntries(
-          outputKeys(template.template).map((key) => {
-            const description =
-              registration.spec.outputs?.find((o) => o.key === key)
-                ?.description || key;
-            return [key, `<${description} from ${sectionLabel}>`];
-          }),
-        );
-        return [
-          {
-            section: selection.section,
-            sectionLabel,
-            registration: selection.registration,
-            optionLabel: registration.spec.label || selection.registration,
-            template: template.name,
-            ...(template.description && { description: template.description }),
-            ...(onlyWhen.length > 0 && { onlyWhen }),
-            result:
-              failed ??
-              renderJSON(
-                template.template,
-                { ...data, parameters, outputs },
-                "grant",
-              ),
-          },
-        ];
-      },
+        }),
     );
+    const outputs = Object.fromEntries(
+      (registration.spec.outputs ?? []).map((o) => [
+        o.key,
+        `<${o.description || o.key} from ${sectionLabel}>`,
+      ]),
+    );
+    // The plugin writes no Grant of the request when one template fails, so
+    // the first error, in template order, stands for every template.
+    const first =
+      failed ??
+      templates
+        .map((template) =>
+          renderJSON(
+            template.template,
+            { ...data, parameters: "error" in real ? {} : real.value, outputs },
+            "grant",
+          ),
+        )
+        .find((result) => "error" in result);
+    return templates.map((template): GrantPreview => {
+      const onlyWhen = [
+        ...new Set(
+          (template.requiresInputs ?? []).map((name) => {
+            const from = registration.spec.inputs?.find(
+              (i) => i.name === name,
+            )?.from;
+            const inputSection = from?.split("/")[0] ?? name;
+            return (
+              input.sections.find((s) => s.metadata.name === inputSection)?.spec
+                .label || inputSection
+            );
+          }),
+        ),
+      ];
+      return {
+        section: selection.section,
+        sectionLabel,
+        registration: selection.registration,
+        optionLabel: registration.spec.label || selection.registration,
+        template: template.name,
+        ...(template.description && { description: template.description }),
+        ...(onlyWhen.length > 0 && { onlyWhen }),
+        result:
+          first ??
+          renderJSON(
+            template.template,
+            { ...data, parameters, outputs },
+            "grant",
+          ),
+      };
+    });
   });
 }
 
@@ -285,19 +308,4 @@ function shownParameters(
       ];
     }),
   );
-}
-
-// outputKeys returns each output key that a string of template references.
-function outputKeys(template: unknown): string[] {
-  const keys = new Set<string>();
-  const walk = (value: unknown) => {
-    if (typeof value === "string") {
-      const parsed = parseTemplate(value, "grant");
-      if (!("error" in parsed)) for (const key of parsed.outputs) keys.add(key);
-    } else if (Array.isArray(value)) value.forEach(walk);
-    else if (typeof value === "object" && value !== null)
-      Object.values(value).forEach(walk);
-  };
-  walk(template);
-  return [...keys];
 }
