@@ -1,2 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";function n({kinds:e}){return(0,r.jsxs)(`p`,{className:`text-sm text-muted`,children:[`Not known: the page could not read `,e.join(`, `),`.`]})}var r;function i(){return(i=e((()=>{r=t(),n.__docgenInfo={description:`NotRead names kinds that the page could not read or whose list is out of
-date, in a box that then shows nothing from them.`,methods:[],displayName:`NotRead`,props:{kinds:{required:!0,tsType:{name:`unknown`},description:``}}}})))()}export{i as n,n as t};
