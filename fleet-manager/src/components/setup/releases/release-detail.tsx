@@ -6,6 +6,7 @@ import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type { ReadError } from "@/components/planes/planes-table";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Resource } from "@/lib/k8s/kinds";
 import type {
   Change,
   Preview,
@@ -16,23 +17,35 @@ import type { ImagesTable } from "@/startup/bundled-data";
 import { ReleaseEnvironments } from "./release-environments";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
+import type { RolloutData } from "./rollout";
+import { type RolloutLists, useRolloutSources } from "./rollout-sources";
+import { type FailedMove, RolloutTab } from "./rollout-tab";
 import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
-/** ReleaseActions are the writes of the release pages: the server actions on the page, fakes in tests and stories. */
+/**
+ * ReleaseActions are the writes of the release pages: the server actions on
+ * the page, fakes in tests and stories. previewChange and applyChange write
+ * CamundaReleases, previewMove and applyMove the cluster claims of a move
+ * to a release.
+ */
 export type ReleaseActions = {
   previewChange: (change: Change) => Promise<Preview>;
   applyChange: (change: Change) => Promise<WriteResult>;
+  previewMove: (change: Change) => Promise<Preview>;
+  applyMove: (change: Change) => Promise<WriteResult>;
 };
 
 /**
  * ReleaseDetailData is what the release page reads on the server: the name
- * of the release, the first snapshot of the sources, the images table, and
- * the Secret refs of each namespace whose Secrets an env entry can name.
+ * of the release, the first snapshot of the sources and of the lists of the
+ * Rollout tab, the images table, and the Secret refs of each namespace
+ * whose Secrets an env entry can name.
  */
 export type ReleaseDetailData = {
   name: string;
   sources: ReleasesData;
+  rollout: RolloutLists;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
 };
@@ -50,9 +63,11 @@ export function ReleaseDetail({
   actions: ReleaseActions;
 }): ReactNode {
   const sources = useReleaseSources(data.sources);
+  const rollout = useRolloutSources(data.rollout);
   return (
     <ReleaseDetailView
       sources={sources}
+      rollout={rollout}
       name={data.name}
       imagesTable={data.imagesTable}
       secrets={data.secrets}
@@ -65,11 +80,13 @@ export function ReleaseDetail({
 
 /**
  * ReleaseDetailView is the page of the release name, with a tab for each
- * entry of RELEASE_TABS. A tab change sets the tab query parameter without
- * a navigation.
+ * entry of RELEASE_TABS: the Settings tab, and the Rollout tab, which moves
+ * clusters to the release and is the only tab that reads rollout. A tab
+ * change sets the tab query parameter without a navigation.
  */
 export function ReleaseDetailView({
   sources,
+  rollout,
   name,
   imagesTable,
   secrets,
@@ -78,6 +95,7 @@ export function ReleaseDetailView({
   actions,
 }: {
   sources: ReleasesData & { errors: ReadError[] } & SourceReads;
+  rollout: RolloutLists & SourceReads;
   name: string;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
@@ -86,6 +104,18 @@ export function ReleaseDetailView({
   actions: ReleaseActions;
 }): ReactNode {
   const [tab, setTab] = useState(initialTab);
+  // The Rollout tab unmounts on a tab change, and its failed move stays.
+  const [failed, setFailed] = useState<FailedMove>();
+  const release = sources.releases.find((r) => r.metadata.name === name) as
+    Resource<"CamundaRelease"> | undefined;
+  // A Resource is plain JSON, so it differs from its model type only in its
+  // timestamps, which the move does not read.
+  const rolloutData = {
+    ...sources,
+    ...rollout,
+    errors: [...(sources.errors ?? []), ...(rollout.errors ?? [])],
+    stale: [...(sources.stale ?? []), ...(rollout.stale ?? [])],
+  } as unknown as RolloutData & SourceReads;
   const selectTab = (value: string) => {
     const next = releaseTabOf(value);
     setTab(next);
@@ -126,6 +156,22 @@ export function ReleaseDetailView({
               environments={sources.environments}
             />
           </div>
+        </TabsContent>
+        <TabsContent value="rollout">
+          {release ? (
+            <RolloutTab
+              release={release}
+              data={rolloutData}
+              mode={mode}
+              actions={actions}
+              failed={failed}
+              onFailed={setFailed}
+            />
+          ) : (
+            <p role="alert" className="text-sm text-bad">
+              The release {name} does not exist.
+            </p>
+          )}
         </TabsContent>
       </Tabs>
     </div>

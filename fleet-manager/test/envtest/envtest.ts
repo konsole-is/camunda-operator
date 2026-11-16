@@ -82,6 +82,27 @@ export async function startEnvtest(
   const users = options.users ?? [];
   checkUsers(users);
   const timeoutMs = options.startTimeoutMs ?? 120_000;
+  const crdDirs = options.crdDirs ?? [CRD_DIR];
+
+  // The ports are free when freePorts closes its probes, and another process
+  // can take one before etcd or the API server binds it.
+  for (let start = 1; ; start++) {
+    try {
+      return await startOnce(assetsDir, users, timeoutMs, crdDirs);
+    } catch (error) {
+      if (start === 3 || !String(error).includes("address already in use")) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function startOnce(
+  assetsDir: string,
+  users: EnvtestUser[],
+  timeoutMs: number,
+  crdDirs: string[],
+): Promise<Envtest> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fleet-envtest-"));
   const running: Running[] = [];
   // A test runner that exits without stop must not leave the processes behind.
@@ -89,11 +110,7 @@ export async function startEnvtest(
   process.once("exit", killAll);
 
   try {
-    const [etcdPort, peerPort, apiPort] = [
-      await freePort(),
-      await freePort(),
-      await freePort(),
-    ];
+    const [etcdPort, peerPort, apiPort] = await freePorts(3);
     const etcdURL = `http://127.0.0.1:${etcdPort}`;
     const etcd = run(path.join(assetsDir, "etcd"), "etcd", [
       `--data-dir=${path.join(dir, "etcd")}`,
@@ -174,13 +191,7 @@ export async function startEnvtest(
       );
     }
 
-    await installCRDs(
-      server,
-      token,
-      options.crdDirs ?? [CRD_DIR],
-      apiserver,
-      timeoutMs,
-    );
+    await installCRDs(server, token, crdDirs, apiserver, timeoutMs);
 
     return {
       ...admin,
@@ -448,14 +459,23 @@ async function stopAll(running: Running[]): Promise<void> {
   }
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.unref();
-    probe.on("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address() as net.AddressInfo;
-      probe.close(() => resolve(port));
-    });
-  });
+// The probes stay open until every port is chosen, so that two picks never return the same port.
+async function freePorts(count: number): Promise<number[]> {
+  const probes: net.Server[] = [];
+  try {
+    for (let i = 0; i < count; i++) {
+      const probe = net.createServer();
+      probe.unref();
+      await new Promise<void>((resolve, reject) => {
+        probe.once("error", reject);
+        probe.listen(0, "127.0.0.1", resolve);
+      });
+      probes.push(probe);
+    }
+    return probes.map((p) => (p.address() as net.AddressInfo).port);
+  } finally {
+    await Promise.all(
+      probes.map((p) => new Promise((resolve) => p.close(resolve))),
+    );
+  }
 }

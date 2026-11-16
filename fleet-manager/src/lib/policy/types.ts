@@ -124,7 +124,8 @@ export type InputRef = {
  * status.management.version, absent while the cluster publishes none, for
  * example while it is suspended. downgrade is true when target is below
  * current. skippedMinor is the minor to move to first, as major.minor, when
- * target skips one. backup is the backup that runs now.
+ * target skips one. backup is a backup of the cluster that has not ended,
+ * and backupState says whether it is pending or running.
  */
 export type MoveCheck = {
   allowed: boolean;
@@ -133,4 +134,5 @@ export type MoveCheck = {
   downgrade: boolean;
   skippedMinor?: string;
   backup?: BackupRef;
+  backupState?: "pending" | "running";
 };

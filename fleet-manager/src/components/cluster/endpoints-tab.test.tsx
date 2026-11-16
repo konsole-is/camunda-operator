@@ -77,6 +77,58 @@ describe("EndpointsTab", () => {
     expect(within(rowOf("future")).getByText("-")).toBeTruthy();
   });
 
+  const planeIdentity: EndpointRow = {
+    key: "CamundaManagementCluster/identity",
+    owner: "CamundaManagementCluster",
+    name: "identity",
+    path: "/identity",
+    url: "https://camunda.example.com/identity",
+    service: "production-identity",
+    port: 80,
+    protocol: "HTTP",
+    servedBy: { label: "Management Identity", embedded: false },
+  };
+
+  it("shows a Path column when a route has a path", () => {
+    render(<EndpointsTab rows={[planeIdentity]} />);
+    expect(screen.getByRole("columnheader", { name: "Path" })).toBeTruthy();
+    expect(within(rowOf("identity")).getByText("/identity")).toBeTruthy();
+  });
+
+  it("shows no Path column for routes without a path", () => {
+    render(<EndpointsTab rows={[operate, grpc]} />);
+    expect(screen.queryByRole("columnheader", { name: "Path" })).toBeNull();
+  });
+
+  it("says when the URL of a route is not valid", () => {
+    render(
+      <EndpointsTab
+        rows={[{ ...planeIdentity, url: undefined, urlInvalid: true }]}
+      />,
+    );
+    expect(within(rowOf("identity")).getByText("Not a valid URL")).toBeTruthy();
+    expect(within(rowOf("identity")).queryByText("No external URL")).toBeNull();
+  });
+
+  it("shows the Service without a port when the route has none", () => {
+    render(<EndpointsTab rows={[{ ...planeIdentity, port: undefined }]} />);
+    expect(
+      within(rowOf("identity")).getByText("production-identity"),
+    ).toBeTruthy();
+  });
+
+  it("says the empty text that it gets", () => {
+    render(
+      <EndpointsTab
+        rows={[]}
+        emptyText="This plane reports no endpoints yet."
+      />,
+    );
+    expect(
+      screen.getByText("This plane reports no endpoints yet."),
+    ).toBeTruthy();
+  });
+
   it("says when the cluster reports no endpoints", () => {
     render(<EndpointsTab rows={[]} />);
     expect(

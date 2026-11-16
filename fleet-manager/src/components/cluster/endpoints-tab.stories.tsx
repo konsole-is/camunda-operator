@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import { planeEndpointRows } from "@/components/planes/plane-endpoints";
 import type { Resource } from "@/lib/k8s/kinds";
 import { endpointRows } from "./endpoints";
 import { EndpointsTab } from "./endpoints-tab";
@@ -50,6 +51,37 @@ const optimize = {
   },
 } as unknown as Resource<"CamundaOptimize">;
 
+const management = "https://management.example.com";
+const planeRoute = (name: string, pathPrefix: string) => ({
+  name,
+  pathPrefix,
+  port: 80,
+  protocol: "HTTP" as const,
+  service: `production-${name}`,
+});
+
+// plane is a Keycloak-mode plane with Web Modeler and no Console.
+const plane = {
+  kind: "CamundaManagementCluster",
+  metadata: { namespace: "platform", name: "production" },
+  spec: {
+    identityProvider: { keycloak: { externalUrl: `${management}/auth` } },
+    identity: { externalUrl: `${management}/identity` },
+    webModeler: {
+      externalUrl: `${management}/modeler`,
+      websocketsExternalUrl: `${management}/modeler-ws`,
+    },
+  },
+  status: {
+    endpoints: [
+      planeRoute("identity", "/identity"),
+      planeRoute("keycloak", "/auth"),
+      planeRoute("web-modeler", "/modeler"),
+      planeRoute("web-modeler-websockets", "/modeler-ws"),
+    ],
+  },
+} as unknown as Resource<"CamundaManagementCluster">;
+
 const meta = {
   title: "cluster/EndpointsTab",
   component: EndpointsTab,
@@ -72,4 +104,9 @@ export const EmbeddedAppsAndAnOptimize: Story = {
 export const NoEndpointsYet: Story = {
   name: "No endpoints yet",
   args: { rows: [] },
+};
+
+export const APlaneWithoutConsole: Story = {
+  name: "A plane without Console",
+  args: { rows: planeEndpointRows(plane) },
 };

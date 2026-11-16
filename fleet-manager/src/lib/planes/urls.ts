@@ -1,5 +1,6 @@
 // This module runs in the browser and on the server.
 import { SLOT_FIELDS } from "@/lib/fields/slots";
+import type { Resource } from "@/lib/k8s/kinds";
 import type { Running } from "./versions";
 
 /** PlaneUrlId names one URL of a plane. */
@@ -19,7 +20,8 @@ export type PlaneUrlField = {
   placeholder: string;
 };
 
-const LABEL: Record<PlaneUrlId, string> = {
+/** PLANE_URL_LABEL is the name of the app of each URL of a plane. */
+export const PLANE_URL_LABEL: Record<PlaneUrlId, string> = {
   keycloak: "Keycloak",
   identity: "Management Identity",
   console: "Console",
@@ -40,11 +42,7 @@ const RAW_URL = /^(https?):\/\/[^/?#]+(.*)$/i;
  * externalAccess rows of SLOT_FIELDS for the plane claim, in their order.
  */
 export function planeUrlFields(running: Running): PlaneUrlField[] {
-  return SLOT_FIELDS.filter(
-    (row) =>
-      row.claimKind === "CamundaManagementClusterClaim" &&
-      row.slot === "externalAccess",
-  ).flatMap((row) => {
+  return planeRows().flatMap((row) => {
     // The rows name the field of the CamundaManagementCluster. The claim
     // holds it under spec.management.
     const names = row.names.slice(1);
@@ -60,13 +58,38 @@ export function planeUrlFields(running: Running): PlaneUrlField[] {
     return [
       {
         id,
-        label: LABEL[id],
+        label: PLANE_URL_LABEL[id],
         names,
         suffix,
         placeholder: `${EXAMPLE_HOST}${suffix}`,
       },
     ];
   });
+}
+
+/**
+ * planeExternalUrls returns the external URL of each app as the spec of
+ * plane holds it. An app without a URL, or with a value that is not a
+ * non-empty string, has no entry. It is empty without a plane.
+ */
+export function planeExternalUrls(
+  plane: Resource<"CamundaManagementCluster"> | undefined,
+): Partial<Record<PlaneUrlId, string>> {
+  const urls: Partial<Record<PlaneUrlId, string>> = {};
+  for (const row of planeRows()) {
+    // names starts with "spec".
+    const value = row.names.reduce<unknown>(
+      (at, name) =>
+        typeof at === "object" && at !== null
+          ? (at as Record<string, unknown>)[name]
+          : undefined,
+      plane,
+    );
+    if (typeof value === "string" && value !== "") {
+      urls[idOf(row.names.slice(1))] = value;
+    }
+  }
+  return urls;
 }
 
 /** accessUrls returns prefix + host + suffix of each field, as the claim controller writes them. */
@@ -126,6 +149,14 @@ function urlError(value: string, field: PlaneUrlField): string | undefined {
       : `${name} needs https when it has a path.`;
   }
   return undefined;
+}
+
+function planeRows() {
+  return SLOT_FIELDS.filter(
+    (row) =>
+      row.claimKind === "CamundaManagementClusterClaim" &&
+      row.slot === "externalAccess",
+  );
 }
 
 function idOf(names: readonly string[]): PlaneUrlId {
