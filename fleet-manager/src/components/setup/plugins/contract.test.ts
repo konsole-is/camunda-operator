@@ -67,6 +67,18 @@ describe("contractOf", () => {
     ]);
   });
 
+  it("gives an error for a section whose appliesTo is not a list of kinds", () => {
+    for (const appliesTo of [null, { kind: "x" }, [1]]) {
+      const sections = sources.sections.map((s) => ({
+        ...s,
+        spec: { ...s.spec, appliesTo: appliesTo as never },
+      }));
+      expect(contractOf(es, sections, []).sections[0]).toEqual({
+        error: "The section secondary-storage is not valid.",
+      });
+    }
+  });
+
   it("names a section whose label is not text by its name", () => {
     const sections = sources.sections.map((s) => ({
       ...s,

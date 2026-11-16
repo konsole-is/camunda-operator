@@ -60,6 +60,8 @@ export function contractOf(
       (item) => {
         if (typeof item !== "string") return item;
         const section = sectionOf(item);
+        if (section && !isNameList(section.spec.appliesTo))
+          return { error: `The section ${item} is not valid.` };
         return section
           ? {
               name: item,
@@ -106,6 +108,11 @@ type Input = {
 
 function isName(item: unknown): item is string {
   return typeof item === "string";
+}
+
+// sectionFields throws on an appliesTo that is not a list.
+function isNameList(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isName);
 }
 
 function isInput(item: unknown): item is Input {
