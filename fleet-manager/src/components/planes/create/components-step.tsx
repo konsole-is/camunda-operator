@@ -261,7 +261,7 @@ function Section({
   return (
     <section className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="font-heading text-base font-semibold">{title}</h2>
+        <h3 className="font-heading text-base font-semibold">{title}</h3>
         {note && <p className="text-sm text-muted">{note}</p>}
       </div>
       {children}

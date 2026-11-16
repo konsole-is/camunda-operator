@@ -31,7 +31,8 @@ export const ATTACH_CAUTION =
  * what change creates, and the confirm. It previews change once for each
  * change, and Create stays disabled until that preview is clean and while
  * a write runs or while blocked. Create sends change to create once and
- * gives the result to onWritten, also when the write is refused.
+ * gives the result to onWritten, also when the write is refused. With
+ * onBack, Back sits beside Create.
  */
 export function PlaneReviewStep({
   change,
@@ -43,6 +44,7 @@ export function PlaneReviewStep({
   create,
   onWritten,
   blocked: held = false,
+  onBack,
 }: {
   change: Change;
   claim: PlaneClaim;
@@ -53,6 +55,7 @@ export function PlaneReviewStep({
   create: (change: Change) => Promise<WriteResult>;
   onWritten: (result: WriteResult) => void;
   blocked?: boolean;
+  onBack?: () => void;
 }) {
   const key = JSON.stringify(change);
   const [previewed, setPreviewed] = useState<{
@@ -133,6 +136,7 @@ export function PlaneReviewStep({
       confirmLabel="Create"
       pending={writing || blocked}
       onConfirm={confirm}
+      onCancel={onBack}
     />
   );
 }

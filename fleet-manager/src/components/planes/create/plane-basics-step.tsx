@@ -112,7 +112,7 @@ export function PlaneBasicsStep({
         />
       ) : (
         <section className="flex min-w-0 flex-col gap-3">
-          <h2 className="font-heading text-base font-semibold">Namespace</h2>
+          <h3 className="font-heading text-base font-semibold">Namespace</h3>
           <p className="text-sm text-muted">Choose an environment first.</p>
         </section>
       )}
