@@ -207,7 +207,7 @@ If the fleet manager cannot read a kind that can use a contract, the column **Us
 
 ### Change a contract
 
-You can change a contract that is `Created by hand` or `Kept from <registration>`. On its page, the panel **Settings** is a form. The page of any other contract shows **Settings** as text, with no form and no delete.
+You can change a contract that is `Created by hand` or `Kept from <registration>`. On its page, the panel **Settings** is a form. The page of any other contract shows **Settings** as text, with no form and no delete. A contract that is `Kept from <registration>` goes back to the registration when the claim that held its request is created again. The values of the registration then replace your change.
 
 The form edits the values of the contract. For example, you can change a bucket, a region, an endpoint, the credentials, or the host and port of a server. It shows the storage type and the auth type as text, and a save keeps them. To change a type, apply the contract again with `kubectl` or with your GitOps tool.
 
@@ -217,7 +217,13 @@ When you change a field, a bar at the bottom of the page offers **Review**. The 
 
 `CamundaCluster my-cluster-ns/my-cluster restarts its pods, all but Connectors.`
 
-A cluster, its Optimize, and a management plane restart their pods on any change of a contract that they use. When you point a database server contract at another server, the operator creates each database and its roles on the new server. It does not remove them from the old server. A backup that runs fails when the location of its bucket changes. While the fleet manager cannot read a kind that can use the contract, the review says that the users are not known.
+A cluster, its Optimize, and a management plane restart their pods on any change of a contract that they use. When you point a database server contract at another server, the operator creates each database and its roles on the new server. It does not remove them from the old server. A backup that runs fails when the location of its bucket changes.
+
+While the fleet manager cannot read a kind that can use the contract, the form shows the values, but **Review** stays off. An open review closes. The page names the kinds that it cannot read:
+
+> A change is possible when the fleet manager can read LogicalBackupRDBMS.
+
+The page shows this line for a short time after it opens or connects again. If the line stays, the error above the page gives the cause, as for a delete below.
 
 Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The operator writes these two fields, and the save keeps them.
 
@@ -233,7 +239,7 @@ When you clear a field that another tool set, such as `kubectl apply` or your Gi
 
 The page offers the delete only for a contract that you can change and that nothing uses. **Used by** counts the backups and the archive records of database servers, so a bucket that holds data that a restore needs is not offered. To delete, type the name of the contract and select **Review the delete**. Then select **Delete the contract**. In Git mode, the button reads **Push the delete to Git**, and the commit removes the file of the contract. Your GitOps tool must prune the contract to delete it from the cluster.
 
-When a user appears while the review is open, the review closes. The fleet manager reads every user again when you delete, and it refuses the delete of a contract in use.
+When a user appears while the review is open, the review closes. The fleet manager checks the users again before the delete, and it refuses the delete of a contract in use. A user that is created at the same moment as the delete can be missed.
 
 The fleet manager must read every kind that can use a contract to know that nothing uses it. When it cannot read one of these kinds, the page offers no delete, and an open delete review closes. The page names the kinds that it cannot read:
 
