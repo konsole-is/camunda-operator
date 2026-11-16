@@ -232,6 +232,10 @@ describe("PlaneCreateFlow", () => {
         .getByText("The name plane-a is taken in this namespace.")
         .closest("li")?.textContent,
     ).toBe("Basics: The name plane-a is taken in this namespace.");
+    expect(
+      document.getElementById(create().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Basics: The name plane-a is taken in this namespace.");
   });
 
   it("puts the section headings of a step under the step heading", () => {

@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WizardStepper } from "./wizard-stepper";
+import { useStepperErrors, WizardStepper } from "./wizard-stepper";
 
 afterEach(cleanup);
 
@@ -33,7 +33,41 @@ function Flow({ start = "namespace" }: { start?: string }) {
 const stepHeading = (name: string) =>
   screen.getByRole("heading", { level: 2, name });
 
+// Confirm stands in for the confirm of a last step, outside the footer.
+function Confirm() {
+  return <button aria-describedby={useStepperErrors()}>Create</button>;
+}
+
 describe("WizardStepper", () => {
+  it("gives the last step the id of the error list while an earlier step has errors", () => {
+    render(
+      <WizardStepper
+        steps={steps(["Choose a storage option"])}
+        current="review"
+      >
+        <Confirm />
+      </WizardStepper>,
+    );
+    const create = screen.getByRole("button", { name: "Create" });
+    expect(
+      document.getElementById(create.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Storage and access: Choose a storage option");
+  });
+
+  it("gives the last step no error list id while no step has errors", () => {
+    render(
+      <WizardStepper steps={steps()} current="review">
+        <Confirm />
+      </WizardStepper>,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Create" })
+        .hasAttribute("aria-describedby"),
+    ).toBe(false);
+  });
+
   it("blocks Next while the step reports an error", async () => {
     const onNext = vi.fn();
     render(

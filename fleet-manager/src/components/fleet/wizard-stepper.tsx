@@ -1,7 +1,14 @@
 "use client";
 
 import { Check, CircleAlert } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +16,17 @@ import { cn } from "@/lib/utils";
 export type WizardStep = { id: string; label: string; errors?: string[] };
 
 type StepState = "Done" | "Current" | "Not started" | "Has errors";
+
+const ErrorsContext = createContext<string | undefined>(undefined);
+
+/**
+ * useStepperErrors returns the id of the footer list of the WizardStepper
+ * around it while that list shows errors, else undefined. The review of a
+ * last step gives it to its confirm as aria-describedby.
+ */
+export function useStepperErrors(): string | undefined {
+  return useContext(ErrorsContext);
+}
 
 /**
  * WizardStepper shows the steps of a create flow, numbered in order, with
@@ -132,7 +150,13 @@ export function WizardStepper({
           >
             {steps[index]?.label}
           </h2>
-          <div className="min-w-0">{children}</div>
+          <div className="min-w-0">
+            <ErrorsContext.Provider
+              value={blocking.length > 0 ? errorsId : undefined}
+            >
+              {children}
+            </ErrorsContext.Provider>
+          </div>
         </div>
         <div
           className={cn(
