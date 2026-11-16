@@ -30,7 +30,7 @@ export const IMAGE_LABELS: Readonly<Record<ImageField, string>> = {
  * Camunda minors of each default when defaults hold more than one minor.
  * usersKnown is false while the users of the config are not known.
  * unreadMinorKinds names the kinds that feed the minors of defaults and
- * cannot be read, so those minors can be incomplete.
+ * cannot be read.
  */
 export function ImagesSection({
   images,

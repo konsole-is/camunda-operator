@@ -83,7 +83,7 @@ camunda/web-modeler-restapi for Camunda 8.9
 camunda/hub for Camunda 8.10
 ```
 
-A database server runs a PostgreSQL version, not a Camunda minor, so it adds no minor. When no cluster or management plane uses the platform config, the page shows the defaults of the newest minor of the images table. When the fleet manager cannot read a kind that gives the minors, such as `CamundaCluster` or `CamundaRelease`, a warning says that the minors can be incomplete and names that kind. When the images table has no defaults for a minor that a user runs, a warning above the fields names that minor. The fields still show the defaults of the other minors.
+A database server runs a PostgreSQL version, not a Camunda minor, so it adds no minor. When no cluster or management plane uses the platform config, the page shows the defaults of the newest minor of the images table. The minors of the users can be incomplete while the fleet manager cannot read a kind that gives them. A warning then names that kind, such as `CamundaCluster`. When the images table has no defaults for a minor that a user runs, a warning above the fields names that minor. The fields still show the defaults of the other minors.
 
 ### Delete a platform config
 
