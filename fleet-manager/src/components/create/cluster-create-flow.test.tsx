@@ -1312,6 +1312,48 @@ describe("ClusterCreateFlow write", () => {
     ).toBeTruthy();
   });
 
+  it("a lost answer after the new namespace says that the claim is not known", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      live.objects.Namespace = [...newNamespaceData().namespaces, newNamespace];
+      return {
+        ok: false,
+        errors: [{ code: "Unavailable", message: "The answer was lost." }],
+        createdNamespace: "team-new",
+      };
+    });
+    show(newNamespaceData());
+    await toReview("team-new", {});
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      (await screen.findByText(/The write created the namespace/)).textContent,
+    ).toBe(
+      "The write created the namespace team-new, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, create the cluster again.",
+    );
+  });
+
+  it("a lost answer after the new namespace offers only to follow the claim once it exists", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      live.objects.Namespace = [...newNamespaceData().namespaces, newNamespace];
+      live.objects.CamundaClusterClaim = [writtenClaim("team-new")];
+      return {
+        ok: false,
+        errors: [{ code: "Unavailable", message: "The answer was lost." }],
+        createdNamespace: "team-new",
+      };
+    });
+    show(newNamespaceData());
+    await toReview("team-new", {});
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      await screen.findByRole("button", { name: "Follow the claim" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The write created the namespace/)).toBeNull();
+  });
+
   it("a failed write after which the claim exists says so and can follow the claim", async () => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));

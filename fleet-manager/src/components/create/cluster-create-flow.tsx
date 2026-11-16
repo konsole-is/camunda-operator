@@ -705,12 +705,14 @@ export function ClusterCreateFlow({
           />
         )}
       </WizardStepper>
-      {keptNamespace !== undefined && existing === keptNamespace && (
+      {keptNamespace !== undefined && existing === keptNamespace && !landed && (
         <p
           role="note"
           className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
         >
-          {`The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the cluster now goes into it as an existing namespace. Fix the cause and create the cluster again.`}
+          {refused?.unavailable
+            ? `The write created the namespace ${keptNamespace}, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, create the cluster again.`
+            : `The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the cluster now goes into it as an existing namespace. Fix the cause and create the cluster again.`}
         </p>
       )}
       {taken && refusedRef && (
