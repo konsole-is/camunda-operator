@@ -13,7 +13,12 @@ import type { FieldDoc } from "@/generated/fielddocs";
 import { useClock } from "@/components/fleet/use-clock";
 import { unreadKinds } from "@/components/setup/releases/rows";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import {
+  useResource,
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   ACCESS_SECTION,
@@ -296,8 +301,9 @@ export function ClusterView({
     { namespace: ns },
     initial.elasticsearchClusters,
   );
-  // The detail of a section reads these lists. A list whose watch answered
-  // and then lost its connection can be out of date.
+  // The detail of a section reads these lists. A list is not current when
+  // its watch answered and is not fresh, or never answered and is overdue:
+  // the read of the server then has no time limit.
   const sectionLists = [
     { kind: "PluginRequest", opts: requestsOpts },
     { kind: "CamundaClusterClaim", opts: { namespace: ns } },
@@ -312,6 +318,7 @@ export function ClusterView({
     { kind: "Environment", opts: {} },
   ] as const;
   const sectionFresh = useWatchesFresh(sectionLists);
+  const sectionOverdue = useWatchesOverdue(sectionLists);
   const answered = useAnswered([
     ...sectionLists,
     { kind: "CamundaCluster", opts: { namespace: ns, name: name ?? "" } },
@@ -399,6 +406,12 @@ export function ClusterView({
     ),
   ];
   const requestsError = errors.find((e) => e.kind === "PluginRequest")?.message;
+  const stale = sectionLists
+    .filter(
+      ({ kind }, i) =>
+        !sectionFresh[i] && (answered.has(kind) || sectionOverdue[i]),
+    )
+    .map(({ kind }) => kind);
 
   const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
@@ -458,9 +471,7 @@ export function ClusterView({
     ...sectionCards(
       sectionList,
       requestsError,
-      answered.has("PluginRequest") &&
-        !sectionFresh[0] &&
-        requestsError === undefined,
+      stale.includes("PluginRequest") && requestsError === undefined,
     ),
   ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
@@ -519,13 +530,12 @@ export function ClusterView({
   };
   const openId = componentOf(component, cards);
   const openSection = sectionList.find((s) => s.id === openId);
-  const unread = unreadKinds({
-    errors,
-    stale: sectionLists
-      .filter(({ kind }, i) => answered.has(kind) && !sectionFresh[i])
-      .map(({ kind }) => kind),
-  });
+  const unread = unreadKinds({ errors, stale });
   const requestsStale = unread.includes("PluginRequest");
+  // Without a current list of claims, the page cannot tell a claim that is
+  // gone from one that it did not read.
+  const claimUnread =
+    claimName !== undefined && !claim && unread.includes("CamundaClusterClaim");
   const context: ClusterSlotContext = {
     cluster: live,
     claim,
@@ -731,6 +741,7 @@ export function ClusterView({
                 hrefOf={overviewHref}
                 onOpen={openComponent}
               />
+              {claimUnread && <NotRead kinds={["CamundaClusterClaim"]} />}
               <OverviewConditions
                 cluster={clusterConditions}
                 optimize={
@@ -753,6 +764,7 @@ export function ClusterView({
             restores={restoreRowsOf(live, restores)}
             actions={slot("cluster.backups.actions")}
             rowActions={rowActionsOf(slots, managed, context)}
+            unread={errors.map((e) => e.kind)}
           />
         </TabsContent>
         <TabsContent value="endpoints">
@@ -783,6 +795,8 @@ export function ClusterView({
                   stored={claim}
                   now={clock}
                 />
+              ) : claimUnread ? (
+                <NotRead kinds={["CamundaClusterClaim"]} />
               ) : (
                 <NoClaim managed={managed} name={claimName} />
               )}

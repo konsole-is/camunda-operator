@@ -26,8 +26,8 @@ export type ReleasesData = {
 /**
  * useReleaseSources follows each list of initial live. errors holds the
  * error of each failed watch. The lists then keep their last items, which
- * can be out of date. stale holds the kind of each list whose watch has no
- * snapshot on its current connection.
+ * can be out of date. stale holds the kind of each list whose watch is not
+ * fresh (freshKey).
  */
 export function useReleaseSources(
   initial: ReleasesData,

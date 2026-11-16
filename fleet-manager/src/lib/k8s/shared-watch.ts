@@ -46,12 +46,29 @@ export function failureKey(spec: WatchSpec) {
 
 /**
  * freshKey is the query key that is true once the watch got its snapshot,
- * until an error of the connection or the end of the watch. A list from
- * before that can be out of date.
+ * until an error of the connection, a new connection that sends no
+ * snapshot of the watch within SNAPSHOT_WAIT_MS, or the end of the watch.
+ * A list from before that can be out of date.
  */
 export function freshKey(spec: WatchSpec) {
   return [
     "k8s-fresh",
+    spec.kind,
+    spec.namespace ?? "",
+    spec.labelSelector ?? "",
+    spec.name ?? "",
+  ] as const;
+}
+
+/**
+ * overdueKey is the query key that is true while the watch has no snapshot
+ * since an error of the connection, or since SNAPSHOT_WAIT_MS after a new
+ * connection opened. Until then, a list that never had a snapshot is the
+ * initial data of its query.
+ */
+export function overdueKey(spec: WatchSpec) {
+  return [
+    "k8s-overdue",
     spec.kind,
     spec.namespace ?? "",
     spec.labelSelector ?? "",
@@ -75,6 +92,15 @@ export function watchId(spec: WatchSpec): string {
 export const REOPEN_DELAY_MS = 5_000;
 
 /**
+ * SNAPSHOT_WAIT_MS is the time that a new connection has to send the
+ * snapshot of each watch.
+ */
+// The server sends a snapshot once its cache holds the kind. A shorter
+// wait marks a list out of date while the server still lists a kind for
+// the first time. A longer wait keeps a list current that no longer updates.
+export const SNAPSHOT_WAIT_MS = 5_000;
+
+/**
  * SharedWatch keeps one EventSource to /api/watch for all watches of its
  * QueryClient.
  */
@@ -82,15 +108,16 @@ export interface SharedWatch {
   /**
    * subscribe adds one subscriber to the watch of spec. Subscribers of an
    * equal spec share one watch, which is the only writer of its entries at
-   * watchKey, failureKey, and freshKey. It writes no list before the first
+   * watchKey, failureKey, freshKey, and overdueKey. It writes no list before the first
    * snapshot, so the initial data of a query stays. The function it returns
    * removes the subscriber once, also when it is called again. A change of
    * the set of watches opens a new connection in a microtask, so the
    * subscribes of one render share one connection. A watch that was fresh
-   * stays fresh on that new connection. An error of the connection sets
-   * freshKey of each watch to false until its next snapshot. A watch without
-   * subscribers leaves its list in the cache, sets its failure to null, and
-   * sets freshKey to false.
+   * stays fresh on that new connection for SNAPSHOT_WAIT_MS, or until its
+   * snapshot. An error of the connection sets freshKey of each watch to
+   * false until its next snapshot. A watch without subscribers leaves its
+   * list in the cache, sets its failure to null, and sets freshKey and
+   * overdueKey to false.
    */
   subscribe(spec: WatchSpec): () => void;
 }
@@ -115,6 +142,8 @@ class Connection implements SharedWatch {
   private source?: EventSource;
   private openIds: string[] = [];
   private reopen?: ReturnType<typeof setTimeout>;
+  private wait?: ReturnType<typeof setTimeout>;
+  private waiting = new Set<string>();
   private scheduled = false;
 
   constructor(private readonly client: QueryClient) {}
@@ -147,6 +176,7 @@ class Connection implements SharedWatch {
         this.watches.delete(id);
         this.client.setQueryData(failureKey(watch.spec), null);
         this.client.setQueryData(freshKey(watch.spec), false);
+        this.client.setQueryData(overdueKey(watch.spec), false);
       }
       const ids = [...this.watches.keys()].sort();
       if (ids.join("\n") !== this.openIds.join("\n")) this.open(ids);
@@ -156,12 +186,18 @@ class Connection implements SharedWatch {
   private open(ids: string[]) {
     this.source?.close();
     clearTimeout(this.reopen);
+    clearTimeout(this.wait);
     this.openIds = ids;
     this.source = undefined;
     if (ids.length === 0) return;
     const params = new URLSearchParams(ids.map((id) => ["watch", id]));
     const source = new EventSource(`/api/watch?${params}`);
     this.source = source;
+    this.waiting = new Set(ids);
+    this.wait = setTimeout(
+      () => this.markOverdue([...this.waiting]),
+      SNAPSHOT_WAIT_MS,
+    );
     // A closed source can still deliver frames that were in flight. Only the
     // open source writes, so a late frame cannot bring back an old state.
     const on = <T extends { watch: string }>(
@@ -178,6 +214,9 @@ class Connection implements SharedWatch {
       this.client.setQueryData(watchKey(spec), frame.objects);
       this.client.setQueryData(failureKey(spec), null);
       this.client.setQueryData(freshKey(spec), true);
+      this.client.setQueryData(overdueKey(spec), false);
+      this.waiting.delete(frame.watch);
+      if (this.waiting.size === 0) clearTimeout(this.wait);
     });
     on<WatchDelta>("delta", (spec, frame) => {
       this.client.setQueryData<NamedObject[]>(watchKey(spec), (list = []) =>
@@ -191,16 +230,19 @@ class Connection implements SharedWatch {
     // body that is not text/event-stream. It then has readyState CLOSED.
     source.addEventListener("error", () => {
       if (this.source !== source) return;
-      this.markNotFresh();
+      clearTimeout(this.wait);
+      this.markOverdue(this.openIds);
       if (source.readyState !== EventSource.CLOSED) return;
       this.reopen = setTimeout(() => this.open(this.openIds), REOPEN_DELAY_MS);
     });
   }
 
-  private markNotFresh() {
-    for (const id of this.openIds) {
+  private markOverdue(ids: readonly string[]) {
+    for (const id of ids) {
       const watch = this.watches.get(id);
-      if (watch) this.client.setQueryData(freshKey(watch.spec), false);
+      if (!watch) continue;
+      this.client.setQueryData(freshKey(watch.spec), false);
+      this.client.setQueryData(overdueKey(watch.spec), true);
     }
   }
 }

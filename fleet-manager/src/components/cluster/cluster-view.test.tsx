@@ -40,6 +40,7 @@ const live = vi.hoisted(() => ({
   partitions: undefined as unknown,
   observed: [] as { hook: string; args: string[] }[],
   stale: [] as string[],
+  overdue: [] as string[],
 }));
 // The App Router keeps useSearchParams in step with history.replaceState, so
 // the fake reads the URL of the window.
@@ -63,6 +64,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   },
   useWatchesFresh: (lists: readonly { kind: string }[]) =>
     lists.map((l) => !live.stale.includes(l.kind)),
+  useWatchesOverdue: (lists: readonly { kind: string }[]) =>
+    lists.map((l) => live.overdue.includes(l.kind)),
   useResource: (kind: string, ref: { name: string }, initial?: unknown) => {
     live.calls.push({ kind, opts: ref });
     const items = live.objects[kind] as
@@ -81,6 +84,7 @@ beforeEach(() => {
   live.partitions = undefined;
   live.observed = [];
   live.stale = [];
+  live.overdue = [];
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -485,6 +489,44 @@ describe("ClusterView", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Could not read Grant: forbidden",
     );
+  });
+
+  it("names the kind in the Backups and Restores boxes, never that there are none, while their reads failed", async () => {
+    live.errors.LogicalBackupRDBMS = "forbidden";
+    live.errors.PointInTimeRestore = "forbidden";
+    render(view());
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    const backups = screen.getByRole("region", { name: "Backups" });
+    expect(
+      within(backups).getByText(
+        "Not known: the page has no current list of LogicalBackupRDBMS.",
+      ),
+    ).toBeTruthy();
+    expect(within(backups).queryByText("No backups yet.")).toBeNull();
+    const restores = screen.getByRole("region", { name: "Restores" });
+    expect(
+      within(restores).getByText(
+        "Not known: the page has no current list of PointInTimeRestore.",
+      ),
+    ).toBeTruthy();
+    expect(within(restores).queryByText("No restores.")).toBeNull();
+  });
+
+  it("names the claim kind, never that the claim is gone, while the read of the claims failed", async () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    render(view({ initial: data({ claims: [] }) }));
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(screen.queryByText(/is not in this namespace/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the page has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows a failed read with its kind and keeps the page", () => {
@@ -2162,6 +2204,33 @@ describe("The detail of a section", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("table", { name: /settings$/ })).toBeNull();
+  });
+
+  it("hides the state and headline of a section card once the requests watch is overdue without an answer", () => {
+    live.stale = ["PluginRequest"];
+    live.overdue = ["PluginRequest"];
+    render(view({ initial: withClaim() }));
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Not known");
+  });
+
+  it("offers no editor in the Settings tab once the claims watch is overdue without an answer", async () => {
+    live.stale = ["CamundaClusterClaim"];
+    live.overdue = ["CamundaClusterClaim"];
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim(),
+        slots: { "component.settings.editor": <p>Editor</p> },
+      }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("Editor")).toBeNull();
   });
 
   it("offers no editor in the Settings tab while the claim is out of date", async () => {

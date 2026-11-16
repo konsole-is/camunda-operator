@@ -109,7 +109,9 @@ The **Logs** tab of a section shows the lines of its controller about its reques
 
 ### When the page cannot read a list
 
-Sometimes the page cannot read a list, or its list is out of date, for example after the page lost its connection. Then the boxes that need the list show "Not known: the page has no current list of" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page has no current list of Grant." and the conditions of each Grant show **Not known**. Without the claim, the sections, the registrations, or the Environments, the **Settings** tab of a section shows only that line. Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
+Sometimes the page cannot read a list, or its list is out of date, for example after the page lost its connection. A list also counts as out of date when the page gets no answer for it within a few seconds. Then the boxes that need the list show "Not known: the page has no current list of" and the kind. For example, without the Grants, the **Grants** box shows "Not known: the page has no current list of Grant." and the conditions of each Grant show **Not known**.
+
+Without the claim, the sections, the registrations, or the Environments, the **Settings** tab of a section shows only that line, with no **Edit settings**. Without the claim, the **Overview** and **Claim** tabs show that line in place of the sections of the claim. Without the backups or the restores, the **Backups** tab shows that line in place of "No backups yet." or "No restores.". Without the claim, each resource shows **Not known** in place of **Kept** or **Deleted**. Without the requests, the card of a section shows **Request: Not known**, and its detail shows no state of the request. The page reads each list again by itself.
 
 ## Logs
 

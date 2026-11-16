@@ -18,7 +18,7 @@ const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
 /**
  * PlatformList is the list page of the platform configs. Each of errors
  * shows above the table, and the rows stay. stale holds the kinds whose
- * watch has no snapshot on its current connection, as usePlatformSources
+ * watch is not fresh (freshKey), as usePlatformSources
  * gives them.
  */
 export function PlatformList({

@@ -25,6 +25,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
     item: initial,
   }),
   useWatchesFresh: (lists: readonly unknown[]) => lists.map(() => true),
+  useWatchesOverdue: (lists: readonly unknown[]) => lists.map(() => false),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
