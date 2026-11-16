@@ -68,7 +68,7 @@ status:
     message: "spec.licenseSecretRef: Secret camunda-system/camunda-license not found"
 ```
 
-The Secret stays picked and shows as `camunda-license (not found)`. A key that the Secret does not hold shows the same way, as `license-key (not found)`. A save keeps the reference. Create the Secret with the named key, or pick another one. When the fleet manager cannot read the Secrets of a namespace, the picker shows the read error and marks no Secret or key as not found.
+The Secret stays picked and shows as `camunda-license (not found)`. A key that the Secret does not hold shows the same way, as `license-key (not found)`. A save keeps the reference. Create the Secret with the named key, or pick another one. When the fleet manager cannot read the Secrets of a namespace, the picker shows the read error. It then marks no Secret or key as not found.
 
 ## Default images
 
