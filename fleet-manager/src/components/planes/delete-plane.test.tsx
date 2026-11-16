@@ -19,7 +19,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type WatchSpec, watchId } from "@/lib/k8s/shared-watch";
 import { ENVIRONMENT_LABEL, REVISION_ANNOTATION } from "@/lib/labels";
-import type { WriteMode } from "@/lib/write/types";
+import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { DeletePlane } from "./delete-plane";
@@ -51,6 +51,8 @@ const claim = (over: ClaimOver = {}) => {
       name: "plane-a",
       resourceVersion: "7",
       uid: "uid-1",
+      generation: 1,
+      finalizers: ["fleet.camunda.io/cleanup"],
       ...metadata,
     },
     spec: {
@@ -64,6 +66,7 @@ const claim = (over: ClaimOver = {}) => {
       ...(deletionPolicy && { deletionPolicy }),
     },
     status: {
+      observedGeneration: 1,
       resolvedPolicy: { deletionPolicy: "Delete" },
       managementCluster: { name: "plane-a" },
       requests: [
@@ -155,6 +158,7 @@ const actions = {
 };
 
 function page(initial: DeletePlaneData = data(), mode: WriteMode = "direct") {
+  fakeWriter.objects = [initial.claim as unknown as KubeObject];
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
@@ -238,6 +242,7 @@ const removed = (applied: unknown) =>
     apply: [],
     delete: [ref],
     uids: { [KEY]: "uid-1" },
+    generations: { [KEY]: 1 },
   });
 
 const radio = (name: RegExp) =>
@@ -293,9 +298,11 @@ describe("DeletePlane", () => {
       (fakeWriter.applied[0].apply[0].spec as { deletionPolicy?: string })
         .deletionPolicy,
     ).toBe("Orphan");
-    await snapshot(claimWatch, [
-      claim({ deletionPolicy: "Orphan", resourceVersion: "8" }),
-    ]);
+    const written = claim({ deletionPolicy: "Orphan", resourceVersion: "8" });
+    fakeWriter.objects = [written as unknown as KubeObject];
+    // The cleanup finalizer gives the policy to the request of the option
+    // on delete, so the request keeps the old policy here.
+    await snapshot(claimWatch, [written]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     removed(fakeWriter.applied[1]);
   });
@@ -313,13 +320,22 @@ describe("DeletePlane", () => {
     const revision = createHash("sha1")
       .update(JSON.stringify(fakeWriter.applied[0].apply[0]))
       .digest("hex");
-    await snapshot(claimWatch, [
-      claim({
-        resourceVersion: "8",
-        deletionPolicy: "Orphan",
-        annotations: { [REVISION_ANNOTATION]: revision },
-      }),
-    ]);
+    const written = claim({
+      resourceVersion: "8",
+      deletionPolicy: "Orphan",
+      annotations: { [REVISION_ANNOTATION]: revision },
+    });
+    fakeWriter.objects = [written as unknown as KubeObject];
+    await snapshot(claimWatch, [written]);
+    expect(fakeWriter.applied).toHaveLength(1);
+    // In Git mode the delete waits until the request has the policy.
+    await snapshot(
+      { kind: "PluginRequest", namespace: "platform" },
+      data().requests.map((r) => ({
+        ...r,
+        spec: { ...r.spec, deletionPolicy: "Orphan" },
+      })),
+    );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     removed(fakeWriter.applied[1]);
   });

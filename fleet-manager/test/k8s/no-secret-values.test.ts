@@ -439,8 +439,8 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         },
       }),
     ),
-  // The precondition is older than the live plane claim, so the dry run and
-  // the delete reach the writer, refuse with Stale, and remove nothing.
+  // The change passes the schema, so the dry run and the delete read the
+  // plane claim, refuse with Stale, and remove nothing.
   "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimDelete":
     refused("Stale", async () =>
       previewPlaneClaimDelete(await stalePlaneClaimDelete()),
@@ -747,7 +747,7 @@ async function staleClaimDelete() {
   };
 }
 // stalePlaneClaimDelete makes a plane claim and returns the change that
-// deletes it, with its UID and a resourceVersion that it no longer has.
+// deletes it, with its UID and a generation that it does not have.
 async function stalePlaneClaimDelete() {
   const name = `delete-${randomUUID().slice(0, 8)}`;
   const live: KubernetesObject = await api.create({
@@ -769,7 +769,7 @@ async function stalePlaneClaimDelete() {
       },
     ],
     uids: { [key]: live.metadata?.uid ?? "" },
-    preconditions: { [key]: "1" },
+    generations: { [key]: (live.metadata?.generation ?? 1) + 1 },
   };
 }
 function planeClaimChange() {

@@ -2,8 +2,9 @@
 
 import {
   claimChangeSchema,
-  claimDeleteSchema,
+  previewClaimDelete,
   runChange,
+  runClaimDelete,
   runPreview,
 } from "@/lib/write/run-change";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
@@ -22,16 +23,16 @@ export async function applyPlaneClaimChange(
   return runChange(change, claimChangeSchema);
 }
 
-/** previewPlaneClaimDelete is the dry run of the delete of one plane claim. */
+/** previewPlaneClaimDelete is the dry run of the delete of one plane claim, as previewClaimDelete of run-change gives it. */
 export async function previewPlaneClaimDelete(
   change: Change,
 ): Promise<Preview> {
-  return runPreview(change, claimDeleteSchema);
+  return previewClaimDelete(change);
 }
 
-/** applyPlaneClaimDelete deletes one plane claim with the writer of the settings. */
+/** applyPlaneClaimDelete deletes one plane claim with runClaimDelete. */
 export async function applyPlaneClaimDelete(
   change: Change,
 ): Promise<WriteResult> {
-  return runChange(change, claimDeleteSchema);
+  return runClaimDelete(change);
 }

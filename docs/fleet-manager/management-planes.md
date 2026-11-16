@@ -314,8 +314,10 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
 3. Type the name of the plane.
 4. Select **Delete the management plane**.
 
-When the policy that you chose differs from the policy of the claim, the page first writes the new policy. It deletes the claim after the claim controller read that policy. The page then shows each object that goes until it is gone. The [Deletion](../crds/camundamanagementclusterclaim.md#deletion) section of the claim explains the order.
+The page first writes your choice to the claim when the claim has another deletion policy, or none of its own and none recorded. The page then shows "Waiting for the operator to read the deletion policy." In direct mode, the fleet manager then deletes the claim. The operator gives your choice to each option before it removes anything. The page shows each object that goes until it is gone. The [Deletion](../crds/camundamanagementclusterclaim.md#deletion) section of the claim explains the order.
 
-In Git mode, the confirm is **Push the delete to Git**. A changed policy and the delete are two commits. The page pushes the delete only after GitOps applied the policy. The fleet manager removes the claim file, so your GitOps tool must prune to delete the claim.
+If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. A claim without the finalizer `fleet.camunda.io/cleanup` cannot give its deletion policy to its options. Its delete fails until you add the finalizer back.
+
+In Git mode, the confirm is **Push the delete to Git**. A changed policy and the delete are two commits. The page pushes the delete only after GitOps applied the policy and each option has it. While the claim reports an error, the operator does not update the options. The page then names the options and gives the reason, and the fleet manager refuses the push. The fleet manager removes the claim file, so your GitOps tool must prune to delete the claim. [Delete in Git mode](cluster-page.md#delete-in-git-mode) on the cluster page shows the same steps with examples.
 
 When the page cannot read a list that the delete needs, it shows `Not known` for each fact that comes from that list. It then shows no confirm. It shows `Delete is possible when the fleet manager can read <kind>.`
