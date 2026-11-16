@@ -668,6 +668,27 @@ describe("the direct writer against envtest", () => {
     });
   });
 
+  it("a preview of a delete shows the object as removed and deletes nothing", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+    const before = await live(name);
+
+    const preview = await writer.preview({
+      intent: "Delete",
+      apply: [],
+      delete: [environmentRef(name)],
+      uids: { [refKey({ kind: "Environment", name })]: before.metadata!.uid! },
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects.map((o) => o.ref.name)).toEqual([name]);
+    const after = await live(name);
+    expect(after.metadata?.deletionTimestamp).toBeUndefined();
+    expect(after.metadata?.uid).toBe(before.metadata!.uid);
+  });
+
   it("a delete of a missing object succeeds", async () => {
     expect(
       await writer.apply({
