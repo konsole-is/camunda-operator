@@ -13,6 +13,8 @@ import {
 } from "./detail-sources";
 import { unreadKinds } from "./groups";
 import { HealthTab } from "./health-tab";
+import { parameterRows } from "./parameters";
+import { ParametersTab } from "./parameters-tab";
 import {
   REGISTRATION_TABS,
   type RegistrationTab,
@@ -92,6 +94,12 @@ export function RegistrationDetail({
           <TabsContent value="contract">
             <ContractTab
               contract={contractOf(registration, sources.sections, unread)}
+            />
+          </TabsContent>
+          <TabsContent value="parameters">
+            <ParametersTab
+              rows={parameterRows(registration, sources.environments, unread)}
+              unread={unread}
             />
           </TabsContent>
           <TabsContent value="health">

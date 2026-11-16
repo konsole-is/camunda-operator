@@ -115,6 +115,7 @@ describe("the Storybook stories", () => {
       "AboutTab",
       "HealthTab",
       "ContractTab",
+      "ParametersTab",
       "ConnectionList",
       "UsersTable",
       "ConnectionDetail",
