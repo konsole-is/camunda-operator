@@ -1,4 +1,3 @@
-import { unknownUsersText } from "@/components/setup/platform/model";
 import type { ContractKind, ContractUser } from "@/lib/usage";
 
 // What each kind of user does when a contract of a kind changes, as the
@@ -57,30 +56,14 @@ const EFFECTS: Record<ContractKind, Record<string, string>> = {
   },
 };
 
-const UNKNOWN: Record<ContractKind, string> = {
-  ObjectStorageConfig: "A cluster that uses this contract restarts its pods.",
-  SecondaryStorageConfig:
-    "A cluster that uses this contract restarts its pods.",
-  DatabaseServerConfig:
-    "A database moves to a changed server, and a cluster or management plane that uses it restarts its pods.",
-  DatabaseConfig:
-    "A cluster or management plane that uses this contract restarts its pods.",
-  ManagementAuthConfig:
-    "An Optimize that uses this contract restarts its pods.",
-};
-
 /**
  * saveEffects returns the lines that the review of a change of a contract
- * of kind shows: each user and what it does on the change. unread are the
- * kinds that can use the contract and that the page could not read; while
- * any is unread, a last line says that the users are not known and what a
- * user does. A contract without users and without unread kinds gives one
- * line that says so.
+ * of kind shows: each user and what it does on the change. A contract
+ * without users gives one line that says so.
  */
 export function saveEffects(
   kind: ContractKind,
   users: readonly ContractUser[],
-  unread: readonly string[],
 ): string[] {
   const lines = users.map(
     (u) =>
@@ -88,7 +71,5 @@ export function saveEffects(
         EFFECTS[kind][u.kind] ?? "reads the changed contract."
       }`,
   );
-  if (unread.length > 0)
-    return [...lines, `${unknownUsersText(unread)} ${UNKNOWN[kind]}`];
   return lines.length > 0 ? lines : ["No resource uses this contract."];
 }

@@ -387,6 +387,59 @@ describe("ConnectionDetail with changes", () => {
     },
   );
 
+  it("blocks the save of a CA certificate whose key is not picked", () => {
+    edit(inTeamA("SecondaryStorageConfig", "shared-es"));
+    fireEvent.change(
+      within(screen.getByRole("group", { name: "CA certificate" })).getByRole(
+        "combobox",
+        { name: "Secret" },
+      ),
+      { target: { value: "shared-es-user" } },
+    );
+    expect(
+      screen.getByRole("button", { name: "Review" }),
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getAllByText("Pick the Secret and the key of the CA certificate.")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it.each<[string, { errors?: ReadError[]; stale?: string[] }]>([
+    [
+      "cannot be read",
+      { errors: [{ kind: "LogicalBackupRDBMS", message: "forbidden" }] },
+    ],
+    ["has not answered", { stale: ["LogicalBackupRDBMS"] }],
+  ])("blocks a save while a user kind %s", (_, reads) => {
+    edit(inTeamA("ObjectStorageConfig", "backups"), reads);
+    const line =
+      "A change is possible when the fleet manager can read LogicalBackupRDBMS.";
+    expect(screen.getByText(line)).toBeTruthy();
+    const region = screen.getByLabelText("Region") as HTMLInputElement;
+    expect(region.value).not.toBe("");
+    fireEvent.change(region, { target: { value: "eu-central-1" } });
+    expect(
+      screen.getByRole("button", { name: "Review" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("closes the save review when a user kind stops being read", async () => {
+    const sources = connectionFixtures();
+    const { rerender } = edit(inTeamA("ObjectStorageConfig", "backups"), {
+      sources,
+    });
+    fireEvent.change(screen.getByLabelText("Region"), {
+      target: { value: "eu-central-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "Review the contract" });
+    rerender(sources, [], ["LogicalBackupRDBMS"]);
+    expect(
+      screen.queryByRole("region", { name: "Review the contract" }),
+    ).toBeNull();
+  });
+
   it("keeps a contract kept from a registration read only while the requests are not known", () => {
     edit(inTeamA("ObjectStorageConfig", "old-backup"), {
       stale: ["PluginRequest"],

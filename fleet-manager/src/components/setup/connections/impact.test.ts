@@ -15,7 +15,6 @@ describe("saveEffects", () => {
       saveEffects(
         "ObjectStorageConfig",
         [user("CamundaCluster"), user("DatabaseServer", "orders-pg")],
-        [],
       ),
     ).toEqual([
       "CamundaCluster team-a/orders restarts its pods, all but Connectors.",
@@ -39,20 +38,13 @@ describe("saveEffects", () => {
   ])(
     "says that a %s change restarts the pods that a %s runs or leads to",
     (kind, userKind) => {
-      const [line] = saveEffects(kind, [user(userKind)], []);
+      const [line] = saveEffects(kind, [user(userKind)]);
       expect(line).toMatch(/restart/);
     },
   );
 
-  it("never says that a change has no effect while the users are not known", () => {
-    const lines = saveEffects("ObjectStorageConfig", [], ["CamundaCluster"]);
-    expect(lines).toEqual([
-      "The users are not known while the fleet manager cannot read CamundaCluster. A cluster that uses this contract restarts its pods.",
-    ]);
-  });
-
   it("says that no resource uses an unused contract", () => {
-    expect(saveEffects("DatabaseConfig", [], [])).toEqual([
+    expect(saveEffects("DatabaseConfig", [])).toEqual([
       "No resource uses this contract.",
     ]);
   });
@@ -62,7 +54,6 @@ describe("saveEffects", () => {
       saveEffects(
         "ManagementAuthConfig",
         [user("CamundaOptimize", "optimize")],
-        [],
       ),
     ).toEqual(["CamundaOptimize team-a/optimize restarts its pods."]);
   });

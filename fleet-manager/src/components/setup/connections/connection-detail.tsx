@@ -66,11 +66,11 @@ export type ContractActions = {
  *
  * With actions, a contract that a person may change (writerEditable) has a
  * form with the form state of useSetupEditor, and a delete. A save and a
- * delete each show a review with a dry run before the write. The delete is
- * offered only while nothing uses the contract and each kind that can use
- * it is read; an open delete review closes when that stops being true, and
- * an open review closes when the contract gets a writer. Without mode the
- * form is disabled. Any other contract keeps the read view.
+ * delete each show a review with a dry run before the write. Both wait
+ * until each kind that can use the contract is read, and the delete also
+ * until nothing uses it; an open review closes when that stops being true
+ * or when the contract gets a writer. Without mode the form is disabled.
+ * Any other contract keeps the read view.
  */
 export function ConnectionDetail({
   target,
@@ -119,7 +119,7 @@ export function ConnectionDetail({
   if (
     reviewing &&
     !writing &&
-    (!editable || (deleting && (users.length > 0 || unread.length > 0)))
+    (!editable || unread.length > 0 || (deleting && users.length > 0))
   )
     editor.cancel();
 
@@ -142,6 +142,10 @@ export function ConnectionDetail({
   }
   const ready = readyOf(shown);
   const formErrors = draftErrors(target.kind, draft);
+  const unreadLine =
+    unread.length > 0
+      ? `A change is possible when the fleet manager can read ${unread.join(", ")}.`
+      : undefined;
   const count = base ? changeCount(base, draft) : 0;
   const namesIn = (kind: "DatabaseConfig" | "DatabaseServerConfig") =>
     unreadKinds(sources).includes(kind)
@@ -204,6 +208,7 @@ export function ConnectionDetail({
           className="flex min-w-0 flex-col gap-4"
         >
           <EditorSection title="Settings">
+            {unreadLine && <p className="text-sm text-muted">{unreadLine}</p>}
             <ContractForm
               kind={target.kind}
               namespace={target.namespace}
@@ -285,7 +290,7 @@ export function ConnectionDetail({
                         ]
                       : []),
                   ]
-                : saveEffects(target.kind, users, unread)
+                : saveEffects(target.kind, users)
             }
             confirm={
               deleting
@@ -318,7 +323,7 @@ export function ConnectionDetail({
         base && (
           <ChangeBar
             count={count}
-            blocked={formErrors[0]?.message}
+            blocked={unreadLine ?? formErrors[0]?.message}
             onDiscard={editor.discard}
             onReview={() =>
               editor.review({ change: updateChange(base, draft), kind: "save" })
