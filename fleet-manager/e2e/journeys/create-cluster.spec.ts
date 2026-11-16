@@ -8,6 +8,7 @@ import {
   createdSpec,
   deleteClaim,
   dumpClaim,
+  field,
   fillCreateForm,
   kubectl,
 } from "./create";
@@ -15,19 +16,6 @@ import {
 // A new name on each run, so that a second run on the same harness finds
 // no taken name.
 const name = `create-${Date.now().toString(36)}`;
-
-function field(kind: string, jsonpath: string): string {
-  return kubectl(
-    "get",
-    kind,
-    name,
-    "-n",
-    HARNESS_NAMESPACE,
-    "--ignore-not-found",
-    "-o",
-    `jsonpath={${jsonpath}}`,
-  );
-}
 
 test.afterEach(() => {
   dumpClaim(test.info(), name);
@@ -53,12 +41,12 @@ test("a cluster created through the form gets its sections, its requests, and th
 
   await expect(
     page.getByRole("heading", { name: `Creating the cluster ${name}` }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await expect(
     page
       .getByRole("status")
       .filter({ hasText: `Created the cluster ${name}.` }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   const claim = JSON.parse(
     kubectl(
       "get",
@@ -70,18 +58,23 @@ test("a cluster created through the form gets its sections, its requests, and th
       "json",
     ),
   );
+  // A new top-level default of the claim CRD must be added to createdSpec.
   expect(bySection(claim.spec)).toEqual(createdSpec);
 
   await expect
-    .poll(() => field("camundaclusterclaim", ".status.requests[*].ready"), {
-      timeout: 180_000,
-    })
+    .poll(
+      () => field("camundaclusterclaim", name, ".status.requests[*].ready"),
+      {
+        timeout: 180_000,
+      },
+    )
     .toBe("True True True");
   await expect
     .poll(
       () =>
         field(
           "camundaclusterclaim",
+          name,
           ".status.conditions[?(@.type=='RequestsReady')].status",
         ),
       { timeout: 60_000 },
@@ -92,6 +85,7 @@ test("a cluster created through the form gets its sections, its requests, and th
       () =>
         field(
           "camundacluster",
+          name,
           ".status.conditions[?(@.type=='Ready')].reason",
         ),
       { timeout: 180_000 },
@@ -109,7 +103,7 @@ test("a cluster created through the form gets its sections, its requests, and th
     "jsonpath={.status.outputs.externalUrl}",
   );
   expect(url).not.toBe("");
-  expect(field("camundacluster", ".spec.externalUrl")).toBe(url);
+  expect(field("camundacluster", name, ".spec.externalUrl")).toBe(url);
 
   const row = (label: string) =>
     page

@@ -25,6 +25,23 @@ export function kubectl(...args: string[]): string {
 }
 
 /**
+ * field returns the value at jsonpath, without braces, of the object kind
+ * name in HARNESS_NAMESPACE. It returns "" when the object does not exist.
+ */
+export function field(kind: string, name: string, jsonpath: string): string {
+  return kubectl(
+    "get",
+    kind,
+    name,
+    "-n",
+    HARNESS_NAMESPACE,
+    "--ignore-not-found",
+    "-o",
+    `jsonpath={${jsonpath}}`,
+  );
+}
+
+/**
  * createdSpec is the spec that fillCreateForm makes the form write for a
  * claim, with plugins in section order.
  */
@@ -112,7 +129,8 @@ export async function fillCreateForm(page: Page, name: string): Promise<void> {
 export function dumpClaim(testInfo: TestInfo, name: string): void {
   if (testInfo.status === testInfo.expectedStatus) return;
   for (const args of [
-    ["camundaclusterclaim,camundacluster", name],
+    ["camundaclusterclaim", name],
+    ["camundacluster", name],
     ["pluginrequests", "-l", `${CLAIM_LABEL}=${name}`],
   ]) {
     try {

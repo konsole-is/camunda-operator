@@ -10,15 +10,15 @@ import {
   createdSpec,
   deleteClaim,
   dumpClaim,
+  field,
   fillCreateForm,
-  kubectl,
 } from "./create";
 import {
   GIT_PATH,
   committedFile,
   pauseApplyLoop,
   removeCommittedFile,
-  switchToDirectMode,
+  restoreDirectMode,
   switchToGitMode,
 } from "./git";
 
@@ -27,47 +27,38 @@ import {
 const name = `create-git-${Date.now().toString(36)}`;
 const CLAIM_FILE = `${GIT_PATH}/${HARNESS_NAMESPACE}/camundaclusterclaims/${name}.yaml`;
 
-function claimField(jsonpath: string): string {
-  return kubectl(
-    "get",
-    "camundaclusterclaim",
-    name,
-    "-n",
-    HARNESS_NAMESPACE,
-    "--ignore-not-found",
-    "-o",
-    `jsonpath={${jsonpath}}`,
-  );
-}
+const claimField = (jsonpath: string) =>
+  field("camundaclusterclaim", name, jsonpath);
+
+// A test that timed out reaches its finally block only after afterEach, so
+// afterEach lets the apply loop go on first.
+let resumeApplyLoop: (() => void) | undefined;
 
 // The apply loop applies the whole folder on each new commit, so the claim
-// file leaves the repository before the claim leaves the cluster. The loop
-// applies a commit once, so the claim must exist before the removal: the
-// loop then never applies the commit that holds the file again.
+// file must leave the repository. A loop pass that already read the commit
+// with the file can apply the claim after deleteClaim. The claim exists
+// only after that pass, so the hook waits for it first.
 test.afterEach(async () => {
+  resumeApplyLoop?.();
+  resumeApplyLoop = undefined;
   dumpClaim(test.info(), name);
-  if ((await committedFile(CLAIM_FILE)) !== undefined) {
-    await expect
-      .poll(() => claimField(".metadata.name"), { timeout: 120_000 })
-      .toBe(name);
-    removeCommittedFile(CLAIM_FILE);
+  try {
+    if ((await committedFile(CLAIM_FILE)) !== undefined) {
+      try {
+        await expect
+          .poll(() => claimField(".metadata.name"), { timeout: 120_000 })
+          .toBe(name);
+      } finally {
+        removeCommittedFile(CLAIM_FILE);
+      }
+    }
+  } finally {
+    deleteClaim(name);
   }
-  deleteClaim(name);
 });
 
-// A hook gets no baseURL fixture, so the page takes the address that
-// journeys.sh sets. A later journey then runs in direct mode, also when
-// this one failed.
-test.afterAll(async ({ browser }) => {
-  const page = await browser.newPage({
-    baseURL: process.env.FLEET_JOURNEYS_BASE_URL,
-  });
-  try {
-    await switchToDirectMode(page);
-  } finally {
-    await page.close();
-  }
-});
+// A later journey then runs in direct mode, also when this one failed.
+test.afterAll(({ browser }) => restoreDirectMode(browser));
 
 // The operator refuses a cluster with the options of the harness claim, so
 // no Camunda pod starts on kind.
@@ -90,7 +81,7 @@ test("a cluster created in Git mode waits for GitOps, then the claim appears", a
     .filter({ hasText: "Waiting for GitOps to apply" });
   // The apply loop can apply the commit right after the push, and the app
   // then ends the waiting state.
-  const resumeApplyLoop = pauseApplyLoop();
+  resumeApplyLoop = pauseApplyLoop();
   try {
     await push.click();
     await expect(waiting.filter({ hasText: /Commit [0-9a-f]{7}/ })).toBeVisible(
@@ -102,6 +93,7 @@ test("a cluster created in Git mode waits for GitOps, then the claim appears", a
     await shot(page, "create-git-waiting", { dir: JOURNEYS_DIR });
   } finally {
     resumeApplyLoop();
+    resumeApplyLoop = undefined;
   }
 
   const file = await committedFile(CLAIM_FILE);
