@@ -328,6 +328,25 @@ describe("RequestOverview", () => {
     expect(within(grants).queryByText("Healthy")).toBeNull();
   });
 
+  it("names PluginSection in the Grants box while the sections are not read, because they decide which grants show", () => {
+    show("cloud-identity", { unread: ["PluginSection"] });
+    expect(
+      within(region("Grants")).getByText(
+        "Not known: the page has no current list of PluginSection.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no field that an output fills while the claim is not read", () => {
+    show("volume-encryption", { unread: ["CamundaClusterClaim"] });
+    const outputs = region("Outputs");
+    expect(
+      cells(within(outputs).getByRole("row", { name: /storageClassName/ })).at(
+        -1,
+      ),
+    ).toBe("Not known");
+  });
+
   it("names the Grant kind in the Grants box of a section without grants while the grants are not read", () => {
     show("backup-storage", { unread: ["Grant"] });
     expect(

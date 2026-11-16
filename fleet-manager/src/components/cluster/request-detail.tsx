@@ -36,9 +36,11 @@ import type {
  * for each block that has something to show. unread holds the kinds that
  * the page could not read or that are out of date. A box that depends on
  * one of them names the kind, and shows no fate, no condition, and no
- * empty list from it: CamundaClusterClaim for the fates, Grant for the
- * grants, PluginRegistration for the inputs and the users, and the kind of
- * each connected contract for its Ready. now is the time that the ages
+ * empty list from it: CamundaClusterClaim for the fates, Grant and
+ * PluginSection for the grants, PluginRegistration for the inputs and the
+ * users, and the kind of each connected contract for its Ready. While
+ * CamundaClusterClaim or PluginSection is in unread, the fields that
+ * outputs fill show as Not known. now is the time that the ages
  * count to.
  */
 export function RequestOverview({
@@ -53,7 +55,9 @@ export function RequestOverview({
   const unreadKind = (kind: string) => unread.includes(kind);
   const registrationUnread = unreadKind("PluginRegistration");
   const grantsUnread = unreadKind("Grant");
-  const showGrants = detail.grants.length > 0 || grantsUnread;
+  // Which Grants a section shows depends on the slot of its PluginSection.
+  const sectionsUnread = unreadKind("PluginSection");
+  const showGrants = detail.grants.length > 0 || grantsUnread || sectionsUnread;
   return (
     <div className="flex flex-col gap-4">
       {detail.summary.length > 0 && (
@@ -93,7 +97,14 @@ export function RequestOverview({
           note={detail.clusterGrants ? "Every grant of the cluster" : undefined}
           region
         >
-          {grantsUnread && <NotRead kinds={["Grant"]} />}
+          {(grantsUnread || sectionsUnread) && (
+            <NotRead
+              kinds={[
+                ...(grantsUnread ? ["Grant"] : []),
+                ...(sectionsUnread ? ["PluginSection"] : []),
+              ]}
+            />
+          )}
           {registrationUnread && detail.grants.length > 0 && (
             <NotRead kinds={["PluginRegistration"]} />
           )}
@@ -125,7 +136,10 @@ export function RequestOverview({
       )}
       {detail.outputs.length > 0 && (
         <DetailSection title="Outputs" region>
-          <Outputs detail={detail} unread={unreadKind("PluginSection")} />
+          <Outputs
+            detail={detail}
+            unread={sectionsUnread || unreadKind("CamundaClusterClaim")}
+          />
         </DetailSection>
       )}
       {(detail.inputs.length > 0 || registrationUnread) && (
