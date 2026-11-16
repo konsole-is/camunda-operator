@@ -66,7 +66,7 @@ spec:
 
 The claim names `platformConfigRef` only when you picked a platform config that is not the default of the environment. It names `deletionPolicy` only when your choice is not the default of the environment.
 
-The review asks the Kubernetes API to check the claim, and saves nothing. When the Kubernetes API refuses the claim, the review shows its message, and **Create** stays off.
+The review asks the Kubernetes API to check the claim, and saves nothing. When the Kubernetes API refuses the claim, the review shows its message, and **Create** stays off. The Kubernetes API cannot check a claim in a namespace that does not exist yet. So when the cluster gets a new namespace, the review shows the claim unchecked, and the check comes at **Create**. [When the write is refused](#when-the-write-is-refused) says what happens then.
 
 ### Permissions
 
