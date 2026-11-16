@@ -108,10 +108,12 @@ type Remote = {
  * object in a namespace that the same change creates. The preview shows them as rendered. The
  * dry run of an object that GitOps applied with server-side apply, or of a
  * custom resource that GitOps applied with client-side apply, drops each
- * field of GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
- * an object without a file, and a file behind a symbolic link of the
- * repository, are Invalid, in the preview too for an object to delete. The UID is checked only before the push: GitOps
- * later deletes the object of that name, whatever its UID.
+ * field of GitOps that the change leaves out, except the revision
+ * annotation. Any other object is dry-run as the app. A delete of an
+ * object without a file, and a file behind a symbolic link of the
+ * repository, are Invalid, in the preview too for an object to delete. The
+ * UID is checked only before the push: GitOps later deletes the object of
+ * that name, whatever its UID.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the

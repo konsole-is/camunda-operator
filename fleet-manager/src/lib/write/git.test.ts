@@ -778,6 +778,24 @@ describe("the Git writer", slow, () => {
     expect(preview.errors).toEqual([]);
   });
 
+  it("the preview of a delete refuses when the clone fails, and does not report the file as there", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const preview = await writerFor({ branch: "release" }).preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([
+      { code: "Unavailable", message: `${repo.url} has no branch release.` },
+    ]);
+  });
+
   it("a change whose files are already in the repository makes no commit", async () => {
     repo = await serveBareRepository();
     const change: Change = {
