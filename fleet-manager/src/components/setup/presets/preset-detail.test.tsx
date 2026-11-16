@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { ReadError } from "@/components/planes/planes-table";
-import type { Resource } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
@@ -36,7 +36,7 @@ function setup(
     mode?: WriteMode;
     sources?: PresetSources;
     errors?: ReadError[];
-    pending?: string[];
+    pending?: KindName[];
   } = {},
 ) {
   const {

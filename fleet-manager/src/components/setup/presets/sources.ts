@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReadError } from "@/components/planes/planes-table";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
@@ -54,11 +55,13 @@ export function usePresetSources(
   const keys = Object.keys(PRESET_SOURCE_KINDS) as (keyof PresetSources)[];
   const kinds = keys.map((key) => PRESET_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
+  const answered = useAnswered(kinds);
   const errors = keys.flatMap((key, i): ReadError[] => {
     const kind = kinds[i];
     const { error } = lists[key];
     if (error) return [{ kind, message: error }];
-    return fresh[i] ? [] : initial.readErrors.filter((e) => e.kind === kind);
+    if (answered.has(kind)) return [];
+    return initial.readErrors.filter((e) => e.kind === kind);
   });
   const pending = kinds.filter(
     (kind, i) => !fresh[i] && !errors.some((e) => e.kind === kind),

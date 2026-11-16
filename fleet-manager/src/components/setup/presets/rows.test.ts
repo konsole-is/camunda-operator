@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Resource } from "@/lib/k8s/kinds";
 import { presetFixtures } from "./fixtures";
 import { changedLabel, presetFacts, presetRows, usedByLabel } from "./rows";
 
@@ -55,6 +56,47 @@ describe("presetRows", () => {
       ],
       deletable: false,
     });
+  });
+
+  it("refuses delete for a preset that the environment of a claim gives its selection", () => {
+    const sources = presetFixtures();
+    sources.environments[0].spec.parameters = {
+      "database-server": { preset: { value: "standard" } },
+    };
+    sources.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "database-server" },
+        spec: {
+          sections: ["secondary-storage"],
+          mode: "Default",
+          parameterValues: { preset: "small" },
+        },
+      } as Resource<"PluginRegistration">,
+    ];
+    sources.clusterClaims.push({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { namespace: "team-orders", name: "billing" },
+      spec: {
+        plugins: [
+          { section: "secondary-storage", registration: "database-server" },
+        ],
+      },
+    } as Resource<"CamundaClusterClaim">);
+    const billing = {
+      kind: "CamundaClusterClaim",
+      namespace: "team-orders",
+      name: "billing",
+    };
+    expect(rowOf("postgresql/standard", sources)).toMatchObject({
+      users: [billing],
+      deletable: false,
+    });
+    expect(rowOf("postgresql/small", sources)?.users).not.toContainEqual(
+      billing,
+    );
   });
 
   it("refuses delete for an allowed preset without users", () => {

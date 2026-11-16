@@ -8,6 +8,7 @@ import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
 import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
+import type { KindName } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
@@ -46,7 +47,7 @@ export function PresetDetail({
   mode,
   actions,
 }: {
-  sources: PresetSources & { errors: ReadError[]; pending: string[] };
+  sources: PresetSources & { errors: ReadError[]; pending: KindName[] };
   kind: PresetKind;
   name: string;
   mode?: WriteMode;

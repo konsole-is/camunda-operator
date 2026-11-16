@@ -11,7 +11,7 @@ import {
   type PresetKind,
   type PresetUser,
   type PresetUserKind,
-  presetUsers,
+  findPresetUsers,
 } from "@/lib/usage";
 import { PRESET_KINDS, type PresetObject, presetBody } from "./kinds";
 import type { PresetSources } from "./sources";
@@ -35,7 +35,7 @@ export type PresetRow = {
   users: PresetUser[];
   /** allowedUnknown is true while the environments cannot be read, so allowedIn can miss entries. */
   allowedUnknown: boolean;
-  /** usersUnknown is true while another list of GUARD_KINDS cannot be read, so users can miss entries. */
+  /** usersUnknown is true while a list that the users of the preset come from cannot be read, so users can miss entries. */
   usersUnknown: boolean;
   lastChanged?: string;
   deletable: boolean;
@@ -123,7 +123,7 @@ export function presetFacts(
 export function presetRows(
   sources: PresetSources,
   errors: readonly ReadError[],
-  pending: readonly string[] = [],
+  pending: readonly KindName[] = [],
 ): PresetRow[] {
   const lists: Record<PresetKind, readonly PresetObject[]> = {
     CamundaClusterPreset: sources.clusterPresets,
@@ -131,20 +131,20 @@ export function presetRows(
     DatabaseServerPreset: sources.databasePresets,
   };
   // A Resource is plain JSON, so it differs from its model type only in its
-  // timestamps, which allowedIn and presetUsers do not read.
+  // timestamps, which allowedIn and findPresetUsers do not read.
   const environments = sources.environments as unknown as Environment[];
-  const usage = {
+  const usersOf = findPresetUsers({
     ...sources,
     environments,
     namespaces: sources.namespaces as unknown as V1Namespace[],
     registrations: sources.registrations as unknown as PluginRegistration[],
-  };
+  });
   return PRESET_KINDS.flatMap(({ kind, slug }) =>
     [...lists[kind]]
       .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
       .map((preset) => {
         const name = preset.metadata.name ?? "";
-        const users = presetUsers(kind, name, usage);
+        const users = usersOf(kind, name);
         const allowed = allowedIn(environments, kind, name);
         const unread = GUARD_KINDS[kind].filter((k) =>
           errors.some((e) => e.kind === k),

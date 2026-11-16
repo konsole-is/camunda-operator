@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { ResolvedPolicy } from "@/lib/policy";
 import {
   type PresetUsageSources,
@@ -79,6 +81,9 @@ const sources: PresetUsageSources = {
       parameters: { preset: "rustfs-small" },
     }),
   ],
+  environments: [],
+  namespaces: [],
+  registrations: [],
 };
 
 describe("presetResources", () => {
@@ -201,6 +206,37 @@ describe("presetUsers", () => {
       expect(users("policy-default", [claim(recorded("recorded"))])).toEqual(
         [],
       );
+    });
+
+    it("counts a claim whose environment gives the preset over the registration", () => {
+      const environment = {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: "production" },
+        spec: {
+          parameters: {
+            "database-server": { preset: { value: "from-environment" } },
+          },
+        },
+      } as Environment;
+      const inEnvironment = (name: string) =>
+        presetUsers("DatabaseServerPreset", name, {
+          ...sources,
+          clusterClaims: [],
+          planeClaims: [claim()],
+          namespaces: [
+            {
+              metadata: {
+                name: "team-e",
+                labels: { [ENVIRONMENT_LABEL]: "production" },
+              },
+            },
+          ],
+          environments: [environment],
+          registrations: [defaults],
+        });
+      expect(inEnvironment("from-environment")).toEqual([plain]);
+      expect(inEnvironment("policy-default")).toEqual([]);
     });
   });
 

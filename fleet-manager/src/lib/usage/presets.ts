@@ -78,9 +78,9 @@ export type PresetUsageSources = {
   requests: readonly (Named & {
     spec: { registration: string; parameters?: unknown };
   })[];
-  environments?: readonly Environment[];
-  namespaces?: readonly V1Namespace[];
-  registrations?: readonly PluginRegistration[];
+  environments: readonly Environment[];
+  namespaces: readonly V1Namespace[];
+  registrations: readonly PluginRegistration[];
 };
 
 const USER_ORDER: readonly PresetUserKind[] = [
@@ -121,45 +121,81 @@ export function presetResources(
  * whose spec.presetRef is name; each claim of either kind with a selection,
  * and each request, of a built-in registration whose preset parameter lists
  * kind, when that parameter, or the one its request gets from the claim
- * policy, is name. The policy needs environments, namespaces, and
- * registrations until status.resolvedPolicy is set. A claim names a preset
- * this way before its resource exists. Each object is in the list once,
- * sorted by kind in the order of PresetUserKind, then namespace, then name,
- * by code unit. An empty name matches nothing.
+ * policy, is name. A claim names a preset this way before its resource
+ * exists. Each object is in the list once, sorted by kind in the order of
+ * PresetUserKind, then namespace, then name, by code unit. An empty name
+ * matches nothing.
  */
 export function presetUsers(
   kind: PresetKind,
   name: string,
   sources: PresetUsageSources,
 ): PresetUser[] {
-  if (name === "") return [];
-  const users = presetResources(kind, name, sources);
-  const names = (registration: string, parameters: unknown) =>
-    own(BUILTIN_OPTIONS, registration)?.lists.preset === kind &&
-    nameOf(decodeObject(parameters)?.preset) === name;
-  const selects = (claim: Selecting) => {
-    const requested = requestedParameters(claim, sources);
-    return (claim.spec.plugins ?? []).some(
-      (s, i) =>
-        names(s.registration, s.parameters) ||
-        names(s.registration, requested[i]),
-    );
+  return findPresetUsers(sources)(kind, name);
+}
+
+/**
+ * findPresetUsers returns presetUsers over sources. It resolves the policy
+ * of each claim once, so a caller that looks up many presets in the same
+ * sources calls it once and then calls the result for each preset.
+ */
+export function findPresetUsers(
+  sources: PresetUsageSources,
+): (kind: PresetKind, name: string) => PresetUser[] {
+  const claims = [
+    ...sources.clusterClaims.map((claim) =>
+      claimUse("CamundaClusterClaim", claim, claim.spec.presetRef, sources),
+    ),
+    ...sources.planeClaims.map((claim) =>
+      claimUse("CamundaManagementClusterClaim", claim, undefined, sources),
+    ),
+  ];
+  return (kind, name) => {
+    if (name === "") return [];
+    const names = (registration: string, parameters: unknown) =>
+      own(BUILTIN_OPTIONS, registration)?.lists.preset === kind &&
+      nameOf(decodeObject(parameters)?.preset) === name;
+    const users = presetResources(kind, name, sources);
+    for (const claim of claims) {
+      const byRef = kind === "CamundaClusterPreset" && claim.presetRef === name;
+      const selects = claim.selections.some(
+        (s, i) =>
+          names(s.registration, s.parameters) ||
+          names(s.registration, claim.requested[i]),
+      );
+      if (byRef || selects) users.push(claim.user);
+    }
+    for (const request of sources.requests) {
+      if (names(request.spec.registration, request.spec.parameters))
+        users.push(userOf("PluginRequest", request));
+    }
+    return sortUsers(users);
   };
-  for (const claim of sources.clusterClaims) {
-    const byRef =
-      kind === "CamundaClusterPreset" && claim.spec.presetRef === name;
-    if (byRef || selects(claim))
-      users.push(userOf("CamundaClusterClaim", claim));
-  }
-  for (const claim of sources.planeClaims) {
-    if (selects(claim))
-      users.push(userOf("CamundaManagementClusterClaim", claim));
-  }
-  for (const request of sources.requests) {
-    if (names(request.spec.registration, request.spec.parameters))
-      users.push(userOf("PluginRequest", request));
-  }
-  return sortUsers(users);
+}
+
+type ClaimUse = {
+  user: PresetUser;
+  presetRef?: string;
+  selections: { registration: string; parameters?: unknown }[];
+  requested: unknown[];
+};
+
+function claimUse(
+  kind: PresetUserKind,
+  claim: Selecting,
+  presetRef: string | undefined,
+  sources: PresetUsageSources,
+): ClaimUse {
+  const selections = claim.spec.plugins ?? [];
+  const resolves = selections.some(
+    (s) => own(BUILTIN_OPTIONS, s.registration)?.lists.preset !== undefined,
+  );
+  return {
+    user: userOf(kind, claim),
+    presetRef,
+    selections,
+    requested: resolves ? requestedParameters(claim, sources) : [],
+  };
 }
 
 // requestedParameters gives the parameters of the request of each selection
@@ -168,15 +204,14 @@ function requestedParameters(
   claim: Selecting,
   sources: PresetUsageSources,
 ): unknown[] {
-  const namespace = sources.namespaces?.find(
+  const namespace = sources.namespaces.find(
     (n) => n.metadata?.name === claim.metadata.namespace,
   );
   const resolved = resolve({
     recorded: claim.status?.resolvedPolicy,
     environment:
-      namespace &&
-      environmentOf(namespace, sources.environments ?? []).environment,
-    registrations: [...(sources.registrations ?? [])],
+      namespace && environmentOf(namespace, sources.environments).environment,
+    registrations: [...sources.registrations],
     selections: (claim.spec.plugins ?? []) as PluginSelection[],
   });
   if (!("value" in resolved)) return [];
