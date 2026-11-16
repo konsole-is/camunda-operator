@@ -159,7 +159,10 @@ function environmentName(
     ? environmentOf(object, sources.environments).environment
     : undefined;
   if (!environment) return NO_ENVIRONMENT;
-  return environment.spec.displayName || (environment.metadata.name ?? "");
+  const label: unknown = environment.spec.displayName;
+  return isText(label) && label
+    ? (label as string)
+    : (environment.metadata.name ?? "");
 }
 
 const SEVERITIES: readonly unknown[] = [undefined, "Info", "Warning", "Error"];

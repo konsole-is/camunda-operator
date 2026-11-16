@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   condition,
+  fleetEnvironment,
   labelledNamespace,
   pluginGrant,
   pluginRequest,
@@ -200,6 +201,17 @@ describe("usedByRows", () => {
       ],
     });
     expect(usedByRows("aws-s3", sources, [])[0].deletionPolicy).toBeUndefined();
+  });
+
+  it("names an environment whose display name is not text by its name", () => {
+    const sources = registrationSources({
+      requests: [pluginRequest("team-x", "a", { registration: "aws-s3" })],
+      namespaces: [labelledNamespace("team-x", "production")],
+      environments: [
+        fleetEnvironment("production", { displayName: { x: 1 } as never }),
+      ],
+    });
+    expect(usedByRows("aws-s3", sources, [])[0].environment).toBe("production");
   });
 
   it("knows no Grant while Grant is not read", () => {

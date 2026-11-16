@@ -136,6 +136,17 @@ describe("parameterRows", () => {
     expect(rows[0].environments?.[0].environment).toBe("staging");
   });
 
+  it("names an environment whose display name is not text by its name", () => {
+    const rows = valueOf(
+      parameterRows(
+        kms,
+        [fleetEnvironment("staging", { displayName: { x: 1 } as never })],
+        [],
+      ),
+    );
+    expect(rows[0].environments?.[0].environment).toBe("staging");
+  });
+
   it("gives no environment values while Environment is not read", () => {
     const rows = valueOf(parameterRows(kms, [production], ["Environment"]));
     expect(rows.every((r) => r.environments === undefined)).toBe(true);

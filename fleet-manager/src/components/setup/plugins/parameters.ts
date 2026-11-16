@@ -81,7 +81,9 @@ export function parameterRows(
       byEnvironment.push({
         name: environment.metadata.name ?? "",
         environment:
-          environment.spec.displayName || (environment.metadata.name ?? ""),
+          isText(environment.spec.displayName) && environment.spec.displayName
+            ? environment.spec.displayName
+            : (environment.metadata.name ?? ""),
         policies: policies.value,
       });
     }
