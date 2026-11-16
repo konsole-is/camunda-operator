@@ -3020,7 +3020,6 @@ metadata:
             f:registration: {}
             f:section: {}
         f:presetRef: {}
-        f:releaseRef: {}
     manager: kubectl
     operation: Apply
     time: "2026-01-01T00:00:00Z"
@@ -3119,7 +3118,6 @@ spec:
     registration: existing-secondary-storage
     section: secondary-storage
   presetRef: medium
-  releaseRef: camunda-8-9-0
 status:
   cluster:
     name: orders

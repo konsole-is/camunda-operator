@@ -254,10 +254,11 @@ The **Rollout** tab of a release page lists every cluster. Each row shows the na
 | Not allowed in the environment | The environment of the cluster does not allow the release. | Allow the release on the [Environments](environments.md) page. **Open Environments** opens the environment of the cluster. |
 | Downgrade | The release has a lower version than the version that the cluster runs. | Select **Confirm downgrade**. See [Downgrades](#downgrades). |
 | Skips a Camunda minor | The release is more than one minor above the running version. The row names the minor between them. | Move to a release of the minor between them first. The Releases list shows the version of each release. |
-| A backup is running | A backup of the cluster is pending or running. The row names the backup. | Wait until the backup ends. |
+| A backup is pending or running | A backup of the cluster is pending or running. The row names the backup and says which. | Wait until the backup ends. |
 | Not managed by the fleet manager | No claim made the cluster. | The tab cannot move the cluster. Change the `CamundaCluster` itself. |
 | Claim missing | The cluster names a claim that does not exist. | The tab cannot move the cluster without its claim. Change the `CamundaCluster` itself. |
 | Runs this release | The claim or the cluster names this release already. | Nothing. |
+| Refused by the operator | The claim names this release, and the operator refused the version change. The row shows the message of the refusal. | For a downgrade, select **Confirm downgrade**. See [Downgrades](#downgrades). For a skipped minor, move the claim to a release of the minor between them first. |
 | Checks wait | The cluster is suspended, or it reports no running version. The tab cannot check the versions. | You can select **Move**. The operator still refuses a skipped minor or a downgrade, and the cluster then reports `Ready: False`. |
 | Lists not read | The fleet manager cannot read a list that the checks need, or it has not read the list since it connected. | Wait until the fleet manager can read the list. The tab names it. If the list stays unread, give the fleet manager the right to list that kind. |
 
@@ -280,13 +281,17 @@ spec:
   # ... the rest of your claim
 ```
 
-A move of many clusters is one change. In Git mode, it is one commit. In direct mode, the fleet manager first checks every claim with the API server, and it writes no claim when one check fails. Then it writes the claims one after another, and it stops at the first claim that fails. The claims before it keep the new release, and the claims after it keep their release. The review names the claim that failed, and the table shows the release of each claim. Start a new move for the clusters that did not move.
+A move of many clusters is one change. In Git mode, it is one commit. The fleet manager checks each claim again before it writes. It writes no claim when a backup of a cluster is pending or running, or when a claim changed since the tab read it. In direct mode, it also checks every claim with the API server, and it writes no claim when one check fails. Then it writes the claims one after another, and it stops at the first claim that fails. The claims before it keep the new release, and the claims after it keep their release.
 
-If a backup starts or a list cannot be read while the review is open, the review closes. Start the move again.
+When a move fails, the review names the claim that failed. After the review closes, the tab shows **The move did not finish**. It names each cluster of the move: moved, not moved, or the error of its claim. The note stays until you dismiss it or start a new move. Start a new move for the clusters that did not move.
+
+The review names a claim whose `spec.releaseRef` belongs to another tool, for example `kubectl apply` or a GitOps tool. The review shows the field manager of that tool, and **Move** stays off. The fleet manager does not take a field from another tool. Change `spec.releaseRef` of that claim with the tool that owns it, or leave that cluster out of the selection.
+
+If a backup starts or a list cannot be read while the review is open, the review closes. Start the move again. **Back** closes the review and keeps the selection.
 
 ### What moves with a claim
 
-A move restarts the cluster. The brokers restart one at a time, and the other processes restart. A built-in Elasticsearch cluster or database server that the claim made moves to the release too. An attached Optimize moves to the version of the release. The review lists these for each cluster. An Elasticsearch cluster or a database server that no claim made does not move here.
+A move restarts the cluster. The brokers restart one at a time, and the other processes restart. A built-in Elasticsearch cluster or database server that the claim made moves to the release too. An attached Optimize moves to the version of the release. The review lists these for each cluster. An Elasticsearch cluster or a database server that no claim made does not move here. A database server that runs another PostgreSQL major version than the release keeps its major version, and the review says so for that server. [CamundaRelease](../crds/camundarelease.md#versions) describes this refusal.
 
 ### Downgrades
 

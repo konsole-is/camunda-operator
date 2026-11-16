@@ -1,9 +1,10 @@
 schemaVersion: 1
 description: >-
   The seed of claim-ready, plus the release camunda-8-9-1 (8.9.1). The
-  cluster of the claim orders in the Environment Production runs 8.9.0.
-  No Environment allows camunda-8-9-1, so a page can allow it in
-  Production and then move the claim orders to it.
+  claim orders names no release, so its cluster in the Environment
+  Production takes the default camunda-8-9-0 and runs 8.9.0. No
+  Environment allows camunda-8-9-1, so a page can allow it in Production
+  and then move the claim orders to it.
 seed:
   - apiVersion: v1
     kind: Namespace
@@ -175,7 +176,6 @@ seed:
       namespace: team-orders
     spec:
       presetRef: medium
-      releaseRef: camunda-8-9-0
       platformConfigRef: camundaplatformconfig-sample
       plugins:
         - section: secondary-storage
