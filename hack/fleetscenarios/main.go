@@ -42,10 +42,18 @@ limitations under the License.
 //     only status that a person writes.
 //   - states: optional. Named changes, each on top of the one before. A
 //     state has a name (a DNS label other than objects, scenario, and
-//     observe), a description, and optional apply (objects), workload
-//     (steps that replace the step of the same object; a step that gives a
-//     finished Job another outcome fails the run), and overlays (applied
-//     after the overlays of the scenario and of the states before it).
+//     observe), a description, and optional apply (objects), thenApply
+//     (objects applied after the scenario settled on apply and workload, none
+//     of them also in apply), workload (steps that replace the step of the
+//     same object; a step that gives a finished Job another outcome fails
+//     the run), and overlays (applied after the overlays of the scenario and
+//     of the states before it).
+//
+// Do not apply a CamundaOptimize, or a second CamundaCluster on the same
+// backend, in one list with the CamundaCluster whose storage claim it reads.
+// The order of their first reconciles then decides which Events the output
+// holds, and that order changes from run to run. Put the object that reads
+// the claim in thenApply.
 //
 // For example:
 //
@@ -79,11 +87,9 @@ limitations under the License.
 // the scenario and of the operator namespace camunda-system, with its
 // status and its managed fields, and every cluster-scoped object of the
 // operator. Events are of the events.k8s.io API, without an Event that has
-// the field manager kube-apiserver, and without the Event that the
-// framework records for an apply that updated an object. The generator
-// removes a generated file of a state that is gone, and never a file that a
-// person wrote. A scenario writes its files only after each of its states
-// settled.
+// the field manager kube-apiserver. The generator removes a generated file
+// of a state that is gone, and never a file that a person wrote. A scenario
+// writes its files only after each of its states settled.
 //
 // The outputs are normalized, so the same input always writes the same
 // bytes: UIDs come from the kind, namespace, and name of an object, there is
