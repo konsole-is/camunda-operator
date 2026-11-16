@@ -262,7 +262,7 @@ The **Access** section also shows the host of the plane and the URL of each app.
 
 ### Change the platform config
 
-**Basics** has a list of the platform configs. The first entry, **From the environment**, removes the platform config from the claim, so that the plane takes the platform config of its environment. Management Identity, Console, and Web Modeler restart on a move. OIDC sign-in needs a platform config with OIDC authentication. While the plane signs in with OIDC, the tab refuses a platform config with basic authentication. After a move of the platform config in OIDC mode, add the callback of each Optimize to the application of the new identity provider. The **Optimize** tab lists the callbacks.
+**Basics** has a list of the platform configs. The first entry, **From the environment**, removes the platform config from the claim, so that the plane takes the platform config of its environment. Management Identity, Console, and Web Modeler restart on a move. OIDC sign-in needs a platform config with OIDC authentication. While the plane signs in with OIDC, the tab refuses a platform config with basic authentication. A move of the platform config in OIDC mode can change the identity provider. Then add the callback of each Optimize to its application. The **Optimize** tab lists the callbacks.
 
 ### Change where users sign in
 
