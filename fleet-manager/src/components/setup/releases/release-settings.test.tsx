@@ -54,6 +54,8 @@ function setup(
       errors: [],
     })),
     applyChange: vi.fn<ReleaseActions["applyChange"]>(async () => result),
+    previewMove: vi.fn<ReleaseActions["previewMove"]>(),
+    applyMove: vi.fn<ReleaseActions["applyMove"]>(),
   };
   const view = (s: ReleasesData & SourceReads) => (
     <GitPushesProvider>

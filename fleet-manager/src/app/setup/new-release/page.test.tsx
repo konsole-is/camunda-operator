@@ -30,6 +30,8 @@ vi.mock("@/lib/bundled", () => ({
 vi.mock("@/app/setup/releases/actions", () => ({
   previewReleaseChange: vi.fn(),
   applyReleaseChange: vi.fn(),
+  previewReleaseMove: vi.fn(),
+  applyReleaseMove: vi.fn(),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({

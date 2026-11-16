@@ -27,7 +27,14 @@ export async function loadPlanePage(
       });
       return empty;
     };
-  const [plane, claim, namespaces, environments] = await Promise.all([
+  const [
+    plane,
+    claim,
+    namespaces,
+    environments,
+    optimizes,
+    managementAuthConfigs,
+  ] = await Promise.all([
     get("CamundaManagementCluster", namespace, name).catch(
       failed("CamundaManagementCluster", undefined),
     ),
@@ -36,6 +43,8 @@ export async function loadPlanePage(
     ),
     list("Namespace", {}).catch(failed("Namespace", [])),
     list("Environment", {}).catch(failed("Environment", [])),
+    list("CamundaOptimize", {}).catch(failed("CamundaOptimize", [])),
+    list("ManagementAuthConfig", {}).catch(failed("ManagementAuthConfig", [])),
   ]);
   const objectUnread = readErrors.some(
     (e) =>
@@ -53,6 +62,8 @@ export async function loadPlanePage(
     ...(joined && { claim }),
     namespaces,
     environments,
+    optimizes,
+    managementAuthConfigs,
     readErrors,
   };
 }

@@ -1,6 +1,11 @@
 import { ReleaseListLive } from "@/components/setup/releases/release-list";
 import { writeMode } from "@/lib/write/writer";
-import { applyReleaseChange, previewReleaseChange } from "./actions";
+import {
+  applyReleaseChange,
+  applyReleaseMove,
+  previewReleaseChange,
+  previewReleaseMove,
+} from "./actions";
 import { loadReleases } from "./load";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -19,6 +24,8 @@ export default async function ReleasesPage() {
       actions={{
         previewChange: previewReleaseChange,
         applyChange: applyReleaseChange,
+        previewMove: previewReleaseMove,
+        applyMove: applyReleaseMove,
       }}
     />
   );

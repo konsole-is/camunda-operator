@@ -5,6 +5,10 @@ export type PlaneTab =
 /** PLANE_TABS are the tabs of the plane page, in their order. */
 export const PLANE_TABS: readonly { id: PlaneTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "clusters", label: "Clusters served" },
+  { id: "optimize", label: "Optimize" },
+  { id: "contract", label: "Contract" },
+  { id: "endpoints", label: "Endpoints" },
 ];
 
 /**

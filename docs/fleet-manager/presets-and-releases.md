@@ -321,6 +321,77 @@ Above the save, the page shows this notice:
 
 Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A resource that sets its own version keeps it. The review of a save names the users and each version that changes. A version line names the kind of resource that runs the version. Clusters run the Camunda and Connectors versions. Elasticsearch clusters run the Elasticsearch version, and database servers run the PostgreSQL version. The rules about a version that a resource refuses are in the [CamundaRelease](../crds/camundarelease.md#versions) reference.
 
+## Move clusters to a release
+
+The **Rollout** tab of a release page lists every cluster. Each row shows the name, the environment, the namespace, the current release, the running version, and one eligibility. The current release is the release of the claim, or the release of the cluster when the claim names none. **Not reported** means that the cluster reports no running version. Two filters narrow the list: **Environment** and **Eligibility**.
+
+| Eligibility | Meaning | What to do |
+| --- | --- | --- |
+| Can move | The move passes every check. | Select **Move**. |
+| Not allowed in the environment | The environment of the cluster does not allow the release. Or the namespace belongs to no environment, or names one that does not exist, and the claim takes no change. | Allow the release on the [Environments](environments.md) page, or add the namespace to an environment. **Open Environments** opens the environment of the cluster, or the Environments page. |
+| Downgrade | The release has a lower version than the version that the cluster runs. | Select **Confirm downgrade**. See [Downgrades](#downgrades). |
+| Skips a Camunda minor | The release is more than one minor above the running version. The row names the minor between them. | Move to a release of the minor between them first. The Releases list shows the version of each release. |
+| A backup is pending or running | A backup of the cluster is pending or running. The row names the backup and says which. | Wait until the backup ends. |
+| Not managed by the fleet manager | No claim made the cluster. | The tab cannot move the cluster. Change the `CamundaCluster` itself. |
+| Claim missing | The cluster names a claim that does not exist. | The tab cannot move the cluster without its claim. Change the `CamundaCluster` itself. |
+| Runs this release | The claim or the cluster names this release already. | Nothing. |
+| Refused by the operator | The claim names this release, and the operator refused the version change. The row shows the message of the refusal. | For a downgrade, select **Confirm downgrade**. See [Downgrades](#downgrades). For a skipped minor, move the claim to a release of the minor between them first. |
+| Checks wait | The cluster is suspended, or it reports no running version. The tab cannot check the versions. | You can select **Move**. The operator still refuses a skipped minor or a downgrade, and the cluster then reports `Ready: False`. |
+| Lists not read | The fleet manager cannot read a list that the checks need, or it has not read the list since it connected. | Wait until the fleet manager can read the list. The tab names it. If the list stays unread, give the fleet manager the right to list that kind. |
+
+The checks compare the release with the version that the cluster runs, not with the version of its current release. A cluster can run another version than its release, for example while a version change rolls. When the operator refuses a skipped minor, the row also shows the message of the `VersionSkipRefused` condition of the cluster. [A skipped minor is refused](../crds/camundacluster.md#a-skipped-minor-is-refused) describes the refusal.
+
+### Move one cluster or many
+
+To move one cluster, select **Move** on its row. To move many clusters, select their checkboxes, or **Select all that can move**, and then **Move selected**. Nothing is selected when the tab opens. Only a row that can move has a checkbox that you can select. A downgrade moves one cluster at a time, with **Confirm downgrade** on its row. If a selected row can no longer move, for example because a backup starts, the row leaves the selection.
+
+The review shows each cluster and what the move does to it. **Move** writes the change. The move sets `spec.releaseRef` of each claim and changes nothing else:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  releaseRef: camunda-8-9-1
+  # ... the rest of your claim
+```
+
+A move of many clusters is one change. In Git mode, it is one commit. The fleet manager checks each claim again before it writes. It writes no claim when a backup of a cluster is pending or running, or when a claim changed since the tab read it. In direct mode, it also checks every claim with the API server, and it writes no claim when one check fails. Then it writes the claims one after another, and it stops at the first claim that fails. The claims before it keep the new release, and the claims after it keep their release.
+
+When a move fails, the review names the claim that failed. After the review closes, the tab shows **The move did not finish**. It names each cluster of the move: moved, not moved, a downgrade that is not confirmed, or the error of its claim. The note stays until you dismiss it or start a new move. Start a new move for the clusters that did not move.
+
+The review names a claim whose `spec.releaseRef` belongs to another tool, for example `kubectl apply` or a GitOps tool. The review shows the field manager of that tool, and **Move** stays off. The fleet manager does not take a field from another tool. Change `spec.releaseRef` of that claim with the tool that owns it, or leave that cluster out of the selection.
+
+If a backup starts, a list cannot be read, or the version of the release changes while the review is open, the review closes. Start the move again. **Back** closes the review and keeps the selection.
+
+### What moves with a claim
+
+A move restarts the cluster. The brokers restart one at a time, and the other processes restart. A built-in Elasticsearch cluster or database server that the claim made moves to the release too. An attached Optimize moves to the version of the release. The review lists these for each cluster. An Elasticsearch cluster or a database server that no claim made does not move here. A database server that runs another PostgreSQL major version than the release keeps its major version, and the review says so for that server. [CamundaRelease](../crds/camundarelease.md#versions) describes this refusal.
+
+### Downgrades
+
+**Confirm downgrade** sets `spec.releaseRef`, and it sets `spec.allowVersionDowngrade` to the version of the release. The fleet manager writes both fields on the claim, never on the `CamundaCluster`:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  releaseRef: camunda-8-9-1
+  allowVersionDowngrade: "8.9.1"
+  # ... the rest of your claim
+```
+
+A move to a higher version keeps an `allowVersionDowngrade` that the claim holds from an earlier downgrade. When the cluster runs the version, the Claim tab of the cluster offers **Clear**, as [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) describes. [Downgrade on purpose](../crds/camundacluster.md#downgrade-on-purpose) tells when a downgrade is safe.
+
+### Backups block a move here
+
+On the Rollout tab, a pending or a running backup blocks the move. The Claim tab of a cluster only warns, and only for a running backup. The two tabs differ because of what you see before the write. On the Claim tab, you move one cluster and read its warning before you save. A move of many clusters shows no warning for each cluster, so the tab blocks instead. The tab blocks a pending backup too, because it can start while the brokers roll and then fail.
+
 ## Environments of a release
 
 The **Environments** card of a release page shows each environment with its state for the release:

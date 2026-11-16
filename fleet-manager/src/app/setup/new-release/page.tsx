@@ -1,7 +1,12 @@
 import { ReleaseCreate } from "@/components/setup/releases/release-create";
 import { getBundledData } from "@/lib/bundled";
 import { writeMode } from "@/lib/write/writer";
-import { applyReleaseChange, previewReleaseChange } from "../releases/actions";
+import {
+  applyReleaseChange,
+  applyReleaseMove,
+  previewReleaseChange,
+  previewReleaseMove,
+} from "../releases/actions";
 import { loadReleases } from "../releases/load";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -33,6 +38,8 @@ export default async function NewReleasePage({
       actions={{
         previewChange: previewReleaseChange,
         applyChange: applyReleaseChange,
+        previewMove: previewReleaseMove,
+        applyMove: applyReleaseMove,
       }}
     />
   );

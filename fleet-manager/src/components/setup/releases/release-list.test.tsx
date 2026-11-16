@@ -39,6 +39,8 @@ function setup(
       ok: true as const,
       mode: "direct" as const,
     })),
+    previewMove: vi.fn<ReleaseActions["previewMove"]>(),
+    applyMove: vi.fn<ReleaseActions["applyMove"]>(),
   };
   const view = (s: ReleasesData & SourceReads) => (
     <GitPushesProvider>
