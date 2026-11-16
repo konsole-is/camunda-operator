@@ -3,6 +3,7 @@
 import { CircleAlert } from "lucide-react";
 import { useCreateReview } from "@/components/create/use-create-review";
 import { ReviewPanel } from "@/components/fleet/review-panel";
+import { useStepperErrors } from "@/components/fleet/wizard-stepper";
 import { objectDiff } from "@/lib/diff";
 import {
   type PlaneContext,
@@ -64,6 +65,7 @@ export function PlaneReviewStep({
     onWritten,
     blocked,
   });
+  const describedBy = useStepperErrors();
 
   return (
     <ReviewPanel
@@ -92,6 +94,7 @@ export function PlaneReviewStep({
       mode={mode}
       confirmLabel="Create"
       pending={pending}
+      describedBy={describedBy}
       onConfirm={confirm}
       onCancel={onBack}
     />
