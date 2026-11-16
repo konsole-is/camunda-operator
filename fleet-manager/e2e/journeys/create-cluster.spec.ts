@@ -28,8 +28,8 @@ function field(kind: string, jsonpath: string): string {
   );
 }
 
-test.afterEach((_, testInfo) => {
-  dumpClaim(testInfo, name);
+test.afterEach(() => {
+  dumpClaim(test.info(), name);
   deleteClaim(name);
 });
 

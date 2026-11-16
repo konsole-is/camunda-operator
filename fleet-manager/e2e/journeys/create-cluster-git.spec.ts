@@ -43,8 +43,8 @@ function claimField(jsonpath: string): string {
 // file leaves the repository before the claim leaves the cluster. The loop
 // applies a commit once, so the claim must exist before the removal: the
 // loop then never applies the commit that holds the file again.
-test.afterEach(async (_, testInfo) => {
-  dumpClaim(testInfo, name);
+test.afterEach(async () => {
+  dumpClaim(test.info(), name);
   if ((await committedFile(CLAIM_FILE)) !== undefined) {
     await expect
       .poll(() => claimField(".metadata.name"), { timeout: 120_000 })
