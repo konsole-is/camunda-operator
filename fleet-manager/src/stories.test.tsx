@@ -111,6 +111,7 @@ describe("the Storybook stories", () => {
       "NamespacedSecretRefPicker",
       "PlatformList",
       "PlatformDetail",
+      "AuthSection",
       "ImagesSection",
       "UsersSection",
       "PresetList",
