@@ -8,6 +8,7 @@ import { JOURNEYS_DIR, shot } from "../shot";
 import {
   GIT_PATH,
   committedFile,
+  pauseApplyLoop,
   switchToDirectMode,
   switchToGitMode,
 } from "./git";
@@ -31,21 +32,6 @@ function claimField(jsonpath: string): string {
     "-o",
     `jsonpath=${jsonpath}`,
   );
-}
-
-// pauseApplyLoop stops apply-loop.sh, which must run on this host, and
-// returns the function that lets it go on. It throws when no loop runs.
-function pauseApplyLoop(): () => void {
-  const pids = execFileSync("pgrep", ["-f", "harness/apply-loop.sh"], {
-    encoding: "utf8",
-  })
-    .trim()
-    .split("\n")
-    .map(Number);
-  for (const pid of pids) process.kill(pid, "SIGSTOP");
-  return () => {
-    for (const pid of pids) process.kill(pid, "SIGCONT");
-  };
 }
 
 test.beforeAll(async () => {

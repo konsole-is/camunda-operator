@@ -90,3 +90,52 @@ export async function committedFile(path: string): Promise<string | undefined> {
   }
   return gitInPod("show", `main:${path}`);
 }
+
+/**
+ * removeCommittedFile commits the removal of the file at path to the branch
+ * main of the in-cluster repository, so that a later apply of the folder
+ * no longer applies it. The object that GitOps applied from the file stays
+ * in the cluster. It throws when main has no such file, or when kubectl or
+ * git fails.
+ */
+export function removeCommittedFile(path: string): void {
+  execFileSync(
+    "kubectl",
+    [
+      "exec",
+      "-n",
+      "fleet-harness",
+      "deploy/git",
+      "--",
+      "sh",
+      "-c",
+      `set -eu
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+git clone -q --branch main /srv/git/fleet.git "$work"
+git -C "$work" rm -q -- "$1"
+git -C "$work" -c user.name="Fleet journeys" -c user.email=journeys@fleet-harness.test commit -q -m "Remove $1"
+git -C "$work" push -q origin main`,
+      "sh",
+      path,
+    ],
+    { encoding: "utf8" },
+  );
+}
+
+/**
+ * pauseApplyLoop stops apply-loop.sh, which must run on this host, and
+ * returns the function that lets it go on. It throws when no loop runs.
+ */
+export function pauseApplyLoop(): () => void {
+  const pids = execFileSync("pgrep", ["-f", "harness/apply-loop.sh"], {
+    encoding: "utf8",
+  })
+    .trim()
+    .split("\n")
+    .map(Number);
+  for (const pid of pids) process.kill(pid, "SIGSTOP");
+  return () => {
+    for (const pid of pids) process.kill(pid, "SIGCONT");
+  };
+}
