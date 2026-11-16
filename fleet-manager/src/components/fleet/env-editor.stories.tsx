@@ -35,3 +35,20 @@ export const ValuesAndSecrets: Story = {
 };
 
 export const Empty: Story = { name: "Empty" };
+
+export const SecretMissingInANamespace: Story = {
+  name: "Secret missing in a namespace",
+  args: {
+    defaultValue: [
+      {
+        name: "DB_PASSWORD",
+        valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
+      },
+      {
+        name: "SMTP_TOKEN",
+        valueFrom: { secretKeyRef: { name: "smtp", key: "token" } },
+      },
+    ],
+    missingIn: (name: string) => (name === "orders-db" ? ["team-billing"] : []),
+  },
+};
