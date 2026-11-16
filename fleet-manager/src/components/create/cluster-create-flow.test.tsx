@@ -207,6 +207,16 @@ describe("ClusterCreateFlow", () => {
     );
   });
 
+  it("puts the section headings of a step under the step heading", () => {
+    render(<ClusterCreateFlow initial={data()} />);
+    const texts = (level: number) =>
+      screen.getAllByRole("heading", { level }).map((h) => h.textContent);
+    expect(texts(2)).toEqual(["Environment and name"]);
+    expect(texts(3)).toEqual(
+      expect.arrayContaining(["Environment", "Namespace", "Preset"]),
+    );
+  });
+
   it("shows the hosts of the default access option under the name", async () => {
     render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
     await fillBasics("search");
@@ -291,6 +301,32 @@ describe("ClusterCreateFlow", () => {
     );
     expect(screen.getAllByText("Choose a namespace").length).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
+  });
+
+  it("blocks Next on step 2 while step 1 has errors, and names step 1", async () => {
+    const { rerender } = render(
+      <ClusterCreateFlow initial={data({ sections: [] })} />,
+    );
+    await fillBasics("orders");
+    await userEvent.click(next());
+    live.objects.Namespace = [];
+    rerender(<ClusterCreateFlow initial={data({ sections: [] })} />);
+    expect(next().disabled).toBe(true);
+    expect(
+      document.getElementById(next().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toContain("Environment and name: Choose a namespace");
+  });
+
+  it("offers Back on the review step", async () => {
+    render(<ClusterCreateFlow initial={data({ sections: [] })} />);
+    await fillBasics("orders");
+    for (let i = 0; i < 4; i++) await userEvent.click(next());
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 2, name: "Attachments" }),
+    );
   });
 
   it("keeps the step 1 choices after Next and Back", async () => {

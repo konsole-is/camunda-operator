@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -491,6 +493,8 @@ func (c *Controller) outputs(req *pluginsv1alpha1.PluginRequest) map[string]stri
 // writeStatus writes the status of req on the copy that it read. It records
 // one event for each resource row that the status did not list yet.
 func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.PluginRequest) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("request", klog.KRef(req.Namespace, req.Name))
+
 	grants, err := c.grants(req)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -546,17 +550,32 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 
 	c.recordNewResources(req, status.Resources, grants)
 
+	var before *metav1.Condition
+	if ready := meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady); ready != nil {
+		before = ready.DeepCopy()
+	}
+
 	req.Status = *status
 	if err := c.client.Status().Update(ctx, req); err != nil {
 		return requeueOnConflict(err)
 	}
-	log.FromContext(ctx).Info("Wrote the status of the PluginRequest", "request", req.Name)
+	logger.Info("Wrote the status of the PluginRequest")
+	logReadyChange(logger, before, meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady))
 
 	if c.opts.Defect == DefectDropAccepted {
 		return c.dropAccepted(ctx)
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// logReadyChange writes one line when the status or the reason of Ready
+// changed. A nil before means that the request had no Ready condition yet.
+func logReadyChange(logger logr.Logger, before, after *metav1.Condition) {
+	if after == nil || before != nil && before.Status == after.Status && before.Reason == after.Reason {
+		return
+	}
+	logger.Info("Set Ready of PluginRequest", "status", after.Status, "reason", after.Reason)
 }
 
 // servedGrants are existing, the Grants that the cache holds, and each Grant

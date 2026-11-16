@@ -6,12 +6,7 @@ import { fieldDocsOf } from "@/lib/fielddocs";
 import { clusterFields } from "@/lib/fields";
 import { listOrEmpty } from "@/lib/k8s/list-or-empty";
 import { get } from "@/lib/k8s/read";
-import {
-  ACCESS_SECTION,
-  CLAIM_LABEL,
-  CLUSTER_LABEL,
-  SECTION_LABEL,
-} from "@/lib/labels";
+import { CLAIM_LABEL, CLUSTER_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/server";
 import { mergeCluster } from "@/lib/merge";
 
@@ -37,7 +32,6 @@ export async function loadClusterPage(
     presets,
     releases,
     storage,
-    accessRequests,
     requests,
     pods,
     backupsES,
@@ -63,10 +57,6 @@ export async function loadClusterPage(
     listOrEmpty("CamundaClusterPreset", {}),
     listOrEmpty("CamundaRelease", {}),
     listOrEmpty("SecondaryStorageConfig", inNamespace),
-    listOrEmpty("PluginRequest", {
-      namespace,
-      labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
-    }),
     listOrEmpty("PluginRequest", {
       namespace,
       labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
@@ -113,7 +103,6 @@ export async function loadClusterPage(
     presets,
     releases,
     storage,
-    accessRequests,
     requests,
     pods,
     podSelector,
