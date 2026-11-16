@@ -46,11 +46,19 @@ describe("deleteClaimSteps", () => {
     });
   });
 
-  it("reads the recorded policy, else Delete, when the claim sets none", () => {
+  it("reads the recorded policy when the claim sets none", () => {
     expect(
       deleteClaimSteps(claim({}, "Orphan"), "Orphan", "x").policy,
     ).toBeUndefined();
-    expect(deleteClaimSteps(claim(), "Delete", "x").policy).toBeUndefined();
+    expect(
+      deleteClaimSteps(claim({}, "Delete"), "Delete", "x").policy,
+    ).toBeUndefined();
+  });
+
+  it("writes the policy first when the claim sets none and has not recorded one, because the claim controller can still record another", () => {
+    expect(deleteClaimSteps(claim(), "Delete", "x").policy).toMatchObject({
+      apply: [{ spec: { deletionPolicy: "Delete" } }],
+    });
   });
 
   it("writes the policy first, as the whole claim with the resourceVersion that the page read", () => {

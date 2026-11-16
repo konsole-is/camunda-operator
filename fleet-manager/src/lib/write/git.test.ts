@@ -730,6 +730,45 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Create", "Initial commit"]);
   });
 
+  it("a delete makes no commit and returns Stale when the claim is made again during the clone", async () => {
+    repo = await serveBareRepository();
+    const created = ok(
+      await writerFor().apply({
+        intent: "Create",
+        apply: [claim("team-a", "orders")],
+      }),
+    );
+    const annotated = (uid: string): KubeObject => {
+      const object = liveClaim(3, "99");
+      object.metadata = {
+        ...object.metadata,
+        uid,
+        annotations: {
+          [REVISION_ANNOTATION]:
+            created.revisions["CamundaClusterClaim/team-a/orders"],
+        },
+      };
+      return object;
+    };
+    live.set("CamundaClusterClaim/team-a/orders", annotated("same"));
+    // GitOps makes the claim again, with the same generation and revision,
+    // while the writer clones the repository.
+    const replacing: HttpClient = {
+      request: async (r) => {
+        live.set("CamundaClusterClaim/team-a/orders", annotated("new"));
+        return gitHttp.request(r);
+      },
+    };
+
+    const result = await writerFor({}, replacing).apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
   it("a delete with a generation fails with Conflict while GitOps has not applied a save of the claim", async () => {
     repo = await serveBareRepository();
     live.set("CamundaClusterClaim/team-a/orders", liveClaim(3, "7"));

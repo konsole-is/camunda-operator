@@ -320,6 +320,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
       const generation = change.generations?.[refKey(ref)];
+      const uid = change.uids?.[refKey(ref)];
       if (expected === undefined && generation === undefined) continue;
       const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
       const committed = await revisionOf(dir, file);
@@ -331,7 +332,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
           (expected !== undefined &&
             object.metadata.resourceVersion !== expected) ||
           (generation !== undefined &&
-            object.metadata.generation !== generation)
+            object.metadata.generation !== generation) ||
+          (uid !== undefined && object.metadata.uid !== uid)
         ) {
           errors.push(staleError(ref));
           continue;
