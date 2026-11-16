@@ -214,6 +214,34 @@ const SECONDARY_STORAGE_OUTPUT = {
   description: "The name of the SecondaryStorageConfig that the cluster reads.",
 };
 
+// The parameter schema of the built-in elasticsearch registration, as the
+// scenario claim-ready holds it, without the fields of overrides.
+const ELASTICSEARCH_PARAMETERS = {
+  type: "object",
+  required: ["preset", "releaseRef"],
+  properties: {
+    preset: {
+      type: "string",
+      title: "Preset",
+      minLength: 1,
+      description:
+        "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from.",
+    },
+    overrides: {
+      type: "object",
+      title: "Overrides",
+      description: "The values that replace the values of the preset.",
+    },
+    releaseRef: {
+      type: "string",
+      title: "Release",
+      minLength: 1,
+      description:
+        "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim.",
+    },
+  },
+};
+
 const DATABASE_OUTPUTS = [
   {
     key: "keycloakDatabaseConfig",
@@ -322,7 +350,22 @@ export function registrationSources(
         {
           mode: "Default",
           claimEditable: ["overrides"],
+          inputs: [
+            {
+              name: "storageClassName",
+              from: "volume-encryption/storageClassName",
+            },
+            {
+              name: "objectStorageConfig",
+              from: "backup-storage/objectStorageConfig",
+            },
+            {
+              name: "serviceAccountAnnotations",
+              from: "cloud-identity/serviceAccountAnnotations",
+            },
+          ],
           outputs: [SECONDARY_STORAGE_OUTPUT],
+          parameters: ELASTICSEARCH_PARAMETERS,
         },
       ),
       builtin("database-server", "New PostgreSQL server", "secondary-storage", {

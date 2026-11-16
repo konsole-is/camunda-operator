@@ -6,7 +6,6 @@ import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import type { SlotField } from "@/lib/fields/slots";
 import type { CatalogChart } from "@/startup/bundled-data";
 import { type CatalogRead, missingCharts } from "./catalog";
 import { CatalogPanel } from "./catalog-panel";
@@ -15,6 +14,7 @@ import {
   type RegistrationGroup,
   type RegistrationRow,
   type SectionHeader,
+  fillsText,
   registrationGroups,
   registrationSummary,
   unreadKinds,
@@ -210,14 +210,6 @@ function SectionFacts({ section }: { section: SectionHeader }) {
       </p>
     </div>
   );
-}
-
-function fillsText(field: SlotField): string {
-  const plane =
-    field.claimKind === "CamundaManagementClusterClaim"
-      ? " for a management plane"
-      : "";
-  return `Fills ${field.kind} ${field.path}${plane}`;
 }
 
 function cellsOf(row: RegistrationRow, now: string): Record<string, ReactNode> {

@@ -49,3 +49,32 @@ export function conditionsOf(
     return { error: `Condition ${bad + 1} is not a valid condition.` };
   return { conditions: items as ConditionRow[] };
 }
+
+/** Invalid stands for an item of a list that a tab cannot use, with the reason. */
+export type Invalid = { error: string };
+
+/**
+ * itemsOf returns the items of value that valid accepts, each other item
+ * as the error "<noun> <n> is not a valid <noun lower case>.", or one error
+ * "The <plural> are not a list." when value is not a list. No value gives
+ * no items.
+ */
+export function itemsOf<T>(
+  value: unknown,
+  valid: (item: unknown) => item is T,
+  noun: string,
+  plural: string,
+): (T | Invalid)[] {
+  const items = listOf(value);
+  if (!items) return [{ error: `The ${plural} are not a list.` }];
+  return items.map((item, i) =>
+    valid(item)
+      ? item
+      : { error: `${noun} ${i + 1} is not a valid ${noun.toLowerCase()}.` },
+  );
+}
+
+/** isInvalid is true for an item that itemsOf could not use. */
+export function isInvalid(item: object): item is Invalid {
+  return "error" in item;
+}

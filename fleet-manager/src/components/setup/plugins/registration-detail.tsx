@@ -5,6 +5,8 @@ import { useClock } from "@/components/fleet/use-clock";
 import type { ReadError } from "@/components/planes/planes-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AboutTab } from "./about-tab";
+import { contractOf } from "./contract";
+import { ContractTab } from "./contract-tab";
 import {
   type RegistrationDetailData,
   useRegistrationDetail,
@@ -85,6 +87,11 @@ export function RegistrationDetail({
               registration={registration}
               registrations={sources.registrations}
               unread={unread}
+            />
+          </TabsContent>
+          <TabsContent value="contract">
+            <ContractTab
+              contract={contractOf(registration, sources.sections, unread)}
             />
           </TabsContent>
           <TabsContent value="health">

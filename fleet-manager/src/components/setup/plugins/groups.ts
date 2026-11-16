@@ -84,6 +84,18 @@ export function sectionFields(section: PluginSection): SlotField[] {
 }
 
 /**
+ * fillsText says which field of which kind field fills, and that a
+ * management plane claim fills it.
+ */
+export function fillsText(field: SlotField): string {
+  const plane =
+    field.claimKind === "CamundaManagementClusterClaim"
+      ? " for a management plane"
+      : "";
+  return `Fills ${field.kind} ${field.path}${plane}`;
+}
+
+/**
  * registrationRow returns the row of registration. The requests count by
  * the Environment of their namespace, named by its display name, else its
  * name, and "No environment" for a namespace without one or not in sources,
