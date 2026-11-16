@@ -21,9 +21,10 @@ vi.mock("@/lib/k8s/read", () => ({
 
 const CORE = "core.camunda.io/v1";
 
-// sourcesOnServer puts the fixtures in the cache of the server, with the
-// namespace camunda-system that no Environment holds, an unused contract
-// created by hand in it, and a Management Identity contract created by hand.
+// sourcesOnServer returns the fixtures with the namespace camunda-system
+// that no Environment holds, an unused contract created by hand in it, and a
+// Management Identity contract created by hand. Each contract has the
+// resourceVersion of the changes below.
 function sourcesOnServer(): ConnectionSources {
   const sources = connectionFixtures();
   sources.namespaces = [
@@ -38,6 +39,14 @@ function sourcesOnServer(): ConnectionSources {
     ...sources.managementAuthConfigs[0],
     metadata: { name: "keycloak-auth" },
   });
+  for (const contract of [
+    ...sources.objectStorageConfigs,
+    ...sources.secondaryStorageConfigs,
+    ...sources.databaseServerConfigs,
+    ...sources.databaseConfigs,
+    ...sources.managementAuthConfigs,
+  ])
+    contract.metadata = { ...contract.metadata, resourceVersion: "41" };
   return sources;
 }
 
@@ -261,6 +270,41 @@ describe("applyContractChange", () => {
     expect(messages).toEqual([
       "Delete is possible when the fleet manager can read CamundaManagementCluster.",
     ]);
+  });
+
+  it("refuses a change while a kind that can use the contract cannot be read", async () => {
+    cache.failing = ["CamundaManagementCluster"];
+    const messages = await refusedWith(
+      update("DatabaseConfig", "team-a", "orders-db"),
+      "Forbidden",
+    );
+    expect(messages).toEqual([
+      "A change is possible when the fleet manager can read CamundaManagementCluster.",
+    ]);
+  });
+
+  it.each([
+    ["change", update("ObjectStorageConfig", "team-a", "old-backup")],
+    ["delete", remove("ObjectStorageConfig", "team-a", "old-backup")],
+  ])(
+    "refuses with Stale a %s whose precondition is not the copy that the server read",
+    async (_, change) => {
+      const cached = (
+        cache.lists.ObjectStorageConfig as { metadata: { name: string } }[]
+      ).find((c) => c.metadata.name === "old-backup")!;
+      cached.metadata = { ...cached.metadata, resourceVersion: "40" };
+      const messages = await refusedWith(change, "Stale");
+      expect(messages).toEqual([
+        "The ObjectStorageConfig old-backup changed since you opened it.",
+      ]);
+    },
+  );
+
+  it("refuses with Stale a change of a contract that the server has not read", async () => {
+    await refusedWith(
+      update("ObjectStorageConfig", "team-a", "new-bucket"),
+      "Stale",
+    );
   });
 
   it("refuses a delete of a contract that a claim selects", async () => {

@@ -12,8 +12,11 @@ import {
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
+import { staleError } from "@/lib/write/errors";
+import { refKey } from "@/lib/write/refs";
 import {
   adminChangeSchema,
+  issuesOf,
   runChange,
   runPreview,
 } from "@/lib/write/run-change";
@@ -42,10 +45,13 @@ export async function previewContractChange(change: Change): Promise<Preview> {
  * with the writer of the settings. It reads every list from the cache of the
  * server first. It refuses with Invalid a change that writes another kind, a
  * contract in a namespace that the cluster does not have, an object without
- * a precondition, or a create. It refuses with Forbidden a change of a
- * contract that a registration, a management plane, or a controller writes,
- * and a delete of a contract that an object uses. While a list that these
- * checks read cannot be read, it refuses the change that needs it.
+ * a precondition, or a create. It refuses with Stale a change of a contract
+ * that is not in the list that the server read, or whose precondition is
+ * not the resourceVersion of the copy in that list. Of the other contracts,
+ * it refuses with Forbidden a change of a contract that a registration, a
+ * management plane, or a controller writes, and a delete of a contract that
+ * an object uses. While a list that these checks read cannot be read, it
+ * refuses each change of a contract of that kind or that it can use.
  */
 export async function applyContractChange(
   change: Change,
@@ -67,10 +73,7 @@ async function check(
     { message: "The change must not create a contract." },
   );
   const parsed = schema.safeParse(input);
-  if (!parsed.success) {
-    const refused = await runChange(input, schema);
-    return { errors: refused.ok ? [] : refused.errors };
-  }
+  if (!parsed.success) return { errors: issuesOf(parsed.error) };
   const change = parsed.data;
   const targets: ObjectRef[] = [
     ...change.apply.map((o) => ({
@@ -85,13 +88,19 @@ async function check(
   ];
   const deleted = new Set(change.delete ?? []);
   const errors = targets.flatMap((ref) =>
-    refusalsOf(ref, deleted.has(ref), sources),
+    refusalsOf(
+      ref,
+      change.preconditions?.[refKey(ref)],
+      deleted.has(ref),
+      sources,
+    ),
   );
   return errors.length > 0 ? { errors } : { change, schema };
 }
 
 function refusalsOf(
   ref: ObjectRef,
+  precondition: string | undefined,
   deleting: boolean,
   sources: ConnectionPageData,
 ): ApiError[] {
@@ -109,8 +118,11 @@ function refusalsOf(
     (c) =>
       c.metadata.name === ref.name && c.metadata.namespace === ref.namespace,
   );
-  // A contract that is gone fails on its precondition in the writer.
-  if (!live) return [];
+  // The check of who writes the contract reads this copy, and a cache that
+  // lags must not pass it for another version than the one that the writer
+  // gets.
+  if (!live || live.metadata.resourceVersion !== precondition)
+    return [staleError(ref)];
   const requests = unread.includes("PluginRequest")
     ? undefined
     : sources.requests;
@@ -119,12 +131,12 @@ function refusalsOf(
     return refuse(
       `${named} is managed by ${writerLabel(writer)}. Change it there.`,
     );
-  if (!deleting) return [];
   const blind = unreadUserKinds(kind, unread);
   if (blind.length > 0)
     return refuse(
-      `Delete is possible when the fleet manager can read ${blind.join(", ")}.`,
+      `${deleting ? "Delete" : "A change"} is possible when the fleet manager can read ${blind.join(", ")}.`,
     );
+  if (!deleting) return [];
   const users =
     contractUsage(sources).get(
       contractKey({
