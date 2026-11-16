@@ -316,9 +316,9 @@ function refused<R extends WriteResult | Preview>(
   call: () => Promise<R>,
 ): () => Promise<R> {
   return async () => {
-    const result: WriteResult | Preview = await call();
-    const errors =
-      "ok" in result ? (result.ok ? [] : result.errors) : result.errors;
+    const result = await call();
+    const seen: WriteResult | Preview = result;
+    const errors = "ok" in seen ? (seen.ok ? [] : seen.errors) : seen.errors;
     expect(errors).not.toEqual([]);
     for (const error of errors) {
       // A refusal of the schema of an action names no object.
