@@ -18,6 +18,7 @@ import { ReleaseEnvironments } from "./release-environments";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
 import type { RolloutData } from "./rollout";
+import { type RolloutLists, useRolloutSources } from "./rollout-sources";
 import { RolloutTab } from "./rollout-tab";
 import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
@@ -37,12 +38,14 @@ export type ReleaseActions = {
 
 /**
  * ReleaseDetailData is what the release page reads on the server: the name
- * of the release, the first snapshot of the sources, the images table, and
- * the Secret refs of each namespace whose Secrets an env entry can name.
+ * of the release, the first snapshot of the sources and of the lists of the
+ * Rollout tab, the images table, and the Secret refs of each namespace
+ * whose Secrets an env entry can name.
  */
 export type ReleaseDetailData = {
   name: string;
   sources: ReleasesData;
+  rollout: RolloutLists;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
 };
@@ -60,9 +63,11 @@ export function ReleaseDetail({
   actions: ReleaseActions;
 }): ReactNode {
   const sources = useReleaseSources(data.sources);
+  const rollout = useRolloutSources(data.rollout);
   return (
     <ReleaseDetailView
       sources={sources}
+      rollout={rollout}
       name={data.name}
       imagesTable={data.imagesTable}
       secrets={data.secrets}
@@ -76,11 +81,12 @@ export function ReleaseDetail({
 /**
  * ReleaseDetailView is the page of the release name, with a tab for each
  * entry of RELEASE_TABS: the Settings tab, and the Rollout tab, which moves
- * clusters to the release. A tab change sets the tab query parameter without
- * a navigation.
+ * clusters to the release and is the only tab that reads rollout. A tab
+ * change sets the tab query parameter without a navigation.
  */
 export function ReleaseDetailView({
   sources,
+  rollout,
   name,
   imagesTable,
   secrets,
@@ -89,6 +95,7 @@ export function ReleaseDetailView({
   actions,
 }: {
   sources: ReleasesData & { errors: ReadError[] } & SourceReads;
+  rollout: RolloutLists & SourceReads;
   name: string;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
@@ -99,6 +106,14 @@ export function ReleaseDetailView({
   const [tab, setTab] = useState(initialTab);
   const release = sources.releases.find((r) => r.metadata.name === name) as
     Resource<"CamundaRelease"> | undefined;
+  // A Resource is plain JSON, so it differs from its model type only in its
+  // timestamps, which the move does not read.
+  const rolloutData = {
+    ...sources,
+    ...rollout,
+    errors: [...(sources.errors ?? []), ...(rollout.errors ?? [])],
+    stale: [...(sources.stale ?? []), ...(rollout.stale ?? [])],
+  } as unknown as RolloutData & SourceReads;
   const selectTab = (value: string) => {
     const next = releaseTabOf(value);
     setTab(next);
@@ -144,9 +159,7 @@ export function ReleaseDetailView({
           {release ? (
             <RolloutTab
               release={release}
-              // A Resource is plain JSON, so it differs from its model type
-              // only in its timestamps, which the move does not read.
-              data={sources as unknown as RolloutData & SourceReads}
+              data={rolloutData}
               mode={mode}
               actions={actions}
             />

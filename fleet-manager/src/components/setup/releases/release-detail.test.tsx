@@ -2,9 +2,15 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
-import { imagesFixture, releaseFixtures } from "./fixtures";
+import {
+  imagesFixture,
+  releaseFixtures,
+  rolloutListsFixture,
+} from "./fixtures";
 import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
 import type { ReleaseTab } from "./release-tabs";
+import type { RolloutLists } from "./rollout-sources";
+import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -32,11 +38,13 @@ function show(
   name = "camunda-8-9-0",
   sources: ReleasesData = releaseFixtures(),
   tab: ReleaseTab = "settings",
+  rollout: RolloutLists & SourceReads = rolloutListsFixture(),
 ) {
   render(
     <GitPushesProvider>
       <ReleaseDetailView
         sources={{ ...sources, errors: [] }}
+        rollout={rollout}
         name={name}
         imagesTable={imagesFixture}
         secrets={{}}
@@ -118,5 +126,26 @@ describe("ReleaseDetailView", () => {
     expect(
       screen.getByText("The release camunda-8-9-1 does not exist."),
     ).toBeTruthy();
+  });
+
+  it("keeps the delete of the Settings tab when only a list of the Rollout tab is not read", () => {
+    show("camunda-8-9-1", releaseFixtures(), "settings", {
+      ...rolloutListsFixture(),
+      stale: ["PluginRequest"],
+    });
+    expect(
+      screen.queryByText(/Delete is possible when the fleet manager can read/),
+    ).toBeNull();
+  });
+
+  it("names a list of the Rollout tab that is not read and offers no move", () => {
+    show("camunda-8-9-1", releaseFixtures(), "rollout", {
+      ...rolloutListsFixture(),
+      errors: [{ kind: "LogicalBackupRDBMS", message: "forbidden" }],
+    });
+    expect(
+      screen.getByText("Could not read LogicalBackupRDBMS: forbidden"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Move" })).toBeNull();
   });
 });

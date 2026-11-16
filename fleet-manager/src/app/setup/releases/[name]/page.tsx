@@ -12,7 +12,7 @@ import {
   previewReleaseChange,
   previewReleaseMove,
 } from "../actions";
-import { loadReleases } from "../load";
+import { loadReleases, loadRolloutLists } from "../load";
 
 // The page reads the cache of the server. A static prerender would call the
 // API server at build time.
@@ -24,9 +24,10 @@ export default async function ReleasePage({
 }: PageProps<"/setup/releases/[name]">) {
   const { name } = await params;
   const { tab } = await searchParams;
-  const [found, sources, mode, imagesTable] = await Promise.all([
+  const [found, sources, rollout, mode, imagesTable] = await Promise.all([
     get("CamundaRelease", undefined, name),
     loadReleases(),
+    loadRolloutLists(),
     writeMode().catch(() => undefined),
     // The server checked the table at start. A table that cannot be read
     // now gives no default image.
@@ -42,7 +43,7 @@ export default async function ReleasePage({
   );
   return (
     <ReleaseDetail
-      data={{ name, sources, imagesTable, secrets }}
+      data={{ name, sources, rollout, imagesTable, secrets }}
       tab={releaseTabOf(tab)}
       mode={mode}
       actions={{

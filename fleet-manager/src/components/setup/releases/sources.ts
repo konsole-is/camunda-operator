@@ -4,25 +4,15 @@ import type { V1Namespace } from "@kubernetes/client-node";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
-import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster";
 import type { Environment } from "@/generated/crds/environment";
-import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
-import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
-import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import type { PluginRequest } from "@/generated/crds/pluginrequest";
-import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { RELEASE_SOURCE_KINDS } from "./source-kinds";
 
-/**
- * ReleasesData holds every list that the release pages read, in all
- * namespaces. The presets, sections, registrations, requests, and backups
- * are the lists that a move of clusters to a release checks.
- */
+/** ReleasesData holds every list that the release pages read, in all namespaces. */
 export type ReleasesData = {
   releases: CamundaRelease[];
   environments: Environment[];
@@ -31,12 +21,6 @@ export type ReleasesData = {
   elasticsearchClusters: ElasticsearchCluster[];
   databaseServers: DatabaseServer[];
   claims: CamundaClusterClaim[];
-  clusterPresets: CamundaClusterPreset[];
-  sections: PluginSection[];
-  registrations: PluginRegistration[];
-  requests: PluginRequest[];
-  elasticsearchBackups: LogicalBackupElasticsearch[];
-  rdbmsBackups: LogicalBackupRDBMS[];
 };
 
 /**
@@ -59,15 +43,6 @@ export function useReleaseSources(
     ),
     databaseServers: useLive("DatabaseServer", initial.databaseServers),
     claims: useLive("CamundaClusterClaim", initial.claims),
-    clusterPresets: useLive("CamundaClusterPreset", initial.clusterPresets),
-    sections: useLive("PluginSection", initial.sections),
-    registrations: useLive("PluginRegistration", initial.registrations),
-    requests: useLive("PluginRequest", initial.requests),
-    elasticsearchBackups: useLive(
-      "LogicalBackupElasticsearch",
-      initial.elasticsearchBackups,
-    ),
-    rdbmsBackups: useLive("LogicalBackupRDBMS", initial.rdbmsBackups),
   };
   const keys = Object.keys(results) as (keyof ReleasesData)[];
   const kinds = keys.map((key) => RELEASE_SOURCE_KINDS[key]);
@@ -84,20 +59,17 @@ export function useReleaseSources(
     elasticsearchClusters: results.elasticsearchClusters.items,
     databaseServers: results.databaseServers.items,
     claims: results.claims.items,
-    clusterPresets: results.clusterPresets.items,
-    sections: results.sections.items,
-    registrations: results.registrations.items,
-    requests: results.requests.items,
-    elasticsearchBackups: results.elasticsearchBackups.items,
-    rdbmsBackups: results.rdbmsBackups.items,
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };
 }
 
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the release pages do not read.
-function useLive<K extends KindName, T>(
+/**
+ * useLive follows the list of kind from initial, as useResources does. A
+ * Resource is plain JSON, so it differs from its model type only in its
+ * timestamps, which the release pages do not read.
+ */
+export function useLive<K extends KindName, T>(
   kind: K,
   initial: T[],
 ): { items: T[]; error?: string } {
