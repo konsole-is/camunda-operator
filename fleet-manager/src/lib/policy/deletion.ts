@@ -162,6 +162,92 @@ export type DeletableClaim = {
   status?: { resolvedPolicy?: ResolvedPolicy };
 };
 
+/** CLEANUP_FINALIZER is the finalizer of a claim that gives its policy to its requests on delete. */
+export const CLEANUP_FINALIZER = "fleet.camunda.io/cleanup";
+
+/** ClaimState is the part of a live claim that the delete waits on. */
+export type ClaimState = {
+  metadata: {
+    uid?: string;
+    generation?: number;
+    finalizers?: readonly string[];
+  };
+  status?: {
+    observedGeneration?: number;
+    resolvedPolicy?: ResolvedPolicy;
+    conditions?: readonly { type: string; reason?: string; message?: string }[];
+  };
+};
+
+/** RequestState is the part of a PluginRequest that the delete waits on. */
+export type RequestState = {
+  metadata?: {
+    name?: string;
+    deletionTimestamp?: string;
+    ownerReferences?: readonly { controller?: boolean; uid?: string }[];
+  };
+  spec?: { deletionPolicy?: string };
+};
+
+/**
+ * claimObserved says that the claim controller read the current generation
+ * of claim. A claim with a generation and without status.observedGeneration
+ * counts as read only when it has no status.resolvedPolicy.
+ */
+export function claimObserved(claim: ClaimState): boolean {
+  const { generation } = claim.metadata;
+  const seen = claim.status?.observedGeneration;
+  if (generation === undefined) return true;
+  // The pass that records status.resolvedPolicy sets no observedGeneration.
+  if (seen === undefined) return claim.status?.resolvedPolicy === undefined;
+  return seen >= generation;
+}
+
+/**
+ * requestsWithout returns the names of the requests that claim controls,
+ * that are not being deleted, and that hold another deletion policy than
+ * policy. claim must have a UID.
+ */
+export function requestsWithout(
+  claim: ClaimState,
+  requests: readonly RequestState[],
+  policy: DeletionPolicy,
+): string[] {
+  return requests
+    .filter(
+      (r) =>
+        // The claim finalizer writes no policy on a request that is already
+        // being deleted.
+        r.metadata?.deletionTimestamp === undefined &&
+        (r.metadata?.ownerReferences ?? []).some(
+          (o) => o.controller === true && o.uid === claim.metadata.uid,
+        ) &&
+        r.spec?.deletionPolicy !== policy,
+    )
+    .map((r) => r.metadata?.name ?? "");
+}
+
+/**
+ * requestsBehind returns a message that names the requests in names as
+ * lacking the deletion policy of claim, with the reason and message of its
+ * Ready condition when it has one. names must not be empty.
+ */
+export function requestsBehind(
+  claim: ClaimState,
+  names: readonly string[],
+): string {
+  const ready = claim.status?.conditions?.find((c) => c.type === "Ready");
+  const [which, them] =
+    names.length === 1
+      ? [`The request ${names[0]} does not have`, "it"]
+      : [`The requests ${names.join(", ")} do not have`, "them"];
+  return `${which} the deletion policy of the claim. ${
+    ready
+      ? `The operator does not update ${them} while the claim reports ${ready.reason}: ${ready.message}`
+      : `The operator has not updated ${them}.`
+  }`;
+}
+
 /**
  * claimDeletionChoice returns the deletion choice of a live claim of kind.
  * defaultPolicy is the policy that the claim recorded, else Delete, never

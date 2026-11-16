@@ -33,11 +33,12 @@ beforeAll(async () => {
 async function made(
   name = `orders-${randomUUID().slice(0, 8)}`,
   spec: object = {},
+  finalizers: string[] = [],
 ) {
   return kubeRequest<KubeObject>(kc, "POST", claimsPath, {
     apiVersion,
     kind: "CamundaClusterClaim",
-    metadata: { name, namespace },
+    metadata: { name, namespace, finalizers },
     spec: { presetRef: "medium", ...spec },
   });
 }
@@ -106,7 +107,7 @@ function reviewed(claim: KubeObject): Change {
 }
 
 describe("the delete of a claim against envtest", () => {
-  it("deletes a claim without requests by its UID and generation, also when its status changed since the review", async () => {
+  it("deletes a claim without requests after a status write since the review", async () => {
     const claim = await made();
     await patch(claim.metadata.name, { status: { environment: "prod" } }, true);
 
@@ -129,7 +130,7 @@ describe("the delete of a claim against envtest", () => {
       errors: [
         expect.objectContaining({
           code: "Stale",
-          message: `The request ${request.metadata.name} does not have the deletion policy yet. The operator writes it within a moment. Try again.`,
+          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it.`,
         }),
       ],
     });
@@ -147,6 +148,43 @@ describe("the delete of a claim against envtest", () => {
       mode: "direct",
     });
     expect(await read(claim.metadata.name)).toBeUndefined();
+  });
+
+  it("deletes a set-up claim with the cleanup finalizer whose precheck fails and whose request still has the old policy", async () => {
+    const claim = await made(undefined, { deletionPolicy: "Orphan" }, [
+      "fleet.camunda.io/cleanup",
+    ]);
+    await patch(
+      claim.metadata.name,
+      {
+        status: {
+          observedGeneration: claim.metadata.generation,
+          resolvedPolicy: { deletionPolicy: "Delete" },
+          conditions: [
+            {
+              type: "Ready",
+              status: "False",
+              reason: "InvalidReference",
+              message: "CamundaRelease r1 does not exist",
+              lastTransitionTime: new Date()
+                .toISOString()
+                .replace(/\.\d+Z$/, "Z"),
+            },
+          ],
+        },
+      },
+      true,
+    );
+    await requested(claim, "Delete");
+
+    expect(await applyClaimDelete(reviewed(claim))).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    // The cleanup finalizer holds the claim until the operator removes it.
+    expect(
+      (await read(claim.metadata.name))?.metadata.deletionTimestamp,
+    ).toBeDefined();
   });
 
   it("refuses a claim that lost its cleanup finalizer after the operator recorded its policy", async () => {

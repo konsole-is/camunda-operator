@@ -65,6 +65,7 @@ const claim = (over: ClaimOver = {}) => {
       ...(deletionPolicy && { deletionPolicy }),
     },
     status: {
+      observedGeneration: 1,
       resolvedPolicy: { deletionPolicy: "Delete" },
       requests: [
         {
@@ -337,15 +338,11 @@ describe("DeleteCluster", () => {
       (policy.apply[0].spec as { deletionPolicy?: string }).deletionPolicy,
     ).toBe("Orphan");
     expect(policy.preconditions).toEqual({ [KEY]: "41" });
-    // The request of the option still has the old policy.
+    // The cleanup finalizer gives the policy to the request of the option
+    // on delete.
     await liveClaim(
       claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
       "Delete",
-    );
-    expect(fakeWriter.applied).toHaveLength(1);
-    await liveClaim(
-      claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
-      "Orphan",
     );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(remove("42"));

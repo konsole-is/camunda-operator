@@ -4,10 +4,15 @@ import { apiVersionOf, KindMap, type KindName } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   type BackupLike,
+  CLEANUP_FINALIZER,
+  claimObserved,
+  type ClaimState,
   deletionPolicyOf,
   type DeletionPolicy,
   equalJSON,
-  type ResolvedPolicy,
+  requestsBehind,
+  type RequestState,
+  requestsWithout,
   runningBackup,
 } from "@/lib/policy";
 import { existsError, staleError } from "./errors";
@@ -19,6 +24,7 @@ import type {
   KubeObject,
   ObjectRef,
   Preview,
+  WriteMode,
   WriteResult,
 } from "./types";
 import { firstExisting, getWriter, listObjects, readLive } from "./writer";
@@ -184,14 +190,15 @@ export const CLAIM_DELETE_ATTEMPTS = 5;
  * It refuses with Stale, and deletes nothing, when the claim is gone, has
  * another UID, or has another generation than the change names, that is
  * when its spec changed since the review. It refuses with Invalid a claim
- * that lost its cleanup finalizer after the claim controller recorded its
- * policy, and with Stale while a PluginRequest that the claim controls and
- * that is not being deleted has another deletion policy than the claim.
- * In direct mode it deletes at the resourceVersion of a fresh read, and
- * reads again after a conflict, at most CLAIM_DELETE_ATTEMPTS times. Then
- * it refuses with Stale and says that the claim kept changing. In Git mode
- * the Git writer checks the UID and the generation. A failed read gives
- * Unavailable.
+ * that is not being deleted and lost its cleanup finalizer after the claim
+ * controller recorded its policy. For a claim that is not being deleted, in
+ * Git mode or without the cleanup finalizer, it refuses with Stale until
+ * the claim controller read the current generation and while a request of
+ * the claim lacks its deletion policy. In direct mode it deletes at the
+ * resourceVersion of a fresh read, and reads again after a conflict, at
+ * most CLAIM_DELETE_ATTEMPTS times. Then it refuses with Stale and says
+ * that the claim kept changing. In Git mode the Git writer checks the UID
+ * and the generation. A failed read gives Unavailable.
  */
 export async function runClaimDelete(input: unknown): Promise<WriteResult> {
   const parsed = claimDeleteSchema.safeParse(input);
@@ -204,7 +211,7 @@ export async function runClaimDelete(input: unknown): Promise<WriteResult> {
       const live = await readLive(ref);
       const refusal =
         reviewRefusalOf(change, ref, live) ??
-        (await cleanupRefusalOf(ref, live!));
+        (await cleanupRefusalOf(ref, live!, writer.mode));
       if (refusal !== undefined) return { ok: false, errors: [refusal] };
       if (writer.mode === "git") return await writer.apply(change);
       const result = await writer.apply({
@@ -244,7 +251,7 @@ export async function previewClaimDelete(input: unknown): Promise<Preview> {
     // A policy write that corrects the requests can follow the preview.
     const refusal =
       reviewRefusalOf(change, ref, live) ??
-      (await cleanupRefusalOf(ref, live!, false));
+      (await cleanupRefusalOf(ref, live!, "preview"));
     if (refusal !== undefined) return { objects: [], errors: [refusal] };
     return await (await getWriter()).preview(change);
   } catch (error) {
@@ -270,59 +277,48 @@ function reviewRefusalOf(
     : undefined;
 }
 
-const CLEANUP_FINALIZER = "fleet.camunda.io/cleanup";
-
-// The claim finalizer writes no policy on a request that is already being
-// deleted. A claim without its finalizer gives no policy to its requests
-// on delete.
+// check is "preview" for the dry run, else the mode of the writer.
 async function cleanupRefusalOf(
   ref: ObjectRef,
   live: KubeObject,
-  requests = true,
+  check: "preview" | WriteMode,
 ): Promise<ApiError | undefined> {
-  const { uid, finalizers } = live.metadata as {
-    uid?: string;
-    finalizers?: string[];
+  const claim = live as unknown as ClaimState & {
+    metadata: { deletionTimestamp?: string };
+    spec?: { deletionPolicy?: DeletionPolicy | "" };
   };
-  const spec = live.spec as
-    { deletionPolicy?: DeletionPolicy | "" } | undefined;
-  const status = live.status as { resolvedPolicy?: ResolvedPolicy } | undefined;
-  if (
-    status?.resolvedPolicy !== undefined &&
-    !(finalizers ?? []).includes(CLEANUP_FINALIZER)
-  )
+  if (claim.metadata.deletionTimestamp !== undefined) return undefined;
+  const finalized = (claim.metadata.finalizers ?? []).includes(
+    CLEANUP_FINALIZER,
+  );
+  if (claim.status?.resolvedPolicy !== undefined && !finalized)
     return {
       code: "Invalid",
       message: `The ${ref.kind} ${ref.name} has no finalizer ${CLEANUP_FINALIZER}, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.`,
       ref,
     };
-  if (!requests) return undefined;
-  const policy = deletionPolicyOf(spec?.deletionPolicy, status?.resolvedPolicy);
-  const behind = (await listObjects("PluginRequest", ref.namespace!))
-    .filter((request) => {
-      const metadata = request.metadata as {
-        ownerReferences?: { controller?: boolean; uid?: string }[];
-        deletionTimestamp?: string;
-      };
-      return (
-        metadata.deletionTimestamp === undefined &&
-        (metadata.ownerReferences ?? []).some(
-          (o) => o.controller === true && o.uid === uid,
-        ) &&
-        (request.spec as { deletionPolicy?: string } | undefined)
-          ?.deletionPolicy !== policy
-      );
-    })
-    .map((request) => request.metadata.name);
-  if (behind.length === 0) return undefined;
-  return {
-    code: "Stale",
-    message:
-      behind.length === 1
-        ? `The request ${behind[0]} does not have the deletion policy yet. The operator writes it within a moment. Try again.`
-        : `The requests ${behind.join(", ")} do not have the deletion policy yet. The operator writes it within a moment. Try again.`,
-    ref,
-  };
+  // The cleanup finalizer writes the policy of the claim on each request
+  // that is not being deleted, before it deletes any. A claim without its
+  // finalizer gives no policy to its requests on delete.
+  if (check === "preview" || (check === "direct" && finalized))
+    return undefined;
+  if (!claimObserved(claim))
+    return {
+      code: "Stale",
+      message: `The operator has not read the deletion policy of the ${ref.kind} ${ref.name} yet. Try again in a moment.`,
+      ref,
+    };
+  const behind = requestsWithout(
+    claim,
+    (await listObjects(
+      "PluginRequest",
+      ref.namespace!,
+    )) as unknown as RequestState[],
+    deletionPolicyOf(claim.spec?.deletionPolicy, claim.status?.resolvedPolicy),
+  );
+  return behind.length === 0
+    ? undefined
+    : { code: "Stale", message: requestsBehind(claim, behind), ref };
 }
 
 const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
