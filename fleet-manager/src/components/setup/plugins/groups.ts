@@ -68,7 +68,7 @@ export type SourceReads = {
 };
 
 /** NO_ENVIRONMENT names the requests whose namespace belongs to no Environment. */
-const NO_ENVIRONMENT = "No environment";
+export const NO_ENVIRONMENT = "No environment";
 
 /**
  * sectionFields returns the fields that the slot of section fills, for each

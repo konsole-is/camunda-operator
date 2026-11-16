@@ -16,6 +16,8 @@ import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";
 import { ParametersTab } from "./parameters-tab";
+import { usedByRows } from "./used-by";
+import { UsedByTab } from "./used-by-tab";
 import {
   REGISTRATION_TABS,
   type RegistrationTab,
@@ -117,6 +119,16 @@ export function RegistrationDetail({
               events={data.events}
               unread={unread}
               now={now}
+            />
+          </TabsContent>
+          <TabsContent value="usedBy">
+            <UsedByTab
+              rows={usedByRows(
+                data.name,
+                { ...sources, errors, stale },
+                data.grants,
+              )}
+              unread={unread}
             />
           </TabsContent>
         </Tabs>
