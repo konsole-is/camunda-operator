@@ -53,6 +53,21 @@ export function wholeFieldManagers(
   return owners(live, (whole) => whole);
 }
 
+/**
+ * lastChanged returns the newest time of metadata.managedFields as an ISO
+ * time, or undefined when no entry has a time.
+ */
+export function lastChanged(object: ManagedObject): string | undefined {
+  let newest: number | undefined;
+  for (const entry of object.metadata?.managedFields ?? []) {
+    if (entry.time === undefined) continue;
+    const time = new Date(entry.time).getTime();
+    if (!Number.isNaN(time) && (newest === undefined || time > newest))
+      newest = time;
+  }
+  return newest === undefined ? undefined : new Date(newest).toISOString();
+}
+
 function owners(
   live: ManagedObject,
   keep: (whole: boolean) => boolean,

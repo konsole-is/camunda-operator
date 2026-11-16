@@ -4,7 +4,8 @@ import type { ElasticsearchClusterSpec } from "@/generated/crds/elasticsearchclu
 import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
 import { asObject, mergeLayers, type Merged, type RulesOf } from "./engine";
 
-const elasticsearchRules = {
+/** elasticsearchRules is the rule of each field of ElasticsearchCluster, by MergeSpec of pkg/components/elasticsearchcluster. */
+export const elasticsearchRules = {
   presetRef: { instance: "value" },
   releaseRef: { instance: "value" },
   version: "value",
@@ -26,7 +27,8 @@ const elasticsearchRules = {
   suspend: { instance: "value" },
 } as const satisfies RulesOf<ElasticsearchClusterSpec>;
 
-const databaseServerRules = {
+/** databaseServerRules is the rule of each field of DatabaseServer, by MergeSpec of pkg/components/databaseserver. */
+export const databaseServerRules = {
   presetRef: { instance: "value" },
   releaseRef: { instance: "value" },
   platformConfigRef: "value",

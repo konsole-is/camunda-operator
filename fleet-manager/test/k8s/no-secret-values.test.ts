@@ -27,6 +27,10 @@ import {
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
 import {
+  applyPresetChange,
+  previewPresetChange,
+} from "@/app/setup/presets/actions";
+import {
   applyReleaseChange,
   previewReleaseChange,
 } from "@/app/setup/releases/actions";
@@ -324,6 +328,12 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...labelChange(),
       preconditions: { [`Namespace//${namespace}-gone`]: "1" },
     }),
+  "app/setup/presets/actions.ts#previewPresetChange": () =>
+    previewPresetChange(presetDelete()),
+  // The preset does not exist, so the delete refuses with Stale and
+  // removes nothing.
+  "app/setup/presets/actions.ts#applyPresetChange": () =>
+    applyPresetChange(presetDelete()),
   "app/setup/releases/actions.ts#previewReleaseChange": () =>
     previewReleaseChange(releaseChange()),
   // A precondition for an object that does not exist refuses with Stale,
@@ -342,6 +352,21 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function presetDelete() {
+  return {
+    intent: "Delete the preset leak",
+    apply: [],
+    delete: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaClusterPreset",
+        name: namespace,
+      },
+    ],
+    preconditions: { [`CamundaClusterPreset//${namespace}`]: "1" },
+  };
+}
 
 function environmentChange() {
   return {
