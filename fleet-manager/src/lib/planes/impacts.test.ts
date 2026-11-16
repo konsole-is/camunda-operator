@@ -26,6 +26,8 @@ import {
   PREVIEW_NEEDS_ISSUER,
   SECOND_USER,
   WEB_MODELER_OFF,
+  WEB_MODELER_USER_REMOVED,
+  planeSignInMoves,
   planeImpacts,
   planeModeMove,
   planeRestarts,
@@ -226,6 +228,21 @@ describe("planeImpacts", () => {
     ]);
     expect(planeImpacts(input(s))).toEqual([
       "team-orders/orders detaches. It loses its Console settings and restarts once.",
+    ]);
+  });
+
+  it("says that a basic-auth cluster that detaches loses the Web Modeler user of the plane", () => {
+    const live = planeClaim({
+      environments: ["production", "staging"],
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+    });
+    const s = changed(live, [at("spec", "environments"), ["production"]]);
+    expect(planeImpacts(input(s))).toEqual([
+      `team-qa/qa detaches. ${WEB_MODELER_USER_REMOVED}`,
     ]);
   });
 
@@ -993,6 +1010,32 @@ describe("planeRestarts", () => {
     expect(planeRestarts(input(s))).toEqual(["Web Modeler restarts."]);
   });
 
+  it("names no Web Modeler restart for a selector change that serves the same clusters", () => {
+    const s = changed(withWebModeler(), [
+      at("spec", "clusterSelector"),
+      { matchExpressions: [] },
+    ]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+
+  it("says that Web Modeler may restart on a change of the served environments while the preview is unknown", () => {
+    const oidc = planeClaim({
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+      versions: { identity: "8.9.14", webModeler: "8.9.15" },
+    });
+    const s = changed(oidc, [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    expect(planeRestarts(input(s, { platformConfigs: [] }))).toEqual([
+      "Web Modeler may restart when the served clusters change.",
+    ]);
+  });
+
   it("restarts Identity in a Keycloak mode when Console turns off, and names no restart of Console", () => {
     const live = consoleClaim();
     const s = changed(
@@ -1086,5 +1129,66 @@ describe("planeRestarts", () => {
     expect(planeRestarts(input(s))).toEqual([
       "Console may restart when the path of the URL changes.",
     ]);
+  });
+});
+
+describe("planeSignInMoves", () => {
+  it("is false for a change that moves no sign-in", () => {
+    const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeSignInMoves(input(s))).toBe(false);
+  });
+
+  it("is true for a move of the identity mode", () => {
+    const live = externalClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
+  it("is true for a new realm of the External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc2.example.com",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
+  it("is true for a new platform config in OIDC mode, and false in a Keycloak mode", () => {
+    const oidc = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+    });
+    const s = changed(oidc, [at("spec", "platformConfigRef"), "sso-2"]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+    const k = changed(planeClaim(), [at("spec", "platformConfigRef"), "sso"]);
+    expect(planeSignInMoves(input(k))).toBe(false);
+  });
+
+  it("is true for a change of the access settings in the keycloak mode", () => {
+    const live = planeClaim({
+      plugins: [
+        {
+          section: "access",
+          registration: "gateway",
+          parameters: { managementHostnamePattern: "{name}.a.example.com" },
+        },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "access", registration: "gateway" } },
+        { field: "parameters" },
+        { field: "managementHostnamePattern" },
+      ],
+      "{name}.b.example.com",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
   });
 });

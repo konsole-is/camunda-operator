@@ -39,9 +39,9 @@ const EDITORS: Record<PlaneClaimPanel, () => ReactNode> = {
  * each panel. One panel is in edit at a time, in place of its read panel,
  * and Done closes it and keeps its pending changes. The read view shows the
  * claim after the pending changes. Without a session it is read only. While
- * the page could not read the plane or its claim, or its copy is not
- * current, it offers no Edit button and says why. A panel that is open
- * then stays open, and the session refuses review. requested opens its panel on mount. It needs a
+ * the page could not read the plane or its claim, it offers no Edit button
+ * and says why. A panel that is open then stays open, and the session
+ * refuses review. requested opens its panel on mount. It needs a
  * PlaneClaimEditProvider above it.
  */
 export function PlaneClaimEditor({
@@ -60,7 +60,7 @@ export function PlaneClaimEditor({
     return (
       <p className="text-sm text-muted">
         {plane.claimUnread
-          ? changesWaitText(plane.unread)
+          ? changesWaitText(plane.unread, plane.waiting)
           : "No claim made this management plane, so it has no Claim tab to change."}
       </p>
     );
@@ -69,10 +69,12 @@ export function PlaneClaimEditor({
   const fields = planeFieldsOf(shown, plane);
   const urls = planeExternalUrls(plane.plane);
   const note = plane.claimUnread && (
-    <p className="text-sm text-muted">{changesWaitText(plane.unread)}</p>
+    <p className="text-sm text-muted">
+      {changesWaitText(plane.unread, plane.waiting)}
+    </p>
   );
-  // The tree stays the same while the plane or the claim is not current,
-  // so that an open panel keeps its state through a reconnect of the watch.
+  // The tree stays the same while the plane or the claim is unread, so that
+  // an open panel keeps its state.
   const view = (edit?: PlaneClaimTabEdit) => (
     <div className="flex flex-col gap-4">
       {note}

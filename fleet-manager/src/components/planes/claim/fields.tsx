@@ -1,7 +1,7 @@
 "use client";
 
 import { TriangleAlert } from "lucide-react";
-import { useId } from "react";
+import { type ChangeEvent, useId, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import type { FieldError } from "@/lib/session";
 
@@ -94,4 +94,25 @@ export function Notes({ notes }: { notes: readonly string[] }) {
       ))}
     </div>
   );
+}
+
+/**
+ * useSecretPick passes on a report of a SecretRefPicker inside the element
+ * that gets onChange only after the user picked in one of its selects. The
+ * picker also reports when the Secrets of the namespace no longer hold its
+ * Secret, and such a report must not reach the claim.
+ */
+export function useSecretPick() {
+  const picked = useRef(false);
+  const onChange = (event: ChangeEvent) => {
+    if (event.target instanceof HTMLSelectElement) picked.current = true;
+  };
+  const only =
+    <A extends unknown[]>(f: (...args: A) => void) =>
+    (...args: A) => {
+      if (!picked.current) return;
+      picked.current = false;
+      f(...args);
+    };
+  return { onChange, only };
 }

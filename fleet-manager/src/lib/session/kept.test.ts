@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
-import { keptFields } from "./kept";
-import { openSession, resetValue, setValue, type ClaimObject } from "./session";
+import { appliedSession, keptFields } from "./kept";
+import {
+  claimAfter,
+  openSession,
+  resetValue,
+  setValue,
+  type ClaimObject,
+} from "./session";
 
 const at = (...names: string[]): Step[] => names.map((field) => ({ field }));
 
@@ -18,6 +24,7 @@ function claimOf(managedFields: unknown[]): ClaimObject {
     } as ClaimObject["metadata"],
     spec: {
       deletionPolicy: "Delete",
+      environments: ["platform", "qa"],
       management: {
         identityProvider: { oidc: {} },
         identity: { admin: { claimName: "sub", claimValue: "42" } },
@@ -31,6 +38,7 @@ const kubectl = {
   operation: "Apply",
   fieldsV1: {
     "f:spec": {
+      "f:environments": { 'v:"platform"': {}, 'v:"qa"': {} },
       "f:management": {
         "f:identityProvider": { "f:oidc": {} },
         "f:identity": {
@@ -69,14 +77,14 @@ describe("keptFields", () => {
       if ("session" in reset) s = reset.session;
     }
     expect(keptFields(s)).toEqual([
-      { path: "spec.management.identityProvider.oidc", manager: "kubectl" },
+      { path: "spec.management.identityProvider.oidc", managers: ["kubectl"] },
       {
         path: "spec.management.identity.admin.claimName",
-        manager: "kubectl",
+        managers: ["kubectl"],
       },
       {
         path: "spec.management.identity.admin.claimValue",
-        manager: "kubectl",
+        managers: ["kubectl"],
       },
     ]);
   });
@@ -91,6 +99,32 @@ describe("keptFields", () => {
     );
     if ("session" in cleared) s = cleared.session;
     expect(keptFields(s)).toEqual([]);
+  });
+
+  it("names a field that kubectl still owns after a save of the app took every field", () => {
+    const shared = {
+      ...app,
+      fieldsV1: {
+        "f:spec": { "f:deletionPolicy": {}, ...kubectl.fieldsV1["f:spec"] },
+      },
+    };
+    let s = session(claimOf([kubectl, shared]));
+    const set = setValue(s, at("spec", "environments"), ["platform"]);
+    if ("session" in set) s = set.session;
+    expect(keptFields(s)).toEqual([
+      { path: 'spec.environments[="qa"]', managers: ["kubectl"] },
+    ]);
+    expect(claimAfter(appliedSession(s)).spec).toEqual(s.claim.spec);
+  });
+
+  it("gives the claim after the change when no field is kept", () => {
+    let s = session(claimOf([kubectl]));
+    const set = setValue(s, at("spec", "deletionPolicy"), "Orphan");
+    if ("session" in set) s = set.session;
+    expect(claimAfter(appliedSession(s)).spec).toEqual({
+      ...s.claim.spec,
+      deletionPolicy: "Orphan",
+    });
   });
 
   it("names nothing for a change that removes no field", () => {

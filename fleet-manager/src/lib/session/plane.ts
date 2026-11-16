@@ -110,7 +110,9 @@ export function validatePlaneClaim(
     ...environmentErrors(live, spec, ctx),
     ...modeErrors(live, spec, ctx),
     ...adminErrors(mode, spec.management),
-    ...(mode === "oidc" ? recordedClaimErrors(spec.management, ctx.plane) : []),
+    ...(mode === "oidc" && pairMoves(live, spec)
+      ? recordedClaimErrors(spec.management, ctx.plane)
+      : []),
     ...(mode === "externalKeycloak" ? externalErrors(spec.management) : []),
     ...urlErrorsOf(s.claim, after, ctx),
     ...versionErrorsOf(live, spec),
@@ -299,6 +301,21 @@ function recordedClaimErrors(
       message: `Management Identity started with the administrator claim ${recorded}. Fixed after Identity started.`,
     },
   ];
+}
+
+// pairMoves reports whether the change moves the identity mode or the
+// claim pair, so that a pair that was already off the record does not block
+// another change.
+function pairMoves(live: Spec, spec: Spec): boolean {
+  const pair = (s: Spec) => {
+    const admin = s.management?.identity?.admin;
+    return [admin?.claimName ?? "", admin?.claimValue ?? ""];
+  };
+  return (
+    identityModeOf(live.management?.identityProvider) !==
+      identityModeOf(spec.management?.identityProvider) ||
+    !equalJSON(pair(live), pair(spec))
+  );
 }
 
 function externalErrors(management: PlaneManagement | undefined): FieldError[] {

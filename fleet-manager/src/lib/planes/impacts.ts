@@ -72,7 +72,11 @@ export const CONSOLE_ON =
 export const CONSOLE_OFF =
   "Console stops. Served clusters lose their Console settings and restart once.";
 /** WEB_MODELER_OFF is the impact of turning Web Modeler off. */
-export const WEB_MODELER_OFF = "Removes Web Modeler. Its database stays.";
+export const WEB_MODELER_OFF =
+  "Removes Web Modeler. Its database stays. Each served cluster with basic authentication loses the Web Modeler user of the plane.";
+/** WEB_MODELER_USER_REMOVED is the impact on a basic-auth cluster that detaches from a plane that runs Web Modeler. */
+export const WEB_MODELER_USER_REMOVED =
+  "It loses the Web Modeler user of the plane.";
 /** ACCESS_ISSUER_MOVES is the impact of a change of the access settings of a plane that runs Keycloak. */
 export const ACCESS_ISSUER_MOVES =
   "A new access host moves the public URL of Keycloak. Served clusters that sign in with OIDC and trust the old public URL then detach, lose their Console settings, and restart once. Clusters that trust the Keycloak Service address stay.";
@@ -122,6 +126,24 @@ export function planeModeMove(
     claimAfter(session).spec?.management?.identityProvider,
   );
   return from && to && from !== to ? { from, to } : undefined;
+}
+
+/**
+ * planeSignInMoves reports whether the change moves where users and the
+ * served clusters sign in: a move of the identity mode, another External
+ * Keycloak realm, another platform config in OIDC mode, or a change of the
+ * access settings in the keycloak mode.
+ */
+export function planeSignInMoves(input: PlaneChangeInput): boolean {
+  const live: Spec = input.session.claim.spec ?? {};
+  const spec: Spec = claimAfter(input.session).spec ?? {};
+  return (
+    planeModeMove(input.session) !== undefined ||
+    realmMoves(input.session) ||
+    (identityModeOf(spec.management?.identityProvider) === "oidc" &&
+      effectiveConfig(live, input) !== effectiveConfig(spec, input)) ||
+    accessLines(input, live, spec).length > 0
+  );
 }
 
 /**
@@ -246,19 +268,26 @@ function servedLines(
       );
     return moved ? [PREVIEW_NEEDS_ISSUER] : [];
   }
-  return servedChangeLines(changes, live, spec);
+  return servedChangeLines(changes, input);
 }
 
 /**
  * servedChangeLines returns one line for each cluster of changes that
- * attaches, then one for each that detaches, as planeImpacts lists them.
- * live and spec are the claim specs before and after the change.
+ * attaches, then one for each that detaches, as planeImpacts lists them
+ * for the change of input.
  */
 export function servedChangeLines(
   changes: { attach: PreviewRow[]; detach: PreviewRow[] },
-  live: Partial<PlaneClaim["spec"]>,
-  spec: Partial<PlaneClaim["spec"]>,
+  input: PlaneChangeInput,
 ): string[] {
+  const live: Spec = input.session.claim.spec ?? {};
+  const spec: Spec = claimAfter(input.session).spec ?? {};
+  // The plane keeps a Web Modeler user only on a basic-auth cluster
+  // (basicUserSecret of camundamanagementcluster).
+  const user = (r: PreviewRow) =>
+    live.management?.webModeler != null && basicAuth(r, input)
+      ? ` ${WEB_MODELER_USER_REMOVED}`
+      : "";
   // The plane writes the Console settings only while it runs Console.
   return [
     ...changes.attach.map((r) =>
@@ -266,12 +295,23 @@ export function servedChangeLines(
         ? `${r.namespace}/${r.name} attaches and restarts its pods once, because it gets the Console settings.`
         : `${r.namespace}/${r.name} attaches.`,
     ),
-    ...changes.detach.map((r) =>
-      live.management?.console != null
-        ? `${r.namespace}/${r.name} detaches. It loses its Console settings and restarts once.`
-        : `${r.namespace}/${r.name} detaches.`,
+    ...changes.detach.map(
+      (r) =>
+        (live.management?.console != null
+          ? `${r.namespace}/${r.name} detaches. It loses its Console settings and restarts once.`
+          : `${r.namespace}/${r.name} detaches.`) + user(r),
     ),
   ];
+}
+
+function basicAuth(row: PreviewRow, input: PlaneChangeInput): boolean {
+  const cluster = input.clusters.find(
+    (c) =>
+      c.metadata?.namespace === row.namespace && c.metadata?.name === row.name,
+  );
+  const ref = cluster?.spec?.platformConfigRef;
+  const config = input.platformConfigs.find((c) => c.metadata?.name === ref);
+  return config?.spec?.auth?.method === "basic";
 }
 
 function versionLines(live: Spec, spec: Spec): string[] {
@@ -499,6 +539,7 @@ const IMAGE_REASON = "when the platform config sets another image";
 const DATABASE_REASON =
   "when the database settings change, as the option decides";
 const ACCESS_REASON = "when the access host changes";
+const SERVED_REASON = "when the served clusters change";
 const PATH_REASON = "when the path of the URL changes";
 const SECTION_REASON = "as the option of the changed section decides";
 
@@ -556,11 +597,15 @@ function restartsOf(
     add("identity");
 
   // Web Modeler lists the served clusters in its env (clusters.go).
-  if (
-    differs(live.environments, spec.environments) ||
-    differs(live.clusterSelector, spec.clusterSelector)
-  )
+  const served = servedChanges(input);
+  if (served && served.attach.length + served.detach.length > 0)
     add("webModeler");
+  if (
+    !served &&
+    (differs(live.environments, spec.environments) ||
+      differs(live.clusterSelector, spec.clusterSelector))
+  )
+    maybe(SERVED_REASON, "webModeler");
   // The Keycloak modes register a client for Console and Web Modeler in
   // the env of Identity (keycloakenv.go).
   const turned = (app: "console" | "webModeler") =>

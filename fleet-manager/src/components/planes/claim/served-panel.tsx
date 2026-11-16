@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditorGeneration } from "@/components/cluster/edit/editor-generation";
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { errorsAt } from "@/components/cluster/settings-editor";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { PreviewTable } from "@/components/planes/create/served-step";
@@ -12,7 +12,7 @@ import {
   servedChangeLines,
   servedChanges,
 } from "@/lib/planes/impacts";
-import { claimAfter } from "@/lib/session";
+import { appliedSession, claimAfter } from "@/lib/session";
 import { FieldErrors } from "./fields";
 import { selectorText } from "./plane-claim-tab";
 import {
@@ -27,6 +27,13 @@ const SELECTOR: Step[] = [{ field: "spec" }, { field: "clusterSelector" }];
 /** EXPRESSIONS_READ_ONLY is the note under the match expressions of the selector, which the panel does not edit. */
 export const EXPRESSIONS_READ_ONLY =
   "Change match expressions in the claim YAML.";
+
+/** NO_SELECTOR is the hint under the cluster labels of a claim without a cluster selector. */
+export const NO_SELECTOR =
+  "The claim has no cluster selector, so the plane serves no cluster. Add a label to serve the clusters that carry it.";
+/** EMPTY_LABELS is the hint under the cluster labels of a claim with a cluster selector. */
+export const EMPTY_LABELS =
+  "Leave empty to serve every cluster in these environments.";
 
 type Selector = {
   matchLabels?: Record<string, string> | null;
@@ -45,10 +52,13 @@ export function ServedPanel() {
   const plane = usePlaneClaimEdit();
   const id = useId();
   const edit = plane.edit;
-  // An editor that keeps its own text starts again after a discard or a
-  // write.
-  const { generation } = useEditorGeneration(edit?.pending ?? 0);
   const session = edit?.session;
+  // An editor that keeps its own text starts again after a discard, a
+  // write, or a new selector of the live claim.
+  const { generation, own } = useEditorGeneration(
+    edit?.pending ?? 0,
+    session?.claim.spec?.clusterSelector,
+  );
   if (!edit || !session) return null;
   const after = claimAfter(session);
   const chosen = Array.isArray(after.spec?.environments)
@@ -70,12 +80,10 @@ export function ServedPanel() {
       ENVIRONMENTS,
       on ? [...chosen, name] : chosen.filter((n) => n !== name),
     );
-  const changes = plane.unread.length
-    ? undefined
-    : servedChanges(planeChangeInput(plane, session));
-  const lines = changes
-    ? servedChangeLines(changes, session.claim.spec ?? {}, after.spec ?? {})
-    : [];
+  // The preview reads the claim that the save leaves.
+  const input = planeChangeInput(plane, appliedSession(session));
+  const changes = plane.unread.length ? undefined : servedChanges(input);
+  const lines = changes ? servedChangeLines(changes, input) : [];
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -98,29 +106,22 @@ export function ServedPanel() {
         <FieldErrors errors={errorsAt(edit.errors, ENVIRONMENTS)} />
       </fieldset>
       <div className="flex max-w-xl min-w-0 flex-col gap-2">
-        <KeyValueEditor
+        <LabelsEditor
           key={generation}
-          label="Cluster labels"
-          keyLabel="Label"
-          format="label"
           defaultValue={selector?.matchLabels ?? undefined}
           describedBy={`${id}-labels-hint`}
-          onChange={(labels, errors) => {
-            edit.invalid(
-              SELECTOR,
-              errors.length > 0 ? errors[0].message : undefined,
-            );
-            if (errors.length > 0) return;
+          invalid={edit.invalid}
+          onChange={own((labels: Record<string, string> | undefined) => {
             const rest: Selector = { ...selector };
             delete rest.matchLabels;
             edit.set(
               SELECTOR,
               labels ? { ...rest, matchLabels: labels } : rest,
             );
-          }}
+          })}
         />
         <p id={`${id}-labels-hint`} className="text-sm text-muted">
-          Leave empty to serve every cluster in these environments.
+          {selector == null ? NO_SELECTOR : EMPTY_LABELS}
         </p>
         {expressions.length > 0 && (
           <p className="text-sm text-text-2">
@@ -133,7 +134,9 @@ export function ServedPanel() {
         <FieldErrors errors={errorsAt(edit.errors, SELECTOR)} />
       </div>
       {plane.unread.length > 0 ? (
-        <p className="text-sm text-muted">{changesWaitText(plane.unread)}</p>
+        <p className="text-sm text-muted">
+          {changesWaitText(plane.unread, plane.waiting)}
+        </p>
       ) : changes ? (
         <>
           {lines.length > 0 && (
@@ -152,5 +155,34 @@ export function ServedPanel() {
         <p className="text-sm text-muted">{PREVIEW_NEEDS_ISSUER}</p>
       )}
     </div>
+  );
+}
+
+// LabelsEditor edits the labels of the cluster selector. It reports the
+// error that it shows to invalid, and clears it when it unmounts.
+function LabelsEditor({
+  defaultValue,
+  describedBy,
+  invalid,
+  onChange,
+}: {
+  defaultValue: Record<string, string> | undefined;
+  describedBy: string;
+  invalid: (steps: Step[], message: string | undefined) => void;
+  onChange: (labels: Record<string, string> | undefined) => void;
+}) {
+  useEffect(() => () => invalid(SELECTOR, undefined), [invalid]);
+  return (
+    <KeyValueEditor
+      label="Cluster labels"
+      keyLabel="Label"
+      format="label"
+      defaultValue={defaultValue}
+      describedBy={describedBy}
+      onChange={(labels, errors) => {
+        invalid(SELECTOR, errors.length > 0 ? errors[0].message : undefined);
+        if (errors.length === 0) onChange(labels);
+      }}
+    />
   );
 }

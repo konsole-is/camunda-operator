@@ -32,13 +32,15 @@ import { FakeEventSource } from "../../../../test/fakes/event-source";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { PlanePageData } from "../plane-view";
 import type { PlaneClaimTabData } from "./data";
+import { RECORDED_PAIR } from "./identity-panel";
 import {
   changesWaitText,
   KEPT_FIELDS_NOTE,
+  NOTHING_CHANGES,
   PlaneClaimEditProvider,
 } from "./plane-claim-edit";
 import { PlaneClaimEditor } from "./plane-claim-editor";
-import { EXPRESSIONS_READ_ONLY } from "./served-panel";
+import { EXPRESSIONS_READ_ONLY, NO_SELECTOR } from "./served-panel";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 
@@ -386,6 +388,89 @@ describe("PlaneClaimEditor identity", () => {
     expect(screen.getAllByText("Fixed after Identity started")).toHaveLength(2);
   });
 
+  it("a move back to OIDC of a plane that started in OIDC mode takes the recorded claim pair", () => {
+    editor({
+      claim: claimOf({
+        platformConfigRef: "sso",
+        management: {
+          identityProvider: { keycloak: {} },
+          identity: { admin: { username: "admin" } },
+        },
+        versions: { identity: "8.9.14", keycloak: "26.6.4" },
+      }),
+      plane: planeOf({ [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "sub=42" }),
+    });
+    open("Identity");
+    fireEvent.click(
+      screen.getByRole("radio", { name: /OIDC from the platform config/ }),
+    );
+    expect(screen.getByText(RECORDED_PAIR)).toBeTruthy();
+    expect(screen.getByText("sub")).toBeTruthy();
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(reviewButton().disabled).toBe(false);
+    expect(within(region("Unsaved changes")).queryByText(/Fix/)).toBeNull();
+  });
+
+  it("a new URL of the External Keycloak needs the plane name typed", () => {
+    editor();
+    open("Identity");
+    fireEvent.change(screen.getByLabelText("Keycloak URL"), {
+      target: { value: "https://kc2.example.com" },
+    });
+    fireEvent.click(reviewButton());
+    expect(within(dialog()).getByLabelText(/to confirm/)).toBeTruthy();
+  });
+
+  it("opening Identity with a password Secret that the namespace does not hold changes nothing", () => {
+    editor({
+      claim: claimOf({
+        management: {
+          identityProvider: { keycloak: {} },
+          identity: {
+            admin: {
+              username: "admin",
+              passwordSecretRef: { name: "gone", key: "password" },
+            },
+          },
+        },
+        versions: { identity: "8.9.14", keycloak: "26.6.4" },
+      }),
+    });
+    open("Identity");
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+  });
+
+  it("an untouched password picker follows a new reference in the live claim", () => {
+    const keycloak = (key: string) =>
+      claimOf({
+        management: {
+          identityProvider: { keycloak: {} },
+          identity: {
+            admin: {
+              username: "admin",
+              passwordSecretRef: { name: "kc-admin", key },
+            },
+          },
+        },
+        versions: { identity: "8.9.14", keycloak: "26.6.4" },
+      });
+    const { rerender } = editor({ claim: keycloak("username") });
+    open("Identity");
+    const picker = () =>
+      within(screen.getByRole("group", { name: "Password Secret" }));
+    expect((picker().getByLabelText("Key") as HTMLSelectElement).value).toBe(
+      "username",
+    );
+    const updated = keycloak("password");
+    updated.metadata.resourceVersion = "8";
+    rerender(tree({ claim: updated }));
+    expect((picker().getByLabelText("Key") as HTMLSelectElement).value).toBe(
+      "password",
+    );
+  });
+
   it("OIDC is not offered while the platform config uses basic authentication", () => {
     editor();
     open("Identity");
@@ -439,6 +524,56 @@ describe("PlaneClaimEditor served clusters, components, and versions", () => {
       matchExpressions: expressions,
       matchLabels: { team: "orders" },
     });
+  });
+
+  it("the label editor follows a new selector in the live claim", () => {
+    const { rerender } = editor();
+    open("Environments served");
+    expect(screen.queryAllByLabelText(/^Label/)).toHaveLength(0);
+    const updated = claimOf({
+      clusterSelector: { matchLabels: { team: "a" } },
+    });
+    updated.metadata.resourceVersion = "8";
+    rerender(tree({ claim: updated }));
+    expect(
+      (screen.getAllByLabelText(/^Label/)[0] as HTMLInputElement).value,
+    ).toBe("team");
+  });
+
+  it("an invalid label stops blocking Review once its editor closes", () => {
+    editor();
+    open("Environments served");
+    fireEvent.click(screen.getByRole("button", { name: /Add/ }));
+    fireEvent.change(screen.getAllByLabelText(/^Label/)[0], {
+      target: { value: "not a label!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    open("When the plane is deleted");
+    fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
+    expect(reviewButton().disabled).toBe(false);
+  });
+
+  it("says that a claim without a cluster selector serves no cluster", () => {
+    const claim = claimOf();
+    delete (claim.spec as { clusterSelector?: unknown }).clusterSelector;
+    editor({ claim });
+    open("Environments served");
+    expect(screen.getByText(NO_SELECTOR)).toBeTruthy();
+  });
+
+  it("Run Console turns on a Console whose block is null", () => {
+    const claim = claimOf();
+    (claim.spec.management as { console: unknown }).console = null;
+    editor({ claim });
+    open("Components");
+    const box = screen.getByRole("checkbox", { name: "Run Console" });
+    expect(box.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(box);
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Run Console" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   it("Console off says that served clusters lose their Console settings and restart once", () => {
@@ -671,7 +806,7 @@ describe("PlaneClaimEditor writes", () => {
     );
   });
 
-  it("keeps an open panel while the plane is not current, and offers no other Edit", () => {
+  it("keeps an open panel while the read of the plane failed, and offers no other Edit", () => {
     const { rerender } = editor();
     open("Identity");
     const radio = screen.getByRole("radio", { name: /External Keycloak/ });
@@ -719,6 +854,40 @@ describe("PlaneClaimEditor writes", () => {
     expect(caution.textContent).toContain(
       "spec.management.identityProvider.oidc (kubectl)",
     );
+  });
+
+  it("names an item of a list that kubectl keeps, and says when the save changes nothing", () => {
+    const claim = claimOf({ environments: ["production", "staging"] });
+    (claim.metadata as { managedFields?: unknown }).managedFields = [
+      {
+        manager: "kubectl",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:environments": { 'v:"production"': {}, 'v:"staging"': {} },
+          },
+        },
+      },
+      {
+        manager: "fleet-manager",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:environments": { 'v:"production"': {}, 'v:"staging"': {} },
+          },
+        },
+      },
+    ];
+    editor({ claim });
+    open("Environments served");
+    fireEvent.click(screen.getByRole("checkbox", { name: "staging" }));
+    fireEvent.click(reviewButton());
+    const caution = within(dialog()).getByRole("note", { name: "Caution" });
+    expect(caution.textContent).toContain(NOTHING_CHANGES);
+    expect(caution.textContent).toContain(
+      'spec.environments[="staging"] (kubectl)',
+    );
+    expect(within(dialog()).queryByText(/detaches/)).toBeNull();
   });
 
   it("closes an open review and turns Review off while a list that the checks read is unread", () => {

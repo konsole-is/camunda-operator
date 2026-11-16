@@ -544,6 +544,27 @@ describe("PlaneView", () => {
       expect(actions.preview).not.toHaveBeenCalled();
     });
 
+    it("keeps the Edit buttons while the watches of the plane and a list reconnect", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      live.fresh = new Set(["CamundaManagementCluster", "CamundaCluster"]);
+      const page = () => (
+        <GitPushesProvider>
+          <PlaneView
+            data={data()}
+            writeMode="direct"
+            claimActions={{ preview: vi.fn(), apply: vi.fn() }}
+          />
+        </GitPushesProvider>
+      );
+      const { rerender } = render(page());
+      live.fresh = new Set();
+      rerender(page());
+      expect(
+        screen.getByRole("button", { name: "Edit Identity" }),
+      ).toBeTruthy();
+      expect(screen.queryByText(/Review waits/)).toBeNull();
+    });
+
     it("offers no edit while the read of the plane failed", () => {
       window.history.replaceState(null, "", "?tab=claim");
       live.errors.set("CamundaManagementCluster", "forbidden");

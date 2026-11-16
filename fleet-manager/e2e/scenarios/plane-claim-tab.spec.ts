@@ -33,9 +33,9 @@ type Claim = {
 };
 
 // The scenario applied the claim with kubectl, which owns its fields. The
-// fleet manager does not take a field over, so a change of such a field
-// stops in the review, and a field that no tool owns saves.
-test("a move of the identity mode shows what it does, and a field that kubectl owns stops the save", async ({
+// fleet manager does not take a field over, so a field that kubectl owns
+// stays, and the review names it.
+test("a move of the identity mode names the fields that kubectl keeps, and writes nothing", async ({
   page,
   scenario,
 }) => {
@@ -56,21 +56,17 @@ test("a move of the identity mode shows what it does, and a field that kubectl o
     .click();
 
   const dialog = page.getByRole("dialog", { name: "Review the change" });
-  const effects = dialog.getByRole("list", { name: "What this change does" });
-  await expect(effects).toContainText(
-    "Sign-in moves from OIDC to External Keycloak.",
-  );
-  await expect(effects).toContainText("The first administrator stays.");
-  await expect(effects).toContainText("restart");
-  await expect(dialog.getByLabel(/to confirm/)).toBeVisible();
   const caution = dialog.getByRole("note", { name: "Caution" });
-  await expect(caution).toContainText("another tool set them");
+  await expect(caution).toContainText("another tool also set them");
   await expect(caution).toContainText(
     "spec.management.identityProvider.oidc (kubectl)",
   );
+  await expect(caution).toContainText(
+    "spec.management.identity.admin.claimName (kubectl)",
+  );
+  await expect(dialog.getByText(/Sign-in moves/)).toHaveCount(0);
   await checkPage(page, "plane-claim-review");
 
-  await dialog.getByLabel(/to confirm/).fill("plane-a");
   await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
   const claim = await kubeRequest<Claim>(scenario.admin, "GET", CLAIM);
   expect(claim.spec.management.identityProvider).toEqual({ oidc: {} });

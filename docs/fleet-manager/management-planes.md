@@ -299,15 +299,15 @@ spec:
 
 ### Change the clusters served
 
-**Environments served** has one checkbox for each environment, and the **Cluster labels** of the cluster selector. Match expressions of the selector show as text. Change them in the claim YAML. A change of the labels keeps the match expressions.
+**Environments served** has one checkbox for each environment, and the **Cluster labels** of the cluster selector. Match expressions of the selector show as text. Change them in the claim YAML. A change of the labels keeps the match expressions. A selector without labels serves every cluster in the environments. A claim without a cluster selector serves no cluster.
 
-Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches loses its Console settings and restarts once. **Expected clusters** shows the result that the page expects for each cluster. The operator decides the real result when the plane runs.
+Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches while the plane runs Console loses its Console settings and restarts once. A cluster with basic authentication that detaches while the plane runs Web Modeler loses the Web Modeler user of the plane. **Expected clusters** shows the result that the page expects for each cluster. The operator decides the real result when the plane runs.
 
 In OIDC mode, the list needs the issuer URL of the platform config. Without it, the section says that the preview needs the issuer and lists no cluster.
 
 ### Turn Console and Web Modeler on or off
 
-**Components** has **Run Console** and **Run Web Modeler**. When Console stops, the served clusters lose their Console settings and restart once. When Web Modeler stops, its database stays. An app that you turn off loses its version in the claim. An app that you turn on needs a version in **Versions**.
+**Components** has **Run Console** and **Run Web Modeler**. When Console stops, the served clusters lose their Console settings and restart once. When Web Modeler stops, its database stays, and each served cluster with basic authentication loses the Web Modeler user of the plane. An app that you turn off loses its version in the claim. An app that you turn on needs a version in **Versions**.
 
 ### Change the versions
 
@@ -330,10 +330,26 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 - The apps that restart, and the Optimize of each served cluster when its sign-in settings change.
 - The apps that restart only in some cases, as `may restart` with the case. For example, a change of a database parameter can restart the apps. The database option decides.
 
-A move of the sign-in needs the name of the plane typed before **Save** turns on. In Git mode, the button is **Push to Git**. [Fleet manager settings](settings.md) says how to turn on Git mode.
+A change that moves where users and the served clusters sign in needs the name of the plane typed before **Save** turns on. These changes are:
+
+- A move of the sign-in.
+- Another URL or realm of the External Keycloak.
+- Another platform config in OIDC mode.
+- A change of the access settings while the plane runs its own Keycloak (**Keycloak, run by this plane**).
+
+In Git mode, the button is **Push to Git**. [Fleet manager settings](settings.md) says how to turn on Git mode.
 
 The save carries the version of the claim that the page read. When the claim changed since then, the save writes nothing and says so. Review the change and save it again.
 
-The fleet manager does not change a field that another tool, such as `kubectl apply`, wrote. A change of such a field fails in the review, and nothing is written. When you clear such a field, the field stays in the claim, and the review says so. Change that field with the tool that wrote it.
-
 While the page cannot read a list that the review needs, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
+
+### A claim that another tool applied
+
+The fleet manager does not take over a field that another tool, such as `kubectl apply`, set. The tab can add a field and change a field that only the fleet manager set. For a field that another tool also set, these limits apply:
+
+- A new value fails in the review. The message names the other tool, and nothing is written.
+- A removed field or list item stays in the claim. The review lists each such field with the tool that keeps it. When the change removes nothing else, the review says that the save changes nothing.
+
+To change or remove such a field, make the change with the tool that set it.
+
+The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane, the Claim tab can only add fields. Make each other change in the claim file, and apply the file again.

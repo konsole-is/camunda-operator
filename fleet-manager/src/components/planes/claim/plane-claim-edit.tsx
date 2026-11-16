@@ -22,6 +22,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import {
   type FieldLock,
+  IDENTITY_INITIAL_CLAIM_ANNOTATION,
   type PlaneField,
   planeFields,
   type Step,
@@ -29,7 +30,7 @@ import {
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
-import type { FieldPath } from "@/lib/merge";
+import type { FieldPath, KeptField } from "@/lib/merge";
 import { identityMoveEdits } from "@/lib/planes/edits";
 import {
   type ExternalKeycloakDraft,
@@ -39,11 +40,12 @@ import {
 import {
   type PlaneChangeInput,
   planeImpacts,
-  planeModeMove,
   planeRestarts,
+  planeSignInMoves,
 } from "@/lib/planes/impacts";
-import { environmentNameOf } from "@/lib/policy";
+import { environmentNameOf, equalJSON } from "@/lib/policy";
 import {
+  appliedSession,
   claimAfter,
   type FieldError,
   type LockProvider,
@@ -52,7 +54,6 @@ import {
   planeLocks,
   type Session,
   keptFields,
-  type KeptField,
   validatePlaneClaim,
   valueAt,
 } from "@/lib/session";
@@ -64,8 +65,9 @@ import type { PlanePageData } from "../plane-view";
  * live. claim is undefined for a plane that no claim made, and while the
  * page cannot tell which claim made the plane. unread names each kind that
  * the checks or the impacts of a change read and that the page could not
- * read, or whose watch is out of date. claimUnread says that one of them is
- * the plane or its claim.
+ * read or has not read yet. claimUnread says that one of them is the plane
+ * or its claim. waiting names the kinds of unread that the page has not
+ * read yet.
  */
 export type PlaneClaimSources = {
   name: string;
@@ -81,6 +83,7 @@ export type PlaneClaimSources = {
   registrations: readonly Resource<"PluginRegistration">[];
   requests: readonly Resource<"PluginRequest">[];
   unread: readonly string[];
+  waiting: readonly string[];
   claimUnread: boolean;
 };
 
@@ -124,17 +127,32 @@ const IDENTITY_STEPS: Step[][] = [
 
 /**
  * changesWaitText is the reason that a change of the claim cannot be
- * reviewed while the page could not read kinds.
+ * reviewed while the page could not read the kinds of unread that are not
+ * in waiting, or has not read the kinds of waiting yet.
  */
-export function changesWaitText(kinds: readonly string[]): string {
-  return `Review waits: the page could not read ${kinds.join(", ")}, so what this change does is not known.`;
+export function changesWaitText(
+  unread: readonly string[],
+  waiting: readonly string[] = [],
+): string {
+  const failed = unread.filter((k) => !waiting.includes(k));
+  const parts = [
+    ...(failed.length > 0
+      ? [`the page could not read ${failed.join(", ")}`]
+      : []),
+    ...(waiting.length > 0
+      ? [
+          `${waiting.join(", ")} ${waiting.length === 1 ? "is" : "are"} not current yet`,
+        ]
+      : []),
+  ];
+  return `Review waits: ${parts.join(", and ")}, so what this change does is not known.`;
 }
 
 /**
  * PlaneClaimEditProvider holds the claim edit session of the plane page,
  * through ClaimEditProvider, over claim, the live claim of the plane. It
  * follows the lists of data.claimTab live. pageUnread are the kinds of the
- * page that it could not read, or whose watch is out of date. While a kind
+ * page whose read failed. While a kind
  * that the checks or the impacts read is unread, the session refuses
  * review with one error that names the kinds, and an open review closes.
  * Without actions it opens no session. It needs a GitPushesProvider above
@@ -191,6 +209,7 @@ export function PlaneClaimEditProvider({
     registrations: lists.registrations,
     requests: lists.requests,
     unread,
+    waiting: lists.waiting,
     claimUnread: unread.some((k) => OBJECT_KINDS.includes(k)),
   };
 
@@ -198,6 +217,10 @@ export function PlaneClaimEditProvider({
   // below the session keeps here, and a mode that moveIdentity is moving to.
   const afterRef = useRef<PlaneClaim | undefined>(claim);
   const movingRef = useRef<IdentityModeId | undefined>(undefined);
+  const liveModeRef = useRef(claim?.spec?.management?.identityProvider);
+  useEffect(() => {
+    liveModeRef.current = claim?.spec?.management?.identityProvider;
+  });
   const sourcesRef = useRef(sources);
   useEffect(() => {
     sourcesRef.current = sources;
@@ -206,6 +229,8 @@ export function PlaneClaimEditProvider({
     const after = afterRef.current;
     if (!after) return undefined;
     const { plane, registrations, environment } = sourcesRef.current;
+    const liveOidc = identityModeOf(liveModeRef.current) === "oidc";
+    if (!liveOidc && PAIR_PATHS.includes(path)) return undefined;
     return lockedFields(after, movingRef.current, {
       plane,
       registrations,
@@ -216,16 +241,22 @@ export function PlaneClaimEditProvider({
   const context = planeClaimContext(sources);
   const validate = (s: Session<PlaneClaim>): readonly FieldError[] =>
     unread.length > 0
-      ? [{ message: changesWaitText(unread) }]
+      ? [{ message: changesWaitText(unread, sources.waiting) }]
       : validatePlaneClaim(s, context);
 
+  // The impacts read the claim that the save leaves: a field that another
+  // field manager keeps stays.
   const review = (s: Session<PlaneClaim>): ClaimReviewInput => {
-    const input = planeChangeInput(sources, s);
     const kept = keptFields(s);
+    const applied = appliedSession(s);
+    const nothing = equalJSON(claimAfter(applied).spec, s.claim.spec);
+    const input = planeChangeInput(sources, applied);
     return {
       impacts: [...planeImpacts(input), ...planeRestarts(input)],
-      ...(planeModeMove(s) && { confirm: { typed: name } }),
-      ...(kept.length > 0 && { caution: <KeptFields kept={kept} /> }),
+      ...(planeSignInMoves(input) && { confirm: { typed: name } }),
+      ...(kept.length > 0 && {
+        caution: <KeptFields kept={kept} nothing={nothing} />,
+      }),
     };
   };
   const host: ClaimEditHost<PlaneClaim> = {
@@ -261,17 +292,27 @@ export function PlaneClaimEditProvider({
  * while another field manager owns them.
  */
 export const KEPT_FIELDS_NOTE =
-  "These fields stay in the claim, because another tool set them. The fleet manager does not take a field over. Change them with that tool:";
+  "The save keeps these fields, because another tool also set them, and the fleet manager does not take a field over. Remove them with that tool:";
+/** NOTHING_CHANGES is the note of a save that every kept field undoes. */
+export const NOTHING_CHANGES =
+  "This save changes nothing, because each field that it removes stays.";
 
-// KeptFields shows each field of kept with its field manager.
-function KeptFields({ kept }: { kept: readonly KeptField[] }) {
+// KeptFields shows each field of kept with its field managers.
+function KeptFields({
+  kept,
+  nothing,
+}: {
+  kept: readonly KeptField[];
+  nothing: boolean;
+}) {
   return (
     <div className="flex flex-col gap-1">
+      {nothing && <p>{NOTHING_CHANGES}</p>}
       <p>{KEPT_FIELDS_NOTE}</p>
       <ul className="list-disc pl-5">
         {kept.map((k) => (
           <li key={k.path}>
-            <code className="text-xs">{k.path}</code> ({k.manager})
+            <code className="text-xs">{k.path}</code> ({k.managers.join(", ")})
           </li>
         ))}
       </ul>
@@ -372,7 +413,10 @@ function EditBridge({
                   ? { steps, reset: true as const }
                   : { steps, value };
               })
-            : identityMoveEdits(from.spec, to, external);
+            : [
+                ...identityMoveEdits(from.spec, to, external),
+                ...(to === "oidc" ? recordedPairEdits(sources.plane) : []),
+              ];
         for (const e of edits) {
           const lock = "reset" in e ? reset(e.steps) : set(e.steps, e.value);
           if (lock) return lock;
@@ -382,13 +426,37 @@ function EditBridge({
         movingRef.current = undefined;
       }
     },
-    [afterRef, movingRef, live, set, reset],
+    [afterRef, movingRef, live, set, reset, sources.plane],
   );
   return (
     <PlaneClaimEditContext.Provider value={{ ...sources, edit, moveIdentity }}>
       {children}
     </PlaneClaimEditContext.Provider>
   );
+}
+
+const PAIR_PATHS: readonly FieldPath[] = [
+  "spec.management.identity.admin.claimName",
+  "spec.management.identity.admin.claimValue",
+];
+
+// recordedPairEdits sets the claim pair that Management Identity of plane
+// started with, as the operator records it: "<claimName>=<claimValue>".
+function recordedPairEdits(
+  plane: PlaneClaimSources["plane"],
+): { steps: Step[]; value: string }[] {
+  const recorded =
+    plane?.metadata?.annotations?.[IDENTITY_INITIAL_CLAIM_ANNOTATION];
+  const split = recorded?.indexOf("=") ?? -1;
+  if (!recorded || split < 0) return [];
+  const steps = (name: string) =>
+    ["spec", "management", "identity", "admin", name].map((field) => ({
+      field,
+    }));
+  return [
+    { steps: steps("claimName"), value: recorded.slice(0, split) },
+    { steps: steps("claimValue"), value: recorded.slice(split + 1) },
+  ];
 }
 
 // lockedFields returns planeLocks of the fields of claim, read in the mode
@@ -416,9 +484,9 @@ function lockedFields(
 }
 
 // useClaimTabLists follows the lists of data.claimTab live. unread names
-// each kind whose read failed, and each kind whose watch answered once and
-// is out of date now. Before its first answer, a list is the read of the
-// server.
+// each kind whose read failed or that the page has not read yet, and
+// waiting the kinds that it has not read yet. Before its first answer, a
+// list is the read of the server.
 function useClaimTabLists(data: PlanePageData) {
   const initial = data.claimTab;
   const { namespace, name } = data;
@@ -465,14 +533,15 @@ function useClaimTabLists(data: PlanePageData) {
     .filter(({ kind }, i) => fresh[i] && !answered.has(kind))
     .map(({ kind }) => kind);
   if (added.length > 0) setAnswered(new Set([...answered, ...added]));
+  const waiting = initial
+    ? []
+    : followed.map(({ kind }) => kind).filter((kind) => !answered.has(kind));
   const unread = [
     ...results.flatMap(([kind, r]) => (r.error ? [kind] : [])),
     ...(initial?.readErrors ?? [])
       .map((e) => e.kind)
       .filter((kind) => !answered.has(kind)),
-    ...followed
-      .filter(({ kind }, i) => answered.has(kind) && !fresh[i])
-      .map(({ kind }) => kind),
+    ...waiting,
   ];
   return {
     clusters: results[0][1].items,
@@ -481,6 +550,7 @@ function useClaimTabLists(data: PlanePageData) {
     registrations: results[3][1].items,
     requests: results[4][1].items,
     unread: [...new Set(unread)],
+    waiting,
   };
 }
 

@@ -5,7 +5,10 @@ import { useContext } from "react";
 import { errorsAt } from "@/components/cluster/settings-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import { SecretRefsReaderContext } from "@/components/fleet/namespaced-secret-ref-picker";
-import { SecretRefPicker } from "@/components/fleet/secret-ref-picker";
+import {
+  SecretRefPicker,
+  type SecretKeyRef,
+} from "@/components/fleet/secret-ref-picker";
 import {
   ExternalKeycloakFields,
   IdentityCards,
@@ -20,7 +23,7 @@ import {
 } from "@/lib/planes/identity";
 import { FIRST_ADMIN_STAYS, planeModeMove } from "@/lib/planes/impacts";
 import { claimAfter } from "@/lib/session";
-import { ClaimTextField, FieldErrors } from "./fields";
+import { ClaimTextField, FieldErrors, useSecretPick } from "./fields";
 import { planeFieldsOf, usePlaneClaimEdit } from "./plane-claim-edit";
 import { UrlFields } from "./plane-section-panel";
 
@@ -32,6 +35,10 @@ const ADMIN = at("spec", "management", "identity", "admin");
 // A picker that starts before the list of Secrets is known would report
 // its Secret as gone, and the panel would remove it from the claim.
 const READING_SECRETS = "Reading the Secrets of the namespace.";
+
+/** RECORDED_PAIR is the note on the claim pair that a move back to OIDC takes from the record of the plane. */
+export const RECORDED_PAIR =
+  "The plane was set up with this administrator claim. Management Identity keeps it in its database, so it cannot change.";
 
 /**
  * IdentityPanel edits where the users of the plane sign in, and the first
@@ -45,10 +52,16 @@ export function IdentityPanel() {
   const plane = usePlaneClaimEdit();
   const { secrets } = useContext(SecretRefsReaderContext)(plane.namespace);
   const edit = plane.edit;
-  // An editor that keeps its own text starts again after a discard or a
-  // write.
-  const { generation } = useEditorGeneration(edit?.pending ?? 0);
   const session = edit?.session;
+  const liveManagement = session?.claim.spec?.management;
+  // A picker starts again after a discard, a write, or a new reference in
+  // the live claim.
+  const { generation, own } = useEditorGeneration(edit?.pending ?? 0, [
+    liveManagement?.identity?.admin?.passwordSecretRef,
+    liveManagement?.identityProvider?.externalKeycloak?.caBundleSecretRef,
+  ]);
+  const passwordPick = useSecretPick();
+  const caPick = useSecretPick();
   if (!edit || !session) return null;
   const after = claimAfter(session);
   const management = after.spec?.management;
@@ -90,10 +103,15 @@ export function IdentityPanel() {
         draft.adminSecret,
       );
     if (JSON.stringify(draft.caBundle) !== JSON.stringify(before.caBundle))
-      if (draft.caBundle)
-        edit.set([...EXTERNAL, { field: "caBundleSecretRef" }], draft.caBundle);
-      else edit.reset([...EXTERNAL, { field: "caBundleSecretRef" }]);
+      setCaBundle(draft.caBundle);
   };
+  const setCaBundle = caPick.only(
+    own((ref: ExternalKeycloakDraft["caBundle"]) =>
+      ref
+        ? edit.set([...EXTERNAL, { field: "caBundleSecretRef" }], ref)
+        : edit.reset([...EXTERNAL, { field: "caBundleSecretRef" }]),
+    ),
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -122,7 +140,7 @@ export function IdentityPanel() {
         <p className="text-sm text-muted">{READING_SECRETS}</p>
       )}
       {mode === "externalKeycloak" && secrets && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" onChange={caPick.onChange}>
           <ExternalKeycloakFields
             key={generation}
             value={externalKeycloakDraftOf(
@@ -143,6 +161,9 @@ export function IdentityPanel() {
           First administrator
         </h3>
         {crossed && <p className="text-sm text-muted">{FIRST_ADMIN_STAYS}</p>}
+        {crossed && mode === "oidc" && lockOf("admin.claimName") && (
+          <p className="text-sm text-muted">{RECORDED_PAIR}</p>
+        )}
         {mode === "oidc" ? (
           (["claimName", "claimValue"] as const).map((name) => {
             const label = name === "claimName" ? "Claim name" : "Claim value";
@@ -184,7 +205,10 @@ export function IdentityPanel() {
               errors={errors("email")}
               onChange={setAdmin("email")}
             />
-            <div className="flex max-w-md flex-col gap-1">
+            <div
+              className="flex max-w-md flex-col gap-1"
+              onChange={passwordPick.onChange}
+            >
               <span className="text-sm font-medium text-text">
                 Password Secret (optional)
               </span>
@@ -194,14 +218,19 @@ export function IdentityPanel() {
                   label="Password Secret"
                   secrets={secrets}
                   defaultValue={admin.passwordSecretRef ?? undefined}
-                  onChange={(secret) =>
-                    secret
-                      ? edit.set(
-                          [...ADMIN, { field: "passwordSecretRef" }],
-                          secret,
-                        )
-                      : edit.reset([...ADMIN, { field: "passwordSecretRef" }])
-                  }
+                  onChange={passwordPick.only(
+                    own((secret: SecretKeyRef | undefined) =>
+                      secret
+                        ? edit.set(
+                            [...ADMIN, { field: "passwordSecretRef" }],
+                            secret,
+                          )
+                        : edit.reset([
+                            ...ADMIN,
+                            { field: "passwordSecretRef" },
+                          ]),
+                    ),
+                  )}
                 />
               ) : (
                 <p className="text-sm text-muted">{READING_SECRETS}</p>

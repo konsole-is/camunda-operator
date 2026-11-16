@@ -26,7 +26,9 @@ export {
   fieldManagers,
   wholeFieldManagers,
   isClaimManager,
+  keptRemovals,
   lastChanged,
+  type KeptField,
   type ManagedFieldsEntry,
   type ManagedObject,
 } from "./managers";

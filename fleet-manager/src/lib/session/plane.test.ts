@@ -974,6 +974,13 @@ describe("validatePlaneClaim and the claim that Management Identity recorded", (
     ]);
   });
 
+  it("lets a deletion policy change pass while the live pair already differs from the recorded one", () => {
+    const live = structuredClone(oidcClaim());
+    live.spec.management.identity.admin.claimValue = "43";
+    const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(validatePlaneClaim(s, ctx({ plane: recorded }))).toEqual([]);
+  });
+
   it("accepts a recorded claim whose value holds an equals sign", () => {
     const plane = {
       metadata: {

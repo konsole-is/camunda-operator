@@ -6,6 +6,7 @@ import {
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
   isClaimManager,
+  keptRemovals,
   lastChanged,
   wholeFieldManagers,
 } from "./managers";
@@ -206,5 +207,193 @@ describe("lastChanged", () => {
       lastChanged({ metadata: { managedFields: [{ manager: "x" }] } }),
     ).toBeUndefined();
     expect(lastChanged({})).toBeUndefined();
+  });
+});
+
+describe("keptRemovals", () => {
+  // The claim and the managedFields entry of kubectl as plane-ready of the
+  // page scenarios holds them, cut to the fields that the cases read.
+  const spec = () => ({
+    deletionPolicy: "Delete",
+    environments: ["platform", "qa"],
+    management: {
+      identityProvider: { oidc: {} },
+      identity: { admin: { claimName: "email", claimValue: "a@example.com" } },
+    },
+    plugins: [
+      {
+        registration: "existing-database-configs",
+        section: "management-database",
+        parameters: { identity: "identity-db" },
+      },
+    ],
+  });
+  const kubectl = {
+    manager: "kubectl",
+    operation: "Apply",
+    time: "2026-01-01T00:00:00Z",
+    fieldsV1: {
+      "f:spec": {
+        "f:environments": { 'v:"platform"': {}, 'v:"qa"': {} },
+        "f:management": {
+          "f:identity": {
+            "f:admin": { "f:claimName": {}, "f:claimValue": {} },
+          },
+          "f:identityProvider": { "f:oidc": {} },
+        },
+        "f:plugins": {
+          'k:{"registration":"existing-database-configs","section":"management-database"}':
+            {
+              ".": {},
+              "f:parameters": { "f:identity": {} },
+              "f:registration": {},
+              "f:section": {},
+            },
+        },
+      },
+    },
+  };
+  // After a save of the deletion policy the app owns every field of the
+  // claim, and kubectl still owns its own.
+  const app = {
+    manager: APP_FIELD_MANAGER,
+    operation: "Apply",
+    time: "2026-01-02T00:00:00Z",
+    fieldsV1: {
+      "f:spec": {
+        "f:deletionPolicy": {},
+        ...kubectl.fieldsV1["f:spec"],
+      },
+    },
+  };
+  const status = {
+    manager: "manager",
+    operation: "Update",
+    subresource: "status",
+    fieldsV1: { "f:status": { ".": {}, "f:environment": {} } },
+  };
+  const live = { metadata: { managedFields: [kubectl, app, status] } };
+
+  it("names a field that another manager still owns after a save of the app", () => {
+    const after = spec();
+    after.management = {
+      identityProvider: { keycloak: {} },
+      identity: { admin: { username: "admin" } },
+    } as never;
+    const { kept, result } = keptRemovals(
+      live,
+      { spec: spec() },
+      { spec: after },
+    );
+    expect(kept).toEqual([
+      { path: "spec.management.identityProvider.oidc", managers: ["kubectl"] },
+      {
+        path: "spec.management.identity.admin.claimName",
+        managers: ["kubectl"],
+      },
+      {
+        path: "spec.management.identity.admin.claimValue",
+        managers: ["kubectl"],
+      },
+    ]);
+    expect(result).toEqual({
+      spec: {
+        ...after,
+        management: {
+          identityProvider: { keycloak: {}, oidc: {} },
+          identity: {
+            admin: {
+              username: "admin",
+              claimName: "email",
+              claimValue: "a@example.com",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("names an item of a set list, and keeps it in the result", () => {
+    const after = { ...spec(), environments: ["platform"] };
+    const { kept, result } = keptRemovals(
+      live,
+      { spec: spec() },
+      { spec: after },
+    );
+    expect(kept).toEqual([
+      { path: 'spec.environments[="qa"]', managers: ["kubectl"] },
+    ]);
+    expect(result).toEqual({ spec: spec() });
+  });
+
+  it("names an item of a map list as a whole", () => {
+    const after = { ...spec(), plugins: [] };
+    const { kept, result } = keptRemovals(
+      live,
+      { spec: spec() },
+      { spec: after },
+    );
+    expect(kept).toEqual([
+      {
+        path: "spec.plugins[registration=existing-database-configs,section=management-database]",
+        managers: ["kubectl"],
+      },
+    ]);
+    expect(result).toEqual({ spec: spec() });
+  });
+
+  it("names a nested map key inside an item of a map list", () => {
+    const after = spec();
+    after.plugins[0].parameters = {} as never;
+    const { kept } = keptRemovals(live, { spec: spec() }, { spec: after });
+    expect(kept).toEqual([
+      {
+        path: "spec.plugins[registration=existing-database-configs,section=management-database].parameters.identity",
+        managers: ["kubectl"],
+      },
+    ]);
+  });
+
+  it("names every manager of a field, in the order of the claim, and none that only the applier owns", () => {
+    const edit = {
+      manager: "kubectl-edit",
+      operation: "Update",
+      fieldsV1: {
+        "f:spec": {
+          "f:deletionPolicy": {},
+          "f:environments": { 'v:"qa"': {} },
+        },
+      },
+    };
+    const after = { ...spec(), environments: ["platform"] } as Record<
+      string,
+      unknown
+    >;
+    delete after.deletionPolicy;
+    const { kept } = keptRemovals(
+      { metadata: { managedFields: [kubectl, app, edit] } },
+      { spec: spec() },
+      { spec: after },
+    );
+    expect(kept).toEqual([
+      { path: "spec.deletionPolicy", managers: ["kubectl-edit"] },
+      {
+        path: 'spec.environments[="qa"]',
+        managers: ["kubectl", "kubectl-edit"],
+      },
+    ]);
+  });
+
+  it("keeps nothing for a change that removes nothing, or without managed fields", () => {
+    const after = { ...spec(), deletionPolicy: "Orphan" };
+    expect(keptRemovals(live, { spec: spec() }, { spec: after })).toEqual({
+      kept: [],
+      result: { spec: after },
+    });
+    const gone = { ...spec(), environments: [] };
+    expect(keptRemovals({}, { spec: spec() }, { spec: gone })).toEqual({
+      kept: [],
+      result: { spec: gone },
+    });
   });
 });

@@ -68,6 +68,168 @@ export function lastChanged(object: ManagedObject): string | undefined {
   return newest === undefined ? undefined : new Date(newest).toISOString();
 }
 
+/** KeptField is a field that an apply leaves out and that managers keep. */
+export type KeptField = { path: FieldPath; managers: string[] };
+
+/**
+ * keptRemovals returns each field of before that after leaves out while a
+ * manager other than applier owns it in live.metadata.managedFields, with
+ * every such manager. An apply of after without force keeps these fields,
+ * so result is after with each of them back. An item of a list is one
+ * field. A field that a manager owns as a whole names no field below it.
+ * The fields are in the order of before.
+ */
+export function keptRemovals(
+  live: ManagedObject,
+  before: object,
+  after: object,
+  applier: string = APP_FIELD_MANAGER,
+): { kept: KeptField[]; result: object } {
+  const tree = newOwners();
+  for (const entry of live.metadata?.managedFields ?? []) {
+    if (!entry.manager || entry.manager === applier || !entry.fieldsV1)
+      continue;
+    addOwner(tree, entry.fieldsV1 as Record<string, unknown>, entry.manager);
+  }
+  const kept: KeptField[] = [];
+  const result = restore(tree, before, after, "", kept) as object;
+  return { kept, result };
+}
+
+// Owners is the merged FieldsV1 tree of several managers: the managers
+// that own each node, by the FieldsV1 key of each child.
+type Owners = { managers: string[]; children: Map<string, Owners> };
+
+function newOwners(): Owners {
+  return { managers: [], children: new Map() };
+}
+
+function addOwner(
+  at: Owners,
+  fields: Record<string, unknown>,
+  manager: string,
+): void {
+  for (const [key, sub] of Object.entries(fields)) {
+    if (key === ".") {
+      own(at, manager);
+      continue;
+    }
+    let next = at.children.get(key);
+    if (next === undefined) {
+      next = newOwners();
+      at.children.set(key, next);
+    }
+    const children = isRecord(sub) ? sub : {};
+    if (Object.keys(children).length === 0) own(next, manager);
+    else addOwner(next, children, manager);
+  }
+}
+
+function own(at: Owners, manager: string): void {
+  if (!at.managers.includes(manager)) at.managers.push(manager);
+}
+
+// restore returns after with each value of before that owners own and
+// after leaves out put back, and adds each such value to kept.
+function restore(
+  owners: Owners,
+  before: unknown,
+  after: unknown,
+  path: FieldPath,
+  kept: KeptField[],
+): unknown {
+  if (after === undefined && owners.managers.length > 0) {
+    kept.push({ path, managers: [...owners.managers] });
+    return before;
+  }
+  if (Array.isArray(before)) {
+    let items = Array.isArray(after) ? after : undefined;
+    let changed = false;
+    for (const item of before) {
+      const found = itemOwners(owners, item);
+      if (found === undefined) continue;
+      const index =
+        items?.findIndex((candidate) => found.matches(candidate)) ?? -1;
+      const current = index < 0 ? undefined : items![index];
+      const next = restore(found.owners, item, current, found.path(path), kept);
+      if (next === current) continue;
+      changed = true;
+      items =
+        index < 0
+          ? [...(items ?? []), next]
+          : items!.map((x, i) => (i === index ? next : x));
+    }
+    return changed ? items : after;
+  }
+  if (isRecord(before)) {
+    let fields = isRecord(after) ? after : undefined;
+    let changed = false;
+    for (const [key, value] of Object.entries(before)) {
+      const below = owners.children.get(`f:${key}`);
+      if (below === undefined) continue;
+      const current = fields?.[key];
+      const next = restore(below, value, current, child(path, key), kept);
+      if (next === current) continue;
+      changed = true;
+      fields = { ...(fields ?? {}), [key]: next };
+    }
+    return changed ? fields : after;
+  }
+  return after;
+}
+
+// itemOwners finds the node of item of a list: a k: node whose keys item
+// holds, or the v: node of its value.
+function itemOwners(
+  owners: Owners,
+  item: unknown,
+):
+  | {
+      owners: Owners;
+      matches: (candidate: unknown) => boolean;
+      path: (list: FieldPath) => FieldPath;
+    }
+  | undefined {
+  for (const [key, node] of owners.children) {
+    if (!key.startsWith("k:")) continue;
+    let keys: Record<string, unknown>;
+    try {
+      keys = JSON.parse(key.slice(2)) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const matches = (candidate: unknown) =>
+      isRecord(candidate) &&
+      Object.entries(keys).every(([k, v]) => sameJSON(candidate[k], v));
+    if (matches(item))
+      return { owners: node, matches, path: (list) => keyedItem(list, keys) };
+  }
+  const node = owners.children.get(`v:${JSON.stringify(item)}`);
+  if (node === undefined) return undefined;
+  return {
+    owners: node,
+    matches: (candidate) => sameJSON(candidate, item),
+    path: (list) => valueItem(list, item),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sameJSON(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((k) => Object.hasOwn(right, k) && sameJSON(left[k], right[k]))
+  );
+}
+
 function owners(
   live: ManagedObject,
   keep: (whole: boolean) => boolean,
