@@ -3,6 +3,10 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
+import {
+  MANAGEMENT_AUTH_CONFIGS_UNREAD,
+  NO_MANAGEMENT_AUTH_CONFIG,
+} from "@/lib/clusters/attachments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   type ClusterCreateData,
@@ -12,17 +16,23 @@ import {
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   errors: {} as Record<string, string>,
+  asked: new Set<string>(),
+  fresh: new Set<string>(),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
-  useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: live.objects[kind] ?? initial,
-    error: live.errors[kind],
-  }),
+  useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
+    live.asked.add(kind);
+    return { items: live.objects[kind] ?? initial, error: live.errors[kind] };
+  },
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map((l) => live.fresh.has(l.kind)),
 }));
 
 beforeEach(() => {
   live.objects = {};
   live.errors = {};
+  live.asked = new Set();
+  live.fresh = new Set();
 });
 afterEach(cleanup);
 
@@ -51,11 +61,40 @@ function prod(
         access: { allowed: ["gateway", "internal"], default: "gateway" },
       },
       presets: { camundaCluster: ["small"] },
+      releases: {
+        allowed: ["camunda-8-8", "camunda-8-9"],
+        default: "camunda-8-9",
+      },
+      platformConfigRef: "basic",
       ...(namespaceCreation && { namespaceCreation }),
     },
     status: READY(),
   };
 }
+
+const release = (name: string, version: string) =>
+  ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaRelease",
+    metadata: { name },
+    spec: { version },
+  }) as unknown as Resource<"CamundaRelease">;
+
+const platformConfig = (name: string) =>
+  ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaPlatformConfig",
+    metadata: { name },
+    spec: {},
+  }) as unknown as Resource<"CamundaPlatformConfig">;
+
+const managementAuthConfig = (name: string) =>
+  ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "ManagementAuthConfig",
+    metadata: { name },
+    spec: {},
+  }) as unknown as Resource<"ManagementAuthConfig">;
 
 const accessSection: Resource<"PluginSection"> = {
   apiVersion: "plugins.camunda.io/v1alpha1",
@@ -171,6 +210,13 @@ function data(over: Partial<ClusterCreateData> = {}): ClusterCreateData {
     databaseServerPresets: [],
     secondaryStorageConfigs: [],
     objectStorageConfigs: [],
+    releases: [
+      release("camunda-8-8", "8.8.4"),
+      release("camunda-8-9", "8.9.9"),
+    ],
+    platformConfigs: [platformConfig("basic"), platformConfig("oidc")],
+    managementAuthConfigs: [managementAuthConfig("central")],
+    readErrors: [],
     ...over,
   };
 }
@@ -187,6 +233,26 @@ async function fillBasics(name: string) {
   await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
   await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
 }
+
+const heading = (name: string) =>
+  screen.queryByRole("heading", { level: 2, name });
+
+// toStep fills step 1 and clicks Next until the step of label shows.
+async function toStep(label: string, name = "search") {
+  await fillBasics(name);
+  for (let i = 0; i < 4 && !heading(label); i++) {
+    if (next().disabled) break;
+    await userEvent.click(next());
+  }
+  expect(heading(label)).toBeTruthy();
+}
+
+const stepButton = (label: string) =>
+  screen.getByRole("button", { name: new RegExp(label) });
+
+const footer = () =>
+  document.getElementById(next().getAttribute("aria-describedby") ?? "")
+    ?.textContent ?? "";
 
 describe("ClusterCreateFlow", () => {
   it("shows five steps", () => {
@@ -607,4 +673,516 @@ describe("ClusterCreateFlow", () => {
     ).toBeTruthy();
     expect(next().disabled).toBe(true);
   });
+
+  it("opens step 3 with the release and platform config of the environment", async () => {
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await toStep("Cluster settings");
+    expect(
+      (screen.getByRole("combobox", { name: "Release" }) as HTMLSelectElement)
+        .value,
+    ).toBe("camunda-8-9");
+    expect(
+      (
+        screen.getByRole("combobox", {
+          name: "Platform config",
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe("basic");
+    expect(next().disabled).toBe(false);
+  });
+
+  it("blocks step 3 without a platform config", async () => {
+    const without = prod();
+    delete without.spec.platformConfigRef;
+    render(
+      <ClusterCreateFlow
+        initial={data({ environments: [without], accessRequests: [] })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain("Cluster settings: Pick a platform config.");
+  });
+
+  it("blocks step 3, not step 1, while the releases cannot be read", async () => {
+    live.objects.CamundaRelease = [];
+    live.errors.CamundaRelease = "forbidden";
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+    expect(footer()).not.toContain("Environment and name:");
+    expect(
+      screen.getByRole("option", { name: "Could not read the releases" }),
+    ).toBeTruthy();
+  });
+
+  it("blocks step 3 while the platform configs cannot be read, and names no platform config as missing", async () => {
+    live.objects.CamundaPlatformConfig = [];
+    live.errors.CamundaPlatformConfig = "forbidden";
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+    expect(
+      screen.getByRole("option", {
+        name: "Could not read the platform configs",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("blocks step 4, not step 3, while the ManagementAuthConfigs cannot be read", async () => {
+    live.objects.ManagementAuthConfig = [];
+    live.errors.ManagementAuthConfig = "forbidden";
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Attachments");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
+    );
+    expect(footer()).not.toContain("Cluster settings:");
+    expect(screen.queryByText(NO_MANAGEMENT_AUTH_CONFIG)).toBeNull();
+    expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
+  });
+
+  it("blocks step 3 on a failed server read of the releases while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          accessRequests: [],
+          releases: [],
+          readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
+        })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+    expect(
+      screen.getByRole("option", { name: "Could not read the releases" }),
+    ).toBeTruthy();
+  });
+
+  it("blocks step 3 on a failed server read of the platform configs while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          accessRequests: [],
+          platformConfigs: [],
+          readErrors: [{ kind: "CamundaPlatformConfig", message: "forbidden" }],
+        })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+  });
+
+  it("blocks step 4 on a failed server read of the ManagementAuthConfigs while the watch has not answered", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={{
+          ...attachmentData(),
+          managementAuthConfigs: [],
+          readErrors: [{ kind: "ManagementAuthConfig", message: "forbidden" }],
+        }}
+      />,
+    );
+    await toStep("Attachments");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
+    );
+    expect(screen.queryByText(NO_MANAGEMENT_AUTH_CONFIG)).toBeNull();
+    expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
+  });
+
+  it("forgets a failed server read once the watch sends the releases", async () => {
+    const initial = data({
+      accessRequests: [],
+      releases: [],
+      readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
+    });
+    const { rerender } = render(<ClusterCreateFlow initial={initial} />);
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+
+    live.objects.CamundaRelease = [release("camunda-8-9", "8.9.9")];
+    live.fresh.add("CamundaRelease");
+    rerender(<ClusterCreateFlow initial={initial} />);
+
+    expect(footer()).not.toContain("could not read");
+    expect(next().disabled).toBe(false);
+  });
+
+  it("keeps the step 3 and 4 picks after Back and Next", async () => {
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Cluster settings");
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Release" }),
+      "camunda-8-8",
+    );
+    await userEvent.click(next());
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Back up on a schedule" }),
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(next());
+    expect(
+      (screen.getByRole("combobox", { name: "Release" }) as HTMLSelectElement)
+        .value,
+    ).toBe("camunda-8-8");
+    await userEvent.click(next());
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Back up on a schedule" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Schedule (cron, UTC)",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("0 2 * * *");
+  });
+
+  it("drops the typed Optimize URL once an access option fills it", async () => {
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Storage and access");
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Attach Optimize" }),
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "External URL" }),
+      "https://optimize.example.com",
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/^Gateway/));
+    await userEvent.click(next());
+    await userEvent.click(next());
+
+    // The locked row shows the URL of the draft first, so the typed URL
+    // would show here while the draft still held it.
+    const group = screen.getByRole("group", { name: "External URL" });
+    expect(within(group).getByText("Filled by Access")).toBeTruthy();
+    expect(
+      within(group).getByText("Known once the access option is ready"),
+    ).toBeTruthy();
+    expect(
+      within(group).queryByText("https://optimize.example.com"),
+    ).toBeNull();
+  });
+
+  it("drops a whole cluster value once an access option fills it", async () => {
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Storage and access");
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(next());
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "externalUrl" }),
+      "https://orders.example.com",
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/^Gateway/));
+    await userEvent.click(next());
+    const url = screen.getAllByRole("group", { name: "externalUrl" })[0];
+    expect(within(url).getByText("Filled by Access")).toBeTruthy();
+    expect(next().disabled).toBe(false);
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(next());
+    expect(
+      (screen.getByRole("textbox", { name: "externalUrl" }) as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  it("drops service account annotations once an identity option fills them", async () => {
+    render(<ClusterCreateFlow initial={identityData()} />);
+    await toStep("Storage and access");
+    await userEvent.click(radio(/No identity/));
+    await userEvent.click(next());
+    const row = () =>
+      screen.getAllByRole("group", { name: "serviceAccount.annotations" })[0];
+    await userEvent.click(
+      within(row()).getByRole("button", { name: "Add an entry" }),
+    );
+    await userEvent.type(
+      within(row()).getByRole("textbox", { name: "Key" }),
+      "role",
+    );
+    await userEvent.type(
+      within(row()).getByRole("textbox", { name: "Value" }),
+      "orders",
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/^IRSA/));
+    await userEvent.click(next());
+    expect(within(row()).getByText("Filled by Identity")).toBeTruthy();
+    expect(next().disabled).toBe(false);
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/No identity/));
+    await userEvent.click(next());
+    expect(within(row()).queryByRole("textbox", { name: "Key" })).toBeNull();
+  });
+
+  it("stops on a step 2 error that a release pick causes", async () => {
+    const pinned: Resource<"PluginRegistration"> = {
+      ...gateway,
+      metadata: { name: "pinned" },
+      spec: {
+        ...gateway.spec,
+        label: "Pinned",
+        parameters: {
+          type: "object",
+          properties: {
+            releaseRef: { type: "string", enum: ["camunda-8-9"] },
+          },
+        },
+      },
+    };
+    const environment = prod();
+    environment.spec.sections = {
+      access: { allowed: ["pinned"], default: "pinned", required: true },
+    };
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          environments: [environment],
+          registrations: [pinned],
+          accessRequests: [],
+        })}
+      />,
+    );
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(false);
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Release" }),
+      "camunda-8-8",
+    );
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain("Storage and access:");
+  });
+
+  it("blocks step 4 on a count with an error until the schedule is turned off", async () => {
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Attachments");
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Back up on a schedule" }),
+    );
+    expect(next().disabled).toBe(false);
+    await userEvent.type(
+      screen.getByRole("spinbutton", { name: "Completed backups to keep" }),
+      "1.5",
+    );
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Attachments: Completed backups to keep: Enter a whole number",
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Back up on a schedule" }),
+    );
+    expect(next().disabled).toBe(false);
+  });
+
+  it("asks for nothing on a new namespace with no Secrets to read", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          sections: [],
+          environments: [prod({ allowed: true })],
+        })}
+      />,
+    );
+    await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "c1");
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    );
+    await userEvent.type(
+      screen.getAllByRole("textbox", { name: "Name" })[1],
+      "team-new",
+    );
+    await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
+    await userEvent.click(next());
+    await userEvent.click(next());
+    expect(heading("Cluster settings")).toBeTruthy();
+    expect(live.asked.has("Secret")).toBe(false);
+  });
+
+  it("names a Secret read error and does not block step 3", async () => {
+    live.errors.Secret = "forbidden";
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await toStep("Cluster settings");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read Secret: forbidden",
+    );
+    expect(next().disabled).toBe(false);
+  });
 });
+
+// attachmentData gives step 2 a backup storage option, Elasticsearch as
+// secondary storage, and an access section whose Gateway option gives the
+// Optimize URL. Each section starts with its option picked.
+function attachmentData(): ClusterCreateData {
+  const slotted = (
+    name: string,
+    label: string,
+    slot: string,
+    order: number,
+    emptyOptionLabel?: string,
+  ) =>
+    ({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginSection",
+      metadata: { name },
+      spec: {
+        appliesTo: ["CamundaClusterClaim"],
+        label,
+        selection: "One",
+        order,
+        slot,
+        ...(emptyOptionLabel && { emptyOptionLabel }),
+      },
+    }) as unknown as Resource<"PluginSection">;
+  const bucket: Resource<"PluginRegistration"> = {
+    ...gateway,
+    metadata: { name: "bucket" },
+    spec: {
+      ...gateway.spec,
+      sections: ["backup-storage"],
+      label: "Bucket",
+      parameterValues: {},
+    },
+  };
+  const elasticsearch: Resource<"PluginRegistration"> = {
+    ...gateway,
+    metadata: { name: "elasticsearch" },
+    spec: {
+      ...gateway.spec,
+      sections: ["secondary-storage"],
+      label: "New Elasticsearch cluster",
+      controller: { name: "camunda-operator", version: "0.0.0" },
+      parameters: {
+        type: "object",
+        properties: { preset: { type: "string", title: "Preset" } },
+      },
+      parameterValues: {},
+    },
+  };
+  const access: Resource<"PluginRegistration"> = {
+    ...gateway,
+    spec: {
+      ...gateway.spec,
+      outputs: [{ key: "externalUrl" }, { key: "optimizeUrl" }],
+    },
+  };
+  const environment = prod();
+  environment.spec.sections = {
+    access: { allowed: ["gateway"], default: "gateway" },
+    "backup-storage": { allowed: ["bucket"], default: "bucket" },
+    "secondary-storage": {
+      allowed: ["elasticsearch"],
+      default: "elasticsearch",
+      required: true,
+    },
+  };
+  environment.spec.presets = {
+    ...environment.spec.presets,
+    elasticsearchCluster: ["search-small"],
+  };
+  environment.spec.parameters = {
+    elasticsearch: { preset: { value: "search-small" } },
+  };
+  return data({
+    environments: [environment],
+    sections: [
+      slotted(
+        "backup-storage",
+        "Backup storage",
+        "backupStorage",
+        40,
+        "No backups",
+      ),
+      slotted("secondary-storage", "Secondary storage", "secondaryStorage", 50),
+      slotted(
+        "access",
+        "Access",
+        "externalAccess",
+        60,
+        "No access from outside",
+      ),
+    ],
+    registrations: [access, bucket, elasticsearch],
+    accessRequests: [],
+    elasticsearchPresets: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "ElasticsearchClusterPreset",
+        metadata: { name: "search-small" },
+        spec: { cluster: { replicas: 1 } },
+      } as unknown as Resource<"ElasticsearchClusterPreset">,
+    ],
+  });
+}
+
+// identityData is attachmentData with an identity section that fills the
+// service account annotations and offers no option by default.
+function identityData(): ClusterCreateData {
+  const base = attachmentData();
+  const identity = {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginSection",
+    metadata: { name: "identity" },
+    spec: {
+      appliesTo: ["CamundaClusterClaim"],
+      label: "Identity",
+      selection: "One",
+      order: 70,
+      slot: "workloadIdentity",
+      emptyOptionLabel: "No identity",
+    },
+  } as unknown as Resource<"PluginSection">;
+  const irsa: Resource<"PluginRegistration"> = {
+    ...gateway,
+    metadata: { name: "irsa" },
+    spec: {
+      ...gateway.spec,
+      sections: ["identity"],
+      label: "IRSA",
+      parameterValues: {},
+    },
+  };
+  const [environment] = base.environments;
+  environment.spec.sections = {
+    ...environment.spec.sections,
+    identity: { allowed: ["irsa"] },
+  };
+  return {
+    ...base,
+    sections: [...base.sections, identity],
+    registrations: [...base.registrations, irsa],
+  };
+}
