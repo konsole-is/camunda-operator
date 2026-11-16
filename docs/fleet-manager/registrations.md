@@ -12,7 +12,7 @@ Above its options, each group says three things about its section:
 
 - The field that the claim sets from the option that it picks, for example `Fills CamundaCluster spec.backupStorageRef`. A field of a management plane ends with `for a management plane`. A section that only gives values to other sections, such as **Encryption key**, shows `Fills no field`.
 - Whether a claim picks one option or many: `Pick one` or `Pick many`.
-- The empty option that a claim can pick in place of an option, for example `Empty option: No backups`. A section without one shows `No empty option`, and a claim must pick an option there.
+- The empty option that a claim can pick in place of an option, for example `Empty option: No backups`. A section without one shows `No empty option`. The setting **Required** of an environment decides if a claim must pick an option. See [Sections and options](environments.md#sections-and-options).
 
 A section without a registration shows `No option is installed for this section.`
 
