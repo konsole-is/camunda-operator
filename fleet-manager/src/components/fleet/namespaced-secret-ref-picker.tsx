@@ -162,8 +162,6 @@ function SecretAndKey({
 }) {
   const read = useContext(SecretRefsReaderContext);
   const { secrets: listed, error } = read(picked.namespace);
-  // A list that could not be read is not known, so it marks nothing as not
-  // found.
   const secrets = error ? undefined : listed;
   const keys = secrets?.find((s) => s.name === picked.name)?.keys;
   const keyMissing =
