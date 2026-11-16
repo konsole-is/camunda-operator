@@ -10,6 +10,8 @@ import {
   ENVIRONMENT_LABEL,
   OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
+  SECTION_LABEL,
+  ACCESS_SECTION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
 import {
@@ -156,7 +158,6 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     ],
     releases: [],
     storage: [],
-    accessRequests: [],
     requests: [],
     pods: [brokerPod(0), brokerPod(1), brokerPod(2)],
     podSelector: "camunda.io/cluster=orders",
@@ -362,7 +363,7 @@ describe("ClusterView", () => {
         metadata: {
           namespace: "team-a",
           name: `${kind}-${claimName}-access`,
-          labels: { [CLAIM_LABEL]: claimName },
+          labels: { [CLAIM_LABEL]: claimName, [SECTION_LABEL]: ACCESS_SECTION },
         },
         spec: { claimRef: { kind, name: claimName } },
         status: { links: [{ name, url }] },
@@ -371,7 +372,7 @@ describe("ClusterView", () => {
       view({
         initial: data({
           cluster: cluster({ spec: { externalUrl: undefined } }),
-          accessRequests: [
+          requests: [
             request(
               "CamundaManagementClusterClaim",
               "orders",
@@ -399,6 +400,31 @@ describe("ClusterView", () => {
         .getAllByRole("link", { name: /Operate|Tasklist|Admin/ })
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([["Operate", "https://o.example.com"]]);
+  });
+
+  it("reads no access link from a request of another section", () => {
+    const backup = nsObject(
+      "PluginRequest",
+      "orders-backup-storage",
+      { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
+      { links: [{ name: "operate", url: "https://o.example.com" }] },
+      {
+        labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "backup-storage" },
+      },
+    );
+    render(
+      view({
+        initial: data({
+          cluster: cluster({ spec: { externalUrl: undefined } }),
+          requests: [backup],
+        }),
+      }),
+    );
+    expect(
+      within(screen.getByRole("banner")).queryAllByRole("link", {
+        name: /Operate/,
+      }),
+    ).toEqual([]);
   });
 
   it("follows a navigation to another tab without a remount", () => {
@@ -1278,8 +1304,9 @@ describe("Endpoints tab", () => {
       "orders-access",
       { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
       { outputs: { grpcHost: "grpc.orders.example.com:443" } },
+      { labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: ACCESS_SECTION } },
     );
-    render(view({ initial: data({ cluster: c, accessRequests: [access] }) }));
+    render(view({ initial: data({ cluster: c, requests: [access] }) }));
     const table = screen.getByRole("table", { name: "Endpoints" });
     expect(within(table).getByText("grpc.orders.example.com:443")).toBeTruthy();
   });
@@ -1739,5 +1766,146 @@ describe("Component detail", () => {
     );
     render(view());
     expect(components()).toBeTruthy();
+  });
+});
+
+describe("Section components", () => {
+  const components = () => screen.getByRole("region", { name: "Components" });
+  const cardNames = () =>
+    within(components())
+      .getAllByRole("article")
+      .map((a) => a.getAttribute("aria-label"));
+
+  const pluginSection = (name: string, label: string, order: number) =>
+    ({
+      kind: "PluginSection",
+      metadata: { name },
+      spec: { label, order, selection: "One" },
+    }) as unknown as Resource<"PluginSection">;
+
+  const sectionClaim = {
+    ...claim(),
+    spec: {
+      plugins: [
+        { section: "access", registration: "gateway-access" },
+        { section: "backup-storage", registration: "aws-s3" },
+      ],
+    },
+    status: {
+      requests: [
+        {
+          section: "backup-storage",
+          registration: "aws-s3",
+          name: "orders-backup-storage",
+        },
+      ],
+    },
+  } as unknown as Resource<"CamundaClusterClaim">;
+
+  const backupRequest = nsObject(
+    "PluginRequest",
+    "orders-backup-storage",
+    {
+      registration: "aws-s3",
+      section: "backup-storage",
+      claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+    },
+    {
+      summary: [{ label: "Bucket", value: "orders-backups" }],
+      resources: [
+        { kind: "S3Bucket", name: "orders-backups", onOrphan: "Kept" },
+      ],
+    },
+    { labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "backup-storage" } },
+  );
+
+  const withSections = (over: Partial<ClusterPageData> = {}) =>
+    data({
+      claims: [sectionClaim],
+      sections: [
+        pluginSection("access", "Access", 5),
+        pluginSection("backup-storage", "Backup storage", 2),
+      ],
+      requests: [backupRequest],
+      ...over,
+    });
+
+  it("shows a card for each selection of the claim after the process cards", () => {
+    render(view({ initial: withSections() }));
+    expect(cardNames().slice(-2)).toEqual(["Backup storage", "Access"]);
+    const card = within(components()).getByRole("article", {
+      name: "Backup storage",
+    });
+    expect(
+      within(card).getByText("Bucket", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("orders-backups");
+  });
+
+  it("says that the request could not be read, never that it is not made yet, when the requests watch fails", async () => {
+    live.errors.PluginRequest = "forbidden";
+    render(view({ initial: withSections({ requests: [] }) }));
+    const card = within(components()).getByRole("article", {
+      name: "Backup storage",
+    });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Could not read");
+    await userEvent.click(
+      within(card).getByRole("link", { name: "Backup storage" }),
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Backup storage" })).getByText(
+        "Could not read PluginRequest: forbidden",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeNull();
+  });
+
+  it("shows no section card for a cluster without a claim", () => {
+    render(
+      view({
+        initial: withSections({ cluster: cluster({ labels: {} }) }),
+      }),
+    );
+    expect(cardNames()).not.toContain("Backup storage");
+    expect(cardNames()).toContain("Brokers");
+  });
+
+  it("opens a section from an encoded URL", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "?tab=overview&component=section%3Aaccess",
+    );
+    render(view({ initial: withSections() }));
+    expect(screen.getByRole("heading", { name: "Access" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "All components" })).toBeTruthy();
+  });
+
+  it("opens a section card in place and writes its encoded id to the URL", async () => {
+    render(view({ initial: withSections() }));
+    await userEvent.click(
+      within(
+        within(components()).getByRole("article", { name: "Backup storage" }),
+      ).getByRole("link", { name: "Backup storage" }),
+    );
+    expect(window.location.search).toBe(
+      "?tab=overview&component=section%3Abackup-storage",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Backup storage" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
   });
 });

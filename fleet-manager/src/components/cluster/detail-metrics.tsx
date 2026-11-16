@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import { MetricChart } from "@/components/fleet/metric-chart";
-import { type PodLike, USAGE_UNAVAILABLE } from "./pod-table";
+import { NO_PODS, type PodLike, USAGE_UNAVAILABLE } from "./pod-table";
 import { UsageBars } from "@/components/fleet/usage-bars";
 import {
   NativeSelect,
@@ -36,19 +36,22 @@ export const METRICS_RANGE_LABELS: Record<MetricsRange, string> = {
 /**
  * DetailMetrics is the Metrics tab of a component detail: the live usage of
  * pods, then the charts of source over the range the user picks, the last
- * hour first. Without source it asks no charts and shows no history. It
- * needs a QueryClientProvider above it.
+ * hour first. Without source it asks no charts and shows no history. A
+ * podless component shows NO_PODS in place of the live usage. It needs a
+ * QueryClientProvider above it.
  */
 export function DetailMetrics({
   namespace,
   source,
   pods,
   usage,
+  podless = false,
 }: {
   namespace: string;
   source?: MetricsRef;
   pods: PodLike[];
   usage: PodUsage[] | Unavailable | undefined;
+  podless?: boolean;
 }) {
   const [range, setRange] = useState<MetricsRange>("1h");
   const answer = useMetrics(namespace, source, range);
@@ -56,6 +59,7 @@ export function DetailMetrics({
     <DetailMetricsView
       pods={pods}
       usage={usage}
+      podless={podless}
       charts={source ? (answer ?? "loading") : undefined}
       range={range}
       onRange={setRange}
@@ -74,16 +78,18 @@ export function DetailMetricsView({
   charts,
   range,
   onRange,
+  podless = false,
 }: {
   pods: PodLike[];
   usage: PodUsage[] | Unavailable | undefined;
   charts?: MetricsAnswer | "failed" | "loading";
   range: MetricsRange;
   onRange?: (range: MetricsRange) => void;
+  podless?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-6 pt-2">
-      <LiveUsage pods={pods} usage={usage} />
+      <LiveUsage pods={pods} usage={usage} podless={podless} />
       {charts !== undefined && (
         <History charts={charts} range={range} onRange={onRange} />
       )}
@@ -94,16 +100,20 @@ export function DetailMetricsView({
 function LiveUsage({
   pods,
   usage,
+  podless,
 }: {
   pods: PodLike[];
   usage: PodUsage[] | Unavailable | undefined;
+  podless: boolean;
 }) {
   return (
     <section className="flex min-w-0 flex-col gap-2">
       <h3 className="font-heading text-sm font-semibold text-text">
         Live usage
       </h3>
-      {usage === "unavailable" ? (
+      {podless ? (
+        <p className="text-sm text-muted">{NO_PODS}</p>
+      ) : usage === "unavailable" ? (
         <p className="text-sm text-muted">{USAGE_UNAVAILABLE}</p>
       ) : (
         <Table label="Live usage">

@@ -1,0 +1,34 @@
+# The claim of the Git-mode journey and its secondary storage. The journey
+# applies this file once, with the field manager of the harness GitOps loop,
+# so a save that the loop applies changes no field that another manager
+# owns. The storage has its own endpoint, because one CamundaCluster writes
+# one backend and the harness claim holds fleet-harness-storage.
+apiVersion: core.camunda.io/v1
+kind: SecondaryStorageConfig
+metadata:
+  name: git-mode-storage
+  namespace: fleet-smoke
+spec:
+  type: elasticsearch
+  elasticsearch:
+    endpoint: http://git-mode-storage.fleet-smoke.svc:9200
+    credentialsSecretRef:
+      name: fleet-harness-storage-credentials
+      usernameKey: username
+      passwordKey: password
+---
+# Suspended, so the operator starts no Camunda pod on kind.
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: git-mode-sample
+  namespace: fleet-smoke
+spec:
+  presetRef: fleet-harness
+  releaseRef: fleet-harness-8-9-0
+  suspend: true
+  plugins:
+    - section: secondary-storage
+      registration: existing-secondary-storage
+      parameters:
+        name: git-mode-storage

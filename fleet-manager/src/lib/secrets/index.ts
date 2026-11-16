@@ -28,6 +28,22 @@ export async function listSecretRefs(
 }
 
 /**
+ * listSecretRefsIn returns the Secret refs of each namespace, keyed by
+ * namespace. A namespace whose read fails has no entry, so a caller does not
+ * take a failed read for a namespace without the Secret.
+ */
+export async function listSecretRefsIn(
+  namespaces: readonly string[],
+): Promise<Record<string, { name: string; keys: string[] }[]>> {
+  const reads = await Promise.allSettled(namespaces.map(listSecretRefs));
+  const byNamespace: Record<string, { name: string; keys: string[] }[]> = {};
+  reads.forEach((read, i) => {
+    if (read.status === "fulfilled") byNamespace[namespaces[i]] = read.value;
+  });
+  return byNamespace;
+}
+
+/**
  * writeSecretValue sets one key of a Secret and keeps its other keys. It
  * creates the Secret when it is missing. It returns Invalid without a
  * request for a name, a namespace, or a key that a Secret cannot have, and

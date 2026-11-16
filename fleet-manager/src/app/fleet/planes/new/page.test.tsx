@@ -42,8 +42,8 @@ const table = {
 
 const failing = vi.hoisted(() => ({ kind: "", bundled: false }));
 const seen = vi.hoisted(() => ({ props: undefined as unknown }));
-vi.mock("@/startup/bundled-data", () => ({
-  loadBundledData: vi.fn(async () => {
+vi.mock("@/lib/bundled", () => ({
+  getBundledData: vi.fn(async () => {
     if (failing.bundled) throw new Error("no table");
     return { imagesTable: table };
   }),
