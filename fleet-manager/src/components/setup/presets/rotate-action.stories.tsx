@@ -36,7 +36,11 @@ const meta = {
       previewChange: async () => ({
         objects: [
           {
-            ref: { kind: "CamundaClusterPreset", name: "medium" },
+            ref: {
+              apiVersion: "core.camunda.io/v1",
+              kind: "CamundaClusterPreset",
+              name: "medium",
+            },
             diff: [
               { op: "same", text: "auth:" },
               { op: "same", text: "  basic:" },

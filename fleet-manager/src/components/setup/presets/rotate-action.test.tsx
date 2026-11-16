@@ -30,7 +30,11 @@ function setup(
     previewChange: vi.fn<PresetActions["previewChange"]>(async () => ({
       objects: [
         {
-          ref: { kind: "CamundaClusterPreset", name: "medium" },
+          ref: {
+            apiVersion: "core.camunda.io/v1",
+            kind: "CamundaClusterPreset",
+            name: "medium",
+          },
           diff: [{ op: "added" as const, text: "passwordRotation" }],
         },
       ],

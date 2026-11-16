@@ -132,10 +132,10 @@ The review lists each resource that inherits the preset, as `<namespace>/<name>`
 
 | Mark | Meaning |
 | --- | --- |
-| Pods roll | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of **No roll** are the only exception. |
-| No roll | The change reaches the cluster but rolls no pods: a change of `auth.basic.passwordRotation`, `auth.basic.adminEmail`, or a field under `connectors.serviceAccount`. |
-| Unchanged | The change does not reach the resource. For a cluster, this occurs only for a change of the fields of **No roll**. For example, a cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
-| Pods may roll | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
+| `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of `No roll` are the only exception. |
+| `No roll` | The change reaches the cluster but rolls no pods: a change of `auth.basic.passwordRotation`, `auth.basic.adminEmail`, or a field under `connectors.serviceAccount`. |
+| `Unchanged` | The change does not reach the resource. For a cluster, this occurs only for a change of the fields of `No roll`. For example, a cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
+| `Pods may roll` | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
 
 The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field that stays, because another field manager set it, does not count as a change.
 

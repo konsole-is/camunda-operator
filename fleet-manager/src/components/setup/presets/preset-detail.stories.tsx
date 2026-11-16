@@ -17,7 +17,11 @@ const meta = {
       // The dry run keeps exactly the applied spec.
       previewChange: fn(async (change: Change) => ({
         objects: change.apply.map((object) => ({
-          ref: { kind: object.kind, name: object.metadata.name ?? "" },
+          ref: {
+            apiVersion: object.apiVersion,
+            kind: object.kind,
+            name: object.metadata.name,
+          },
           after: object,
           diff: [{ op: "added" as const, text: "(changed)" }],
         })),

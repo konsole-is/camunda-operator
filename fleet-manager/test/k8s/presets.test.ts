@@ -67,7 +67,7 @@ describe.each([
     const change = presetUpdateChange(live, {
       ...presetDraftOf(live),
       body: {
-        ...(spec as Record<string, Record<string, unknown>>)[body],
+        ...(spec as unknown as Record<string, Record<string, unknown>>)[body],
         storageSize: "80Gi",
       },
     });

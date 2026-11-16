@@ -37,7 +37,7 @@ export type ScopeEnv = { extraEnv?: EnvVar[]; extraEnvFrom?: EnvFromSource[] };
  * release, or the body of a cluster preset.
  */
 export type EnvSpec = ScopeEnv & {
-  [S in Exclude<EnvScope, "release">]?: ScopeEnv;
+  [S in Exclude<EnvScope, "release">]?: ScopeEnv & Record<string, unknown>;
 };
 
 /** envOf returns the env lists of scope in spec, without the lists that are unset. */
@@ -58,7 +58,7 @@ export function withEnv<S extends EnvSpec>(
   spec: S,
   scope: EnvScope,
   env: ScopeEnv,
-): S {
+): S & EnvSpec {
   const lists = {
     ...(env.extraEnv?.length ? { extraEnv: env.extraEnv } : {}),
     ...(env.extraEnvFrom?.length ? { extraEnvFrom: env.extraEnvFrom } : {}),
@@ -69,7 +69,7 @@ export function withEnv<S extends EnvSpec>(
   const block = { ...withoutEnv(spec[scope] ?? {}), ...lists };
   return (
     Object.keys(block).length > 0 ? { ...rest, [scope]: block } : rest
-  ) as S;
+  ) as S & EnvSpec;
 }
 
 function withoutEnv<T extends ScopeEnv>(block: T): T {
@@ -80,7 +80,7 @@ function withoutEnv<T extends ScopeEnv>(block: T): T {
 }
 
 /** namedSecretRefs returns each Secret key that an extraEnv entry of spec names, in any scope. */
-export function namedSecretRefs(spec: EnvSpec): SecretRefs {
+export function namedSecretRefs<S extends EnvSpec>(spec: S): SecretRefs {
   const refs = ENV_SCOPES.flatMap(({ scope }) =>
     (envOf(spec, scope).extraEnv ?? []).flatMap((entry) => {
       const ref = entry.valueFrom?.secretKeyRef;

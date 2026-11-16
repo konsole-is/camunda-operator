@@ -13,7 +13,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
-import type { Change, Preview, WriteMode } from "@/lib/write/types";
+import type { Change, KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
 import { presetDraftOf, presetUpdateChange } from "./draft";
 import { presetFixtures } from "./fixtures";
@@ -325,9 +325,13 @@ describe("PresetDetail", () => {
         ...dryRun()(change),
         objects: [
           {
-            ref: { kind: "CamundaClusterPreset", name: "medium" },
-            before: medium,
-            after: medium,
+            ref: {
+              apiVersion: "core.camunda.io/v1",
+              kind: "CamundaClusterPreset",
+              name: "medium",
+            },
+            before: medium as unknown as KubeObject,
+            after: medium as unknown as KubeObject,
             diff: [{ op: "added", text: "x" }],
           },
         ],
@@ -458,8 +462,12 @@ function dryRun(): (change: Change) => Preview {
   return (change) => ({
     objects: [
       {
-        ref: { kind: "CamundaClusterPreset", name: "medium" },
-        before: medium,
+        ref: {
+          apiVersion: "core.camunda.io/v1",
+          kind: "CamundaClusterPreset",
+          name: "medium",
+        },
+        before: medium as unknown as KubeObject,
         after: change.apply[0],
         diff: [{ op: "added", text: "replicas: 5" }],
       },

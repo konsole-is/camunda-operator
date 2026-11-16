@@ -12,7 +12,7 @@ import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
-import type { Preview, WriteMode } from "@/lib/write/types";
+import type { Change, Preview, WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
 import { presetChangeCount, presetDraftOf, presetUpdateChange } from "./draft";
 import { FactsList } from "./facts-list";
@@ -45,14 +45,13 @@ import {
  * editor of its fields and description with the merge rule of each field
  * that it sets, the fields that it cannot set, and the resources that
  * inherit it. A save shows a review with the dry run and the impact on
- * each inheriting resource, computed from the spec that the dry run keeps;
- * the save waits while the users or the releases of the impact cannot be
- * read. A cluster preset offers the rotation of the admin password of its
- * clusters while the form has no pending change. A preset that can be
- * deleted offers a delete after a typed confirm and a review. The delete
- * review closes before its write starts when the preset can no longer be
- * deleted. secrets are the Secret refs of each namespace whose Secrets the
- * body can name. Without mode nothing can change.
+ * each inheriting resource. The save waits while the users or the releases
+ * of the impact cannot be read. A cluster preset offers the rotation of the
+ * admin password of its clusters while the form has no pending change. A
+ * preset that can be deleted offers a delete after a typed confirm and a
+ * review. The delete review closes before its write starts when the preset
+ * can no longer be deleted. secrets are the Secret refs of each namespace
+ * whose Secrets the body can name. Without mode nothing can change.
  */
 export function PresetDetail({
   sources,
@@ -333,7 +332,7 @@ export function PresetDetail({
 function specsOf(
   preview: Preview,
   base: PresetObject,
-  change: { apply: { spec?: unknown }[] },
+  change: Change,
 ): { before: PresetObject["spec"]; after: PresetObject["spec"] } {
   const object = preview.objects.find(
     (o) => o.ref.kind === base.kind && o.ref.name === base.metadata.name,

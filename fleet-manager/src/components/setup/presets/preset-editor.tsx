@@ -17,7 +17,7 @@ import { YamlEditor } from "@/components/fleet/yaml-editor";
 import { EditorSection, TextField } from "@/components/setup/form-parts";
 import { type EnvSpec, namedSecretRefs } from "@/components/setup/releases/env";
 import { EnvScopes } from "@/components/setup/releases/env-scopes";
-import { COMPONENTS, type Step } from "@/lib/fields";
+import { COMPONENTS, type SchemaGroup, type Step } from "@/lib/fields";
 import { without, withValue } from "@/lib/session";
 import type { PresetKind } from "@/lib/usage";
 import type { PresetDraft } from "./draft";
@@ -33,7 +33,7 @@ const GROUPS: readonly SettingsGroup[] = [
   { label: "General", component: "cluster", embedded: false, fields: [] },
   ...COMPONENTS.map((component): SettingsGroup => ({
     label: PROCESS_LABEL[component as keyof typeof PROCESS_LABEL],
-    component,
+    component: component as SchemaGroup,
     embedded: false,
     fields: [],
   })),
@@ -48,10 +48,11 @@ const GROUPS: readonly SettingsGroup[] = [
  * no schema: the dry run of the review checks it. secrets are the Secret
  * refs of each namespace whose Secrets the body can name, and a Secret key
  * that one of them lacks shows as missing there. onDraft gets a function
- * that applies each valid edit to a draft. onErrors gets every error that the editors show, and an empty list
- * once they show none; while the YAML of the body has an error, the draft
- * keeps its last valid body. The editors read draft once, so a caller gives
- * the component a new key when it replaces the draft.
+ * that applies each valid edit to a draft. onErrors gets every error that
+ * the editors show, and an empty list once they show none. While the YAML
+ * of the body has an error, the draft keeps its last valid body. The
+ * editors read draft once, so a caller gives the component a new key when
+ * it replaces the draft.
  */
 export function PresetEditor({
   kind,
