@@ -215,7 +215,10 @@ function predict(
     );
   }
   if (issuer.kind === "new") return refuse(NEW_ISSUER_MESSAGE);
-  if (normalizeIssuer(trusted) !== normalizeIssuer(issuer.url)) {
+  const issuers = [issuer.url, issuer.backendUrl].filter(
+    (u): u is string => !!u,
+  );
+  if (!issuers.some((u) => normalizeIssuer(trusted) === normalizeIssuer(u))) {
     return refuse(
       `This cluster trusts ${trusted}. This plane hands out tokens of ${issuer.url}.`,
     );

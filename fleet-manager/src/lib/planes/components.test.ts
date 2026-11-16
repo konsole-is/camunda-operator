@@ -5,6 +5,7 @@ import {
   adminErrors,
   mailErrors,
   runningOf,
+  runningOfClaim,
 } from "./components";
 import { EMPTY_PLANE_DRAFT, type PlaneDraft } from "./draft";
 
@@ -103,5 +104,37 @@ describe("mailErrors", () => {
     [{ smtpPort: 25.5 }, "Enter an SMTP port from 1 to 65535."],
   ])("refuses %o", (over, message) => {
     expect(mailErrors({ ...mail, ...over })).toEqual([message]);
+  });
+});
+
+describe("runningOfClaim", () => {
+  it("reads the apps that the claim runs", () => {
+    expect(
+      runningOfClaim({
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin" } },
+        console: {},
+      }),
+    ).toEqual({ keycloak: true, console: true, webModeler: false });
+    expect(
+      runningOfClaim({
+        identityProvider: {
+          externalKeycloak: {
+            url: "https://kc.example.com",
+            adminCredentialsSecretRef: { name: "kc" },
+          },
+        },
+        identity: { admin: { username: "admin" } },
+        webModeler: { mail: { smtpHost: "smtp", fromAddress: "a@b.c" } },
+      }),
+    ).toEqual({ keycloak: false, console: false, webModeler: true });
+  });
+
+  it("runs nothing optional without a management block", () => {
+    expect(runningOfClaim(undefined)).toEqual({
+      keycloak: false,
+      console: false,
+      webModeler: false,
+    });
   });
 });

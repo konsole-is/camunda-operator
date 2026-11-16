@@ -1,6 +1,7 @@
 // This module runs in the browser and on the server.
 import type { SecretKeyRef } from "@/components/fleet/secret-ref-picker";
 import type { PlaneDraft } from "./draft";
+import { type PlaneManagement, identityModeOf } from "./identity";
 import type { Running } from "./versions";
 
 /**
@@ -50,6 +51,17 @@ export function runningOf(draft: PlaneDraft): Running {
     keycloak: draft.mode === "keycloak",
     console: draft.console,
     webModeler: draft.webModeler,
+  };
+}
+
+/** runningOfClaim says which optional apps a plane claim with management runs. Keycloak runs only in Keycloak mode. */
+export function runningOfClaim(
+  management: PlaneManagement | undefined,
+): Running {
+  return {
+    keycloak: identityModeOf(management?.identityProvider) === "keycloak",
+    console: management?.console != null,
+    webModeler: management?.webModeler != null,
   };
 }
 

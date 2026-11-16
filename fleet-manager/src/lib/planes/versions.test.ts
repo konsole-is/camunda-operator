@@ -4,10 +4,14 @@ import type { Environment } from "@/generated/crds/environment";
 import { parseImagesTable } from "@/startup/bundled-data";
 import {
   KEYCLOAK_REALM_WARNING,
+  KEYCLOAK_RESTART_WARNING,
   type Running,
   defaultRelease,
   prefillNote,
+  versionChangeWarnings,
+  versionError,
   versionErrors,
+  versionMatrixWarning,
   versionPrefill,
   versionWarnings,
   versionsOf,
@@ -197,6 +201,157 @@ describe("versionErrors", () => {
         none,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("versionError", () => {
+  it("gives the error of versionErrors for one field", () => {
+    expect(versionError("keycloak", "25.0.1")).toBe(
+      "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0.",
+    );
+    expect(versionError("console", "")).toBe("Enter the Console version.");
+    expect(versionError("console", undefined)).toBe(
+      "Enter the Console version.",
+    );
+    expect(versionError("identity", "8.9.14")).toBeUndefined();
+  });
+});
+
+describe("versionChangeWarnings", () => {
+  it("warns when a Camunda app moves down", () => {
+    expect(
+      versionChangeWarnings(
+        { identity: "8.9.14" },
+        { identity: "8.9.10" },
+        all,
+      ),
+    ).toEqual([
+      "Management Identity moves down from 8.9.14 to 8.9.10. Camunda documents no downgrade.",
+    ]);
+  });
+
+  it("warns when a Camunda app skips a minor", () => {
+    expect(
+      versionChangeWarnings({ console: "8.9.133" }, { console: "8.11.2" }, all),
+    ).toEqual([
+      "Console skips 8.10: 8.9.133 to 8.11.2. Move one minor at a time.",
+    ]);
+  });
+
+  it("counts a move to a higher major as a skipped minor", () => {
+    expect(
+      versionChangeWarnings(
+        { webModeler: "8.9.15" },
+        { webModeler: "9.0.0" },
+        all,
+      ),
+    ).toEqual([
+      "Web Modeler skips 8.10: 8.9.15 to 9.0.0. Move one minor at a time.",
+    ]);
+  });
+
+  it("gives no warning for a move of one minor up", () => {
+    expect(
+      versionChangeWarnings(
+        { identity: "8.9.14" },
+        { identity: "8.10.0" },
+        all,
+      ),
+    ).toEqual([]);
+  });
+
+  it("warns that sign-in stops when the Keycloak version changes", () => {
+    expect(
+      versionChangeWarnings(
+        { keycloak: "26.6.4" },
+        { keycloak: "26.6.5" },
+        all,
+      ),
+    ).toEqual([KEYCLOAK_RESTART_WARNING]);
+  });
+
+  it("gives no downgrade or skip warning for Keycloak", () => {
+    expect(
+      versionChangeWarnings(
+        { keycloak: "26.6.4" },
+        { keycloak: "26.0.1" },
+        all,
+      ),
+    ).toEqual([KEYCLOAK_RESTART_WARNING]);
+  });
+
+  it("gives no warning for an app that does not run, or with no old version", () => {
+    expect(
+      versionChangeWarnings(
+        { keycloak: "26.6.4" },
+        { keycloak: "26.6.5" },
+        none,
+      ),
+    ).toEqual([]);
+    expect(versionChangeWarnings({}, { console: "8.9.133" }, all)).toEqual([]);
+  });
+
+  it("gives no warning for a patch upgrade or a malformed version", () => {
+    expect(
+      versionChangeWarnings(
+        { identity: "8.9.10" },
+        { identity: "8.9.14" },
+        all,
+      ),
+    ).toEqual([]);
+    expect(
+      versionChangeWarnings({ identity: "8.9.10" }, { identity: "8.9" }, all),
+    ).toEqual([]);
+  });
+});
+
+describe("versionMatrixWarning", () => {
+  const camunda: Running = { keycloak: false, console: true, webModeler: true };
+
+  it("passes the versions of one row of the images table", () => {
+    expect(
+      versionMatrixWarning(
+        { identity: "8.9.14", console: "8.9.133", webModeler: "8.9.15" },
+        camunda,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("warns when the running Camunda apps are on different minors", () => {
+    expect(
+      versionMatrixWarning(
+        { identity: "8.10.1", console: "8.9.133", webModeler: "8.9.15" },
+        camunda,
+      ),
+    ).toBe(
+      "Management Identity, Console, and Web Modeler run on different minors: 8.10, 8.9. Camunda supports them together on one minor only.",
+    );
+  });
+
+  it("names two apps with 'and'", () => {
+    expect(
+      versionMatrixWarning(
+        { identity: "8.10.1", console: "8.9.133" },
+        { keycloak: true, console: true, webModeler: false },
+      ),
+    ).toBe(
+      "Management Identity and Console run on different minors: 8.10, 8.9. Camunda supports them together on one minor only.",
+    );
+  });
+
+  it("leaves out an app that does not run", () => {
+    expect(
+      versionMatrixWarning({ identity: "8.10.1", console: "8.9.133" }, none),
+    ).toBeUndefined();
+  });
+
+  it("leaves out an app whose version does not parse", () => {
+    expect(
+      versionMatrixWarning(
+        { identity: "8.10.1", console: "8.9", webModeler: "" },
+        camunda,
+      ),
+    ).toBeUndefined();
   });
 });
 
