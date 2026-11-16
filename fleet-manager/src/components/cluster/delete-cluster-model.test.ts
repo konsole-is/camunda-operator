@@ -486,6 +486,32 @@ describe("mergeTargets", () => {
   });
 });
 
+describe("mergeTargets of a management plane", () => {
+  it("keeps the order in which the delete of a plane claim goes: the plane, the requests, then the claim", () => {
+    const t = (
+      kind:
+        | "CamundaManagementCluster"
+        | "PluginRequest"
+        | "CamundaManagementClusterClaim",
+      name: string,
+    ) => ({ kind, name, label: `${kind} ${name}` });
+    expect(
+      mergeTargets(
+        [],
+        [
+          t("CamundaManagementClusterClaim", "plane-a"),
+          t("PluginRequest", "plane-a-management-database"),
+          t("CamundaManagementCluster", "plane-a"),
+        ],
+      ).map((x) => x.kind),
+    ).toEqual([
+      "CamundaManagementCluster",
+      "PluginRequest",
+      "CamundaManagementClusterClaim",
+    ]);
+  });
+});
+
 describe("mergeTargets refresh", () => {
   it("takes the note of a target from found and keeps a target that found lacks", () => {
     const t = (name: string, note?: string) => ({
