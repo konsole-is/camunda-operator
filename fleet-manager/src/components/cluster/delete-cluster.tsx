@@ -156,7 +156,7 @@ export function DeleteCluster({
   const [targets, setTargets] = useState<DeleteTarget[]>();
   if (run.stage.kind === "deleting") {
     const merged = mergeTargets(targets ?? [], model.targets);
-    if (merged.length !== targets?.length) setTargets(merged);
+    if (JSON.stringify(merged) !== JSON.stringify(targets)) setTargets(merged);
   }
 
   let stage: DeleteStage;

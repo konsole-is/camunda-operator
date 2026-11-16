@@ -379,6 +379,23 @@ describe("mergeTargets", () => {
   });
 });
 
+describe("mergeTargets refresh", () => {
+  it("takes the note of a target from found and keeps a target that found lacks", () => {
+    const t = (name: string, note?: string) => ({
+      kind: "CamundaCluster" as const,
+      name,
+      label: `CamundaCluster ${name}`,
+      ...(note && { note }),
+    });
+    expect(
+      mergeTargets(
+        [t("orders", "Volumes not known"), t("gone", "Volumes stay")],
+        [t("orders", "Volumes are deleted")],
+      ).map((x) => x.note),
+    ).toEqual(["Volumes are deleted", "Volumes stay"]);
+  });
+});
+
 describe("deleteProgress", () => {
   it("a live object is Waiting, one being deleted is Deleting, and a gone one is Deleted, in target order", () => {
     const model = deleteClusterModel(data(), "Delete");

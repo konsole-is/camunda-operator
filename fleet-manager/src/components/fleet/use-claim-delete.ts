@@ -156,7 +156,11 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   const send = useCallback(
     async (): Promise<WriteResult> => {
       const { live, policy, intent, actions } = latest.current;
-      setSent({ kind: "choose" });
+      setSent((s) =>
+        s.kind === "choose" && s.written
+          ? { kind: "choose", written: s.written }
+          : { kind: "choose" },
+      );
       if (!live || !isOriginal(live))
         return { ok: false, errors: [gone(name)] };
       const steps = deleteClaimSteps(live, policy, intent);

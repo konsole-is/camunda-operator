@@ -297,17 +297,19 @@ const TARGET_ORDER: readonly KindName[] = [
 
 /**
  * mergeTargets returns kept with each target of found that it lacks, in
- * the order in which the kinds go.
+ * the order of the kinds. A target in both takes its label and note from
+ * found; one only in kept stays.
  */
 export function mergeTargets(
   kept: readonly DeleteTarget[],
   found: readonly DeleteTarget[],
 ): DeleteTarget[] {
-  const added = found.filter(
-    (f) => !kept.some((k) => k.kind === f.kind && k.name === f.name),
-  );
+  const same = (a: DeleteTarget) => (b: DeleteTarget) =>
+    a.kind === b.kind && a.name === b.name;
+  const refreshed = kept.map((k) => found.find(same(k)) ?? k);
+  const added = found.filter((f) => !kept.some(same(f)));
   const rank = (t: DeleteTarget) => TARGET_ORDER.indexOf(t.kind);
-  return [...kept, ...added].sort((a, b) => rank(a) - rank(b));
+  return [...refreshed, ...added].sort((a, b) => rank(a) - rank(b));
 }
 
 /** DeleteState is where one target of a delete is. */

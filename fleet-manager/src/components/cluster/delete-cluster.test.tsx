@@ -383,6 +383,28 @@ describe("DeleteCluster", () => {
     ).toBeTruthy();
   });
 
+  it("a failed watch during the wait for the policy shows the read error", async () => {
+    fakeWriter.reset("git");
+    page(data(), "git");
+    await readAll();
+    fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
+    await confirm("Push the delete to Git");
+    await screen.findByText(
+      /Waiting for GitOps to apply the deletion policy\./,
+    );
+    const { source, watch } = await watched(optimizesWatch);
+    act(() =>
+      source.emit("failure", {
+        watch,
+        kind: "CamundaOptimize",
+        message: "lost",
+      }),
+    );
+    expect(
+      await screen.findByText("Could not read CamundaOptimize: lost"),
+    ).toBeTruthy();
+  });
+
   it("Git mode: stop waiting sends no delete and says that the policy commit is in the repository", async () => {
     fakeWriter.reset("git");
     page(data(), "git");
@@ -596,6 +618,23 @@ describe("DeleteCluster", () => {
     expect(row.textContent).toBe("CamundaOptimize orders-optimize: not known");
   });
 
+  it("a failed watch of the CamundaCluster shows its fate as not known", async () => {
+    page();
+    await readAll();
+    await screen.findByRole("button", { name: "Delete the cluster" });
+    const { source, watch } = await watched(clusterWatch);
+    act(() =>
+      source.emit("failure", {
+        watch,
+        kind: "CamundaCluster",
+        message: "lost",
+      }),
+    );
+    await screen.findByText("Could not read CamundaCluster: lost");
+    const row = screen.getByText(/^CamundaCluster orders/).closest("li")!;
+    expect(row.textContent).toBe("CamundaCluster orders: not known");
+  });
+
   it("a cluster that the claim did not make shows as kept, and the end text says that it stays", async () => {
     const initial = data({
       claim: claim({ notMade: true }),
@@ -645,7 +684,9 @@ describe("DeleteCluster", () => {
       },
     } as unknown as Resource<"CamundaCluster">;
     page(data({ cluster: retaining }));
-    expect(screen.getByText(/Volumes not known/)).toBeTruthy();
+    expect(
+      screen.getByText(/^CamundaCluster orders/).closest("li")!.textContent,
+    ).toBe("CamundaCluster orders: not known");
     await readAll(data({ cluster: retaining }));
     expect(
       await screen.findByText(/Volumes kept for a cluster of the same name/),

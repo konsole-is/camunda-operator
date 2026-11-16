@@ -288,6 +288,30 @@ describe("useClaimDelete", () => {
     expect(fakeWriter.applied).toHaveLength(2);
   });
 
+  it("a refused retry after a refused delete keeps the written policy", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    await confirm(hook);
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Forbidden", message: "No delete." }] },
+    ];
+    await live(read("42"));
+    await waitFor(() =>
+      expect(hook.result.current.stage).toMatchObject({
+        kind: "choose",
+        afterPolicyWrite: { held: "Orphan" },
+      }),
+    );
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Forbidden", message: "Still no." }] },
+    ];
+    const retried = await confirm(hook);
+    expect(retried.ok).toBe(false);
+    expect(hook.result.current.stage).toMatchObject({
+      kind: "choose",
+      afterPolicyWrite: { held: "Orphan" },
+    });
+  });
+
   it("refuses with Stale and sends no delete when the claim changed beyond the policy during the wait", async () => {
     const { hook } = mount(claim(), { policy: "Orphan" });
     await confirm(hook);

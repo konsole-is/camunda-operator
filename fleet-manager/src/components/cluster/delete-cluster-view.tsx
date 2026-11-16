@@ -169,14 +169,17 @@ export function DeleteClusterView({
           </Link>
         </div>
       ) : stage.kind === "waiting" ? (
-        <WaitingPanel
-          text={
-            mode === "git"
-              ? "Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
-              : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
-          }
-          onStopWaiting={onStopWaiting}
-        />
+        <>
+          <ReadErrors errors={errors} />
+          <WaitingPanel
+            text={
+              mode === "git"
+                ? "Waiting for GitOps to apply the deletion policy. The fleet manager then removes the claim file."
+                : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
+            }
+            onStopWaiting={onStopWaiting}
+          />
+        </>
       ) : stage.kind === "deleting" ? (
         <>
           <ReadErrors errors={errors} />
@@ -258,9 +261,10 @@ export function DeleteClusterView({
   );
 }
 
-// The page decides from the lists of these kinds whether the claim made an
-// object, so an object of such a kind that it cannot read is not known.
+// The page decides from the lists of these kinds whether the claim controls
+// an object, so an object of such a kind that it cannot read is not known.
 const ATTACHMENT_KINDS: readonly string[] = [
+  "CamundaCluster",
   "CamundaOptimize",
   "BackupSchedule",
 ];
