@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { ReadError } from "@/components/planes/planes-table";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { WriteMode, WriteResult } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
@@ -18,11 +19,14 @@ import { PresetListLive } from "./preset-list";
 import type { PresetActions, PresetSources } from "./sources";
 
 const failing = vi.hoisted(() => ({ kind: "" }));
+const watch = vi.hoisted(() => ({ stale: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map((l) => !watch.stale.includes(l.kind)),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
@@ -30,17 +34,22 @@ vi.mock("@/lib/k8s/hooks", () => ({
 afterEach(() => {
   cleanup();
   failing.kind = "";
+  watch.stale = [];
 });
 
 function setup(
   opts: {
     mode?: WriteMode;
     sources?: PresetSources;
+    readErrors?: ReadError[];
     result?: WriteResult;
   } = {},
 ) {
-  const { sources = presetFixtures(), result = { ok: true, mode: "direct" } } =
-    opts;
+  const {
+    sources = presetFixtures(),
+    readErrors = [],
+    result = { ok: true, mode: "direct" },
+  } = opts;
   const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
     previewChange: vi.fn<PresetActions["previewChange"]>(async () => ({
@@ -51,7 +60,11 @@ function setup(
   };
   const view = (s: PresetSources) => (
     <GitPushesProvider>
-      <PresetListLive initial={s} mode={mode} actions={actions} />
+      <PresetListLive
+        initial={{ ...s, readErrors }}
+        mode={mode}
+        actions={actions}
+      />
     </GitPushesProvider>
   );
   const { rerender } = render(view(sources));
@@ -206,6 +219,69 @@ describe("PresetList", () => {
       "disabled",
       false,
     );
+  });
+
+  it("closes the delete review when a list of users cannot be read", () => {
+    const { actions, rerender } = setup();
+    fireEvent.click(within(rowOf(/spare/)).getByRole("checkbox"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete the preset spare" }),
+    );
+    failing.kind = "CamundaClusterClaim";
+    rerender(presetFixtures());
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(actions.applyChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed read of the server until the watch of its kind sends a list", () => {
+    watch.stale = ["PluginRequest"];
+    const { rerender } = setup({
+      readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+    });
+    expect(
+      screen.getByText("Could not read PluginRequest: forbidden"),
+    ).toBeTruthy();
+    const row = () => rowOf(/standard Elasticsearch/);
+    expect(within(row()).getByRole("checkbox")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(within(row()).queryByText("Unused")).toBeNull();
+    expect(within(row()).getAllByText("Unknown")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Select all unused" }));
+    expect(
+      screen.getByRole("button", { name: "Delete the preset spare" }),
+    ).toBeTruthy();
+    watch.stale = [];
+    rerender(presetFixtures());
+    expect(
+      screen.queryByText("Could not read PluginRequest: forbidden"),
+    ).toBeNull();
+    expect(within(row()).getByRole("checkbox")).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("offers no delete while the watch of a list of users reconnects", () => {
+    const { rerender } = setup();
+    watch.stale = ["CamundaCluster"];
+    rerender(presetFixtures());
+    expect(within(rowOf(/spare/)).getByRole("checkbox")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByText(/^Could not read CamundaCluster: /)).toBeTruthy();
+  });
+
+  it("says Unknown for Allowed in while the environments cannot be read", () => {
+    failing.kind = "Environment";
+    setup();
+    const cells = within(rowOf(/spare/)).getAllByRole("cell");
+    expect(cells.map((c) => c.textContent)).toContain("Unknown");
+    expect(within(rowOf(/spare/)).queryByText("Nowhere")).toBeNull();
   });
 
   it("offers no delete and says why without a write mode", () => {

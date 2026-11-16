@@ -26,6 +26,7 @@ import { PresetSettings } from "./preset-settings";
 import { changedLabel, presetRows, usedByLabel } from "./rows";
 import {
   type PresetActions,
+  type PresetSnapshot,
   type PresetSources,
   usePresetSources,
 } from "./sources";
@@ -105,12 +106,18 @@ export function PresetDetail({
             )}
             <dt className="text-muted">Allowed in</dt>
             <dd>
-              {row.allowedIn.length > 0 ? row.allowedIn.join(", ") : "Nowhere"}
+              {row.allowedUnknown
+                ? "Unknown"
+                : row.allowedIn.length > 0
+                  ? row.allowedIn.join(", ")
+                  : "Nowhere"}
             </dd>
             <dt className="text-muted">Used by</dt>
             <dd className="flex flex-col gap-1">
-              <span>{usedByLabel(row.users)}</span>
-              {row.users.length > 0 && (
+              <span>
+                {row.usersUnknown ? "Unknown" : usedByLabel(row.users)}
+              </span>
+              {!row.usersUnknown && row.users.length > 0 && (
                 <ul className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-xs text-text-2">
                   {row.users.map((u) => (
                     <li key={`${u.kind}/${u.namespace}/${u.name}`}>
@@ -148,15 +155,12 @@ export function PresetDetail({
           The preset {name} was deleted.
         </p>
       )}
-      <fieldset
-        disabled={locked || !live || !mode}
-        className="flex min-w-0 flex-col gap-4"
-      >
-        <PresetSettings kind={kind} body={presetBody(shown)} />
-        <EditorSection title="Inheriting resources">
-          <InheritingTable rows={inheritingRows(shown, sources)} />
-        </EditorSection>
-        {live && row && (
+      <PresetSettings kind={kind} body={presetBody(shown)} />
+      <EditorSection title="Inheriting resources">
+        <InheritingTable rows={inheritingRows(shown, sources)} />
+      </EditorSection>
+      {live && row && (
+        <fieldset disabled={locked || !mode} className="min-w-0">
           <EditorSection title="Delete the preset">
             {row.deletable ? (
               <TypedConfirm
@@ -176,8 +180,8 @@ export function PresetDetail({
               <p className="text-sm text-muted">{row.blockedBy}</p>
             )}
           </EditorSection>
-        )}
-      </fieldset>
+        </fieldset>
+      )}
       {reviewing && mode && (
         <section
           aria-label="Review the delete"
@@ -236,7 +240,7 @@ export function PresetDetailLive({
   mode,
   actions,
 }: {
-  initial: PresetSources;
+  initial: PresetSnapshot;
   kind: PresetKind;
   name: string;
   mode?: WriteMode;

@@ -104,6 +104,65 @@ describe("presetRows", () => {
     );
   });
 
+  const ALL = [
+    "cluster/medium",
+    "cluster/spare",
+    "elasticsearch/standard",
+    "postgresql/small",
+    "postgresql/standard",
+  ];
+  const ES_AND_PG = ALL.slice(2);
+  it.each([
+    ["Environment", ALL],
+    ["CamundaCluster", ["cluster/medium", "cluster/spare"]],
+    ["ElasticsearchCluster", ["elasticsearch/standard"]],
+    ["DatabaseServer", ["postgresql/small", "postgresql/standard"]],
+    ["CamundaClusterClaim", ALL],
+    ["CamundaManagementClusterClaim", ES_AND_PG],
+    ["PluginRequest", ES_AND_PG],
+    ["Namespace", []],
+    ["PluginSection", []],
+    ["PluginRegistration", []],
+  ])(
+    "blocks the delete of the presets whose users %s holds while it cannot be read",
+    (kind, blocked) => {
+      const rows = presetRows(presetFixtures(), [
+        { kind, message: "forbidden" },
+      ]);
+      expect(
+        rows.filter((r) => r.blockedBy?.includes(kind)).map((r) => r.id),
+      ).toEqual(blocked);
+      expect(rows.filter((r) => r.deletable).map((r) => r.id)).toEqual(
+        [
+          "cluster/spare",
+          "elasticsearch/standard",
+          "postgresql/standard",
+        ].filter((id) => !blocked.includes(id)),
+      );
+    },
+  );
+
+  it("marks the users unknown while a list of users cannot be read, and Allowed in while the environments cannot", () => {
+    const users = presetRows(presetFixtures(), [
+      { kind: "PluginRequest", message: "forbidden" },
+    ]);
+    expect(users.find((r) => r.id === "postgresql/standard")).toMatchObject({
+      usersUnknown: true,
+      allowedUnknown: false,
+    });
+    expect(users.find((r) => r.id === "cluster/spare")).toMatchObject({
+      usersUnknown: false,
+      allowedUnknown: false,
+    });
+    const environments = presetRows(presetFixtures(), [
+      { kind: "Environment", message: "forbidden" },
+    ]);
+    expect(environments.find((r) => r.id === "cluster/spare")).toMatchObject({
+      usersUnknown: false,
+      allowedUnknown: true,
+    });
+  });
+
   it("sorts by kind, then by name", () => {
     expect(presetRows(presetFixtures(), []).map((r) => r.id)).toEqual([
       "cluster/medium",

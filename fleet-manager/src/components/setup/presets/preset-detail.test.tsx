@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { ReadError } from "@/components/planes/planes-table";
+import type { Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
@@ -54,10 +55,10 @@ function setup(
       mode: "direct" as const,
     })),
   };
-  const view = (s: PresetSources) => (
+  const view = (s: PresetSources, e: ReadError[]) => (
     <GitPushesProvider>
       <PresetDetail
-        sources={{ ...s, errors }}
+        sources={{ ...s, errors: e }}
         kind={kind}
         name={name}
         mode={mode}
@@ -65,8 +66,12 @@ function setup(
       />
     </GitPushesProvider>
   );
-  const { rerender } = render(view(sources));
-  return { actions, rerender: (s: PresetSources) => rerender(view(s)) };
+  const { rerender } = render(view(sources, errors));
+  return {
+    actions,
+    rerender: (s: PresetSources, e: ReadError[] = errors) =>
+      rerender(view(s, e)),
+  };
 }
 
 const openDelete = (name: string) => {
@@ -200,6 +205,51 @@ describe("PresetDetail", () => {
     expect(
       screen.getByText("Could not read CamundaClusterClaim: forbidden"),
     ).toBeTruthy();
+  });
+
+  it("closes the delete review when a list of users cannot be read", () => {
+    const { actions, rerender } = setup({ name: "spare" });
+    openDelete("spare");
+    rerender(presetFixtures(), [
+      { kind: "CamundaCluster", message: "forbidden" },
+    ]);
+    expect(
+      screen.queryByRole("region", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(actions.applyChange).not.toHaveBeenCalled();
+  });
+
+  it("says Unknown for Used by and Allowed in while their lists cannot be read", () => {
+    setup({
+      errors: [
+        { kind: "Environment", message: "forbidden" },
+        { kind: "CamundaClusterClaim", message: "forbidden" },
+      ],
+    });
+    const header = within(screen.getByRole("banner"));
+    expect(header.getAllByText("Unknown")).toHaveLength(2);
+    expect(header.queryByText("1 cluster, 1 claim")).toBeNull();
+    expect(header.queryByText("production")).toBeNull();
+  });
+
+  it("pages through the inheriting resources without a write mode", () => {
+    const sources = presetFixtures();
+    sources.clusters = Array.from(
+      { length: 30 },
+      (_, i) =>
+        ({
+          ...sources.clusters[0],
+          metadata: { namespace: "team-orders", name: `orders-${i}` },
+        }) as Resource<"CamundaCluster">,
+    );
+    setup({ sources, mode: undefined });
+    const next = screen.getByRole("button", { name: "Next page" });
+    expect(next.matches(":disabled")).toBe(false);
   });
 
   it("says that the preset was deleted when it leaves the live list", () => {

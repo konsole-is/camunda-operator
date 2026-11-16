@@ -31,6 +31,10 @@ export type PresetRow = {
   facts: Fact[];
   allowedIn: string[];
   users: PresetUser[];
+  /** allowedUnknown is true while the environments cannot be read, so allowedIn can miss entries. */
+  allowedUnknown: boolean;
+  /** usersUnknown is true while another list of GUARD_KINDS cannot be read, so users can miss entries. */
+  usersUnknown: boolean;
   lastChanged?: string;
   deletable: boolean;
   blockedBy?: string;
@@ -129,7 +133,10 @@ export function presetRows(
         const name = preset.metadata.name ?? "";
         const users = presetUsers(kind, name, sources);
         const allowed = allowedIn(environments, kind, name);
-        const blockedBy = blockedByOf(kind, users, allowed, errors);
+        const unread = GUARD_KINDS[kind].filter((k) =>
+          errors.some((e) => e.kind === k),
+        );
+        const blockedBy = blockedByOf(unread, users, allowed);
         const description = presetDescription(preset);
         const changed = lastChanged(preset);
         return {
@@ -141,6 +148,8 @@ export function presetRows(
           facts: presetFacts(kind, presetBody(preset)),
           allowedIn: allowed,
           users,
+          allowedUnknown: unread.includes("Environment"),
+          usersUnknown: unread.some((k) => k !== "Environment"),
           ...(changed !== undefined && { lastChanged: changed }),
           deletable: blockedBy === undefined,
           ...(blockedBy !== undefined && { blockedBy }),
@@ -150,14 +159,10 @@ export function presetRows(
 }
 
 function blockedByOf(
-  kind: PresetKind,
+  unread: readonly KindName[],
   users: readonly PresetUser[],
   allowed: readonly string[],
-  errors: readonly ReadError[],
 ): string | undefined {
-  const unread = GUARD_KINDS[kind].filter((k) =>
-    errors.some((e) => e.kind === k),
-  );
   if (unread.length > 0)
     return `Delete is possible when the fleet manager can read ${unread.join(", ")}.`;
   if (users.length > 0)

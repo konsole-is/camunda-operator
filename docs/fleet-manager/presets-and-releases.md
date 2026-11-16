@@ -21,8 +21,8 @@ The list has one row for each preset, sorted by kind and then by name. To show o
 | Name | The name of the preset, with its description below it. |
 | Kind | **Cluster**, **Elasticsearch**, or **PostgreSQL**. |
 | Key facts | The size that the preset sets: brokers and partitions for a cluster, nodes for Elasticsearch, instances for PostgreSQL. Then the CPU and memory requests and the storage size. A fact that the preset does not set is not shown. |
-| Allowed in | The [environments](environments.md#platform-config-presets-and-releases) that list the preset, or **Nowhere**. The operator refuses a claim that names a preset that its environment does not list. |
-| Used by | The number of users of each kind, for example `1 cluster, 1 claim`, or **Unused**. [Who uses a preset](#who-uses-a-preset) says what counts as a user. |
+| Allowed in | The [environments](environments.md#platform-config-presets-and-releases) that list the preset, or **Nowhere**. The operator refuses a claim that names a preset that its environment does not list. The column shows **Unknown** while the fleet manager cannot read the environments. |
+| Used by | The number of users of each kind, for example `1 cluster, 1 claim`, or **Unused**. [Who uses a preset](#who-uses-a-preset) says what counts as a user. The column shows **Unknown** while the fleet manager cannot read a list of objects that can use the preset. |
 | Last changed | The time of the newest change to the preset, in UTC to the minute. In Git mode, this is the time that GitOps applied the file. |
 
 The description comes from the annotation `kubernetes.io/description` of the preset:
@@ -40,7 +40,7 @@ spec:
 
 A preset without the annotation shows no description. Two presets of different kinds can have the same name, for example an Elasticsearch preset and a PostgreSQL preset both named `standard`. The column **Kind** tells them apart, and the path of the preset page holds the kind, for example `/setup/presets/postgresql/standard`.
 
-If the fleet manager cannot read a kind, the page shows `Could not read <kind>: <message>` above the table.
+If the fleet manager cannot read a kind, the page shows `Could not read <kind>: <message>` above the table. It also shows this line while the connection to the cluster is lost and the list of a kind can be out of date.
 
 ## Who uses a preset
 
@@ -92,7 +92,7 @@ The operator does not stop a delete of a preset that is in use, for example by `
 
 ## The preset page
 
-Select a preset in the list to open its page. The header shows the kind, the description, the key facts, the environments that allow it, and each user as `<namespace>/<name>`.
+Select a preset in the list to open its page. The header shows the kind, the description, the key facts, the environments that allow it, and each user as `<namespace>/<name>`. The header shows **Unknown** for the environments or the users in the same cases as the list.
 
 ### Settings and merge rules
 

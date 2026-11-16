@@ -14,7 +14,7 @@ import { PRESET_KINDS, presetHref, presetLabel } from "./kinds";
 import { changedLabel, type PresetRow, presetRows, usedByLabel } from "./rows";
 import {
   type PresetActions,
-  type PresetSources,
+  type PresetSnapshot,
   usePresetSources,
 } from "./sources";
 
@@ -135,13 +135,18 @@ export function PresetList({
               ),
               kind,
               facts: <FactsList facts={row.facts} />,
-              allowed:
-                row.allowedIn.length > 0 ? (
-                  row.allowedIn.join(", ")
-                ) : (
-                  <span className="text-muted">Nowhere</span>
-                ),
-              users: usedByLabel(row.users),
+              allowed: row.allowedUnknown ? (
+                <span className="text-muted">Unknown</span>
+              ) : row.allowedIn.length > 0 ? (
+                row.allowedIn.join(", ")
+              ) : (
+                <span className="text-muted">Nowhere</span>
+              ),
+              users: row.usersUnknown ? (
+                <span className="text-muted">Unknown</span>
+              ) : (
+                usedByLabel(row.users)
+              ),
               changed: row.lastChanged ? (
                 <time dateTime={row.lastChanged} className="tabular-nums">
                   {changedLabel(row.lastChanged)}
@@ -231,7 +236,7 @@ export function PresetListLive({
   mode,
   actions,
 }: {
-  initial: PresetSources;
+  initial: PresetSnapshot;
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
