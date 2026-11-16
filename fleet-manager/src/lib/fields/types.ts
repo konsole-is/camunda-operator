@@ -50,7 +50,8 @@ export type FieldLock =
         | "notManaged"
         | "admin"
         | "atCreation"
-        | "chosenAtCreation";
+        | "chosenAtCreation"
+        | "immutableAfterStart";
     };
 
 /**

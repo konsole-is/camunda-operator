@@ -59,6 +59,7 @@ describe("lockLabel", () => {
     [{ reason: "admin" }, "Set by your admin"],
     [{ reason: "atCreation" }, "Set at creation"],
     [{ reason: "chosenAtCreation" }, "Chosen at creation"],
+    [{ reason: "immutableAfterStart" }, "Fixed after Identity started"],
   ])("%o reads %s", (lock, want) => {
     expect(lockLabel(lock)).toBe(want);
   });
