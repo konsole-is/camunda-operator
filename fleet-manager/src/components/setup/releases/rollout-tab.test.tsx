@@ -1,0 +1,326 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { ReadError } from "@/components/planes/planes-table";
+import type { Resource } from "@/lib/k8s/kinds";
+import type {
+  ApiError,
+  Change,
+  KubeObject,
+  WriteMode,
+} from "@/lib/write/types";
+import type { ReleaseActions } from "./release-detail";
+import { PARTIAL_MOVE_CAUTION, type RolloutData } from "./rollout";
+import {
+  cluster,
+  clusterClaim,
+  rolloutData,
+  targetRelease,
+} from "./rollout-fixtures";
+import { RolloutTab } from "./rollout-tab";
+
+vi.mock("@/lib/k8s/hooks", () => ({
+  useGitSync: () => "waiting",
+  useGitGone: () => "waiting",
+}));
+
+afterEach(cleanup);
+
+type Data = RolloutData & {
+  errors?: readonly ReadError[];
+  stale?: readonly string[];
+};
+
+const changed = (o: KubeObject) => ({
+  ref: {
+    apiVersion: o.apiVersion,
+    kind: o.kind,
+    namespace: o.metadata.namespace,
+    name: o.metadata.name,
+  },
+  diff: [{ op: "added" as const, text: "releaseRef: camunda-8-9-1" }],
+});
+
+const staleErrorOf = (namespace: string, name: string): ApiError => ({
+  code: "Stale",
+  message: `The CamundaClusterClaim ${name} changed since you opened it.`,
+  ref: {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace,
+    name,
+  },
+});
+
+function renderTab(opts: { data?: Data; mode?: WriteMode } = {}) {
+  const mode = "mode" in opts ? opts.mode : "direct";
+  const actions = {
+    previewMove: vi.fn<ReleaseActions["previewMove"]>(async (c: Change) => ({
+      objects: c.apply.map(changed),
+      errors: [],
+    })),
+    applyMove: vi.fn<ReleaseActions["applyMove"]>(async () => ({
+      ok: true as const,
+      mode: "direct" as const,
+    })),
+  };
+  const view = (data: Data) => (
+    <GitPushesProvider>
+      <RolloutTab
+        release={targetRelease}
+        data={data}
+        mode={mode}
+        actions={actions}
+      />
+    </GitPushesProvider>
+  );
+  const { rerender } = render(view(opts.data ?? rolloutData()));
+  return { actions, rerender: (data: Data) => rerender(view(data)) };
+}
+
+const rowOf = (name: string) =>
+  screen.getByRole("link", { name }).closest("tr") as HTMLElement;
+
+const withBackupOf = (name: string, phase = "Running"): RolloutData =>
+  rolloutData({
+    rdbmsBackups: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "LogicalBackupRDBMS",
+        metadata: { namespace: "team-orders", name: `${name}-now` },
+        spec: { clusterRef: { name } },
+        status: { phase },
+      } as Resource<"LogicalBackupRDBMS">,
+    ],
+  });
+
+// freshCanMove gives the cluster fresh the version 8.9.0, so that two
+// clusters can move.
+function freshCanMove(): RolloutData {
+  const data = rolloutData();
+  return {
+    ...data,
+    clusters: data.clusters.map((c) =>
+      c.metadata?.name === "fresh"
+        ? cluster("team-pay", "fresh", { version: "8.9.0" })
+        : c,
+    ),
+  };
+}
+
+describe("RolloutTab", () => {
+  it("shows each cluster with its environment, release, version, and eligibility", () => {
+    renderTab();
+    const orders = within(rowOf("orders"));
+    expect(orders.getByRole("link", { name: "Production" })).toHaveProperty(
+      "pathname",
+      "/setup/environments/production",
+    );
+    for (const text of ["team-orders", "camunda-8-9-0", "8.9.0", "Can move."])
+      expect(orders.getByText(text)).toBeTruthy();
+    expect(
+      within(rowOf("fresh")).getByText("Not reported"),
+    ).toBeTruthy();
+    expect(rowOf("orders").querySelector("a")?.getAttribute("href")).toBe(
+      "/fleet/clusters/team-orders/orders",
+    );
+  });
+
+  it("selects nothing at first", () => {
+    renderTab();
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .filter((c) => c.getAttribute("aria-checked") === "true"),
+    ).toEqual([]);
+    expect(
+      screen.getByRole("button", { name: "Move selected" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("selects only the clusters that can move, then moves them in one write", async () => {
+    const { actions } = renderTab();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Select all that can move" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Move selected" }));
+    expect(
+      await screen.findByText(
+        /team-orders\/orders: .*The brokers restart one at a time/,
+      ),
+    ).toBeTruthy();
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    expect(
+      actions.applyMove.mock.calls[0][0].apply.map((o) => o.metadata.name),
+    ).toEqual(["orders"]);
+    expect(
+      await screen.findByText("Moved team-orders/orders to camunda-8-9-1."),
+    ).toBeTruthy();
+  });
+
+  it("confirms a downgrade with allowVersionDowngrade on the claim", async () => {
+    const { actions } = renderTab();
+    await userEvent.click(
+      within(rowOf("payments")).getByRole("button", {
+        name: "Confirm downgrade",
+      }),
+    );
+    const confirm = await screen.findByRole("button", {
+      name: "Confirm downgrade",
+    });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    expect(actions.applyMove.mock.calls[0][0].apply[0].spec).toMatchObject({
+      releaseRef: "camunda-8-9-1",
+      allowVersionDowngrade: "8.9.1",
+    });
+  });
+
+  it("offers no move for a skip, a running backup, or an unmanaged cluster", () => {
+    renderTab();
+    for (const name of ["ledger", "billing", "legacy"])
+      expect(
+        within(rowOf(name)).queryByRole("button", { name: /Move|Confirm/ }),
+      ).toBeNull();
+  });
+
+  it("links a cluster that the environment does not allow to its Environment", () => {
+    renderTab();
+    expect(
+      within(rowOf("stage"))
+        .getByRole("link", { name: "Open Environments" })
+        .getAttribute("href"),
+    ).toBe("/setup/environments/staging");
+  });
+
+  it("names each claim that failed after a partial write", async () => {
+    const { actions } = renderTab({ data: freshCanMove() });
+    actions.applyMove.mockResolvedValueOnce({
+      ok: false,
+      errors: [staleErrorOf("team-pay", "fresh")],
+    });
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-pay/fresh" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Move selected" }));
+    expect(await screen.findByText(PARTIAL_MOVE_CAUTION)).toBeTruthy();
+    const confirm = await screen.findByRole("button", { name: "Move" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    await userEvent.click(confirm);
+    expect(
+      await screen.findByText(
+        "team-pay/fresh: The CamundaClusterClaim fresh changed since you opened it.",
+      ),
+    ).toBeTruthy();
+    expect(
+      actions.applyMove.mock.calls[0][0].apply.map((o) => o.metadata.name),
+    ).toEqual(["orders", "fresh"]);
+  });
+
+  it("drops a selected row that a backup now blocks", async () => {
+    const { rerender } = renderTab();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select team-orders/orders" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Move selected" }),
+    ).toHaveProperty("disabled", false);
+    rerender(withBackupOf("orders"));
+    expect(
+      screen.getByRole("button", { name: "Move selected" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("closes an open review when a backup of its cluster starts", async () => {
+    const { rerender } = renderTab();
+    await userEvent.click(
+      within(rowOf("orders")).getByRole("button", { name: "Move" }),
+    );
+    expect(screen.getByRole("region", { name: "Review the move" })).toBeTruthy();
+    rerender(withBackupOf("orders", "Pending"));
+    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(
+      within(rowOf("orders")).getByText(
+        "Backup orders-now is running. The move waits until it ends.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers no move, names the list, and closes an open review while a list that the move checks is not read", async () => {
+    const { rerender } = renderTab();
+    await userEvent.click(
+      within(rowOf("orders")).getByRole("button", { name: "Move" }),
+    );
+    rerender({
+      ...rolloutData(),
+      errors: [{ kind: "LogicalBackupRDBMS", message: "forbidden" }],
+      stale: ["PluginRequest"],
+    });
+    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(
+      screen.getByText("Could not read LogicalBackupRDBMS: forbidden"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A move is possible when the fleet manager has read LogicalBackupRDBMS, PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(within(rowOf("orders")).queryByText("Can move.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Move|Confirm downgrade)$/ }))
+      .toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Select all that can move" }),
+    ).toHaveProperty("disabled", true);
+  });
+
+  it("shows the errors of a claim that the checks refuse, and opens no review", async () => {
+    const data = rolloutData();
+    renderTab({
+      data: {
+        ...data,
+        claims: data.claims.map((c) =>
+          c.metadata.name === "fresh"
+            ? ({
+                ...clusterClaim("team-pay", "fresh"),
+                spec: { presetRef: 7, releaseRef: null, cluster: { version: 42 } },
+              } as unknown as Resource<"CamundaClusterClaim">)
+            : c,
+        ),
+      },
+    });
+    await userEvent.click(
+      within(rowOf("fresh")).getByRole("button", { name: "Move" }),
+    );
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getAllByText(/^team-pay\/fresh: /).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByRole("region", { name: "Review the move" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Clusters" })).toBeTruthy();
+  });
+
+  it("offers no move without a write mode", () => {
+    renderTab({ mode: undefined });
+    expect(screen.queryAllByRole("checkbox")).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Move" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Move selected" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /settings/i }).getAttribute("href"),
+    ).toBe("/setup/settings");
+  });
+});

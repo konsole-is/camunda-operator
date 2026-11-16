@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { imagesFixture, releaseFixtures } from "./fixtures";
 import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
+import type { ReleaseTab } from "./release-tabs";
 import type { ReleasesData } from "./sources";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -20,11 +21,17 @@ const actions: ReleaseActions = {
     ok: true as const,
     mode: "direct" as const,
   })),
+  previewMove: vi.fn(async () => ({ objects: [], errors: [] })),
+  applyMove: vi.fn(async () => ({
+    ok: true as const,
+    mode: "direct" as const,
+  })),
 };
 
 function show(
   name = "camunda-8-9-0",
   sources: ReleasesData = releaseFixtures(),
+  tab: ReleaseTab = "settings",
 ) {
   render(
     <GitPushesProvider>
@@ -33,7 +40,7 @@ function show(
         name={name}
         imagesTable={imagesFixture}
         secrets={{}}
-        tab="settings"
+        tab={tab}
         mode="direct"
         actions={actions}
       />
@@ -80,6 +87,32 @@ describe("ReleaseDetailView", () => {
         (r) => r.metadata.name !== "camunda-8-9-1",
       ),
     });
+    expect(
+      screen.getByText("The release camunda-8-9-1 does not exist."),
+    ).toBeTruthy();
+  });
+
+  it("shows the Rollout tab and its clusters on ?tab=rollout", () => {
+    show("camunda-8-9-1", releaseFixtures(), "rollout");
+    expect(
+      screen.getByRole("tab", { name: "Rollout" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    const table = screen.getByRole("region", { name: "Clusters" });
+    expect(within(table).getByRole("link", { name: "orders" })).toBeTruthy();
+  });
+
+  it("says on the Rollout tab that a release missing from the live list does not exist", () => {
+    const sources = releaseFixtures();
+    show(
+      "camunda-8-9-1",
+      {
+        ...sources,
+        releases: sources.releases.filter(
+          (r) => r.metadata.name !== "camunda-8-9-1",
+        ),
+      },
+      "rollout",
+    );
     expect(
       screen.getByText("The release camunda-8-9-1 does not exist."),
     ).toBeTruthy();

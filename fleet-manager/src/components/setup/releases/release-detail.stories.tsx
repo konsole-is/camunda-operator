@@ -19,6 +19,11 @@ const meta = {
         ok: true as const,
         mode: "direct" as const,
       })),
+      previewMove: fn(async () => ({ objects: [], errors: [] })),
+      applyMove: fn(async () => ({
+        ok: true as const,
+        mode: "direct" as const,
+      })),
     },
   },
 } satisfies Meta<typeof ReleaseDetailView>;

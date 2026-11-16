@@ -6,7 +6,12 @@ import { get } from "@/lib/k8s/read";
 import { listSecretRefsIn } from "@/lib/secrets";
 import { releaseSecretNamespaces } from "@/lib/usage";
 import { writeMode } from "@/lib/write/writer";
-import { applyReleaseChange, previewReleaseChange } from "../actions";
+import {
+  applyReleaseChange,
+  applyReleaseMove,
+  previewReleaseChange,
+  previewReleaseMove,
+} from "../actions";
 import { loadReleases } from "../load";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -43,6 +48,8 @@ export default async function ReleasePage({
       actions={{
         previewChange: previewReleaseChange,
         applyChange: applyReleaseChange,
+        previewMove: previewReleaseMove,
+        applyMove: applyReleaseMove,
       }}
     />
   );
