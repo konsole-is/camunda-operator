@@ -4,8 +4,8 @@
 //
 //   vi.mock("@/lib/write/writer", () => import("<relative>/test/fakes/writer"))
 //
-// Of that module, it serves only getWriter, writeMode, firstExisting, and
-// listObjects. A test that needs refKey imports it from @/lib/write/refs.
+// Of that module, it serves only getWriter, writeMode, firstExisting,
+// listObjects, and readLive. A test that needs refKey imports it from @/lib/write/refs.
 // A test resets fakeWriter before each test.
 import { createHash } from "node:crypto";
 import { refKey, refOf } from "@/lib/write/refs";
@@ -40,9 +40,9 @@ export class FakeWriter implements Writer {
   results: WriteResult[] = [];
   /** previews are the results of the next previews, first one first. */
   previews: Preview[] = [];
-  /** objects are the objects that firstExisting and listObjects read. */
+  /** objects are the objects that firstExisting, listObjects, and readLive read. */
   objects: KubeObject[] = [];
-  /** readError, when set, is what firstExisting and listObjects throw. */
+  /** readError, when set, is what firstExisting, listObjects, and readLive throw. */
   readError?: Error;
   private commits = 0;
 
@@ -130,6 +130,14 @@ export async function listObjects(
   return fakeWriter.objects.filter(
     (o) => o.kind === kind && o.metadata.namespace === namespace,
   );
+}
+
+/** readLive returns the object of ref in fakeWriter.objects. */
+export async function readLive(
+  ref: ObjectRef,
+): Promise<KubeObject | undefined> {
+  if (fakeWriter.readError) throw fakeWriter.readError;
+  return fakeWriter.objects.find((o) => refKey(refOf(o)) === refKey(ref));
 }
 
 /** getWriter returns fakeWriter. */

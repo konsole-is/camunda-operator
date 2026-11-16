@@ -3,13 +3,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReadError } from "@/components/planes/planes-table";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
-import { useGitSync, useResource, useWatchesFresh } from "@/lib/k8s/hooks";
 import {
+  useGitSync,
+  useResource,
+  useResources,
+  useWatchesFresh,
+} from "@/lib/k8s/hooks";
+import {
+  CLEANUP_FINALIZER,
+  claimObserved,
+  type ClaimState,
   type DeletableClaim,
   deletionPolicyOf,
   type DeletionPolicy,
   equalJSON,
   orphanRefusedBy,
+  requestsBehind,
+  type RequestState,
+  requestsWithout,
 } from "@/lib/policy";
 import { precheckOf } from "@/lib/session";
 import { refKey } from "@/lib/write/refs";
@@ -45,12 +56,12 @@ export type PolicyAfterWrite = {
 
 /**
  * ClaimDeleteStage is where the delete of a claim is. choose: no delete is
- * under way, or a delete after the policy write was refused with errors or
- * stopped; afterPolicyWrite is then set. waiting: the policy write waits
- * for GitOps, or for the claim controller to read it. deleting: the delete
- * is sent or the claim is being deleted; gitWaiting says that the delete
- * commit waits for GitOps to delete the claim; keepRefused says what to do
- * when the claim controller refuses the delete because a registration
+ * under way, or a delete after the policy write was refused or stopped;
+ * afterPolicyWrite is then set. waiting: the delete waits for the policy
+ * write; blocked names the requests that lack the policy. deleting: the
+ * delete is sent or the claim is being deleted; gitWaiting says that the
+ * delete commit waits for GitOps to delete the claim; keepRefused says what
+ * to do when the claim controller refuses the delete because a registration
  * cannot keep. deleted: the claim is gone. replaced: a claim with another
  * UID has its name.
  */
@@ -60,7 +71,7 @@ export type ClaimDeleteStage =
       errors?: ApiError[];
       afterPolicyWrite?: PolicyAfterWrite;
     }
-  | { kind: "waiting" }
+  | { kind: "waiting"; blocked?: string }
   | { kind: "deleting"; gitWaiting: boolean; keepRefused?: string }
   | { kind: "deleted" }
   | { kind: "replaced" };
@@ -86,18 +97,21 @@ type Sent =
 /**
  * useClaimDelete runs the delete of a claim of either kind with the steps
  * of deleteClaimSteps, on the claim that it follows live from initial.
- * Give remove, apply, and onWritten to a ChangeReview. remove carries no
- * resourceVersion, and apply sends the delete at the newest one. apply
- * refuses without a write when the preview of the delete fails. After a
- * policy write it returns that result, and the hook sends the delete once
- * the claim controller read the policy. It sends nothing for a claim with
+ * Give remove, apply, and onWritten to a ChangeReview. remove names the UID
+ * and the generation of the claim, so the server refuses its delete with
+ * Stale after a spec change. Without a policy step, apply sends the change
+ * that it gets. With one, apply refuses without a write when the preview
+ * of the delete fails, and returns the result of the policy write. The
+ * hook then sends the delete itself. It sends nothing for a claim with
  * another UID, and refuses with Stale when another spec change came in.
  * keepRefused names the registrations of the claim that cannot keep while
  * policy is Orphan. apply then refuses with Invalid and writes nothing, and
  * the delete after the policy write does too. registrations are the live
  * PluginRegistrations. reads holds the failed or stale watch of the claim:
- * the policy step needs a current claim. It needs a QueryClientProvider
- * above it.
+ * the policy step needs a current claim. Unless mode is direct and the
+ * claim has the cleanup finalizer, a failed or stale PluginRequest watch
+ * keeps the delete after the policy write waiting, and reads does not show
+ * it. It needs a QueryClientProvider above it.
  */
 export function useClaimDelete<C extends DeletableClaim>(input: {
   initial: C;
@@ -137,12 +151,24 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     { namespace, name },
     initial as never,
   );
-  const [fresh] = useWatchesFresh([{ kind, opts: { namespace, name } }]);
+  const requests = useResources("PluginRequest", { namespace }, []);
+  const [fresh, requestsFresh] = useWatchesFresh([
+    { kind, opts: { namespace, name } },
+    { kind: "PluginRequest", opts: { namespace } },
+  ]);
   const live = item as C | undefined;
   const [sent, setSent] = useState<Sent>({ kind: "choose" });
 
   const uid = live?.metadata.uid;
   const version = live?.metadata.resourceVersion;
+  const generation = live?.metadata.generation;
+  const finalized = (
+    (live ?? initial).metadata as { finalizers?: string[] }
+  ).finalizers?.includes(CLEANUP_FINALIZER);
+  // The cleanup finalizer writes the policy of the claim on each request
+  // that is not being deleted, before it deletes any. A claim without its
+  // finalizer gives no policy to its requests on delete.
+  const guarded = mode !== "direct" || !finalized;
   const spec = JSON.stringify((live ?? initial).spec);
   // ChangeReview keeps a refused write blocked for the same change object.
   // A refusal for a version that the watch has not shown yet ends with the
@@ -151,18 +177,29 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   if (refusal.at !== undefined && refusal.at !== version)
     setRefusal({ retry: version });
   const { retry } = refusal;
+  const without = (claim: C, held: DeletionPolicy) =>
+    requestsFresh && requests.error === undefined
+      ? requestsWithout(
+          claim as unknown as ClaimState,
+          requests.items as unknown as RequestState[],
+          held,
+        )
+      : undefined;
+  const carried =
+    !guarded ||
+    without(
+      live ?? initial,
+      deletionPolicyOf(
+        (live ?? initial).spec?.deletionPolicy,
+        (live ?? initial).status?.resolvedPolicy,
+      ),
+    )?.length === 0;
   const remove = useMemo(
-    () => {
-      const review = {
-        ...deleteClaimSteps(live ?? initial, policy, intent).remove,
-      };
-      delete review.preconditions;
-      return review;
-    },
+    () => deleteClaimSteps(live ?? initial, policy, intent).remove,
     // A Git preview clones the repository, so a status write of the claim
     // must not start a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [uid, spec, intent, policy, retry],
+    [uid, generation, finalized, spec, intent, policy, retry, carried],
   );
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
@@ -195,7 +232,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     original === undefined || claim.metadata.uid === original;
 
   const send = useCallback(
-    async (): Promise<WriteResult> => {
+    async (change: Change): Promise<WriteResult> => {
       const { live, policy, registrations, intent, actions } = latest.current;
       setSent((s) =>
         s.kind === "choose" && s.written
@@ -208,7 +245,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       if (refused)
         return { ok: false, errors: [{ code: "Invalid", message: refused }] };
       const steps = deleteClaimSteps(live, policy, intent);
-      if (!steps.policy) return actions.remove(steps.remove).catch(unavailable);
+      if (!steps.policy) return actions.remove(change).catch(unavailable);
       // A delete that would be refused must not leave the claim with a
       // new policy.
       const checked = await actions
@@ -236,12 +273,15 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  const apply = useCallback(async (): Promise<WriteResult> => {
-    const at = latest.current.live?.metadata.resourceVersion ?? "";
-    const result = await send();
-    if (!result.ok) setRefusal((r) => ({ ...r, at }));
-    return result;
-  }, [send]);
+  const apply = useCallback(
+    async (change: Change): Promise<WriteResult> => {
+      const at = latest.current.live?.metadata.resourceVersion ?? "";
+      const result = await send(change);
+      if (!result.ok) setRefusal((r) => ({ ...r, at }));
+      return result;
+    },
+    [send],
+  );
   const onWritten = useCallback(
     () => setSent((s) => (s.kind === "waiting" ? s : { kind: "deleting" })),
     [],
@@ -275,12 +315,20 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     live !== undefined &&
     !written &&
     (sent.seen || !equalJSON(live.spec, sent.before));
-  const settled =
+  const reached =
     written &&
     sent.kind === "waiting" &&
     live !== undefined &&
-    (sent.revision === undefined || sync === "applied") &&
-    observed(live);
+    (sent.revision === undefined || sync === "applied");
+  // An older pass of the claim controller can still make a request with
+  // the old policy until it read the generation of the policy write.
+  const read =
+    reached &&
+    live !== undefined &&
+    claimObserved(live as unknown as ClaimState);
+  const behind =
+    read && sent.kind === "waiting" ? without(live, sent.policy) : undefined;
+  const settled = reached && (!guarded || behind?.length === 0);
   if (changedSince && live !== undefined && isOriginal(live))
     setSent({
       kind: "choose",
@@ -333,7 +381,15 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       gitWaiting: mode === "git" && !deleting,
       ...(stuck && { keepRefused: stuck }),
     };
-  } else if (sent.kind === "waiting") stage = { kind: "waiting" };
+  } else if (sent.kind === "waiting")
+    stage = {
+      kind: "waiting",
+      ...(guarded &&
+        behind !== undefined &&
+        behind.length > 0 && {
+          blocked: requestsBehind(live as unknown as ClaimState, behind),
+        }),
+    };
   else {
     const { written, ...rest } = sent;
     const held = deletionPolicyOf(
@@ -367,15 +423,6 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     onWritten,
     stopWaiting,
   };
-}
-
-// observed says that the claim controller read the current generation of
-// claim. A claim that lacks one of the numbers counts as read.
-function observed(claim: DeletableClaim): boolean {
-  const generation = (claim.metadata as { generation?: number }).generation;
-  const seen = (claim.status as { observedGeneration?: number } | undefined)
-    ?.observedGeneration;
-  return generation === undefined || seen === undefined || generation === seen;
 }
 
 function keepRefusal(
