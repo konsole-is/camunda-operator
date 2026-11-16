@@ -277,13 +277,13 @@ func TestTemplateHashIgnoresTheValueOfTheConfigHash(t *testing.T) {
 	}
 
 	first := withConfigHash("0429b9eafb6e532c")
-	assert.Equal(t, templateHash(first, d), templateHash(withConfigHash("8b18034a08aa4335"), d))
+	assert.Equal(t, templateHash(first), templateHash(withConfigHash("8b18034a08aa4335")))
 	assert.Equal(t, "0429b9eafb6e532c", first.Annotations[camundamanagementcluster.ConfigHashAnnotation],
 		"the template keeps its own config hash")
 
 	newImage := withConfigHash("0429b9eafb6e532c")
 	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
-	assert.NotEqual(t, templateHash(first, d), templateHash(newImage, d))
+	assert.NotEqual(t, templateHash(first), templateHash(newImage))
 }
 
 func TestTemplateHashIgnoresTheUIDOfAnObjectThatIsNotAnOwner(t *testing.T) {
@@ -295,13 +295,29 @@ func TestTemplateHashIgnoresTheUIDOfAnObjectThatIsNotAnOwner(t *testing.T) {
 	}
 
 	first := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
-	assert.Equal(t, templateHash(first, d), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605"), d))
+	assert.Equal(t, templateHash(first), templateHash(withClusterUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605")))
 	assert.Equal(t, "6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71", first.Labels[operatorlabels.ClusterUIDKey],
 		"the template keeps its own UID")
 
 	newImage := withClusterUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
 	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.24"
-	assert.NotEqual(t, templateHash(first, d), templateHash(newImage, d))
+	assert.NotEqual(t, templateHash(first), templateHash(newImage))
+}
+
+func TestTemplateHashIgnoresAUIDInTheValueOfAnEnvironmentVariable(t *testing.T) {
+	d := webapp()
+	withEnvUID := func(uid string) corev1.PodTemplateSpec {
+		template := *d.Spec.Template.DeepCopy()
+		template.Spec.Containers[0].Env = []corev1.EnvVar{{Name: "CAMUNDA_MODELER_CLUSTERS_0_ID", Value: uid}}
+		return template
+	}
+
+	first := withEnvUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
+	assert.Equal(t, templateHash(first), templateHash(withEnvUID("d2a6e3b4-7c1f-4f0e-b5d8-91e2c3a4f605")))
+
+	newImage := withEnvUID("6b0f3c1e-2f4d-4a59-9a43-0c4f1d2e8a71")
+	newImage.Spec.Containers[0].Image = "camunda/optimize:8.9.25"
+	assert.NotEqual(t, templateHash(first), templateHash(newImage))
 }
 
 func TestSimulatorKeepsTheReplicaSetWhenOnlyTheConfigHashChanges(t *testing.T) {

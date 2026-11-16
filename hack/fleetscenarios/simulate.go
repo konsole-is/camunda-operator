@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -26,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -133,7 +133,7 @@ func (s *simulator) statefulSets(ctx context.Context, ns string) (int, error) {
 func (s *simulator) statefulSet(ctx context.Context, sts *appsv1.StatefulSet) (int, error) {
 	replicas := ptr.Deref(sts.Spec.Replicas, 1)
 	ready := s.readyCount(kindStatefulSet, sts.Namespace, sts.Name, replicas)
-	revision := sts.Name + "-" + templateHash(sts.Spec.Template, sts)
+	revision := sts.Name + "-" + templateHash(sts.Spec.Template)
 	writes := 0
 
 	pods, err := s.ownedPods(ctx, sts.Namespace, "StatefulSet", sts.Name)
@@ -324,7 +324,7 @@ func (s *simulator) deployments(ctx context.Context, ns string) (int, error) {
 func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, error) {
 	replicas := ptr.Deref(d.Spec.Replicas, 1)
 	ready := s.readyCount(kindDeployment, d.Namespace, d.Name, replicas)
-	hash := templateHash(d.Spec.Template, d)
+	hash := templateHash(d.Spec.Template)
 	rsName := d.Name + "-" + hash
 	writes := 0
 
@@ -855,35 +855,24 @@ func (s *simulator) writePodStatus(ctx context.Context, pod *corev1.Pod, status 
 	return 1, nil
 }
 
+// uuidPattern matches a UID as the API server writes it.
+var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
 // templateHash returns the first 10 hex characters of the SHA-256 of the
-// JSON of t, the template of workload. Two templates of workload that differ
-// only in the UID of an owner of workload, in the value of a label or
-// annotation that is a UID, or in the value of the config hash annotation
-// get one hash.
-func templateHash(t corev1.PodTemplateSpec, workload metav1.Object) string {
-	t.Labels = withFixedUIDs(t.Labels)
-	t.Annotations = withFixedUIDs(t.Annotations)
+// JSON of t. Two templates that differ only in a UID, wherever it stands
+// (a label, an annotation, an environment variable), or in the value of the
+// config hash annotation get one hash. The API server draws each UID at
+// random, so a hash that read one would change on each run.
+func templateHash(t corev1.PodTemplateSpec) string {
+	t.Annotations = maps.Clone(t.Annotations)
 	if _, ok := t.Annotations[camundamanagementcluster.ConfigHashAnnotation]; ok {
 		t.Annotations[camundamanagementcluster.ConfigHashAnnotation] = scenarioConfigHash
 	}
 
 	data, _ := json.Marshal(t)
-	for _, owner := range workload.GetOwnerReferences() {
-		derived := scenarioUID(owner.Kind, workload.GetNamespace(), owner.Name)
-		data = bytes.ReplaceAll(data, []byte(owner.UID), []byte(derived))
-	}
+	data = uuidPattern.ReplaceAll(data, []byte(uuid.Nil.String()))
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])[:10]
-}
-
-func withFixedUIDs(values map[string]string) map[string]string {
-	out := maps.Clone(values)
-	for key, value := range out {
-		if id, err := uuid.Parse(value); err == nil && id.String() == value {
-			out[key] = uuid.Nil.String()
-		}
-	}
-	return out
 }
 
 // podSuffix returns 5 characters from the alphabet of the generated names
