@@ -66,9 +66,9 @@ export type ResourceFateRow = ResourceRow & { fate?: "Kept" | "Deleted" };
  * GrantRow is the view of one Grant with all its conditions. statement is
  * spec.fragment as indented JSON. request is set only in the grants of the
  * cloud identity. templateGone is true when the registration of the Grant
- * is in the page data and no longer has its template. errors name each
- * value of the wrong type, and a value that has one is absent: error, the
- * error of the conditions, is one of them.
+ * is in the page data and no longer has its template. errors hold an entry
+ * when the statement is not a JSON object, and error, the error of the
+ * conditions. A value that has one is absent.
  */
 export type GrantRow = GrantView & {
   template: string;
@@ -441,9 +441,8 @@ function isResource(item: unknown): item is ResourceRow {
   );
 }
 
-// outputRows names the fields that each output fills. The field of the
-// CamundaOptimize is filled only while the claim attaches an Optimize
-// (optimize of pkg/components/camundaclusterclaim).
+// The field of the CamundaOptimize is filled only while the claim attaches
+// an Optimize (optimize of pkg/components/camundaclusterclaim).
 function outputRows(
   outputs: unknown,
   slot: string | undefined,
@@ -528,7 +527,8 @@ function grantRow(
 }
 
 // connectedRefs reads the resolved parameters of the request, as the
-// built-in controller does (existing.go of internal/controller/plugins/builtin).
+// built-in controller does (existing.go of
+// internal/controller/plugins/builtin/existing).
 function connectedRefs(
   request: Resource<"PluginRequest">,
   contracts: Partial<Record<ContractKind, readonly ContractObject[]>>,

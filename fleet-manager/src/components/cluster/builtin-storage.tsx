@@ -21,8 +21,9 @@ const NOT_REPORTED = "Not reported yet";
  * and the conditions. A field that the status does not hold says "Not
  * reported yet". unread holds the kinds that the page could not read or
  * that are out of date: while it holds the kind of storage, the box names
- * that kind, shows its conditions and each missing field as Not known,
- * and says nothing of missing volumes. An object that is not
+ * that kind, and for an object that it has, it shows the conditions as Not
+ * known, gives Not known in place of "Not reported yet", and says nothing
+ * of missing volumes. An object that is not
  * in the namespace shows nothing, unless its kind is unread. now is the
  * time that the ages count to.
  */

@@ -83,7 +83,7 @@ import { TopologyView } from "./topology-view";
  * elasticsearchClusters hold the Grants and ElasticsearchClusters of the
  * namespace. fieldDocs holds the help of the settings fields by field key.
  * readErrors names each kind whose first read failed: its list is then
- * empty, and the page says so until the watch of the kind answers.
+ * empty.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -800,8 +800,7 @@ export function ClusterView({
   );
 }
 
-// SETTINGS_KINDS are the kinds that the parameters of a selection come
-// from, through claimView.
+// SETTINGS_KINDS are the kinds of the lists that claimView reads.
 const SETTINGS_KINDS: readonly string[] = [
   "CamundaClusterClaim",
   "PluginSection",

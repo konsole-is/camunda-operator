@@ -4,8 +4,6 @@ import { isObject } from "./json";
 
 const STATUSES: readonly unknown[] = ["True", "False", "Unknown"];
 
-// A watch can give an object of an older CRD, so a status is checked before
-// a page uses it.
 const isText = (value: unknown, optional = false) =>
   typeof value === "string" || (optional && value === undefined);
 

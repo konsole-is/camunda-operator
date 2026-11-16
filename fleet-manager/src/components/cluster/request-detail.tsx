@@ -432,8 +432,6 @@ function Resources({
   detail: RequestDetail;
   claimUnread: boolean;
 }) {
-  // A request that is being deleted keeps its own policy, which does not
-  // depend on the claim.
   const fatesUnknown = claimUnread && !detail.deleting;
   const fateOf = (fate: string | undefined) =>
     fatesUnknown
