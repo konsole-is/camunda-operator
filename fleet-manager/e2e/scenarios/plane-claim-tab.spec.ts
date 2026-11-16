@@ -25,7 +25,17 @@ test("the Claim tab of a plane shows each section of its claim", async ({
   await checkPage(page, "plane-claim-tab");
 });
 
-test("a move of the identity mode shows what it does and saves only the claim", async ({
+type Claim = {
+  spec: {
+    deletionPolicy?: string;
+    management: { identityProvider: Record<string, unknown> };
+  };
+};
+
+// The scenario applied the claim with kubectl, which owns its fields. The
+// fleet manager does not take a field over, so a change of such a field
+// stops in the review, and a field that no tool owns saves.
+test("a move of the identity mode shows what it does, and a field that kubectl owns stops the save", async ({
   page,
   scenario,
 }) => {
@@ -52,39 +62,42 @@ test("a move of the identity mode shows what it does and saves only the claim", 
   );
   await expect(effects).toContainText("The first administrator stays.");
   await expect(effects).toContainText("restart");
-  const save = dialog.getByRole("button", { name: "Save" });
-  await expect(save).toBeDisabled();
+  await expect(dialog.getByLabel(/to confirm/)).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("kubectl");
   await checkPage(page, "plane-claim-review");
 
   await dialog.getByLabel(/to confirm/).fill("plane-a");
+  await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  const claim = await kubeRequest<Claim>(scenario.admin, "GET", CLAIM);
+  expect(claim.spec.management.identityProvider).toEqual({ oidc: {} });
+});
+
+test("a change of the deletion policy saves only the claim", async ({
+  page,
+  scenario,
+}) => {
+  await page.goto(PAGE);
+  await page
+    .getByRole("button", { name: "Edit When the plane is deleted" })
+    .click();
+  await page.getByRole("radio", { name: /Keep the resources/ }).click();
+  await page
+    .getByRole("region", { name: "Unsaved changes" })
+    .getByRole("button", { name: "Review" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Review the change" });
+  await expect(dialog.getByLabel(/to confirm/)).toHaveCount(0);
+  const save = dialog.getByRole("button", { name: "Save" });
   await expect(save).toBeEnabled();
   await save.click();
   await expect(
     page.getByRole("status").filter({ hasText: "The claim plane-a is saved." }),
   ).toBeVisible();
 
-  const claim = await kubeRequest<{
-    spec: {
-      management: {
-        identityProvider: Record<string, unknown>;
-        identity: { admin: Record<string, unknown> };
-      };
-    };
-  }>(scenario.admin, "GET", CLAIM);
-  expect(claim.spec.management.identityProvider).toEqual({
-    externalKeycloak: expect.objectContaining({
-      url: "https://keycloak.example.com/auth",
-      adminCredentialsSecretRef: expect.objectContaining({
-        name: "keycloak-admin",
-      }),
-    }),
-  });
-  expect(claim.spec.management.identity.admin).toEqual({
-    username: "admin",
-    email: "admin@example.com",
-  });
+  const claim = await kubeRequest<Claim>(scenario.admin, "GET", CLAIM);
+  expect(claim.spec.deletionPolicy).toBe("Orphan");
   // No controller runs during a page scenario, so the plane keeps its
-  // mode: the page wrote only the claim.
+  // spec: the page wrote only the claim.
   const plane = await kubeRequest<{
     spec: { identityProvider: Record<string, unknown> };
   }>(
