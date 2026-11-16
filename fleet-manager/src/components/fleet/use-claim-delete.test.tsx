@@ -280,6 +280,18 @@ describe("useClaimDelete", () => {
     await waitFor(() => expect(hook.result.current.remove).not.toBe(behind));
   });
 
+  it("gives a new remove step when the cleanup finalizer of the claim comes back", async () => {
+    const lost = claim({ metadata: { finalizers: [] } });
+    const { hook } = mount(lost);
+    await live(lost);
+    await waitFor(() =>
+      expect(hook.result.current.reads).toEqual({ errors: [], stale: [] }),
+    );
+    const before = hook.result.current.remove;
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(before));
+  });
+
   it("a status write that the watch has not shown yet does not refuse the delete", async () => {
     const { hook } = mount(claim());
     fakeWriter.objects = [claim({ metadata: { resourceVersion: "43" } })];
