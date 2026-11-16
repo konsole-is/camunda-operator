@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 function show(initial: PlaneCreateData = data) {
-  render(
+  return render(
     <PlaneCreateFlow
       initial={initial}
       mode={fakeWriter.mode}
@@ -204,6 +204,46 @@ const create = () =>
   screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
 
 describe("PlaneCreateFlow", () => {
+  it("names the earlier step whose error keeps Create disabled on the review", async () => {
+    const { rerender } = show();
+    await toReview();
+    await waitFor(() => expect(create().disabled).toBe(false));
+    watch.added = {
+      CamundaManagementClusterClaim: [
+        {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "CamundaManagementClusterClaim",
+          metadata: { namespace: "platform", name: "plane-a" },
+          spec: { environments: ["staging"], management: {} },
+        },
+      ],
+    };
+    rerender(
+      <PlaneCreateFlow
+        initial={data}
+        mode={fakeWriter.mode}
+        preview={previewPlaneCreate}
+        create={createPlane}
+      />,
+    );
+    expect(create().disabled).toBe(true);
+    expect(
+      screen
+        .getByText("The name plane-a is taken in this namespace.")
+        .closest("li")?.textContent,
+    ).toBe("Basics: The name plane-a is taken in this namespace.");
+  });
+
+  it("puts the section headings of a step under the step heading", () => {
+    show();
+    const texts = (level: number) =>
+      screen.getAllByRole("heading", { level }).map((h) => h.textContent);
+    expect(texts(2)).toEqual(["Basics"]);
+    expect(texts(3)).toEqual(
+      expect.arrayContaining(["Environment", "Namespace"]),
+    );
+  });
+
   it("blocks Next on step 1 until the basics are complete", async () => {
     show();
     expect(next().disabled).toBe(true);
