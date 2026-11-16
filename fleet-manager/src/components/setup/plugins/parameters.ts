@@ -60,9 +60,6 @@ export function parameterRows(
     return {
       error: "The properties of the parameter schema are not an object.",
     };
-  const claimEditable: unknown = registration.spec.claimEditable;
-  if (claimEditable !== undefined && !Array.isArray(claimEditable))
-    return { error: "The claimEditable of the registration is not a list." };
   const fallback = parameterPolicies(registration, undefined);
   if (!("value" in fallback)) return fallback;
   const byEnvironment: {
@@ -81,9 +78,7 @@ export function parameterRows(
       byEnvironment.push({
         name: environment.metadata.name ?? "",
         environment:
-          isText(environment.spec.displayName) && environment.spec.displayName
-            ? environment.spec.displayName
-            : (environment.metadata.name ?? ""),
+          environment.spec.displayName || (environment.metadata.name ?? ""),
         policies: policies.value,
       });
     }

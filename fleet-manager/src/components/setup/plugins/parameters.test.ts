@@ -136,17 +136,6 @@ describe("parameterRows", () => {
     expect(rows[0].environments?.[0].environment).toBe("staging");
   });
 
-  it("names an environment whose display name is not text by its name", () => {
-    const rows = valueOf(
-      parameterRows(
-        kms,
-        [fleetEnvironment("staging", { displayName: { x: 1 } as never })],
-        [],
-      ),
-    );
-    expect(rows[0].environments?.[0].environment).toBe("staging");
-  });
-
   it("gives no environment values while Environment is not read", () => {
     const rows = valueOf(parameterRows(kms, [production], ["Environment"]));
     expect(rows.every((r) => r.environments === undefined)).toBe(true);
@@ -227,18 +216,6 @@ describe("parameterRows", () => {
       error: "The schema of this parameter has a field of the wrong type.",
     });
     expect(rows[0].type).toBeUndefined();
-  });
-
-  it("returns an error for claimEditable that is not a list", () => {
-    expect(
-      parameterRows(
-        pluginRegistration("bad", { claimEditable: 5 as never }),
-        [],
-        [],
-      ),
-    ).toEqual({
-      error: "The claimEditable of the registration is not a list.",
-    });
   });
 
   it("returns an error for a schema that is not an object", () => {

@@ -67,29 +67,6 @@ describe("contractOf", () => {
     ]);
   });
 
-  it("gives an error for a section whose appliesTo is not a list of kinds", () => {
-    for (const appliesTo of [null, { kind: "x" }, [1]]) {
-      const sections = sources.sections.map((s) => ({
-        ...s,
-        spec: { ...s.spec, appliesTo: appliesTo as never },
-      }));
-      expect(contractOf(es, sections, []).sections[0]).toEqual({
-        error: "The section secondary-storage is not valid.",
-      });
-    }
-  });
-
-  it("names a section whose label is not text by its name", () => {
-    const sections = sources.sections.map((s) => ({
-      ...s,
-      spec: { ...s.spec, label: { text: "x" } as never },
-    }));
-    const contract = contractOf(es, sections, []);
-    const section = contract.sections[0];
-    expect(section).toMatchObject({ name: "secondary-storage" });
-    expect((section as { label?: unknown }).label).toBe("secondary-storage");
-  });
-
   it("gives no label for a section or an input source that does not exist", () => {
     const contract = contractOf(
       pluginRegistration("x", {
@@ -123,17 +100,6 @@ describe("contractOf", () => {
       [],
     );
     expect(contract.deletionPolicies).toEqual(["Delete"]);
-  });
-
-  it("gives an error for deletion policies that are not a list", () => {
-    const contract = contractOf(
-      pluginRegistration("x", { deletionPolicies: "Delete" as never }),
-      [],
-      [],
-    );
-    expect(contract.deletionPolicies).toEqual({
-      error: "The deletion policies are not a list.",
-    });
   });
 
   it("knows no section while PluginSection is not read", () => {

@@ -87,7 +87,6 @@ function DeletionPolicies({
 }: {
   policies: ContractView["deletionPolicies"];
 }) {
-  if (isInvalid(policies)) return <ValueError text={policies.error} />;
   return (
     <ul className="flex flex-col gap-1 text-sm">
       {(["Delete", "Orphan"] as const).map((policy) => (

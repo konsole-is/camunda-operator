@@ -129,7 +129,7 @@ export function UsedByTab({
                             </span>
                           )}
                           <span className={MUTED}>
-                            {`On delete: ${row.deletionPolicy ? resourceFate(resource, row.deletionPolicy) : "Not known"}`}
+                            {`On delete: ${resourceFate(resource, row.deletionPolicy)}`}
                           </span>
                         </li>
                       ),
@@ -162,11 +162,7 @@ export function UsedByTab({
                   </ul>
                 )}
               </Term>
-              <Term label="Deletion policy">
-                {row.deletionPolicy ?? (
-                  <ValueError text="The deletion policy is not Delete or Orphan." />
-                )}
-              </Term>
+              <Term label="Deletion policy">{row.deletionPolicy}</Term>
             </Terms>
           </Panel>
         ))}

@@ -59,8 +59,7 @@ export type UsedByRow = {
   resources: (ResourceRef | Invalid)[];
   /** grants is unset while Grant is not read. */
   grants?: GrantView[];
-  /** deletionPolicy is unset when the request has a value that is not Delete or Orphan. */
-  deletionPolicy?: "Delete" | "Orphan";
+  deletionPolicy: "Delete" | "Orphan";
 };
 
 /**
@@ -142,10 +141,7 @@ export function usedByRows(
           "Resource",
           "resources",
         ),
-        ...((request.spec.deletionPolicy === "Delete" ||
-          request.spec.deletionPolicy === "Orphan") && {
-          deletionPolicy: request.spec.deletionPolicy,
-        }),
+        deletionPolicy: request.spec.deletionPolicy,
       };
     });
 }
@@ -159,10 +155,7 @@ function environmentName(
     ? environmentOf(object, sources.environments).environment
     : undefined;
   if (!environment) return NO_ENVIRONMENT;
-  const label: unknown = environment.spec.displayName;
-  return isText(label) && label
-    ? (label as string)
-    : (environment.metadata.name ?? "");
+  return environment.spec.displayName || (environment.metadata.name ?? "");
 }
 
 const SEVERITIES: readonly unknown[] = [undefined, "Info", "Warning", "Error"];

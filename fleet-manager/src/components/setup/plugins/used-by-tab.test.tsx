@@ -240,29 +240,6 @@ describe("UsedByTab", () => {
     );
   });
 
-  it("shows the error of a deletion policy that is not Delete or Orphan", () => {
-    const rows = usedByRows(
-      "elasticsearch",
-      registrationSources({
-        requests: [
-          {
-            ...esRequest,
-            spec: { ...esRequest.spec, deletionPolicy: { x: 1 } as never },
-          },
-        ],
-      }),
-      [],
-    );
-    render(<UsedByTab rows={rows} unread={[]} />);
-    const panel = "team-orders/orders-secondary-storage";
-    expect(termOf(panel, "Deletion policy").textContent).toBe(
-      "The deletion policy is not Delete or Orphan.",
-    );
-    expect(
-      within(termOf(panel, "Resources")).getAllByText("On delete: Not known"),
-    ).toHaveLength(2);
-  });
-
   it("shows the error of a request whose conditions are not valid", () => {
     const rows = usedByRows(
       "aws-s3",

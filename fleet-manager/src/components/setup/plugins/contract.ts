@@ -37,7 +37,7 @@ export type ContractView = {
   sectionsUnknown?: true;
   inputs: (ContractInput | Invalid)[];
   outputs: (ContractOutput | Invalid)[];
-  deletionPolicies: readonly ("Delete" | "Orphan")[] | Invalid;
+  deletionPolicies: readonly ("Delete" | "Orphan")[];
 };
 
 /**
@@ -54,18 +54,16 @@ export function contractOf(
   const { spec } = registration;
   const sectionOf = (name: string) =>
     sections.find((s) => s.metadata.name === name);
-  const policies = listOf(spec.deletionPolicies);
+  const policies = listOf(spec.deletionPolicies) ?? [];
   return {
     sections: itemsOf(spec.sections, isName, "Section", "sections").map(
       (item) => {
         if (typeof item !== "string") return item;
         const section = sectionOf(item);
-        if (section && !isNameList(section.spec.appliesTo))
-          return { error: `The section ${item} is not valid.` };
         return section
           ? {
               name: item,
-              label: isText(section.spec.label) ? section.spec.label : item,
+              label: section.spec.label,
               fields: sectionFields(section),
             }
           : { name: item, fields: [] };
@@ -93,9 +91,9 @@ export function contractOf(
             ...(item.format && { format: item.format }),
           },
     ),
-    deletionPolicies: policies
-      ? (["Delete", "Orphan"] as const).filter((p) => policies.includes(p))
-      : { error: "The deletion policies are not a list." },
+    deletionPolicies: (["Delete", "Orphan"] as const).filter((p) =>
+      policies.includes(p),
+    ),
   };
 }
 
@@ -108,11 +106,6 @@ type Input = {
 
 function isName(item: unknown): item is string {
   return typeof item === "string";
-}
-
-// sectionFields throws on an appliesTo that is not a list.
-function isNameList(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isName);
 }
 
 function isInput(item: unknown): item is Input {

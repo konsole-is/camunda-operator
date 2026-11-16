@@ -29,23 +29,6 @@ describe("ContractTab", () => {
     expect(deletion.textContent).not.toMatch(/Retain/);
   });
 
-  it("shows the error of deletion policies that are not a list", () => {
-    render(
-      <ContractTab
-        contract={contractOf(
-          pluginRegistration("x", { deletionPolicies: "Delete" as never }),
-          [],
-          [],
-        )}
-      />,
-    );
-    const deletion = screen.getByRole("region", { name: "Deletion" });
-    expect(within(deletion).getByRole("alert").textContent).toBe(
-      "The deletion policies are not a list.",
-    );
-    expect(deletion.textContent).not.toMatch(/not supported/);
-  });
-
   it("shows the sections and the fields they fill", () => {
     render(<ContractTab contract={contractOf(es, sources.sections, [])} />);
     const sections = screen.getByRole("region", { name: "Sections" });
