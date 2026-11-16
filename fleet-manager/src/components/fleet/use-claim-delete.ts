@@ -6,6 +6,7 @@ import { deleteClaimSteps } from "@/lib/claims/deletion";
 import { useGitSync, useResource, useWatchesFresh } from "@/lib/k8s/hooks";
 import {
   type DeletableClaim,
+  deletionPolicyOf,
   type DeletionPolicy,
   equalJSON,
 } from "@/lib/policy";
@@ -30,17 +31,31 @@ export type ClaimDeleteActions = {
 };
 
 /**
+ * PolicyAfterWrite is the deletion policy of a claim after a policy write
+ * that no delete followed. held is the policy of the live claim. unapplied
+ * is the policy of the Git commit while the claim does not carry that
+ * commit.
+ */
+export type PolicyAfterWrite = {
+  held: DeletionPolicy;
+  unapplied?: DeletionPolicy;
+};
+
+/**
  * ClaimDeleteStage is where the delete of a claim is. choose: no delete is
  * under way, or a delete after the policy write was refused with errors or
- * stopped; policyWritten is then the deletion policy that the claim keeps.
- * waiting: the policy write waits for GitOps, or for the claim controller
- * to read it. deleting: the delete is sent or the claim is being deleted;
- * gitWaiting says that the delete commit waits for GitOps to delete the
- * claim. deleted: the claim is gone. replaced: a claim with another UID
- * has its name.
+ * stopped; afterPolicyWrite is then set. waiting: the policy write waits
+ * for GitOps, or for the claim controller to read it. deleting: the delete
+ * is sent or the claim is being deleted; gitWaiting says that the delete
+ * commit waits for GitOps to delete the claim. deleted: the claim is gone.
+ * replaced: a claim with another UID has its name.
  */
 export type ClaimDeleteStage =
-  | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
+  | {
+      kind: "choose";
+      errors?: ApiError[];
+      afterPolicyWrite?: PolicyAfterWrite;
+    }
   | { kind: "waiting" }
   | { kind: "deleting"; gitWaiting: boolean }
   | { kind: "deleted" }
@@ -48,29 +63,33 @@ export type ClaimDeleteStage =
 
 type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 
-// Sent is the state that the hook keeps. waiting holds the policy write:
-// the spec before and after it, and the revision of a Git commit.
+// Written is a policy write, with the revision of its Git commit.
+type Written = { policy: DeletionPolicy; revision?: string };
+
+// Sent is the state that the hook keeps. waiting holds the policy write,
+// the spec before and after it, and seen once the claim showed the spec
+// after it.
 type Sent =
-  | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
-  | {
+  | { kind: "choose"; errors?: ApiError[]; written?: Written }
+  | (Written & {
       kind: "waiting";
-      policy: DeletionPolicy;
       before: unknown;
       spec: unknown;
-      revision?: string;
-    }
+      seen: boolean;
+    })
   | { kind: "deleting" };
 
 /**
  * useClaimDelete runs the delete of a claim of either kind with the steps
  * of deleteClaimSteps, on the claim that it follows live from initial.
- * Give remove, apply, and onWritten to a ChangeReview. apply refuses
- * without a write when the preview of the delete fails. After a policy
- * write it returns that result, and the hook sends the delete once the
- * claim controller read the policy. It sends nothing for a claim with
- * another UID, and refuses with Stale when another spec change came in. reads holds the failed or stale watch of the claim: the
- * policy step needs a current claim. It needs a QueryClientProvider above
- * it.
+ * Give remove, apply, and onWritten to a ChangeReview. remove carries no
+ * resourceVersion, and apply sends the delete at the newest one. apply
+ * refuses without a write when the preview of the delete fails. After a
+ * policy write it returns that result, and the hook sends the delete once
+ * the claim controller read the policy. It sends nothing for a claim with
+ * another UID, and refuses with Stale when another spec change came in.
+ * reads holds the failed or stale watch of the claim: the policy step
+ * needs a current claim. It needs a QueryClientProvider above it.
  */
 export function useClaimDelete<C extends DeletableClaim>(input: {
   initial: C;
@@ -105,12 +124,25 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
 
   const uid = live?.metadata.uid;
   const version = live?.metadata.resourceVersion;
+  const spec = JSON.stringify((live ?? initial).spec);
+  // ChangeReview keeps a refused write blocked for the same change object.
+  // A refusal for a version that the watch has not shown yet ends with the
+  // next version.
+  const [refusedAt, setRefusedAt] = useState<string>();
+  const retry =
+    refusedAt !== undefined && refusedAt !== version ? version : undefined;
   const remove = useMemo(
-    () => deleteClaimSteps(live ?? initial, policy, intent).remove,
-    // ChangeReview keeps a refused write blocked for the same change
-    // object, so only a new claim version or pick gives a new remove.
+    () => {
+      const review = {
+        ...deleteClaimSteps(live ?? initial, policy, intent).remove,
+      };
+      delete review.preconditions;
+      return review;
+    },
+    // A Git preview clones the repository, so a status write of the claim
+    // must not start a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [uid, version, intent, policy],
+    [uid, spec, intent, policy, retry],
   );
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
@@ -124,7 +156,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   const isOriginal = (claim: C) =>
     original === undefined || claim.metadata.uid === original;
 
-  const apply = useCallback(
+  const send = useCallback(
     async (): Promise<WriteResult> => {
       const { live, policy, intent, actions } = latest.current;
       setSent({ kind: "choose" });
@@ -148,6 +180,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
         policy,
         before: live.spec,
         spec: steps.policy.apply[0].spec,
+        seen: false,
         ...(result.mode === "git" && {
           revision: result.revisions[refKey(claimRef)] ?? "",
         }),
@@ -158,6 +191,12 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+  const apply = useCallback(async (): Promise<WriteResult> => {
+    const result = await send();
+    if (!result.ok)
+      setRefusedAt(latest.current.live?.metadata.resourceVersion ?? "");
+    return result;
+  }, [send]);
   const onWritten = useCallback(
     () => setSent((s) => (s.kind === "waiting" ? s : { kind: "deleting" })),
     [],
@@ -165,26 +204,33 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   const stopWaiting = useCallback(
     () =>
       setSent((s) =>
-        s.kind === "waiting" ? { kind: "choose", policyWritten: s.policy } : s,
+        s.kind === "waiting" ? { kind: "choose", written: writtenOf(s) } : s,
       ),
     [],
   );
 
   const sync = useGitSync(
     claimRef,
-    sent.kind === "waiting" ? (sent.revision ?? "") : "",
+    sent.kind === "waiting"
+      ? (sent.revision ?? "")
+      : sent.kind === "choose"
+        ? (sent.written?.revision ?? "")
+        : "",
   );
   const written =
     sent.kind === "waiting" &&
     live !== undefined &&
     equalJSON(live.spec, sent.spec);
+  if (written && sent.kind === "waiting" && !sent.seen)
+    setSent({ ...sent, seen: true });
   // The review showed the claim before or after the policy write. Any
-  // other spec needs a new review.
+  // other spec, or the spec from before after the claim showed the write,
+  // needs a new review.
   const changedSince =
     sent.kind === "waiting" &&
     live !== undefined &&
     !written &&
-    !equalJSON(live.spec, sent.before);
+    (sent.seen || !equalJSON(live.spec, sent.before));
   const settled =
     written &&
     sent.kind === "waiting" &&
@@ -195,7 +241,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     setSent({
       kind: "choose",
       errors: [changed(name)],
-      policyWritten: sent.policy,
+      written: writtenOf(sent),
     });
   const sentFor = useRef<Sent | undefined>(undefined);
   useEffect(() => {
@@ -214,7 +260,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
           setSent({
             kind: "choose",
             errors: result.errors,
-            policyWritten: sent.policy,
+            written: writtenOf(sent),
           });
       });
     // isOriginal follows initial, which does not change.
@@ -229,7 +275,24 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   else if (sent.kind === "deleting" || deleting)
     stage = { kind: "deleting", gitWaiting: mode === "git" && !deleting };
   else if (sent.kind === "waiting") stage = { kind: "waiting" };
-  else stage = sent;
+  else {
+    const { written, ...rest } = sent;
+    const held = deletionPolicyOf(
+      live.spec?.deletionPolicy,
+      live.status?.resolvedPolicy,
+    );
+    stage = written
+      ? {
+          ...rest,
+          afterPolicyWrite: {
+            held,
+            ...(written.revision !== undefined &&
+              sync !== "applied" &&
+              held !== written.policy && { unapplied: written.policy }),
+          },
+        }
+      : rest;
+  }
 
   return {
     claim: live,
@@ -253,6 +316,13 @@ function observed(claim: DeletableClaim): boolean {
   const seen = (claim.status as { observedGeneration?: number } | undefined)
     ?.observedGeneration;
   return generation === undefined || seen === undefined || generation === seen;
+}
+
+function writtenOf(s: Written): Written {
+  return {
+    policy: s.policy,
+    ...(s.revision !== undefined && { revision: s.revision }),
+  };
 }
 
 function unavailable(error: unknown): WriteResult {
