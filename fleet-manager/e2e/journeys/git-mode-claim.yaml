@@ -1,8 +1,8 @@
 # The claim of the Git-mode journey and its secondary storage. The journey
 # applies this file once, with the field manager of the harness GitOps loop,
 # so a save that the loop applies changes no field that another manager
-# owns. The storage has its own endpoint, because one CamundaCluster writes
-# one backend and the harness claim holds fleet-harness-storage.
+# owns. The storage has its own endpoint, because one backend serves one
+# CamundaCluster.
 apiVersion: core.camunda.io/v1
 kind: SecondaryStorageConfig
 metadata:

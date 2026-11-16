@@ -5,48 +5,26 @@ import { parse } from "yaml";
 import { REVISION_ANNOTATION } from "../../src/lib/labels";
 import { blockingViolations } from "../axe";
 import { JOURNEYS_DIR, shot } from "../shot";
+import { field } from "./create";
 import {
   GIT_PATH,
   committedFile,
-  switchToDirectMode,
+  pauseApplyLoop,
+  restoreDirectMode,
   switchToGitMode,
 } from "./git";
 
 const NAMESPACE = "fleet-smoke";
 const NAME = "git-mode-sample";
 const CLAIM_FILE = `${GIT_PATH}/${NAMESPACE}/camundaclusterclaims/${NAME}.yaml`;
-const REVISION_PATH = `{.metadata.annotations.${REVISION_ANNOTATION.replaceAll(".", "\\.")}}`;
+const REVISION_PATH = `.metadata.annotations.${REVISION_ANNOTATION.replaceAll(".", "\\.")}`;
 
 function kubectl(...args: string[]): string {
   return execFileSync("kubectl", args, { encoding: "utf8" });
 }
 
-function claimField(jsonpath: string): string {
-  return kubectl(
-    "get",
-    "camundaclusterclaim",
-    NAME,
-    "-n",
-    NAMESPACE,
-    "-o",
-    `jsonpath=${jsonpath}`,
-  );
-}
-
-// pauseApplyLoop stops apply-loop.sh, which must run on this host, and
-// returns the function that lets it go on. It throws when no loop runs.
-function pauseApplyLoop(): () => void {
-  const pids = execFileSync("pgrep", ["-f", "harness/apply-loop.sh"], {
-    encoding: "utf8",
-  })
-    .trim()
-    .split("\n")
-    .map(Number);
-  for (const pid of pids) process.kill(pid, "SIGSTOP");
-  return () => {
-    for (const pid of pids) process.kill(pid, "SIGCONT");
-  };
-}
+const claimField = (jsonpath: string) =>
+  field("camundaclusterclaim", NAME, jsonpath);
 
 test.beforeAll(async () => {
   // A second apply would drop the revision of a pushed save from the live
@@ -90,19 +68,8 @@ test.beforeAll(async () => {
     .not.toBe("");
 });
 
-// A hook gets no baseURL fixture, so the page takes the address that
-// journeys.sh sets. A later journey then runs in direct mode, also when
-// this one failed.
-test.afterAll(async ({ browser }) => {
-  const page = await browser.newPage({
-    baseURL: process.env.FLEET_JOURNEYS_BASE_URL,
-  });
-  try {
-    await switchToDirectMode(page);
-  } finally {
-    await page.close();
-  }
-});
+// A later journey then runs in direct mode, also when this one failed.
+test.afterAll(({ browser }) => restoreDirectMode(browser));
 
 test("a release change pushed from the Claim tab reaches the repository and the claim", async ({
   page,
@@ -113,7 +80,7 @@ test("a release change pushed from the Claim tab reaches the repository and the 
 
   // An earlier run on the same harness can have saved either release.
   const target =
-    claimField("{.spec.releaseRef}") === "fleet-harness-8-9-1"
+    claimField(".spec.releaseRef") === "fleet-harness-8-9-1"
       ? "fleet-harness-8-9-0"
       : "fleet-harness-8-9-1";
   await page.goto(`/fleet/clusters/${NAMESPACE}/${NAME}?tab=claim`);
@@ -166,7 +133,7 @@ test("a release change pushed from the Claim tab reaches the repository and the 
   );
 
   await expect
-    .poll(() => claimField("{.spec.releaseRef}"), { timeout: 120_000 })
+    .poll(() => claimField(".spec.releaseRef"), { timeout: 120_000 })
     .toBe(target);
   await expect
     .poll(() => claimField(REVISION_PATH), { timeout: 30_000 })

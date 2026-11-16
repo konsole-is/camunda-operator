@@ -100,6 +100,15 @@ jobs:
         run: |
           echo "UI journeys: [ui-journeys](${JOURNEYS_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Upload the Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: journeys-test-results
+          path: fleet-manager/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Read the harness cluster
         if: failure()
         run: |
