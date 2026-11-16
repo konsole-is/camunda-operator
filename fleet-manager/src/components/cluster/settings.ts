@@ -59,6 +59,28 @@ export function componentSettings(
   ];
 }
 
+/**
+ * settingsGroupsOf returns the settings groups of a whole cluster: "Whole
+ * cluster" with the fields of group "cluster" first, then the groups of
+ * componentSettings for each process that runs, in the order of topologyOf.
+ */
+export function settingsGroupsOf(
+  fields: readonly ClusterField[],
+  spec: CamundaClusterSpec,
+): SettingsGroup[] {
+  return [
+    {
+      label: "Whole cluster",
+      component: "cluster",
+      embedded: false,
+      fields: fields.filter((f) => f.group === "cluster"),
+    },
+    ...topologyOf(spec, []).flatMap((box) =>
+      componentSettings(fields, box.process, spec),
+    ),
+  ];
+}
+
 /** claimFieldHref links the Claim tab of a cluster at a claim path. */
 export function claimFieldHref(
   namespace: string,

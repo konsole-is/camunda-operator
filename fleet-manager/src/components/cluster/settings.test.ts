@@ -7,6 +7,7 @@ import {
   clusterFieldsInputOf,
   componentSettings,
   operatorVersionOf,
+  settingsGroupsOf,
 } from "./settings";
 
 function field(group: FieldGroup): ClusterField {
@@ -157,5 +158,37 @@ describe("clusterFieldsInputOf", () => {
     });
     expect(input.backupSchedule).toBeUndefined();
     expect(input.policy).toBeUndefined();
+  });
+});
+
+describe("settingsGroupsOf", () => {
+  const all = [field("cluster"), ...fields, field("connectors")];
+
+  it("puts the whole cluster first, then each process with its embedded apps", () => {
+    const groups = settingsGroupsOf(all, {});
+    expect(groups.map((g) => g.label)).toEqual([
+      "Whole cluster",
+      "Brokers",
+      "Gateway",
+      "Operate",
+      "Tasklist",
+      "Admin",
+    ]);
+    expect(groups[0]).toMatchObject({
+      component: "cluster",
+      embedded: false,
+    });
+    expect(groups[0].fields.map((f) => f.group)).toEqual(["cluster"]);
+  });
+
+  it("has a Connectors group only when connectors run", () => {
+    expect(
+      settingsGroupsOf(all, { connectors: { enabled: true } }).map(
+        (g) => g.label,
+      ),
+    ).toContain("Connectors");
+    expect(
+      settingsGroupsOf(all, {}).some((g) => g.component === "connectors"),
+    ).toBe(false);
   });
 });
