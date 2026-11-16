@@ -545,12 +545,32 @@ const CLAIM_DEFAULTS: Record<string, unknown> = {
   "persistentVolumeClaimRetentionPolicy.whenDeleted": "Delete",
 };
 
+// The clocks of the browser and of the API server can differ by this much.
+const CLOCK_ALLOWANCE_MS = 60_000;
+
+/**
+ * isWrittenClaim says whether live is the claim that a write sent at
+ * startedAt, a time in milliseconds of the browser: it was made after the
+ * write started, and holdsWrittenSpec holds for its spec.
+ */
+export function isWrittenClaim(
+  live: { metadata?: { creationTimestamp?: string }; spec?: unknown },
+  sent: unknown,
+  startedAt: number,
+): boolean {
+  const created = Date.parse(live.metadata?.creationTimestamp ?? "");
+  return (
+    created >= startedAt - CLOCK_ALLOWANCE_MS &&
+    holdsWrittenSpec(live.spec, sent)
+  );
+}
+
 /**
  * holdsWrittenSpec says whether live, the spec of a live claim, is the spec
  * sent with the defaults that the API server adds, and nothing else.
  */
 export function holdsWrittenSpec(live: unknown, sent: unknown): boolean {
-  return holdsSent(live, sent, "");
+  return holdsSent(live, sent, "spec");
 }
 
 function holdsSent(live: unknown, sent: unknown, parent: string): boolean {

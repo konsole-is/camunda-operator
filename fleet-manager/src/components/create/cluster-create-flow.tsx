@@ -13,7 +13,6 @@ import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import type { ReadError } from "@/components/planes/planes-table";
-import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
@@ -53,7 +52,7 @@ import {
   clusterCreateChange,
   draftCluster,
   draftOptimize,
-  holdsWrittenSpec,
+  isWrittenClaim,
   offeredPresets,
   releaseOf,
   type SecretsRead,
@@ -96,7 +95,7 @@ import type {
  * every namespace. accessRequests are the requests of the access section.
  * Step 3 lists releases and platformConfigs, and step 4 lists
  * managementAuthConfigs. readErrors are the failed server reads of the
- * kinds that RECORDED_KINDS names.
+ * lists.
  */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
@@ -119,16 +118,6 @@ export type ClusterCreateData = {
 
 const EVERYWHERE = {};
 const ACCESS_REQUESTS = { labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` };
-
-// The kinds whose failed server read loadCreateCluster records.
-const RECORDED_KINDS: readonly KindName[] = [
-  "Environment",
-  "PluginSection",
-  "PluginRegistration",
-  "CamundaRelease",
-  "CamundaPlatformConfig",
-  "ManagementAuthConfig",
-];
 
 const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
@@ -159,38 +148,55 @@ export function ClusterCreateFlow({
   preview: (change: Change) => Promise<Preview>;
   create: (change: Change) => Promise<WriteResult>;
 }) {
-  const answered = useAnswered(RECORDED_KINDS);
-  const readError = (kind: KindName) =>
-    answered.has(kind)
-      ? undefined
-      : initial.readErrors.find((e) => e.kind === kind)?.message;
+  const { readErrors } = initial;
   const live = {
     environments: useLive(
       "Environment",
       EVERYWHERE,
       initial.environments,
-      readError("Environment"),
+      readErrors,
     ),
-    namespaces: useLive("Namespace", EVERYWHERE, initial.namespaces),
-    claims: useLive("CamundaClusterClaim", EVERYWHERE, initial.claims),
-    clusters: useLive("CamundaCluster", EVERYWHERE, initial.clusters),
-    presets: useLive("CamundaClusterPreset", EVERYWHERE, initial.presets),
+    namespaces: useLive(
+      "Namespace",
+      EVERYWHERE,
+      initial.namespaces,
+      readErrors,
+    ),
+    claims: useLive(
+      "CamundaClusterClaim",
+      EVERYWHERE,
+      initial.claims,
+      readErrors,
+    ),
+    clusters: useLive(
+      "CamundaCluster",
+      EVERYWHERE,
+      initial.clusters,
+      readErrors,
+    ),
+    presets: useLive(
+      "CamundaClusterPreset",
+      EVERYWHERE,
+      initial.presets,
+      readErrors,
+    ),
     sections: useLive(
       "PluginSection",
       EVERYWHERE,
       initial.sections,
-      readError("PluginSection"),
+      readErrors,
     ),
     registrations: useLive(
       "PluginRegistration",
       EVERYWHERE,
       initial.registrations,
-      readError("PluginRegistration"),
+      readErrors,
     ),
     accessRequests: useLive(
       "PluginRequest",
       ACCESS_REQUESTS,
       initial.accessRequests,
+      readErrors,
     ),
   };
   const settingsLive = {
@@ -198,19 +204,19 @@ export function ClusterCreateFlow({
       "CamundaRelease",
       EVERYWHERE,
       initial.releases,
-      readError("CamundaRelease"),
+      readErrors,
     ),
     platformConfigs: useLive(
       "CamundaPlatformConfig",
       EVERYWHERE,
       initial.platformConfigs,
-      readError("CamundaPlatformConfig"),
+      readErrors,
     ),
     managementAuthConfigs: useLive(
       "ManagementAuthConfig",
       EVERYWHERE,
       initial.managementAuthConfigs,
-      readError("ManagementAuthConfig"),
+      readErrors,
     ),
   };
   const sources = {
@@ -218,21 +224,25 @@ export function ClusterCreateFlow({
       "ElasticsearchClusterPreset",
       EVERYWHERE,
       initial.elasticsearchPresets,
+      readErrors,
     ),
     DatabaseServerPreset: useLive(
       "DatabaseServerPreset",
       EVERYWHERE,
       initial.databaseServerPresets,
+      readErrors,
     ),
     SecondaryStorageConfig: useLive(
       "SecondaryStorageConfig",
       EVERYWHERE,
       initial.secondaryStorageConfigs,
+      readErrors,
     ),
     ObjectStorageConfig: useLive(
       "ObjectStorageConfig",
       EVERYWHERE,
       initial.objectStorageConfigs,
+      readErrors,
     ),
   };
   // A list that cannot be read would let a taken name or host, or a rule of
@@ -486,7 +496,16 @@ export function ClusterCreateFlow({
   const [refused, setRefused] = useState<{
     claim: ClusterClaimObject;
     unavailable: boolean;
+    startedAt: number;
   }>();
+  // The claims, by namespace and name, whose write lost its answer. A later
+  // refusal of the same claim does not show that the lost write failed.
+  const [lostClaims, setLostClaims] = useState<ReadonlySet<string>>(new Set());
+  // After a lost answer, Create waits for Try again, which runs the dry run
+  // again by mounting the review step again.
+  const [waitsForRetry, setWaitsForRetry] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const startedAt = useRef(0);
   // Back and Next remount the review step, so the lock of a running write
   // lives here.
   const [writing, setWriting] = useState(false);
@@ -497,6 +516,7 @@ export function ClusterCreateFlow({
     latest.current = flow.draft;
   });
   const createOnce = async (change: Change): Promise<WriteResult> => {
+    startedAt.current = Date.now();
     setWriting(true);
     try {
       return await create(change);
@@ -511,9 +531,17 @@ export function ClusterCreateFlow({
       setWritten(clusterClaimOf(flow.draft, environment, deletion));
       return;
     }
+    const claim = clusterClaimOf(flow.draft, environment, deletion);
+    const key = `${claim.metadata.namespace}/${claim.metadata.name}`;
+    const lost = result.errors.some((e) => e.code === "Unavailable");
+    if (lost) {
+      setLostClaims(new Set([...lostClaims, key]));
+      setWaitsForRetry(true);
+    }
     setRefused({
-      claim: clusterClaimOf(flow.draft, environment, deletion),
-      unavailable: result.errors.some((e) => e.code === "Unavailable"),
+      claim,
+      unavailable: lost || lostClaims.has(key),
+      startedAt: startedAt.current,
     });
     const now = latest.current.namespace;
     if (
@@ -546,7 +574,7 @@ export function ClusterCreateFlow({
   const landed =
     taken &&
     refused?.unavailable &&
-    holdsWrittenSpec(taken.spec, refused.claim.spec)
+    isWrittenClaim(taken, refused.claim.spec, refused.startedAt)
       ? taken
       : undefined;
   const earlier = steps
@@ -670,6 +698,7 @@ export function ClusterCreateFlow({
           />
         ) : (
           <ClusterReviewStep
+            key={attempt}
             change={clusterCreateChange(flow.draft, environment, deletion)}
             summary={reviewSummary(flow.draft, {
               environment,
@@ -700,20 +729,42 @@ export function ClusterCreateFlow({
             create={createOnce}
             onWritten={onWritten}
             onCancel={flow.back}
-            blocked={earlier || writing}
+            blocked={earlier || writing || waitsForRetry}
             unread={unreadKinds}
           />
         )}
       </WizardStepper>
-      {keptNamespace !== undefined && existing === keptNamespace && !landed && (
-        <p
+      {keptNamespace !== undefined &&
+        existing === keptNamespace &&
+        !refused?.unavailable && (
+          <p
+            role="note"
+            className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
+          >
+            {`The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the cluster now goes into it as an existing namespace. Fix the cause and create the cluster again.`}
+          </p>
+        )}
+      {waitsForRetry && !taken && refusedRef && (
+        <div
           role="note"
-          className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
         >
-          {refused?.unavailable
-            ? `The write created the namespace ${keptNamespace}, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, create the cluster again.`
-            : `The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the cluster now goes into it as an existing namespace. Fix the cause and create the cluster again.`}
-        </p>
+          <p>
+            {keptNamespace !== undefined && existing === keptNamespace
+              ? `The write created the namespace ${keptNamespace}, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, try again.`
+              : `The answer of the write was lost. The claim ${refusedRef.name} does not show in ${refusedRef.namespace} yet. If it does not show up, try again.`}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setWaitsForRetry(false);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </Button>
+        </div>
       )}
       {taken && refusedRef && (
         <div
@@ -889,9 +940,16 @@ function useLive<K extends KindName>(
   kind: K,
   opts: ListOptions,
   initial: Resource<K>[],
-  readError?: string,
+  readErrors: readonly ReadError[],
 ): { kind: K; items: Resource<K>[]; failure?: string } {
   const { items, error: watchError } = useResources(kind, opts, initial);
+  // A failed read of the server counts until the watch answers once.
+  const [fresh] = useWatchesFresh([{ kind, opts }]);
+  const [answered, setAnswered] = useState(false);
+  if (fresh && !answered) setAnswered(true);
+  const readError = answered
+    ? undefined
+    : readErrors.find((e) => e.kind === kind)?.message;
   const error = watchError ?? readError;
   return error === undefined
     ? { kind, items }

@@ -855,6 +855,23 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).not.toContain("could not read");
   });
 
+  it("blocks the flow on a failed server read of the access requests until the watch answers", async () => {
+    const initial = data({
+      accessRequests: [],
+      readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+    });
+    const { rerender } = show(initial);
+    await fillBasics("search");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "The fleet manager could not read the PluginRequest objects: forbidden",
+    );
+
+    live.fresh.add("PluginRequest");
+    rerender(flowOf(initial));
+    expect(footer()).not.toContain("could not read");
+  });
+
   it("keeps the step 3 and 4 picks after Back and Next", async () => {
     show(attachmentData());
     await toStep("Cluster settings");
@@ -1108,6 +1125,15 @@ const writtenClaim = (namespace: string) => ({
   },
 });
 
+// liveClaim is writtenClaim as the API server holds it, made at created.
+const liveClaim = (namespace: string, created = new Date().toISOString()) => {
+  const claim = writtenClaim(namespace);
+  return {
+    ...claim,
+    metadata: { ...claim.metadata, creationTimestamp: created },
+  };
+};
+
 const newNamespace = {
   apiVersion: "v1",
   kind: "Namespace",
@@ -1329,7 +1355,7 @@ describe("ClusterCreateFlow write", () => {
     expect(
       (await screen.findByText(/The write created the namespace/)).textContent,
     ).toBe(
-      "The write created the namespace team-new, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, create the cluster again.",
+      "The write created the namespace team-new, and its answer for the claim was lost. The namespace stays, and the cluster now goes into it as an existing namespace. If the claim does not show up, try again.",
     );
   });
 
@@ -1337,7 +1363,7 @@ describe("ClusterCreateFlow write", () => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.Namespace = [...newNamespaceData().namespaces, newNamespace];
-      live.objects.CamundaClusterClaim = [writtenClaim("team-new")];
+      live.objects.CamundaClusterClaim = [liveClaim("team-new")];
       return {
         ok: false,
         errors: [{ code: "Unavailable", message: "The answer was lost." }],
@@ -1357,7 +1383,7 @@ describe("ClusterCreateFlow write", () => {
   it("a failed write after which the claim exists says so and can follow the claim", async () => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
-      live.objects.CamundaClusterClaim = [writtenClaim("team-a")];
+      live.objects.CamundaClusterClaim = [liveClaim("team-a")];
       throw new Error("the connection to the API server was lost");
     });
     show(data({ accessRequests: [] }));
@@ -1377,6 +1403,80 @@ describe("ClusterCreateFlow write", () => {
       screen.getByRole("heading", { name: "Creating the cluster orders" }),
     ).toBeTruthy();
     expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("keeps Create off after a lost answer until Try again runs the dry run again", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      throw new Error("the connection to the API server was lost");
+    });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    expect(fakeWriter.previewed).toHaveLength(1);
+    await userEvent.click(create());
+    const again = await screen.findByRole("button", { name: "Try again" });
+    expect(create().disabled).toBe(true);
+    await userEvent.click(again);
+    await waitFor(() => expect(create().disabled).toBe(false));
+    expect(fakeWriter.previewed).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("keeps a lost answer for the claim when a later write of it gets a Conflict", async () => {
+    vi.spyOn(fakeWriter, "apply")
+      .mockImplementationOnce(async (change) => {
+        fakeWriter.applied.push(structuredClone(change));
+        throw new Error("the connection to the API server was lost");
+      })
+      .mockImplementationOnce(async (change) => {
+        fakeWriter.applied.push(structuredClone(change));
+        live.objects.CamundaClusterClaim = [liveClaim("team-a")];
+        return {
+          ok: false,
+          errors: [
+            {
+              code: "Conflict",
+              message: "CamundaClusterClaim team-a/orders exists already.",
+            },
+          ],
+        };
+      });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Try again" }),
+    );
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      await screen.findByRole("button", { name: "Follow the claim" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/This create did not make it/)).toBeNull();
+  });
+
+  it("does not offer to follow a claim of the same spec that was made before the click", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      live.objects.CamundaClusterClaim = [
+        liveClaim("team-a", "2020-01-01T00:00:00Z"),
+      ];
+      throw new Error("the connection to the API server was lost");
+    });
+    show(data({ accessRequests: [] }));
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      (await screen.findByText(/This create did not make it/)).textContent,
+    ).toBe(
+      "A claim orders exists in team-a already. This create did not make it.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Follow the claim" }),
+    ).toBeNull();
   });
 
   it("a lost answer with another claim of that name does not offer to follow it", async () => {

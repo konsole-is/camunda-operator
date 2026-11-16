@@ -24,6 +24,7 @@ import {
   draftOptimize,
   draftSelections,
   holdsWrittenSpec,
+  isWrittenClaim,
   offeredPresets,
   pickerEnvironment,
   secretErrors,
@@ -1214,6 +1215,27 @@ describe("Secret references", () => {
     );
   });
 
+  it("checks a reference of an attachment under its attachments path", () => {
+    const attached: ClusterDraft = {
+      ...draftWith({
+        presetRef: "small",
+        attachments: {
+          optimize: {
+            webapp: {
+              extraEnv: [{ name: "A", valueFrom: { secretKeyRef: ref } }],
+            },
+          },
+        },
+      } as unknown as ClusterDraft["claim"]["spec"]),
+      namespace: { kind: "existing", name: "team-b" },
+    };
+    expect(
+      secretErrors(attached, { namespace: "team-b", secrets: [] }),
+    ).toEqual([
+      "attachments.optimize.webapp.extraEnv[0].valueFrom.secretKeyRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+    ]);
+  });
+
   it("checks no reference that is optional", () => {
     const optional = withClaimValue(
       {
@@ -1339,8 +1361,9 @@ describe("holdsWrittenSpec", () => {
         "utf8",
       ),
     );
-    const defaults = new Set<string>();
-    const walk = (node: unknown, field: string) => {
+    // A step is a field name, or "[]" for a list item or a map value.
+    const defaults: { path: string[]; value: unknown }[] = [];
+    const walk = (node: unknown, path: string[]) => {
       if (typeof node !== "object" || node === null) return;
       const schema = node as {
         default?: unknown;
@@ -1348,22 +1371,60 @@ describe("holdsWrittenSpec", () => {
         items?: unknown;
         additionalProperties?: unknown;
       };
-      if ("default" in schema)
-        defaults.add(`${field}=${JSON.stringify(schema.default)}`);
+      if ("default" in schema) defaults.push({ path, value: schema.default });
       for (const [name, child] of Object.entries(schema.properties ?? {}))
-        walk(child, `${field.split(".").at(-1)}.${name}`);
-      walk(schema.items, field);
-      walk(schema.additionalProperties, field);
+        walk(child, [...path, name]);
+      walk(schema.items, [...path, "[]"]);
+      walk(schema.additionalProperties, [...path, "{}"]);
     };
-    walk(crd.spec.versions[0].schema.openAPIV3Schema.properties.spec, "spec");
-    for (const entry of defaults) {
-      const [field, value] = entry.split("=");
-      const [parent, name] = field.split(".");
-      const live = { cluster: { [parent]: { [name]: JSON.parse(value) } } };
-      expect(holdsWrittenSpec(live, { cluster: { [parent]: {} } }), entry).toBe(
-        true,
-      );
+    walk(crd.spec.versions[0].schema.openAPIV3Schema.properties.spec, []);
+    // at builds the object that holds leaf at the end of path.
+    const at = (path: string[], leaf: unknown): unknown => {
+      if (path.length === 0) return leaf;
+      const [step, ...rest] = path;
+      if (step === "[]") return [at(rest, leaf)];
+      return { [step === "{}" ? "key" : step]: at(rest, leaf) };
+    };
+    for (const { path, value } of defaults) {
+      const live = at(path, value);
+      const sent = at(path.slice(0, -1), {});
+      expect(holdsWrittenSpec(live, sent), path.join(".")).toBe(true);
     }
-    expect(defaults.size).toBeGreaterThan(0);
+    expect(defaults.length).toBeGreaterThan(0);
+  });
+});
+
+describe("isWrittenClaim", () => {
+  const spec = { presetRef: "small" };
+  const started = Date.parse("2026-11-16T12:00:00Z");
+  const made = (creationTimestamp?: string) => ({
+    metadata: creationTimestamp === undefined ? {} : { creationTimestamp },
+    spec,
+  });
+
+  it("accepts a claim made after the write started, or a minute before it", () => {
+    expect(isWrittenClaim(made("2026-11-16T12:00:05Z"), spec, started)).toBe(
+      true,
+    );
+    expect(isWrittenClaim(made("2026-11-16T11:59:30Z"), spec, started)).toBe(
+      true,
+    );
+  });
+
+  it("refuses a claim made earlier, or with no creation time", () => {
+    expect(isWrittenClaim(made("2026-11-16T11:58:00Z"), spec, started)).toBe(
+      false,
+    );
+    expect(isWrittenClaim(made(), spec, started)).toBe(false);
+  });
+
+  it("refuses a claim with another spec", () => {
+    expect(
+      isWrittenClaim(
+        { ...made("2026-11-16T12:00:05Z"), spec: { presetRef: "large" } },
+        spec,
+        started,
+      ),
+    ).toBe(false);
   });
 });
