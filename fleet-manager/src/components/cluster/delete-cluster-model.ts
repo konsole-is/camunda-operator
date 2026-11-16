@@ -306,11 +306,11 @@ function volumeNote(
       data.releases.find((r) => r.metadata?.name === spec.releaseRef)?.spec,
       spec,
     ).spec.zeebe?.persistentVolumeClaimRetentionPolicy?.whenDeleted;
-  // A change of a preset or a release leaves the generation of the cluster
-  // as it is, so only the spec of the cluster itself shows a Retain that
-  // the operator applied.
-  if (whenDeleted === "Retain" && !own)
-    return "Volumes not known: a preset or release of the cluster sets the volume policy, and the page cannot tell if the operator applied it";
+  // A change of the preset leaves the generation of the cluster as it is,
+  // so only the spec of the cluster itself shows the policy that the
+  // operator applied. A release cannot set it.
+  if (!own && spec?.presetRef)
+    return "Volumes not known: the cluster takes its volume policy from its preset, and the page cannot tell if the operator applied it";
   return whenDeleted === "Retain"
     ? "Volumes kept for a cluster of the same name"
     : "Volumes deleted";

@@ -154,7 +154,7 @@ The page then says "Volumes kept for a cluster of the same name" next to the `Ca
 
 - "Volumes not known: the operator has not applied the current spec of the cluster yet". Wait until the note changes before you delete the cluster.
 - "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec". Correct the cause that the `Ready` condition of the `CamundaCluster` names, for example a missing `CamundaRelease` or preset.
-- "Volumes not known: a preset or release of the cluster sets the volume policy, and the page cannot tell if the operator applied it". The page shows that the operator applied a policy only when the claim sets it. Set `whenDeleted: Retain` in the claim, as above.
+- "Volumes not known: the cluster takes its volume policy from its preset, and the page cannot tell if the operator applied it". With a preset, the page knows the policy only when the claim sets it. Set `whenDeleted: Retain` in the claim, as above.
 - "Volumes not known: the page could not read what decides them". A read of the `CamundaCluster`, its preset, or its release failed.
 
 ### Backups
