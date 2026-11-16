@@ -3,7 +3,6 @@ import type { DeleteClusterData } from "@/components/cluster/delete-cluster-mode
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
-import { ENVIRONMENT_LABEL } from "@/lib/labels";
 
 /**
  * loadDeleteClusterPage reads the first snapshot of the delete page of a
@@ -55,16 +54,11 @@ export async function loadDeleteClusterPage(
     listed("CamundaClusterPreset"),
     listed("CamundaRelease"),
   ]);
-  const environmentName =
-    namespaceObject?.metadata?.labels?.[ENVIRONMENT_LABEL];
-  const environment =
-    environmentName === undefined
-      ? undefined
-      : environments.find((e) => e.metadata?.name === environmentName);
   return {
     claim,
     ...(cluster && { cluster }),
-    ...(environment && { environment }),
+    ...(namespaceObject && { namespace: namespaceObject }),
+    environments,
     sections,
     registrations,
     requests,

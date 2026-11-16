@@ -41,7 +41,8 @@ const made = (name: string) => ({
   ...of("orders"),
 });
 
-const claim = (spec: object = {}) =>
+// claim is a claim that controls its cluster, unless status says otherwise.
+const claim = (spec: object = {}, status: object = {}) =>
   cast("CamundaClusterClaim", {
     kind: "CamundaClusterClaim",
     metadata: { namespace: "team-a", name: "orders", uid: "claim-uid" },
@@ -58,6 +59,8 @@ const claim = (spec: object = {}) =>
           name: "orders-backup-storage",
         },
       ],
+      cluster: { name: "orders" },
+      ...status,
     },
   });
 
@@ -70,6 +73,7 @@ const retaining = object("CamundaCluster", "orders", {
 const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
   claim: claim(),
   cluster: object("CamundaCluster", "orders"),
+  environments: [],
   sections: [
     cast("PluginSection", {
       metadata: { name: "backup-storage" },
@@ -200,6 +204,27 @@ describe("deleteClusterModel", () => {
       ["CamundaOptimize orders-optimize", KEPT_ATTACHMENT],
       ["BackupSchedule orders-hourly", KEPT_ATTACHMENT],
     ]);
+  });
+
+  it("keeps a cluster that the claim does not control, with the reason", () => {
+    const model = deleteClusterModel(
+      data({ claim: claim({}, { cluster: undefined }) }),
+      "Delete",
+    );
+    expect(model.targets.map((t) => t.kind)).not.toContain("CamundaCluster");
+    expect(model.kept.map((t) => [t.label, t.note])).toEqual([
+      ["CamundaCluster orders", KEPT_ATTACHMENT],
+    ]);
+  });
+
+  it("leaves out a cluster that is gone and that the claim does not name", () => {
+    const model = deleteClusterModel(
+      data({ claim: claim({}, { cluster: undefined }), cluster: undefined }),
+      "Delete",
+    );
+    expect([...model.targets, ...model.kept].map((t) => t.kind)).not.toContain(
+      "CamundaCluster",
+    );
   });
 
   it("a failed read of the requests leaves the fates and the warning not known", () => {

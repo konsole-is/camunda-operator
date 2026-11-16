@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 import { PrecheckLine } from "@/components/fleet/precheck-line";
+import type { PolicyAfterWrite } from "@/components/fleet/use-claim-delete";
 import type { ReadError } from "@/components/planes/planes-table";
 import { unreadDeleteText } from "@/components/setup/releases/rows";
 import { Badge } from "@/components/ui/badge";
@@ -45,14 +46,19 @@ export const KEEP_REFUSED_ON_DELETE =
 
 /**
  * DeleteStage is what the delete page shows. choose holds the errors of a
- * delete refused after the policy write, and the policy that the claim
- * keeps after it. waiting: the policy write waits for GitOps, or for the
- * operator to read it. deleting holds the state of each target,
- * whether the delete commit waits for GitOps, and the live claim. deleted:
- * the claim is gone. replaced: the claim was made again under its name.
+ * delete refused after the policy write, and the policy of the claim after
+ * a policy write that no delete followed. waiting: the policy write waits
+ * for GitOps, or for the operator to read it. deleting holds the state of
+ * each target, whether the delete commit waits for GitOps, and the live
+ * claim. deleted: the claim is gone. replaced: the claim was made again
+ * under its name.
  */
 export type DeleteStage =
-  | { kind: "choose"; errors?: ApiError[]; policyWritten?: DeletionPolicy }
+  | {
+      kind: "choose";
+      errors?: ApiError[];
+      afterPolicyWrite?: PolicyAfterWrite;
+    }
   | { kind: "waiting" }
   | {
       kind: "deleting";
@@ -71,7 +77,8 @@ const PRUNE_NOTE =
  * confirm of its review calls apply with remove, and the review previews
  * remove once for each remove object. Without a mode it shows CHANGES_OFF
  * and what the delete takes, and no review. While model.unread has a kind
- * it shows what the delete takes, and no review, unless a write runs. policyStep says that the delete writes the deletion policy first.
+ * it shows what the delete takes, and no review, unless a write runs.
+ * policyStep says that the delete writes the deletion policy first.
  */
 export function DeleteClusterView({
   model,
@@ -103,6 +110,7 @@ export function DeleteClusterView({
   const { name, namespace } = model;
   const clusterHref = `/fleet/clusters/${namespace}/${name}`;
   const effects = effectsOf(model, mode === "git" && policyStep);
+  const clusterKept = model.kept.some((t) => t.kind === "CamundaCluster");
   const [writing, setWriting] = useState(false);
   const takes = (
     <section aria-label="What the delete takes">
@@ -129,7 +137,9 @@ export function DeleteClusterView({
       {stage.kind === "deleted" ? (
         <div className="flex flex-col gap-2 text-sm">
           <p role="status" className="text-text">
-            The cluster {name} is deleted.
+            {clusterKept
+              ? `The claim ${name} is deleted. The cluster ${name} stays: the claim did not make it.`
+              : `The cluster ${name} is deleted.`}
           </p>
           <Link
             href="/fleet"
@@ -182,9 +192,9 @@ export function DeleteClusterView({
           {stage.errors && stage.errors.length > 0 && (
             <Alert texts={stage.errors.map((e) => e.message)} />
           )}
-          {stage.policyWritten && (
+          {stage.afterPolicyWrite && (
             <p role="status" className="text-sm text-warn">
-              {policyNote(name, stage.policyWritten, mode)}
+              {policyNote(name, stage.afterPolicyWrite)}
             </p>
           )}
           {mode === undefined ? (
@@ -236,43 +246,60 @@ export function DeleteClusterView({
   );
 }
 
+// The page decides from the lists of these kinds whether the claim made an
+// object, so an object of such a kind that it cannot read is not known.
+const ATTACHMENT_KINDS: readonly string[] = [
+  "CamundaOptimize",
+  "BackupSchedule",
+];
+
 function effectsOf(
   model: DeleteClusterModel,
   twoCommits: boolean,
 ): ReactNode[] {
-  const always = model.targets.filter((t) => t.kind !== "PluginRequest");
-  const unknown = model.unread.filter(
-    (kind) => kind === "CamundaOptimize" || kind === "BackupSchedule",
+  const unknownKinds = model.unread.filter((k) => ATTACHMENT_KINDS.includes(k));
+  const known = (t: DeleteTarget) => !unknownKinds.includes(t.kind);
+  const always = model.targets.filter(
+    (t) => t.kind !== "PluginRequest" && known(t),
   );
+  const kept = model.kept.filter(known);
+  const unknown = [...model.targets, ...model.kept].filter((t) => !known(t));
+  const rows = (targets: readonly DeleteTarget[], note?: string) =>
+    targets.map((t) => (
+      <li key={`${t.kind}/${t.name}`}>
+        {t.label}
+        {(note ?? t.note) && (
+          <span className="text-muted">: {note ?? t.note}</span>
+        )}
+      </li>
+    ));
   return [
     <div key="always" className="flex flex-col gap-1">
       <span className="font-medium text-text">Always deleted</span>
-      <ul className="flex flex-col gap-0.5">
-        {always.map((t) => (
-          <li key={`${t.kind}/${t.name}`}>
-            {t.label}
-            {t.note && <span className="text-muted">: {t.note}</span>}
-          </li>
-        ))}
-        {unknown.map((kind) => (
-          <li key={kind}>
-            {kind}
-            <span className="text-muted">: not known</span>
-          </li>
-        ))}
-      </ul>
+      <ul className="flex flex-col gap-0.5">{rows(always)}</ul>
     </div>,
-    ...(model.kept.length > 0
+    ...(kept.length > 0
       ? [
           <div key="kept" className="flex flex-col gap-1">
             <span className="font-medium text-text">Kept</span>
+            <ul className="flex flex-col gap-0.5">{rows(kept)}</ul>
+          </div>,
+        ]
+      : []),
+    ...(unknownKinds.length > 0
+      ? [
+          <div key="unknown" className="flex flex-col gap-1">
+            <span className="font-medium text-text">Not known</span>
             <ul className="flex flex-col gap-0.5">
-              {model.kept.map((t) => (
-                <li key={`${t.kind}/${t.name}`}>
-                  {t.label}
-                  {t.note && <span className="text-muted">: {t.note}</span>}
-                </li>
-              ))}
+              {rows(unknown, "not known")}
+              {unknownKinds
+                .filter((kind) => !unknown.some((t) => t.kind === kind))
+                .map((kind) => (
+                  <li key={kind}>
+                    {kind}
+                    <span className="text-muted">: not known</span>
+                  </li>
+                ))}
             </ul>
           </div>,
         ]
@@ -411,18 +438,13 @@ function Progress({
   );
 }
 
-// policyNote says that the delete did not happen after the write of
-// policy. In Git mode the claim gets the policy only once GitOps applies
-// the commit.
-function policyNote(
-  name: string,
-  policy: DeletionPolicy,
-  mode: WriteMode | undefined,
-): string {
-  const label = policy === "Orphan" ? "Keep" : "Delete";
-  return mode === "git"
-    ? `The cluster is not deleted. The repository holds the commit that sets the deletion policy of ${name} to ${label}.`
-    : `The deletion policy of ${name} is now ${label}, and the cluster is not deleted.`;
+function policyNote(name: string, after: PolicyAfterWrite): string {
+  const label = (policy: DeletionPolicy) =>
+    policy === "Orphan" ? "Keep" : "Delete";
+  const held = `The claim ${name} has the deletion policy ${label(after.held)}.`;
+  return after.unapplied
+    ? `The cluster is not deleted. The repository holds the commit that sets the deletion policy of ${name} to ${label(after.unapplied)}, and GitOps has not applied it yet. ${held}`
+    : `The cluster is not deleted. ${held}`;
 }
 
 function ReadErrors({ errors }: { errors: readonly ReadError[] }) {

@@ -58,19 +58,23 @@ describe("loadDeleteClusterPage", () => {
     ).toEqual([{ namespace: "team-a" }]);
   });
 
-  it("takes the Environment that the label of the namespace names", async () => {
+  it("returns the namespace of the claim and the Environments", async () => {
     k8s.objects["CamundaClusterClaim/orders"] = claim;
-    k8s.objects["Namespace/team-a"] = {
+    const namespace = {
       metadata: {
         name: "team-a",
         labels: { "fleet.camunda.io/environment": "prod" },
       },
     };
-    const prod = { metadata: { name: "prod" } };
-    k8s.lists.Environment = [{ metadata: { name: "dev" } }, prod];
-    expect((await loadDeleteClusterPage("team-a", "orders"))?.environment).toBe(
-      prod,
-    );
+    k8s.objects["Namespace/team-a"] = namespace;
+    const environments = [
+      { metadata: { name: "dev" } },
+      { metadata: { name: "prod" } },
+    ];
+    k8s.lists.Environment = environments;
+    const data = await loadDeleteClusterPage("team-a", "orders");
+    expect(data?.namespace).toBe(namespace);
+    expect(data?.environments).toEqual(environments);
   });
 
   it("returns the presets and the releases for the merged spec of the cluster", async () => {

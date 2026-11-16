@@ -42,9 +42,11 @@ type ClaimOver = {
   deletionTimestamp?: string;
   annotations?: Record<string, string>;
   deletionPolicy?: "Delete" | "Orphan";
+  // notMade is a claim that does not control the cluster of its name.
+  notMade?: boolean;
 };
 const claim = (over: ClaimOver = {}) => {
-  const { deletionPolicy, ...metadata } = over;
+  const { deletionPolicy, notMade, ...metadata } = over;
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaClusterClaim",
@@ -69,6 +71,7 @@ const claim = (over: ClaimOver = {}) => {
           name: "orders-backup-storage",
         },
       ],
+      ...(!notMade && { cluster: { name: "orders" } }),
     },
   } as unknown as Resource<"CamundaClusterClaim">;
 };
@@ -81,6 +84,7 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
       kind: "CamundaCluster",
       metadata: { namespace: "team-a", name: "orders" },
     },
+    environments: [],
     sections: [
       {
         metadata: { name: "backup-storage" },
@@ -208,20 +212,44 @@ const requestsWatch: WatchSpec = {
   namespace: "team-a",
 };
 
+const optimizesWatch: WatchSpec = {
+  kind: "CamundaOptimize",
+  namespace: "team-a",
+};
+
 // readAll sends a snapshot of the objects of initial on each watch of the
-// page, so that every list is current and the review opens.
-async function readAll(initial: DeleteClusterData = data()) {
-  await liveClaim(initial.claim);
-  await snapshot(clusterWatch, initial.cluster ? [initial.cluster] : []);
-  await snapshot(requestsWatch, initial.requests);
-  await snapshot(
-    { kind: "CamundaOptimize", namespace: "team-a" },
-    initial.optimizes,
-  );
-  await snapshot(
-    { kind: "BackupSchedule", namespace: "team-a" },
-    initial.schedules,
-  );
+// page, so that every list is current and the review opens. It leaves out
+// the watches of the kinds of except.
+async function readAll(
+  initial: DeleteClusterData = data(),
+  except: string[] = [],
+) {
+  const lists: [WatchSpec, object[]][] = [
+    [claimWatch, [initial.claim]],
+    [clusterWatch, initial.cluster ? [initial.cluster] : []],
+    [
+      { kind: "Namespace", name: "team-a" },
+      initial.namespace ? [initial.namespace] : [],
+    ],
+    [requestsWatch, initial.requests],
+    [optimizesWatch, initial.optimizes],
+    [{ kind: "BackupSchedule", namespace: "team-a" }, initial.schedules],
+    [{ kind: "Environment" }, initial.environments],
+    [{ kind: "PluginSection" }, initial.sections],
+    [{ kind: "PluginRegistration" }, initial.registrations],
+    [{ kind: "CamundaClusterPreset" }, initial.presets],
+    [{ kind: "CamundaRelease" }, initial.releases],
+    [
+      { kind: "LogicalBackupElasticsearch", namespace: "team-a" },
+      initial.backups.elasticsearch,
+    ],
+    [
+      { kind: "LogicalBackupRDBMS", namespace: "team-a" },
+      initial.backups.rdbms,
+    ],
+  ];
+  for (const [spec, objects] of lists)
+    if (!except.includes(spec.kind)) await snapshot(spec, objects);
 }
 
 // revisionOfFirstPush is the revision that GitOps writes for the first
@@ -313,7 +341,7 @@ describe("DeleteCluster", () => {
     await confirm("Delete the cluster");
     await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "42" }));
     const note =
-      "The deletion policy of orders is now Keep, and the cluster is not deleted.";
+      "The cluster is not deleted. The claim orders has the deletion policy Keep.";
     expect(await screen.findByText(note)).toBeTruthy();
     expect(screen.getByText("The app may not delete it.")).toBeTruthy();
     await liveClaim(claim({ deletionPolicy: "Orphan", resourceVersion: "43" }));
@@ -364,12 +392,9 @@ describe("DeleteCluster", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "The cluster is not deleted. The repository holds the commit that sets the deletion policy of orders to Keep.",
+        "The cluster is not deleted. The repository holds the commit that sets the deletion policy of orders to Keep, and GitOps has not applied it yet. The claim orders has the deletion policy Delete.",
       ),
     ).toBeTruthy();
-    // The new claim version makes the review preview again, so the page
-    // has seen it once the preview count grows.
-    const previews = fakeWriter.previewed.length;
     await liveClaim(
       claim({
         resourceVersion: "42",
@@ -377,9 +402,28 @@ describe("DeleteCluster", () => {
         annotations: { [REVISION_ANNOTATION]: revisionOfFirstPush() },
       }),
     );
-    await waitFor(() =>
-      expect(fakeWriter.previewed.length).toBeGreaterThan(previews),
+    expect(
+      await screen.findByText(
+        "The cluster is not deleted. The claim orders has the deletion policy Keep.",
+      ),
+    ).toBeTruthy();
+    expect(fakeWriter.applied).toHaveLength(1);
+  });
+
+  it("direct mode: a change by someone else during the wait shows the policy that the claim has, not the one that the page wrote", async () => {
+    page();
+    await readAll();
+    fireEvent.click(screen.getByRole("radio", { name: /Keep the resources/ }));
+    await confirm("Delete the cluster");
+    await screen.findByText(
+      /Waiting for the operator to read the deletion policy\./,
     );
+    await liveClaim(claim({ deletionPolicy: "Delete", resourceVersion: "42" }));
+    expect(
+      await screen.findByText(
+        "The cluster is not deleted. The claim orders has the deletion policy Delete.",
+      ),
+    ).toBeTruthy();
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
@@ -456,12 +500,16 @@ describe("DeleteCluster", () => {
 
   it.each([
     ["PluginRegistration", /Not known/],
+    ["PluginSection", /Not known/],
     ["CamundaClusterPreset", /Volumes not known/],
+    ["Environment", /Delete is possible/],
+    ["Namespace", /Delete is possible/],
+    ["LogicalBackupElasticsearch", /Delete is possible/],
   ])(
-    "a failed server read of %s names the kind and opens no review",
+    "a failed server read of %s names the kind and opens no review until its watch has a snapshot",
     async (kind, shown) => {
       page(data({ errors: [{ kind, message: "forbidden" }] }));
-      await readAll();
+      await readAll(data(), [kind]);
       expect(
         screen.getByText(`Could not read ${kind}: forbidden`),
       ).toBeTruthy();
@@ -469,8 +517,61 @@ describe("DeleteCluster", () => {
       expect(
         screen.queryByRole("button", { name: "Delete the cluster" }),
       ).toBeNull();
+      await readAll();
+      expect(
+        await screen.findByRole("button", { name: "Delete the cluster" }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText(`Could not read ${kind}: forbidden`),
+      ).toBeNull();
     },
   );
+
+  it("a failed watch of CamundaOptimize shows its objects as not known, also one that the claim did not make", async () => {
+    const handMade = {
+      metadata: { namespace: "team-a", name: "orders-optimize" },
+      spec: { clusterRef: { name: "orders" } },
+    } as unknown as Resource<"CamundaOptimize">;
+    const initial = data({ optimizes: [handMade] });
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the cluster" });
+    expect(
+      screen.getByText("Kept: the claim did not make it", { exact: false }),
+    ).toBeTruthy();
+    const { source, watch } = await watched(optimizesWatch);
+    act(() =>
+      source.emit("failure", {
+        watch,
+        kind: "CamundaOptimize",
+        message: "lost",
+      }),
+    );
+    await screen.findByText("Could not read CamundaOptimize: lost");
+    expect(
+      screen.queryByText("Kept: the claim did not make it", { exact: false }),
+    ).toBeNull();
+    const row = screen
+      .getByText("CamundaOptimize orders-optimize")
+      .closest("li")!;
+    expect(row.textContent).toBe("CamundaOptimize orders-optimize: not known");
+  });
+
+  it("a cluster that the claim did not make shows as kept, and the end text says that it stays", async () => {
+    const initial = data({ claim: claim({ notMade: true }) });
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the cluster" });
+    expect(
+      screen.getByText("CamundaCluster orders").closest("li")!.textContent,
+    ).toBe("CamundaCluster orders: Kept: the claim did not make it");
+    await gone(claimWatch, initial.claim);
+    expect(
+      await screen.findByText(
+        "The claim orders is deleted. The cluster orders stays: the claim did not make it.",
+      ),
+    ).toBeTruthy();
+  });
 
   it("a current snapshot of a watch replaces a list that the server could not read", async () => {
     page(data({ errors: [{ kind: "PluginRequest", message: "forbidden" }] }));

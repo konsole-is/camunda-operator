@@ -23,13 +23,13 @@ import { type DeleteStage, DeleteClusterView } from "./delete-cluster-view";
 
 /**
  * DeleteCluster is the delete page of the cluster of initial.claim. It
- * follows the claim, the cluster, the requests of the claim, and the
- * CamundaOptimize and BackupSchedule objects of the namespace live; the
- * rest of initial stays as read. It opens on the pick of initialPolicy,
- * and writes only through useClaimDelete on the confirm of the review.
- * Once the delete is sent, the page lists each object that always goes
- * until it is gone. writeMode is undefined when the server could not read
- * it. It needs a QueryClientProvider and a GitPushesProvider above it.
+ * follows each object and list of initial live, so a list that the server
+ * could not read comes back with its watch. It opens on the pick of
+ * initialPolicy, and writes only through useClaimDelete on the confirm of
+ * the review. Once the delete is sent, the page lists each object that
+ * always goes until it is gone. writeMode is undefined when the server
+ * could not read it. It needs a QueryClientProvider and a
+ * GitPushesProvider above it.
  */
 export function DeleteCluster({
   initial,
@@ -55,28 +55,61 @@ export function DeleteCluster({
     actions,
     show,
   });
-  const requestsOf = { namespace };
+  const inNamespace = { namespace };
+  const all = {};
   const cluster = useResource(
     "CamundaCluster",
     { namespace, name },
     initial.cluster,
   );
-  const requests = useResources("PluginRequest", requestsOf, initial.requests);
+  const namespaceObject = useResource(
+    "Namespace",
+    { name: namespace },
+    initial.namespace,
+  );
+  const requests = useResources("PluginRequest", inNamespace, initial.requests);
   const optimizes = useResources(
     "CamundaOptimize",
-    { namespace },
+    inNamespace,
     initial.optimizes,
   );
   const schedules = useResources(
     "BackupSchedule",
-    { namespace },
+    inNamespace,
     initial.schedules,
   );
+  const environments = useResources("Environment", all, initial.environments);
+  const sections = useResources("PluginSection", all, initial.sections);
+  const registrations = useResources(
+    "PluginRegistration",
+    all,
+    initial.registrations,
+  );
+  const presets = useResources("CamundaClusterPreset", all, initial.presets);
+  const releases = useResources("CamundaRelease", all, initial.releases);
+  const backupsES = useResources(
+    "LogicalBackupElasticsearch",
+    inNamespace,
+    initial.backups.elasticsearch,
+  );
+  const backupsRDBMS = useResources(
+    "LogicalBackupRDBMS",
+    inNamespace,
+    initial.backups.rdbms,
+  );
   const watched = [
-    { kind: "CamundaCluster", opts: { namespace }, name, ...cluster },
-    { kind: "PluginRequest", opts: requestsOf, ...requests },
-    { kind: "CamundaOptimize", opts: { namespace }, ...optimizes },
-    { kind: "BackupSchedule", opts: { namespace }, ...schedules },
+    { kind: "CamundaCluster", opts: inNamespace, name, ...cluster },
+    { kind: "Namespace", opts: all, name: namespace, ...namespaceObject },
+    { kind: "PluginRequest", opts: inNamespace, ...requests },
+    { kind: "CamundaOptimize", opts: inNamespace, ...optimizes },
+    { kind: "BackupSchedule", opts: inNamespace, ...schedules },
+    { kind: "Environment", opts: all, ...environments },
+    { kind: "PluginSection", opts: all, ...sections },
+    { kind: "PluginRegistration", opts: all, ...registrations },
+    { kind: "CamundaClusterPreset", opts: all, ...presets },
+    { kind: "CamundaRelease", opts: all, ...releases },
+    { kind: "LogicalBackupElasticsearch", opts: inNamespace, ...backupsES },
+    { kind: "LogicalBackupRDBMS", opts: inNamespace, ...backupsRDBMS },
   ] as const;
   const fresh = useWatchesFresh(watched);
   // A current snapshot of a watch replaces the list that the server could
@@ -101,12 +134,19 @@ export function DeleteCluster({
 
   const model = deleteClusterModel(
     {
-      ...initial,
       claim: run.claim ?? initial.claim,
       cluster: cluster.item,
+      namespace: namespaceObject.item,
+      environments: environments.items,
+      sections: sections.items,
+      registrations: registrations.items,
       requests: requests.items,
       optimizes: optimizes.items,
       schedules: schedules.items,
+      backups: { elasticsearch: backupsES.items, rdbms: backupsRDBMS.items },
+      presets: presets.items,
+      releases: releases.items,
+      errors,
     },
     picked,
     unread,

@@ -10,6 +10,7 @@ import {
 } from "@/lib/claims/deletion";
 import type { SectionClaim } from "@/lib/claims/sections";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import {
   claimDeletionChoice,
@@ -19,17 +20,19 @@ import {
 } from "@/lib/policy";
 
 /**
- * DeleteClusterData is what the delete page reads once on the server.
- * cluster is undefined once the CamundaCluster is gone, or when its read
- * failed. environment is the Environment that the label of the namespace
- * names. requests are the PluginRequests of the namespace. The model takes
- * those that the claim controls. presets and releases give the merged spec
- * of the cluster. errors holds each read that failed.
+ * DeleteClusterData is what the delete page reads. cluster is undefined
+ * once the CamundaCluster is gone, or when its read failed. namespace is
+ * the namespace of the claim, undefined when its read failed; the model
+ * takes the Environment that its label names. requests are the
+ * PluginRequests of the namespace. The model takes those that the claim
+ * controls. presets and releases give the merged spec of the cluster.
+ * errors holds each read that failed.
  */
 export type DeleteClusterData = {
   claim: Resource<"CamundaClusterClaim">;
   cluster?: Resource<"CamundaCluster">;
-  environment?: Resource<"Environment">;
+  namespace?: Resource<"Namespace">;
+  environments: Resource<"Environment">[];
   sections: Resource<"PluginSection">[];
   registrations: Resource<"PluginRegistration">[];
   requests: Resource<"PluginRequest">[];
@@ -57,11 +60,12 @@ export type DeleteTarget = {
  * the deletion choice of the claim with policy set to the pick.
  * keepRefused says that the claim keeps its resources and an option cannot.
  * targets are the objects that always go, in the order in which they go,
- * the requests included. kept are the CamundaOptimize and BackupSchedule
- * objects of the cluster that stay, each with the reason in note. backups
- * counts the backups of the cluster of both kinds. warning is the
- * backupWarning of groups, unset while fatesKnown is false. unread are the kinds that the page could not
- * read; fatesKnown is false when the fates of groups depend on one.
+ * the requests included. kept are the CamundaCluster, CamundaOptimize, and
+ * BackupSchedule objects of the cluster that the claim does not control,
+ * each with the reason in note. backups counts the backups of the cluster
+ * of both kinds. warning is the backupWarning of groups, unset while
+ * fatesKnown is false. unread are the kinds that the page could not read;
+ * fatesKnown is false when the fates of groups depend on one.
  */
 export type DeleteClusterModel = {
   name: string;
@@ -88,7 +92,10 @@ const VOLUME_KINDS: readonly string[] = [
   "CamundaRelease",
 ];
 
-/** KEPT_ATTACHMENT is the note of an attachment that the claim did not make. */
+/**
+ * KEPT_ATTACHMENT is the note of a cluster or an attachment that the claim
+ * did not make.
+ */
 export const KEPT_ATTACHMENT = "Kept: the claim did not make it";
 
 /** clusterDeletionChoice is claimDeletionChoice of the claim of data. */
@@ -104,11 +111,20 @@ export function clusterDeletionChoice(data: DeleteClusterData): DeletionChoice {
         plugins: claim.spec?.plugins as PluginSelection[] | undefined,
       },
     },
-    environment: data.environment as unknown as Environment | undefined,
+    environment: environmentOf(data) as unknown as Environment | undefined,
     sections: data.sections as unknown as PluginSection[],
     registrations: data.registrations as unknown as PluginRegistration[],
     kind: "CamundaClusterClaim",
   });
+}
+
+function environmentOf(
+  data: DeleteClusterData,
+): Resource<"Environment"> | undefined {
+  const name = data.namespace?.metadata?.labels?.[ENVIRONMENT_LABEL];
+  return name === undefined
+    ? undefined
+    : data.environments.find((e) => e.metadata?.name === name);
 }
 
 /**
@@ -184,18 +200,29 @@ export function deleteClusterModel(
   );
   const volumesKnown = !unread.some((k) => VOLUME_KINDS.includes(k));
   const fatesKnown = !unread.some((k) => FATE_KINDS.includes(k));
+  // The claim controller names the cluster in status.cluster only while
+  // the claim controls it, and the claim finalizer deletes only that one.
+  const clusterGoes = claim.status?.cluster?.name === name;
+  const clusterKept =
+    !clusterGoes && data.cluster
+      ? [target("CamundaCluster", name, KEPT_ATTACHMENT)]
+      : [];
   const targets: DeleteTarget[] = [
     ...optimizes.goes,
     ...schedules.goes,
-    target(
-      "CamundaCluster",
-      name,
-      !volumesKnown
-        ? "Volumes not known"
-        : volumesOf(data) === "Retain"
-          ? "Volumes kept for a cluster of the same name"
-          : "Volumes deleted",
-    ),
+    ...(clusterGoes
+      ? [
+          target(
+            "CamundaCluster",
+            name,
+            !volumesKnown
+              ? "Volumes not known"
+              : volumesOf(data) === "Retain"
+                ? "Volumes kept for a cluster of the same name"
+                : "Volumes deleted",
+          ),
+        ]
+      : []),
     ...requests.map((r) => {
       const requestName = r.metadata?.name ?? "";
       const section = sectionOf(requestName);
@@ -214,7 +241,7 @@ export function deleteClusterModel(
     choice: { ...choice, policy: picked },
     keepRefused: choice.policy === "Orphan" && !choice.keepAllowed,
     targets,
-    kept: [...optimizes.stays, ...schedules.stays],
+    kept: [...clusterKept, ...optimizes.stays, ...schedules.stays],
     groups,
     backups:
       data.backups.elasticsearch.filter(ofCluster).length +

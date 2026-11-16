@@ -36,7 +36,7 @@ const selections = [
   { section: "secondary-storage", registration: "elasticsearch" },
 ];
 
-const claim = (deletionPolicy?: DeletionPolicy) =>
+const claim = (deletionPolicy?: DeletionPolicy, status: object = {}) =>
   object("CamundaClusterClaim", {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaClusterClaim",
@@ -50,6 +50,8 @@ const claim = (deletionPolicy?: DeletionPolicy) =>
     status: {
       resolvedPolicy: { deletionPolicy: "Orphan" },
       requests: selections.map((s) => ({ ...s, name: `orders-${s.section}` })),
+      cluster: { name: "orders" },
+      ...status,
     },
   });
 
@@ -94,6 +96,7 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData => ({
       },
     },
   }),
+  environments: [],
   sections: [
     section("access", "Access", 10, "externalAccess"),
     section("backup-storage", "Backup storage", 20, "backupStorage"),
@@ -283,8 +286,36 @@ export const PolicyWritten: Story = {
           message: "The claim orders changed since you opened it.",
         },
       ],
-      policyWritten: "Orphan",
+      afterPolicyWrite: { held: "Delete", unapplied: "Orphan" },
     },
+  },
+};
+
+export const AttachmentsNotRead: Story = {
+  name: "The Optimize objects could not be read",
+  args: {
+    model: deleteClusterModel(data(), "Orphan", ["CamundaOptimize"]),
+    errors: [
+      {
+        kind: "CamundaOptimize",
+        message: "camundaoptimizes.core.camunda.io is forbidden",
+      },
+    ],
+  },
+};
+
+const notMade = data({ claim: claim(undefined, { cluster: undefined }) });
+
+export const ClusterNotMade: Story = {
+  name: "A cluster that the claim did not make",
+  args: { model: deleteClusterModel(notMade, "Orphan") },
+};
+
+export const ClusterNotMadeDeleted: Story = {
+  name: "The claim is deleted, and its cluster stays",
+  args: {
+    model: deleteClusterModel(notMade, "Orphan"),
+    stage: { kind: "deleted" },
   },
 };
 
