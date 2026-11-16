@@ -2,7 +2,7 @@ import "server-only";
 import type { Resource } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
 import { CLUSTER_LABEL, COMPONENT_LABEL } from "@/lib/labels";
-import { ownerName } from "@/lib/labels/server";
+import { ownerName } from "@/lib/labels/owner-name";
 import { readSecretValues } from "@/lib/secrets/values";
 import { promRange } from "./prometheus";
 import { PARTITION_HEALTH, inVersionRange, renderCoreQuery } from "./queries";

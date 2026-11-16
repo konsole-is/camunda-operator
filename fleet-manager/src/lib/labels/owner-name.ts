@@ -1,5 +1,6 @@
-import "server-only";
-import { createHash } from "node:crypto";
+// This module runs in the browser and on the server.
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
 // The rule of labels.BoundedName in pkg/labels, with the bound of a label
 // value. test/fixtures/labels/owner-names.json keeps the two the same.
@@ -13,7 +14,7 @@ const HASH_LENGTH = 10;
  */
 export function ownerName(name: string): string {
   if (name.length <= LABEL_VALUE_MAX) return name;
-  const hash = createHash("sha256").update(name).digest("hex");
+  const hash = bytesToHex(sha256(utf8ToBytes(name)));
   const head = name
     .slice(0, LABEL_VALUE_MAX - 1 - HASH_LENGTH)
     .replace(/[-.]+$/, "");
