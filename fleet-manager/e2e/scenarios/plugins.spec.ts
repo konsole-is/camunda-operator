@@ -41,3 +41,49 @@ test("the Plugins page groups the built-in registrations by section", async ({
   await expect(page.getByText(/^Not read:/)).toHaveCount(0);
   await checkPage(page, "plugins");
 });
+
+test("a registration opens with its tabs and the claims that use it", async ({
+  page,
+}) => {
+  await page.goto("/setup/plugins");
+  await page
+    .getByRole("region", { name: "Secondary storage", exact: true })
+    .getByRole("link", { name: /existing-secondary-storage/ })
+    .click();
+  await expect(page).toHaveURL(/\/setup\/plugins\/existing-secondary-storage$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Existing secondary storage" }),
+  ).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveText([
+    "About",
+    "Contract",
+    "Parameters",
+    "Grants",
+    "Health",
+    "Used by",
+  ]);
+  await page.getByRole("tab", { name: "Contract" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Outputs", exact: true })
+      .getByText("secondaryStorageConfig", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Used by" }).click();
+  await expect(page).toHaveURL(/\?tab=usedBy$/);
+  const used = page.getByRole("region", {
+    name: "team-orders/orders-secondary-storage",
+  });
+  await expect(
+    used.getByText("SecondaryStorageConfig: orders-storage, Ready"),
+  ).toBeVisible();
+  await expect(used.getByText("Production", { exact: true })).toBeVisible();
+  await expect(used.getByText("Ready: True", { exact: true })).toBeVisible();
+  // Until each watch has its first snapshot, the page names the lists that
+  // it has not read.
+  await expect(page.getByText(/^Not read:/)).toHaveCount(0);
+  await checkPage(page, "registration-used-by");
+  await page.getByRole("tab", { name: "Grants" }).click();
+  await expect(
+    page.getByText("This option has no grant template, so it writes no Grant."),
+  ).toBeVisible();
+});

@@ -1,10 +1,13 @@
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { Environment } from "@/generated/crds/environment";
+import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import type { Resource } from "@/lib/k8s/kinds";
 import { BUILTIN_CONTROLLER, ENVIRONMENT_LABEL } from "@/lib/labels";
+import type { RegistrationDetailData } from "./detail-sources";
 import type { RegistrationSources } from "./sources";
 
 const SINCE = "2026-11-10T09:00:00Z";
@@ -97,6 +100,77 @@ export function pluginRequest(
   };
 }
 
+/**
+ * pluginGrant returns a Grant of the template access for the cluster
+ * orders, with an empty statement, unless spec says otherwise. It has a
+ * status only with conditions.
+ */
+export function pluginGrant(
+  namespace: string,
+  name: string,
+  spec: Partial<Grant["spec"]>,
+  labels: Record<string, string>,
+  conditions?: ConditionRow[],
+): Grant {
+  return {
+    apiVersion: PLUGINS,
+    kind: "Grant",
+    metadata: { namespace, name, labels },
+    spec: {
+      cluster: { name: "orders" },
+      format: "aws-iam-statement",
+      fragment: {},
+      template: "access",
+      ...spec,
+    },
+    ...(conditions && {
+      status: {
+        conditions: conditions.map((c) => ({
+          message: "",
+          ...c,
+          lastTransitionTime: String(c.lastTransitionTime ?? SINCE),
+        })) as NonNullable<Grant["status"]>["conditions"],
+      },
+    }),
+  };
+}
+
+/** registrationEvent returns an event about the registration name at 2026-11-13T08:55:00Z. */
+export function registrationEvent(
+  name: string,
+  type: "Normal" | "Warning",
+  reason: string,
+  note: string,
+): Resource<"Event"> {
+  return {
+    apiVersion: "events.k8s.io/v1",
+    kind: "Event",
+    metadata: {
+      name: `${name}.${reason}`,
+      namespace: "default",
+      uid: `${name}/${reason}`,
+    },
+    type,
+    reason,
+    note,
+    eventTime: "2026-11-13T08:55:00Z",
+    regarding: { apiVersion: PLUGINS, kind: "PluginRegistration", name },
+  } as Resource<"Event">;
+}
+
+/**
+ * detailData returns the first snapshot of the detail page of the built-in
+ * registration name in registrationSources, with no Grant and no event.
+ */
+export function detailData(name: string): RegistrationDetailData {
+  const sources = registrationSources();
+  const registration = sources.registrations.find(
+    (r) => r.metadata.name === name,
+  );
+  if (!registration) throw new Error(`no built-in registration ${name}`);
+  return { name, registration, sources, grants: [], events: [] };
+}
+
 /** labelledNamespace returns a namespace with the environment label when environment is set. */
 export function labelledNamespace(
   name: string,
@@ -138,6 +212,34 @@ const HEALTHY = [
 const SECONDARY_STORAGE_OUTPUT = {
   key: "secondaryStorageConfig",
   description: "The name of the SecondaryStorageConfig that the cluster reads.",
+};
+
+// The parameter schema of the built-in elasticsearch registration, as the
+// scenario claim-ready holds it, without the fields of overrides.
+const ELASTICSEARCH_PARAMETERS = {
+  type: "object",
+  required: ["preset", "releaseRef"],
+  properties: {
+    preset: {
+      type: "string",
+      title: "Preset",
+      minLength: 1,
+      description:
+        "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from.",
+    },
+    overrides: {
+      type: "object",
+      title: "Overrides",
+      description: "The values that replace the values of the preset.",
+    },
+    releaseRef: {
+      type: "string",
+      title: "Release",
+      minLength: 1,
+      description:
+        "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim.",
+    },
+  },
 };
 
 const DATABASE_OUTPUTS = [
@@ -248,7 +350,22 @@ export function registrationSources(
         {
           mode: "Default",
           claimEditable: ["overrides"],
+          inputs: [
+            {
+              name: "storageClassName",
+              from: "volume-encryption/storageClassName",
+            },
+            {
+              name: "objectStorageConfig",
+              from: "backup-storage/objectStorageConfig",
+            },
+            {
+              name: "serviceAccountAnnotations",
+              from: "cloud-identity/serviceAccountAnnotations",
+            },
+          ],
           outputs: [SECONDARY_STORAGE_OUTPUT],
+          parameters: ELASTICSEARCH_PARAMETERS,
         },
       ),
       builtin("database-server", "New PostgreSQL server", "secondary-storage", {

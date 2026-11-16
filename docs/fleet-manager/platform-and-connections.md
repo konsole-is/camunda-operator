@@ -176,6 +176,9 @@ The panel **Used by** lists each object that names the contract, with the fields
 | Databases | `CamundaManagementCluster` | `spec.identityProvider.keycloak.databaseConfigRef`, `spec.identity.databaseConfigRef`, `spec.webModeler.databaseConfigRef` |
 | Management Identity | `CamundaOptimize` | `spec.managementAuthRef` |
 | Management Identity | `CamundaClusterClaim` | `spec.attachments.optimize.managementAuthConfigRef` |
+| Object storage, secondary storage | `CamundaClusterClaim` | `spec.plugins.<registration>.parameters.name`, for the registrations `existing-object-storage` and `existing-secondary-storage` |
+| Databases | `CamundaManagementClusterClaim` | `spec.plugins.existing-database-configs.parameters.<component>`, for example `parameters.keycloak` |
+| Object storage, secondary storage, databases | `PluginRequest` | `spec.parameters.name` or `spec.parameters.<component>` of a request of these registrations |
 
 An `ElasticsearchCluster` or a `DatabaseServer` can take its reference from its preset. It is then a user of the contract too, and it shows `from preset <preset>` under its field.
 
@@ -183,7 +186,66 @@ A backup and the archive history of a database server keep their bucket in their
 
 An Elasticsearch backup also keeps its secondary storage contract in its status. The deletion of the backup removes its snapshots through that contract, also after the cluster moved to another contract. A point-in-time restore keeps its database server contract in its status, and uses it until the restore is `Completed` or `Failed`. Each of these counts as a user.
 
-If the fleet manager cannot read a kind that can use a contract, the column **Users** and the panel **Used by** name that kind. The count can then be too low.
+A claim that selects a contract through `existing-object-storage`, `existing-secondary-storage`, or `existing-database-configs` is a user too, also before its cluster or plane exists. The claim can name the contract in its own parameters, or it can get the name from the policy of its Environment. This claim uses the bucket contract `backups` of its namespace:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  plugins:
+    - section: backup-storage
+      registration: existing-object-storage
+      parameters:
+        name: backups
+  # ... the rest of your claim
+```
+
+If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. So `Environment`, `Namespace`, `PluginRegistration`, and `PluginRequest` count as kinds that can use a contract too.
+
+### Change a contract
+
+You can change a contract that is `Created by hand` or `Kept from <registration>`. On its page, the panel **Settings** is a form. The page of any other contract shows **Settings** as text, with no form and no delete. A contract that is `Kept from <registration>` goes back to the registration when the claim that held its request is created again. The values of the registration then replace your change.
+
+The form edits the values of the contract. For example, you can change a bucket, a region, an endpoint, the credentials, or the host and port of a server. It shows the storage type and the auth type as text, and a save keeps them. To change a type, apply the contract again with `kubectl` or with your GitOps tool.
+
+Each Secret reference names a Secret of the namespace of the contract and the key of each value. A Management Identity contract has no namespace, so its client secret also names the namespace of the Secret. A username key or a password key that you leave at **Default** is left out, and the operator reads `username` or `password`. The page shows names and keys only, never a Secret value. A Secret or key that does not exist stays picked and shows as `<name> (not found)`. When the fleet manager cannot read the Secrets of the namespace, the picker shows the read error and marks nothing as not found.
+
+When you change a field, a bar at the bottom of the page offers **Review**. The bar names the first required field that is empty, and **Review** stays off until you fill it. The review shows a dry run of the change. It also names each user of the contract and what the user does after the save. For example:
+
+`CamundaCluster my-cluster-ns/my-cluster restarts its pods, all but Connectors.`
+
+A cluster, its Optimize, and a management plane restart their pods on any change of a contract that they use. When you point a database server contract at another server, the operator creates each database and its roles on the new server. It does not remove them from the old server. A backup that runs fails when the location of its bucket changes.
+
+While the fleet manager cannot read a kind that can use the contract, the form shows the values, but **Review** stays off. An open review closes. The page names the kinds that it cannot read:
+
+> A change is possible when the fleet manager can read LogicalBackupRDBMS.
+
+The page shows this line for a short time after it opens or connects again. If the line stays, the error above the page gives the cause, as for a delete below.
+
+Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The operator writes these two fields, and the save keeps them.
+
+The save applies only if the contract did not change after the page read it. When a person or a tool changed it in the meantime, the save writes nothing, and the review shows this error:
+
+`The ObjectStorageConfig backups changed since you opened it.`
+
+Go back, and make the change again on the new copy.
+
+When you clear a field that another tool set, such as `kubectl apply` or your GitOps tool, the Kubernetes API keeps the old value. The review names each such field, for example `spec.s3.region stays, because another field manager set it.` Remove the field with that tool.
+
+### Delete a contract
+
+The page offers the delete only for a contract that you can change and that nothing uses. **Used by** counts the backups and the archive records of database servers, so a bucket that holds data that a restore needs is not offered. To delete, type the name of the contract and select **Review the delete**. Then select **Delete the contract**. In Git mode, the button reads **Push the delete to Git**, and the commit removes the file of the contract. Your GitOps tool must prune the contract to delete it from the cluster.
+
+When a user appears while the review is open, the review closes. The fleet manager checks the users again before the delete, and it refuses the delete of a contract in use. A user that is created at the same moment as the delete can be missed.
+
+The fleet manager must read every kind that can use a contract to know that nothing uses it. When it cannot read one of these kinds, the page offers no delete, and an open delete review closes. The page names the kinds that it cannot read:
+
+> Delete is possible when the fleet manager can read CamundaManagementCluster.
+
+The page shows this line for a short time after it opens or connects again. If the line stays, the error above the page gives the cause, for example a missing permission to list that kind. Give the fleet manager that permission, then open the page again.
 
 ### Status
 
