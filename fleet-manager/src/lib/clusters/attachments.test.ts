@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MANAGEMENT_AUTH_CONFIGS_UNREAD,
   NO_MANAGEMENT_AUTH_CONFIG,
   OPTIMIZE_NEEDS_ELASTICSEARCH,
   SCHEDULE_NEEDS_BACKUP_STORAGE,
@@ -20,6 +21,15 @@ describe("optimizeBlocked", () => {
   it("refuses Optimize without a ManagementAuthConfig", () => {
     expect(optimizeBlocked("elasticsearch", [])).toBe(
       NO_MANAGEMENT_AUTH_CONFIG,
+    );
+  });
+
+  it("says that the ManagementAuthConfigs could not be read, not that none exists", () => {
+    expect(optimizeBlocked("elasticsearch", [], true)).toBe(
+      MANAGEMENT_AUTH_CONFIGS_UNREAD,
+    );
+    expect(optimizeBlocked("rdbms", [], true)).toBe(
+      OPTIMIZE_NEEDS_ELASTICSEARCH,
     );
   });
 

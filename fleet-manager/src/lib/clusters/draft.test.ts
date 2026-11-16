@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import {
@@ -24,6 +25,7 @@ import {
   syncedNamespace,
   withClaimValue,
   withoutClaimValue,
+  withoutClaimValues,
 } from "./draft";
 import type { StorageSummary } from "./storage";
 import type { DeletionChoice } from "@/lib/policy";
@@ -710,10 +712,22 @@ describe("settingsErrors", () => {
     environment: withReleases(),
     releases,
     platformConfigs: [platformConfig("basic"), platformConfig("oidc")],
+    sections: [],
     ...over,
   });
   const draft = (spec: ClusterDraft["claim"]["spec"] = {}) =>
     draftWith({ presetRef: "small", ...spec });
+  const access: PluginSection = {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginSection",
+    metadata: { name: "access" },
+    spec: {
+      appliesTo: ["CamundaClusterClaim"],
+      label: "Access",
+      selection: "One",
+      slot: "externalAccess",
+    },
+  };
 
   it("takes the Environment defaults", () => {
     expect(settingsErrors(draft(), data())).toEqual([]);
@@ -777,6 +791,43 @@ describe("settingsErrors", () => {
     expect(
       settingsErrors(draft({ platformConfigRef: "gone" }), data()),
     ).toEqual(["Platform config gone does not exist. Pick another one."]);
+  });
+
+  it("names no release or platform config as missing while its kind cannot be read", () => {
+    expect(
+      settingsErrors(
+        draft({ releaseRef: "camunda-8-8", platformConfigRef: "oidc" }),
+        data({
+          releases: [],
+          platformConfigs: [],
+          unread: ["CamundaRelease", "CamundaPlatformConfig"],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses a picked release that the Environment does not allow while the releases cannot be read", () => {
+    expect(
+      settingsErrors(
+        draft({ releaseRef: "camunda-8-7" }),
+        data({ releases: [], unread: ["CamundaRelease"] }),
+      ),
+    ).toEqual([
+      "The environment does not allow release camunda-8-7. Pick another one.",
+    ]);
+  });
+
+  it("refuses a cluster value that a selected section fills", () => {
+    const filled = draftWith(
+      {
+        presetRef: "small",
+        cluster: { externalUrl: "https://orders.example.com" },
+      },
+      { access: [{ section: "access", registration: "gateway" }] },
+    );
+    expect(settingsErrors(filled, data({ sections: [access] }))).toEqual([
+      'spec.cluster.externalUrl is filled by section "access", so the claim cannot set it',
+    ]);
   });
 });
 
@@ -854,6 +905,19 @@ describe("attachmentsErrors", () => {
     ).toEqual(["ManagementAuthConfig old does not exist. Pick another one."]);
   });
 
+  it("names no ManagementAuthConfig as missing while the kind cannot be read", () => {
+    expect(
+      attachmentsErrors(
+        draft({ optimize: { managementAuthConfigRef: "old" } }),
+        {
+          summary: summary({ secondaryStorageType: "elasticsearch" }),
+          managementAuthConfigs: [],
+          unread: ["ManagementAuthConfig"],
+        },
+      ),
+    ).toEqual([]);
+  });
+
   it("refuses a schedule without backup storage", () => {
     expect(
       attachmentsErrors(draft({ backupSchedule: { schedule: "0 2 * * *" } }), {
@@ -913,6 +977,31 @@ describe("withoutClaimValue", () => {
         { field: "releaseRef" },
       ]).claim.spec,
     ).toEqual({});
+  });
+});
+
+describe("withoutClaimValues", () => {
+  const url = ["spec", "cluster", "externalUrl"].map((field) => ({ field }));
+  const annotations = ["spec", "cluster", "serviceAccount", "annotations"].map(
+    (field) => ({ field }),
+  );
+
+  it("removes the value at each path", () => {
+    const base = draftWith({
+      presetRef: "small",
+      cluster: {
+        externalUrl: "https://orders.example.com",
+        serviceAccount: { annotations: { role: "orders" } },
+      },
+    });
+    expect(withoutClaimValues(base, [url, annotations]).claim.spec).toEqual({
+      presetRef: "small",
+    });
+  });
+
+  it("gives the same draft when it holds no value at the paths", () => {
+    const base = draftWith({ presetRef: "small" });
+    expect(withoutClaimValues(base, [url, annotations])).toBe(base);
   });
 });
 

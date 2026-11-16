@@ -16,6 +16,7 @@ import {
   scheduleBlocked,
 } from "@/lib/clusters/attachments";
 import { type FieldLock, lockLabel, pathFrom, type Step } from "@/lib/fields";
+import type { KindName } from "@/lib/k8s/kinds";
 import { byCodeUnit } from "@/lib/policy";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
@@ -38,7 +39,7 @@ const FAILED: Step[] = [...SCHEDULE, f("retained"), f("failed")];
  * field errors of the claim. pending is the count of pending changes of
  * the page, 0 on a page without a session. lockedUrl shows in a locked
  * external URL row when the claim sets no URL. optimizeHref links the
- * running Optimize.
+ * running Optimize. unread are the kinds that could not be read.
  */
 export type AttachmentContext = {
   secondaryStorage?: string;
@@ -49,6 +50,7 @@ export type AttachmentContext = {
   pending: number;
   lockedUrl?: string;
   optimizeHref?: string;
+  unread?: readonly KindName[];
 };
 
 /**
@@ -82,7 +84,11 @@ export function AttachmentFields({
   const optimize = value?.optimize;
   const schedule = value?.backupSchedule;
   const auths = context.managementAuthConfigs;
-  const optimizeOff = optimizeBlocked(context.secondaryStorage, auths);
+  const optimizeOff = optimizeBlocked(
+    context.secondaryStorage,
+    auths,
+    context.unread?.includes("ManagementAuthConfig"),
+  );
   const scheduleOff = scheduleBlocked(context.backupStorage);
   const urlLock = context.lock(URL);
   const at = (steps: Step[]) =>

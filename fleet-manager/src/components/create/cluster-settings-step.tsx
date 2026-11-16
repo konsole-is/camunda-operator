@@ -17,15 +17,25 @@ import {
 } from "@/components/ui/native-select";
 import { type ClusterDraft, releaseOf } from "@/lib/clusters/draft";
 import type { ClusterField, Step } from "@/lib/fields";
+import type { KindName } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
+
+// The selects of this step and the preset of step 1 set these.
+const PICKED = new Set([
+  "spec.presetRef",
+  "spec.releaseRef",
+  "spec.platformConfigRef",
+]);
 
 /**
  * ClusterSettingsStep is step 3 of the cluster create flow: the release,
- * the platform config, then the settings editors of settingsGroupsOf over
- * fields. fields are clusterFields of the draft cluster. A field that a
- * step 2 option fills shows locked with its section. It holds no draft:
- * pick sets releaseRef or platformConfigRef, an empty value unsets it, and
- * set, reset, and invalid take steps from the root of the claim.
+ * the platform config, then the settings editors over fields, without the
+ * fields at presetRef, releaseRef, and platformConfigRef. fields are
+ * clusterFields of the draft cluster. A field that a step 2 option fills
+ * shows locked with its section. unread are the kinds that could not be
+ * read. It holds no draft: pick sets releaseRef or platformConfigRef, an
+ * empty value unsets it, and set, reset, and invalid take steps from the
+ * root of the claim.
  */
 export function ClusterSettingsStep({
   draft,
@@ -39,6 +49,7 @@ export function ClusterSettingsStep({
   set,
   reset,
   invalid,
+  unread = [],
 }: {
   draft: ClusterDraft;
   environment: Environment | undefined;
@@ -54,6 +65,7 @@ export function ClusterSettingsStep({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid: (steps: Step[], message: string | undefined) => void;
+  unread?: readonly KindName[];
 }) {
   const id = useId();
   const release = releaseOf(draft, environment) ?? "";
@@ -83,7 +95,9 @@ export function ClusterSettingsStep({
           >
             {!releases.some((o) => o.name === release) && (
               <NativeSelectOption value={release}>
-                Pick a release
+                {unread.includes("CamundaRelease")
+                  ? "Could not read the releases"
+                  : "Pick a release"}
               </NativeSelectOption>
             )}
             {releases.map((o) => (
@@ -110,7 +124,9 @@ export function ClusterSettingsStep({
           >
             {!platformConfigs.includes(platform) && (
               <NativeSelectOption value={platform}>
-                Pick a platform config
+                {unread.includes("CamundaPlatformConfig")
+                  ? "Could not read the platform configs"
+                  : "Pick a platform config"}
               </NativeSelectOption>
             )}
             {platformConfigs.map((name) => (
@@ -126,7 +142,10 @@ export function ClusterSettingsStep({
           )}
         </div>
       </div>
-      {settingsGroupsOf(fields, merged.spec).map((group) => (
+      {settingsGroupsOf(
+        fields.filter((f) => !PICKED.has(f.claimPath ?? "")),
+        merged.spec,
+      ).map((group) => (
         <SettingsEditor
           key={group.component}
           group={group}

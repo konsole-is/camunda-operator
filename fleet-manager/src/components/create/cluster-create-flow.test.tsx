@@ -3,6 +3,10 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
+import {
+  MANAGEMENT_AUTH_CONFIGS_UNREAD,
+  NO_MANAGEMENT_AUTH_CONFIG,
+} from "@/lib/clusters/attachments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   type ClusterCreateData,
@@ -696,6 +700,7 @@ describe("ClusterCreateFlow", () => {
   });
 
   it("blocks step 3, not step 1, while the releases cannot be read", async () => {
+    live.objects.CamundaRelease = [];
     live.errors.CamundaRelease = "forbidden";
     render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
     await toStep("Cluster settings");
@@ -703,18 +708,42 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).toContain(
       "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
     );
+    expect(footer()).not.toContain("does not exist");
     expect(footer()).not.toContain("Environment and name:");
+    expect(
+      screen.getByRole("option", { name: "Could not read the releases" }),
+    ).toBeTruthy();
+  });
+
+  it("blocks step 3 while the platform configs cannot be read, and names no platform config as missing", async () => {
+    live.objects.CamundaPlatformConfig = [];
+    live.errors.CamundaPlatformConfig = "forbidden";
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(
+      "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
+    );
+    expect(footer()).not.toContain("does not exist");
+    expect(
+      screen.getByRole("option", {
+        name: "Could not read the platform configs",
+      }),
+    ).toBeTruthy();
   });
 
   it("blocks step 4, not step 3, while the ManagementAuthConfigs cannot be read", async () => {
+    live.objects.ManagementAuthConfig = [];
     live.errors.ManagementAuthConfig = "forbidden";
-    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    render(<ClusterCreateFlow initial={attachmentData()} />);
     await toStep("Attachments");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
     );
     expect(footer()).not.toContain("Cluster settings:");
+    expect(screen.queryByText(NO_MANAGEMENT_AUTH_CONFIG)).toBeNull();
+    expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
   });
 
   it("keeps the step 3 and 4 picks after Back and Next", async () => {
@@ -779,6 +808,63 @@ describe("ClusterCreateFlow", () => {
     expect(
       within(group).queryByText("https://optimize.example.com"),
     ).toBeNull();
+  });
+
+  it("drops a whole cluster value once an access option fills it", async () => {
+    render(<ClusterCreateFlow initial={attachmentData()} />);
+    await toStep("Storage and access");
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(next());
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "externalUrl" }),
+      "https://orders.example.com",
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/^Gateway/));
+    await userEvent.click(next());
+    const url = screen.getAllByRole("group", { name: "externalUrl" })[0];
+    expect(within(url).getByText("Filled by Access")).toBeTruthy();
+    expect(next().disabled).toBe(false);
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(next());
+    expect(
+      (screen.getByRole("textbox", { name: "externalUrl" }) as HTMLInputElement)
+        .value,
+    ).toBe("");
+  });
+
+  it("drops service account annotations once an identity option fills them", async () => {
+    render(<ClusterCreateFlow initial={identityData()} />);
+    await toStep("Storage and access");
+    await userEvent.click(radio(/No identity/));
+    await userEvent.click(next());
+    const row = () =>
+      screen.getAllByRole("group", { name: "serviceAccount.annotations" })[0];
+    await userEvent.click(
+      within(row()).getByRole("button", { name: "Add an entry" }),
+    );
+    await userEvent.type(
+      within(row()).getByRole("textbox", { name: "Key" }),
+      "role",
+    );
+    await userEvent.type(
+      within(row()).getByRole("textbox", { name: "Value" }),
+      "orders",
+    );
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/^IRSA/));
+    await userEvent.click(next());
+    expect(within(row()).getByText("Filled by Identity")).toBeTruthy();
+    expect(next().disabled).toBe(false);
+
+    await userEvent.click(stepButton("Storage and access"));
+    await userEvent.click(radio(/No identity/));
+    await userEvent.click(next());
+    expect(within(row()).queryByRole("textbox", { name: "Key" })).toBeNull();
   });
 
   it("stops on a step 2 error that a release pick causes", async () => {
@@ -979,4 +1065,43 @@ function attachmentData(): ClusterCreateData {
       } as unknown as Resource<"ElasticsearchClusterPreset">,
     ],
   });
+}
+
+// identityData is attachmentData with an identity section that fills the
+// service account annotations and offers no option by default.
+function identityData(): ClusterCreateData {
+  const base = attachmentData();
+  const identity = {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginSection",
+    metadata: { name: "identity" },
+    spec: {
+      appliesTo: ["CamundaClusterClaim"],
+      label: "Identity",
+      selection: "One",
+      order: 70,
+      slot: "workloadIdentity",
+      emptyOptionLabel: "No identity",
+    },
+  } as unknown as Resource<"PluginSection">;
+  const irsa: Resource<"PluginRegistration"> = {
+    ...gateway,
+    metadata: { name: "irsa" },
+    spec: {
+      ...gateway.spec,
+      sections: ["identity"],
+      label: "IRSA",
+      parameterValues: {},
+    },
+  };
+  const [environment] = base.environments;
+  environment.spec.sections = {
+    ...environment.spec.sections,
+    identity: { allowed: ["irsa"] },
+  };
+  return {
+    ...base,
+    sections: [...base.sections, identity],
+    registrations: [...base.registrations, irsa],
+  };
 }

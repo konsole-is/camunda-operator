@@ -3,7 +3,7 @@ export {
   type ClusterClaimContext,
   type FieldError,
 } from "./cluster";
-export { clusterLocks, type LockProvider } from "./locks";
+export { clusterLocks, filledClaimSteps, type LockProvider } from "./locks";
 export { outcomeOf, STALE_CLAIM_MESSAGE, type WriteOutcome } from "./outcome";
 export { PRECHECK_REASONS, precheckOf, type ClaimCondition } from "./precheck";
 export {

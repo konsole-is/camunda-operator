@@ -3,6 +3,7 @@ import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type {
   NamespaceChoice,
   PickerEnvironment,
@@ -10,17 +11,19 @@ import type {
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import type { Step } from "@/lib/fields";
-import type { Resource } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster, type Merged } from "@/lib/merge";
 import {
   byCodeUnit,
+  checkSlotConflicts,
   type DeletionChoice,
   type PluginSelection,
   releaseAllowed,
 } from "@/lib/policy";
-import { without, withValue } from "@/lib/session/steps";
+import { valueAt, without, withValue } from "@/lib/session/steps";
 import {
+  MANAGEMENT_AUTH_CONFIGS_UNREAD,
   optimizeBlocked,
   SCHEDULE_NEEDS_BACKUP_STORAGE,
   scheduleBlocked,
@@ -350,18 +353,23 @@ export function draftOptimize(
   } as unknown as Resource<"CamundaOptimize">;
 }
 
-/** SettingsData is the live data that step 3 checks a draft against. */
+/**
+ * SettingsData is the live data that step 3 checks a draft against.
+ * unread are the kinds that could not be read.
+ */
 export type SettingsData = {
   environment: Environment | undefined;
   releases: readonly Resource<"CamundaRelease">[];
   platformConfigs: readonly Resource<"CamundaPlatformConfig">[];
+  sections: readonly PluginSection[];
+  unread?: readonly KindName[];
 };
 
 /**
- * settingsErrors returns the errors of step 3: the release, then the
- * platform config. A claim needs a release, because neither a claim nor a
- * preset can set the version. A release or a platform config must exist,
- * and the Environment must allow a picked release.
+ * settingsErrors returns the errors of step 3. A claim needs a release,
+ * because neither a claim nor a preset can set the version. A release or a
+ * platform config must exist, and the Environment must allow a picked
+ * release. It does not say that one of an unread kind is missing.
  */
 export function settingsErrors(
   draft: ClusterDraft,
@@ -369,10 +377,14 @@ export function settingsErrors(
 ): string[] {
   const { spec } = draft.claim;
   const errors: string[] = [];
+  const unread = (kind: KindName) => data.unread?.includes(kind) ?? false;
   const release = releaseOf(draft, data.environment);
   if (!release) {
     errors.push("Pick a release.");
-  } else if (!data.releases.some((r) => r.metadata?.name === release)) {
+  } else if (
+    !unread("CamundaRelease") &&
+    !data.releases.some((r) => r.metadata?.name === release)
+  ) {
     errors.push(
       spec.releaseRef
         ? `Release ${release} does not exist. Pick another one.`
@@ -387,29 +399,40 @@ export function settingsErrors(
     spec.platformConfigRef ?? data.environment?.spec.platformConfigRef;
   if (!platform) {
     errors.push("Pick a platform config.");
-  } else if (!data.platformConfigs.some((p) => p.metadata?.name === platform)) {
+  } else if (
+    !unread("CamundaPlatformConfig") &&
+    !data.platformConfigs.some((p) => p.metadata?.name === platform)
+  ) {
     errors.push(
       spec.platformConfigRef
         ? `Platform config ${platform} does not exist. Pick another one.`
         : `Platform config ${platform} of the environment does not exist. Pick another one.`,
     );
   }
+  const conflict = checkSlotConflicts(data.sections, draftSelections(draft), {
+    cluster: spec.cluster,
+  });
+  if ("refusal" in conflict) errors.push(conflict.refusal.message);
   return errors;
 }
 
 /**
  * AttachmentsData is the live data that step 4 checks a draft against.
  * summary is storageSummary of the draft. managementAuthConfigs are names.
+ * unread are the kinds that could not be read.
  */
 export type AttachmentsData = {
   summary: StorageSummary;
   managementAuthConfigs: readonly string[];
+  unread?: readonly KindName[];
 };
 
 /**
  * attachmentsErrors returns the errors of step 4: an Optimize attachment
  * that cannot attach or names a ManagementAuthConfig that does not exist,
  * then a backup schedule without backup storage or with no schedule.
+ * While ManagementAuthConfig is unread, it gives no error about the
+ * ManagementAuthConfigs.
  */
 export function attachmentsErrors(
   draft: ClusterDraft,
@@ -417,12 +440,16 @@ export function attachmentsErrors(
 ): string[] {
   const { optimize, backupSchedule } = draft.claim.spec.attachments ?? {};
   const errors: string[] = [];
+  const authsUnread = data.unread?.includes("ManagementAuthConfig") ?? false;
   if (optimize) {
     const blocked = optimizeBlocked(
       data.summary.secondaryStorageType,
       data.managementAuthConfigs,
+      authsUnread,
     );
-    if (blocked) errors.push(blocked);
+    if (blocked === MANAGEMENT_AUTH_CONFIGS_UNREAD) {
+      // The flow reports the failed read.
+    } else if (blocked) errors.push(blocked);
     else if (
       !data.managementAuthConfigs.includes(optimize.managementAuthConfigRef)
     )
@@ -446,6 +473,16 @@ export function withClaimValue(
   value: unknown,
 ): ClusterDraft {
   return { ...draft, claim: withValue(draft.claim, steps, value) };
+}
+
+/** withoutClaimValues returns draft without the value at each of paths of its claim, or draft itself when it holds none of them. */
+export function withoutClaimValues(
+  draft: ClusterDraft,
+  paths: readonly (readonly Step[])[],
+): ClusterDraft {
+  return paths
+    .filter((steps) => valueAt(draft.claim, steps) !== undefined)
+    .reduce(withoutClaimValue, draft);
 }
 
 /** withoutClaimValue returns draft without the value at steps of its claim. Objects that become empty go, but the claim keeps a spec. */

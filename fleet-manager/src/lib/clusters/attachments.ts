@@ -14,6 +14,10 @@ export const OPTIMIZE_NEEDS_ELASTICSEARCH =
 export const NO_MANAGEMENT_AUTH_CONFIG =
   "No ManagementAuthConfig exists. Your admin creates one first.";
 
+/** MANAGEMENT_AUTH_CONFIGS_UNREAD says why Optimize cannot attach while the ManagementAuthConfigs cannot be read. */
+export const MANAGEMENT_AUTH_CONFIGS_UNREAD =
+  "The fleet manager could not read the ManagementAuthConfigs.";
+
 /** SCHEDULE_NEEDS_BACKUP_STORAGE says why a backup schedule cannot attach to a cluster without backup storage. */
 export const SCHEDULE_NEEDS_BACKUP_STORAGE = "Needs a backup storage option.";
 
@@ -24,13 +28,16 @@ export const DEFAULT_SCHEDULE = "0 2 * * *";
  * optimizeBlocked returns why Optimize cannot attach, undefined when it
  * can. secondaryStorage is the type of the secondary storage, undefined
  * when it is not known, which counts as not Elasticsearch.
- * managementAuthConfigs are the names of the ManagementAuthConfigs.
+ * managementAuthConfigs are the names of the ManagementAuthConfigs, and
+ * unread says that they could not be read.
  */
 export function optimizeBlocked(
   secondaryStorage: string | undefined,
   managementAuthConfigs: readonly string[],
+  unread = false,
 ): string | undefined {
   if (secondaryStorage !== "elasticsearch") return OPTIMIZE_NEEDS_ELASTICSEARCH;
+  if (unread) return MANAGEMENT_AUTH_CONFIGS_UNREAD;
   if (managementAuthConfigs.length === 0) return NO_MANAGEMENT_AUTH_CONFIG;
   return undefined;
 }

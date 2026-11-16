@@ -24,7 +24,7 @@ import { claimNameErrors, namesIn } from "@/lib/claims/names";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 import { clusterFields, pathFrom, type Step } from "@/lib/fields";
 import { byCodeUnit, environmentOf, type PluginSelection } from "@/lib/policy";
-import { clusterLocks } from "@/lib/session";
+import { clusterLocks, filledClaimSteps } from "@/lib/session";
 import type { ValidationError } from "@/lib/schema";
 import { environmentCounts, presetUsage } from "@/lib/usage";
 import {
@@ -38,6 +38,7 @@ import {
   settingsErrors,
   withClaimValue,
   withoutClaimValue,
+  withoutClaimValues,
 } from "@/lib/clusters/draft";
 import {
   type StorageData,
@@ -83,19 +84,12 @@ const ACCESS_REQUESTS = { labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` };
 
 const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
-const OPTIMIZE_URL: Step[] = [
-  "spec",
-  "attachments",
-  "optimize",
-  "externalUrl",
-].map((field) => ({ field }));
-
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 to 4 against the newest data. A list that cannot be
  * read blocks each step that reads it. The picks of a section that goes
  * away leave the draft. Step 3 edits the release, the platform config, and
- * the settings, and step 4 the attachments. An Optimize URL that a step 2
+ * the settings, and step 4 the attachments. A claim value that a step 2
  * option fills leaves the draft. Step 5 holds no fields yet, and the flow
  * writes nothing. The review step holds the Back of the last step.
  */
@@ -172,6 +166,9 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
     settingsLive.releases,
     settingsLive.platformConfigs,
   ].flatMap((l) => (l.failure ? [l.failure] : []));
+  const unread: KindName[] = Object.values(settingsLive).flatMap((l) =>
+    l.failure ? [l.kind] : [],
+  );
   const attachmentsFailures = [
     ...storageFailures,
     ...(settingsLive.managementAuthConfigs.failure
@@ -296,6 +293,8 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
         environment: derive(draft).environment,
         releases,
         platformConfigs,
+        sections,
+        unread,
       }),
       ...editor.shown("spec.cluster"),
     ],
@@ -304,6 +303,7 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       ...attachmentsErrors(draft, {
         summary: derive(draft).summary,
         managementAuthConfigs,
+        unread,
       }),
       ...editor.shown("spec.attachments"),
     ],
@@ -332,16 +332,15 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   useEffect(() => {
     for (const name of gone) flow.set(["storage", name], undefined);
   });
-  // The claim controller refuses an Optimize URL that a section fills.
-  const urlLocked = locks(pathFrom("", OPTIMIZE_URL)) !== undefined;
-  const typedUrl = flow.draft.claim.spec.attachments?.optimize?.externalUrl;
+  // The claim controller refuses a claim value that a section fills.
+  const unfilled = withoutClaimValues(flow.draft, filledClaimSteps(fields));
+  useEffect(() => {
+    if (unfilled !== flow.draft) flow.set(["claim"], unfilled.claim);
+  });
   const setClaim = (steps: Step[], value: unknown) =>
     flow.set(["claim"], withClaimValue(flow.draft, steps, value).claim);
   const resetClaim = (steps: Step[]) =>
     flow.set(["claim"], withoutClaimValue(flow.draft, steps).claim);
-  useEffect(() => {
-    if (urlLocked && typedUrl !== undefined) resetClaim(OPTIMIZE_URL);
-  });
   const [secrets, setSecrets] = useState<SecretRefs>([]);
   const [secretsError, setSecretsError] = useState<string>();
   const onSecrets = useCallback((refs: SecretRefs, error?: string) => {
@@ -437,6 +436,7 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
             set={setClaim}
             reset={resetClaim}
             invalid={editor.invalid}
+            unread={unread}
           />
         ) : flow.current === "attachments" ? (
           <ClusterAttachmentsStep
@@ -447,6 +447,7 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
             set={setClaim}
             reset={resetClaim}
             invalid={editor.invalid}
+            unread={unread}
           />
         ) : (
           <div className="flex flex-col items-start gap-4">
@@ -496,11 +497,12 @@ function useLive<K extends KindName>(
   kind: K,
   opts: ListOptions,
   initial: Resource<K>[],
-): { items: Resource<K>[]; failure?: string } {
+): { kind: K; items: Resource<K>[]; failure?: string } {
   const { items, error } = useResources(kind, opts, initial);
   return error === undefined
-    ? { items }
+    ? { kind, items }
     : {
+        kind,
         items,
         failure: `The fleet manager could not read the ${kind} objects: ${error}`,
       };

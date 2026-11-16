@@ -6,6 +6,7 @@ import type { FieldLock, Step } from "@/lib/fields";
 import {
   type ClusterAttachments,
   DEFAULT_SCHEDULE,
+  MANAGEMENT_AUTH_CONFIGS_UNREAD,
   OPTIMIZE_NEEDS_ELASTICSEARCH,
   SCHEDULE_NEEDS_BACKUP_STORAGE,
 } from "@/lib/clusters/attachments";
@@ -76,6 +77,17 @@ describe("AttachmentFields", () => {
     expect(box("Attach Optimize").disabled).toBe(true);
     expect(descriptionOf(box("Attach Optimize"))).toBe(
       OPTIMIZE_NEEDS_ELASTICSEARCH,
+    );
+  });
+
+  it("says that the ManagementAuthConfigs could not be read, not that none exists", () => {
+    renderFields(undefined, {
+      managementAuthConfigs: [],
+      unread: ["ManagementAuthConfig"],
+    });
+    expect(box("Attach Optimize").disabled).toBe(true);
+    expect(descriptionOf(box("Attach Optimize"))).toBe(
+      MANAGEMENT_AUTH_CONFIGS_UNREAD,
     );
   });
 

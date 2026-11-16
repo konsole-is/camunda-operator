@@ -167,6 +167,33 @@ describe("ClusterSettingsStep", () => {
     ).toBeTruthy();
   });
 
+  it("says which lists could not be read, not that a pick is missing", () => {
+    renderStep({
+      releases: [],
+      platformConfigs: [],
+      unread: ["CamundaRelease", "CamundaPlatformConfig"],
+    });
+    expect(
+      screen.getByRole("option", { name: "Could not read the releases" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("option", {
+        name: "Could not read the platform configs",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /^Pick a/ })).toBeNull();
+  });
+
+  it("leaves the preset, release, and platform config out of the whole cluster settings", () => {
+    renderStep();
+    const whole = screen.getByRole("region", {
+      name: "Whole cluster settings",
+    });
+    for (const name of ["presetRef", "releaseRef", "platformConfigRef"])
+      expect(within(whole).queryByRole("group", { name })).toBeNull();
+    expect(within(whole).queryByText("Change it in the Claim tab.")).toBeNull();
+  });
+
   it("shows the whole cluster settings first", () => {
     renderStep();
     const groups = screen
