@@ -75,15 +75,60 @@ describe("parameterRows", () => {
     const byName = Object.fromEntries(
       rows.map((r) => [r.name, r.environments]),
     );
+    const env = { name: "production", environment: "Production" };
     expect(byName.deletionWindowDays).toEqual([
-      { environment: "Production", value: 14, claimEditable: false },
+      { ...env, value: 14, claimEditable: false },
     ]);
     expect(byName.keySpec).toEqual([
-      { environment: "Production", value: undefined, claimEditable: true },
+      { ...env, value: undefined, claimEditable: true },
     ]);
     expect(byName.multiRegion).toEqual([
-      { environment: "Production", value: false, claimEditable: false },
+      { ...env, value: false, claimEditable: false },
     ]);
+  });
+
+  it("gives a row, marked, for a parameter that only an environment sets", () => {
+    const rows = valueOf(
+      parameterRows(
+        pluginRegistration("x", {}),
+        [
+          fleetEnvironment("production", {
+            parameters: { x: { region: { value: "eu-west-1" } } },
+          }),
+        ],
+        [],
+      ),
+    );
+    expect(rows).toEqual([
+      {
+        name: "region",
+        environmentOnly: true,
+        claimEditable: false,
+        environments: [
+          {
+            name: "production",
+            environment: "production",
+            value: "eu-west-1",
+            claimEditable: false,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("gives the values of an enum that holds no strings", () => {
+    const rows = valueOf(
+      parameterRows(
+        pluginRegistration("x", {
+          parameters: {
+            properties: { days: { type: "integer", enum: [7, 14, 30] } },
+          },
+        }),
+        [],
+        [],
+      ),
+    );
+    expect(rows[0].values).toEqual(["7", "14", "30"]);
   });
 
   it("names an environment without a display name by its name", () => {

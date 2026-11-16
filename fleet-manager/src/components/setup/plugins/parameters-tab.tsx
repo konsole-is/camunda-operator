@@ -27,6 +27,11 @@ export function ParametersTab({
     );
   return (
     <div className="flex flex-col gap-4">
+      <p className="text-sm text-text-2">
+        Default and A claim can change it apply in a namespace without an
+        environment. Each environment shows what a new claim in it gets. A claim
+        that exists keeps the values that it resolved.
+      </p>
       {unread.includes("Environment") && (
         <p className="text-sm text-muted">
           Values of the environments: Not known: Environment is not read.
@@ -42,6 +47,11 @@ export function ParametersTab({
                 {row.description && (
                   <p className="text-sm text-text-2">{row.description}</p>
                 )}
+                {row.environmentOnly && (
+                  <p className="text-sm text-text-2">
+                    Only an environment sets this parameter.
+                  </p>
+                )}
                 <Terms>
                   <Term label="Type">{row.type ?? "Any"}</Term>
                   {rangeOf(row) && <Term label="Range">{rangeOf(row)}</Term>}
@@ -56,11 +66,9 @@ export function ParametersTab({
                   </Term>
                   {row.environments?.map((e) => (
                     <Term
-                      key={e.environment}
+                      key={e.name}
                       label={e.environment}
-                      note={
-                        e.claimEditable ? "A claim can change it" : undefined
-                      }
+                      note={`A claim can change it: ${e.claimEditable ? "Yes" : "No"}`}
                     >
                       <Value value={e.value} none="No value" />
                     </Term>

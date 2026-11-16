@@ -11,9 +11,14 @@ import {
 import type { PolicyResult } from "@/lib/policy/types";
 import { isRecord } from "./values";
 
-/** ParameterRow is one parameter of a registration. error says why its schema cannot be read. */
+/**
+ * ParameterRow is one parameter of a registration. error says why its
+ * schema cannot be read. environmentOnly is true for a parameter that only
+ * an Environment names.
+ */
 export type ParameterRow = {
   name: string;
+  environmentOnly?: true;
   error?: string;
   description?: string;
   /** type is the type of the property schema, as written there. */
@@ -26,6 +31,8 @@ export type ParameterRow = {
   claimEditable: boolean;
   /** environments is unset while Environment is not read. */
   environments?: {
+    /** name is the name of the Environment, and environment its display name, else its name. */
+    name: string;
     environment: string;
     value?: unknown;
     claimEditable: boolean;
@@ -33,12 +40,12 @@ export type ParameterRow = {
 };
 
 /**
- * parameterRows gives one row for each parameter of registration: the keys
- * of the properties of spec.parameters and of parameterValues, without the
- * parameters that the claim controller sets, by name. Each of environments
- * adds its value and claimEditable, in the order of environments, while
- * Environment is not in unread. An error of parameterPolicies, and a schema
- * or properties that are not an object, is the result.
+ * parameterRows gives one row for each parameter of registration, by name,
+ * without the parameters that the claim controller sets. Each of
+ * environments adds its value and claimEditable, in the order of
+ * environments, while Environment is not in unread. An error of
+ * parameterPolicies, and a schema or properties that are not an object, is
+ * the result.
  */
 export function parameterRows(
   registration: PluginRegistration,
@@ -55,13 +62,17 @@ export function parameterRows(
     };
   const fallback = parameterPolicies(registration, undefined);
   if (!("value" in fallback)) return fallback;
-  const byEnvironment: { environment: string; policies: ParameterPolicies }[] =
-    [];
+  const byEnvironment: {
+    name: string;
+    environment: string;
+    policies: ParameterPolicies;
+  }[] = [];
   if (!unread.includes("Environment")) {
     for (const environment of environments) {
       const policies = parameterPolicies(registration, environment);
       if (!("value" in policies)) return policies;
       byEnvironment.push({
+        name: environment.metadata.name ?? "",
         environment:
           environment.spec.displayName || (environment.metadata.name ?? ""),
         policies: policies.value,
@@ -73,6 +84,7 @@ export function parameterRows(
     ...new Set([
       ...Object.keys(properties ?? {}),
       ...Object.keys(fallback.value),
+      ...byEnvironment.flatMap(({ policies }) => Object.keys(policies)),
     ]),
   ]
     .filter((name) => !hidden.includes(name))
@@ -80,20 +92,26 @@ export function parameterRows(
   return {
     value: names.map((name) => {
       const policy = own(fallback.value, name);
+      const property = properties ? own(properties, name) : undefined;
       return {
         name,
-        ...schemaFacts(properties ? own(properties, name) : undefined),
+        ...(property === undefined &&
+          policy === undefined && { environmentOnly: true as const }),
+        ...schemaFacts(property),
         ...(policy && hasValue(policy) && { fallback: policy.value }),
         claimEditable: policy?.claimEditable === true,
         ...(!unread.includes("Environment") && {
-          environments: byEnvironment.map(({ environment, policies }) => {
-            const entry = own(policies, name);
-            return {
-              environment,
-              value: entry && hasValue(entry) ? entry.value : undefined,
-              claimEditable: entry?.claimEditable === true,
-            };
-          }),
+          environments: byEnvironment.map(
+            ({ name: id, environment, policies }) => {
+              const entry = own(policies, name);
+              return {
+                name: id,
+                environment,
+                value: entry && hasValue(entry) ? entry.value : undefined,
+                claimEditable: entry?.claimEditable === true,
+              };
+            },
+          ),
         }),
       };
     }),
@@ -117,6 +135,10 @@ function schemaFacts(property: unknown): SchemaFacts {
     ...(typeof property.type === "string" && { type: property.type }),
     ...(field.minimum !== undefined && { minimum: field.minimum }),
     ...(field.maximum !== undefined && { maximum: field.maximum }),
-    ...(field.enum && { values: field.enum }),
+    ...(Array.isArray(property.enum) && {
+      values: property.enum.map((v) =>
+        typeof v === "string" ? v : JSON.stringify(v),
+      ),
+    }),
   };
 }

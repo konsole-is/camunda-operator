@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fleetEnvironment, pluginRegistration } from "./fixtures";
 import { parameterRows } from "./parameters";
 import { ParametersTab } from "./parameters-tab";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const kms = pluginRegistration("aws-kms", {
   parameters: {
@@ -58,10 +61,65 @@ describe("ParametersTab", () => {
     render(
       <ParametersTab rows={parameterRows(kms, [production], [])} unread={[]} />,
     );
-    expect(termOf("deletionWindowDays", "Production")).toEqual(["14"]);
-    expect(termOf("keySpec", "Production")).toEqual([
-      "No valueA claim can change it",
+    expect(termOf("deletionWindowDays", "Production")).toEqual([
+      "14A claim can change it: No",
     ]);
+    expect(termOf("keySpec", "Production")).toEqual([
+      "No valueA claim can change it: Yes",
+    ]);
+  });
+
+  it("says where the default and the values of the environments hold", () => {
+    render(<ParametersTab rows={parameterRows(kms, [], [])} unread={[]} />);
+    expect(
+      screen.getByText(
+        /apply in a namespace without an environment\. Each environment shows what a new claim in it gets\. A claim that exists keeps the values that it resolved\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows two environments of the same display name each with its value", () => {
+    const twin = (name: string, value: number) =>
+      fleetEnvironment(name, {
+        displayName: "Production",
+        parameters: { "aws-kms": { deletionWindowDays: { value } } },
+      });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(
+      <ParametersTab
+        rows={parameterRows(kms, [twin("prod-a", 14), twin("prod-b", 21)], [])}
+        unread={[]}
+      />,
+    );
+    expect(termOf("deletionWindowDays", "Production")).toEqual([
+      "14A claim can change it: No",
+      "21A claim can change it: No",
+    ]);
+    expect(
+      error.mock.calls.filter((call) => /same key/.test(String(call[0]))),
+    ).toEqual([]);
+  });
+
+  it("marks a parameter that only an environment sets", () => {
+    render(
+      <ParametersTab
+        rows={parameterRows(
+          pluginRegistration("x", {}),
+          [
+            fleetEnvironment("production", {
+              parameters: { x: { region: { value: "eu-west-1" } } },
+            }),
+          ],
+          [],
+        )}
+        unread={[]}
+      />,
+    );
+    expect(
+      within(screen.getByRole("region", { name: "region" })).getByText(
+        "Only an environment sets this parameter.",
+      ),
+    ).toBeTruthy();
   });
 
   it("says that the values of the environments are not known while Environment is not read", () => {
