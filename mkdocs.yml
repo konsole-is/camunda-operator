@@ -94,6 +94,7 @@ nav:
   - Fleet manager:
       - Install the fleet manager: fleet-manager/install.md
       - Fleet manager settings: fleet-manager/settings.md
+      - Create a cluster: fleet-manager/create-a-cluster.md
       - Change a cluster: fleet-manager/change-a-cluster.md
       - The fleet view: fleet-manager/fleet-view.md
       - The cluster page: fleet-manager/cluster-page.md
