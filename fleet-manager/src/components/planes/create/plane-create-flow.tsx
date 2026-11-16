@@ -17,10 +17,8 @@ import {
   type DraftPath,
   useCreateFlow,
 } from "@/components/create/use-create-flow";
-import {
-  type SecretRefs,
-  secretRefsOf,
-} from "@/components/fleet/secret-ref-picker";
+import { NamespaceSecrets } from "@/components/create/namespace-secrets";
+import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
@@ -552,25 +550,6 @@ export function PlaneCreateFlow({
       {toastView}
     </div>
   );
-}
-
-// NamespaceSecrets follows the Secrets of one namespace, so the flow watches
-// Secrets only once a namespace is chosen, and only that one. It renders
-// nothing: a wrapper around the step would remount the step, and with it
-// the namespace picker, when the choice changes.
-function NamespaceSecrets({
-  namespace,
-  onChange,
-}: {
-  namespace: string;
-  onChange: (secrets: SecretRefs, error?: string) => void;
-}) {
-  const { items, error } = useResources("Secret", { namespace }, []);
-  const key = JSON.stringify(secretRefsOf(items));
-  useEffect(() => {
-    onChange(JSON.parse(key) as SecretRefs, error);
-  }, [key, error, onChange]);
-  return null;
 }
 
 // A Resource is plain JSON, so it differs from its model type only in its

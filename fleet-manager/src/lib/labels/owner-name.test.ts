@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ownerName } from ".";
+import { ownerName } from "./owner-name";
 
 // pkg/labels tests OwnerName against the same file, so the two rules stay
 // the same.
 const fixture = JSON.parse(
   readFileSync(
     new URL(
-      "../../../../../test/fixtures/labels/owner-names.json",
+      "../../../../test/fixtures/labels/owner-names.json",
       import.meta.url,
     ),
     "utf8",

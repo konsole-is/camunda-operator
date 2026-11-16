@@ -3,7 +3,7 @@ import { clusterOptimize } from "@/components/cluster/optimize";
 import type { Resource } from "@/lib/k8s/kinds";
 import { get, list } from "@/lib/k8s/read";
 import { CLUSTER_LABEL } from "@/lib/labels";
-import { ownerName } from "@/lib/labels/server";
+import { ownerName } from "@/lib/labels/owner-name";
 import { getSettings } from "@/lib/settings";
 import { requestPods } from "./kube";
 import { promRange } from "./prometheus";
