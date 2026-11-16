@@ -247,7 +247,8 @@ func settleAndList(
 	return normalize(ips, objs)
 }
 
-// runUntilSettled runs the reconcilers until the scenario settles.
+// runUntilSettled starts the reconcilers, and stops them once the scenario
+// settled. It fails when the scenario does not settle within settleTimeout.
 func runUntilSettled(
 	ctx context.Context,
 	cfg *rest.Config,
@@ -401,9 +402,8 @@ func refObject(ref objectRef) *unstructured.Unstructured {
 }
 
 // runState applies the changes of st, runs the reconcilers until the
-// scenario settles, and returns the normalized objects of the scope. When st
-// has objects in thenApply, it applies them only after the objects of apply
-// settled, and settles again. It appends the overlays of st to overlays.
+// scenario settles, and returns the normalized objects of the scope. It
+// appends the overlays of st to overlays.
 func runState(
 	ctx context.Context,
 	cfg *rest.Config,

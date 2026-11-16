@@ -22,6 +22,7 @@ import (
 	"os"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/yaml"
 )
@@ -162,6 +163,7 @@ func (s *scenario) validate() error {
 		}
 		errs = append(errs, validateObjects("object to apply of "+where+",", st.Apply)...)
 		errs = append(errs, validateObjects("object to apply after the settle of "+where+",", st.ThenApply)...)
+		errs = append(errs, validateNotAppliedTwice(where, st)...)
 		errs = append(errs, validateSteps(where, st.Workload)...)
 		errs = append(errs, validateOverlays(where, st.Overlays)...)
 	}
@@ -180,6 +182,23 @@ func validateObjects(what string, objs []map[string]any) []error {
 		name, _ := metadata["name"].(string)
 		if apiVersion == "" || kind == "" || name == "" {
 			errs = append(errs, fmt.Errorf("%s %d has no apiVersion, kind, or metadata.name", what, i+1))
+		}
+	}
+	return errs
+}
+
+// validateNotAppliedTwice returns an error for each object of thenApply that
+// apply names too. where names the state in the message.
+func validateNotAppliedTwice(where string, st state) []error {
+	applied := map[string]bool{}
+	for _, obj := range st.Apply {
+		applied[describe(&unstructured.Unstructured{Object: obj})] = true
+	}
+
+	var errs []error
+	for _, obj := range st.ThenApply {
+		if name := describe(&unstructured.Unstructured{Object: obj}); applied[name] {
+			errs = append(errs, fmt.Errorf("%s names %s in apply and in thenApply", where, name))
 		}
 	}
 	return errs

@@ -43,10 +43,11 @@ limitations under the License.
 //   - states: optional. Named changes, each on top of the one before. A
 //     state has a name (a DNS label other than objects, scenario, and
 //     observe), a description, and optional apply (objects), thenApply
-//     (objects applied after the objects of apply settled), workload
-//     (steps that replace the step of the same object; a step that gives a
-//     finished Job another outcome fails the run), and overlays (applied
-//     after the overlays of the scenario and of the states before it).
+//     (objects applied after the scenario settled on apply and workload, none
+//     of them also in apply), workload (steps that replace the step of the
+//     same object; a step that gives a finished Job another outcome fails
+//     the run), and overlays (applied after the overlays of the scenario and
+//     of the states before it).
 //
 // Do not apply a CamundaOptimize, or a second CamundaCluster on the same
 // backend, in one list with the CamundaCluster whose storage claim it reads.
