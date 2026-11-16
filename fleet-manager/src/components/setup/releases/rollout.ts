@@ -1,13 +1,14 @@
 import { clusterImpacts, RESTART_ALL } from "@/components/cluster/impacts";
+import type { V1Namespace } from "@kubernetes/client-node";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL, isManaged } from "@/lib/labels";
+import { CLAIM_LABEL, ENVIRONMENT_LABEL, isManaged } from "@/lib/labels";
 import {
   byCodeUnit,
   declaresRelease,
-  environmentNameOf,
+  environmentOf as policyEnvironmentOf,
   type MoveStatus,
   moveStatus,
   releaseMove,
@@ -165,7 +166,10 @@ export function rolloutRows(
       const namespace = cluster.metadata?.namespace ?? "";
       const name = cluster.metadata?.name ?? "";
       const claim = claimOf(cluster, data.claims);
-      const environment = environmentOf(namespace, data);
+      const { environment, refusal: environmentRefusal } = environmentOf(
+        namespace,
+        data,
+      );
       const currentRelease =
         text(claim?.spec?.releaseRef) || text(cluster.spec?.releaseRef);
       const runningVersion = text(cluster.status?.management?.version);
@@ -208,6 +212,8 @@ export function rolloutRows(
             kind: "noClaim",
             text: `The claim ${cluster.metadata?.labels?.[CLAIM_LABEL]} is missing.`,
           };
+        if (environmentRefusal)
+          return { kind: "notAllowed", text: environmentRefusal };
         if (currentRelease === target) return targetStatus(claim);
         return checked();
       }
@@ -305,7 +311,7 @@ export function planMove(
       errors.push(named(session));
       continue;
     }
-    const environment = environmentOf(row.namespace, data);
+    const { environment } = environmentOf(row.namespace, data);
     const claimName = row.claim?.metadata.name;
     const requests = data.requests.filter(
       (r) =>
@@ -481,13 +487,31 @@ function claimOf(
   );
 }
 
+// environmentOf gives the Environment of namespace, or, when the claim
+// controller refuses every claim in it, the text of the refusal.
 function environmentOf(
   namespace: string,
   data: Pick<RolloutData, "namespaces" | "environments">,
-): Resource<"Environment"> | undefined {
+): { environment?: Resource<"Environment">; refusal?: string } {
   const object = data.namespaces.find((n) => n.metadata?.name === namespace);
-  const name = object && environmentNameOf(object, data.environments);
-  return data.environments.find((e) => e.metadata?.name === name);
+  if (!object) return {};
+  const { environment, reason } = policyEnvironmentOf(
+    generated<V1Namespace>(object),
+    generated<Environment[]>(data.environments),
+  );
+  if (reason === "NoEnvironment")
+    return {
+      refusal: `The namespace ${namespace} belongs to no Environment, so the claim takes no change.`,
+    };
+  if (reason === "UnknownEnvironment")
+    return {
+      refusal: `The namespace ${namespace} names the Environment ${object.metadata?.labels?.[ENVIRONMENT_LABEL]}, which does not exist, so the claim takes no change.`,
+    };
+  return {
+    environment: data.environments.find(
+      (e) => e.metadata?.name === environment?.metadata.name,
+    ),
+  };
 }
 
 function readyOf(

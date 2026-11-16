@@ -251,7 +251,7 @@ The **Rollout** tab of a release page lists every cluster. Each row shows the na
 | Eligibility | Meaning | What to do |
 | --- | --- | --- |
 | Can move | The move passes every check. | Select **Move**. |
-| Not allowed in the environment | The environment of the cluster does not allow the release. | Allow the release on the [Environments](environments.md) page. **Open Environments** opens the environment of the cluster. |
+| Not allowed in the environment | The environment of the cluster does not allow the release. Or the namespace belongs to no environment, or names one that does not exist, and the claim takes no change. | Allow the release on the [Environments](environments.md) page, or add the namespace to an environment. **Open Environments** opens the environment of the cluster, or the Environments page. |
 | Downgrade | The release has a lower version than the version that the cluster runs. | Select **Confirm downgrade**. See [Downgrades](#downgrades). |
 | Skips a Camunda minor | The release is more than one minor above the running version. The row names the minor between them. | Move to a release of the minor between them first. The Releases list shows the version of each release. |
 | A backup is pending or running | A backup of the cluster is pending or running. The row names the backup and says which. | Wait until the backup ends. |

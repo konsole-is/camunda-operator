@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   namedErrors,
   planMove,
@@ -169,6 +170,53 @@ describe("rolloutRows", () => {
     }).find((r) => r.name === "payments")!;
     expect(payments.status.kind).toBe("backupRunning");
     expect(payments.action).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "has no environment label while an Environment exists",
+      {},
+      "The namespace team-orders belongs to no Environment, so the claim takes no change.",
+    ],
+    [
+      "names an Environment that does not exist",
+      { [ENVIRONMENT_LABEL]: "gone" },
+      "The namespace team-orders names the Environment gone, which does not exist, so the claim takes no change.",
+    ],
+  ])("offers no move when the namespace %s", (_, labels, text) => {
+    const data = rolloutData();
+    const moved = {
+      ...data,
+      namespaces: data.namespaces.map((n) =>
+        n.metadata?.name === "team-orders"
+          ? { ...n, metadata: { ...n.metadata, labels } }
+          : n,
+      ),
+    };
+    const orders = rolloutRows(targetRelease, moved).find(
+      (r) => r.name === "orders",
+    )!;
+    expect(orders.status).toEqual({ kind: "notAllowed", text });
+    expect(orders.action).toBe("openEnvironments");
+    expect(orders.environment).toBeUndefined();
+    expect(
+      planMove(targetRelease, [{ row: orders, downgrade: false }], moved)
+        .change,
+    ).toBeUndefined();
+  });
+
+  it("lets a cluster move from a namespace without a label while no Environment exists", () => {
+    const data = rolloutData();
+    const orders = rolloutRows(targetRelease, {
+      ...data,
+      environments: [],
+      namespaces: data.namespaces.map((n) =>
+        n.metadata?.name === "team-orders"
+          ? { ...n, metadata: { ...n.metadata, labels: {} } }
+          : n,
+      ),
+    }).find((r) => r.name === "orders")!;
+    expect(orders.status.kind).toBe("canMove");
   });
 
   it("offers no confirm for a refused downgrade that the claim already allows", () => {
