@@ -341,7 +341,7 @@ In Git mode, the button is **Push to Git**. [Fleet manager settings](settings.md
 
 The save carries the version of the claim that the page read. When the claim changed since then, the save writes nothing and says so. Review the change and save it again.
 
-While the page cannot read a list that the review needs, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
+While the page cannot read a list that the review needs, or the list is not current, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
 
 ### A claim that another tool applied
 

@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import { changesWaitText } from "./claim/plane-claim-edit";
 import { type PlanePageData, PlaneView } from "./plane-view";
 
 // live holds what the mocked watches report. useResource reports the
@@ -12,6 +19,7 @@ const live = vi.hoisted(() => ({
   objects: new Map<string, unknown>(),
   errors: new Map<string, string>(),
   fresh: new Set<string>(),
+  overdue: new Set<string>(),
 }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
@@ -27,6 +35,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map((l) => live.fresh.has(l.kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map((l) => live.overdue.has(l.kind)),
 }));
 const now = "2026-11-15T12:00:00Z";
 
@@ -34,6 +44,7 @@ beforeEach(() => {
   live.objects = new Map();
   live.errors = new Map();
   live.fresh = new Set();
+  live.overdue = new Set();
   window.history.replaceState(null, "", "/fleet/planes/platform/plane-a");
 });
 afterEach(cleanup);
@@ -544,25 +555,67 @@ describe("PlaneView", () => {
       expect(actions.preview).not.toHaveBeenCalled();
     });
 
-    it("keeps the Edit buttons while the watches of the plane and a list reconnect", () => {
+    const claimTab = {
+      clusters: [],
+      platformConfigs: [],
+      sections: [],
+      registrations: [],
+      requests: [],
+      readErrors: [],
+    };
+
+    it("offers no edit and says so while the plane is not current", () => {
       window.history.replaceState(null, "", "?tab=claim");
-      live.fresh = new Set(["CamundaManagementCluster", "CamundaCluster"]);
+      live.fresh = new Set(["CamundaManagementCluster"]);
       const page = () => (
         <GitPushesProvider>
           <PlaneView
-            data={data()}
+            data={data({ claimTab })}
             writeMode="direct"
             claimActions={{ preview: vi.fn(), apply: vi.fn() }}
           />
         </GitPushesProvider>
       );
       const { rerender } = render(page());
-      live.fresh = new Set();
-      rerender(page());
       expect(
         screen.getByRole("button", { name: "Edit Identity" }),
       ).toBeTruthy();
-      expect(screen.queryByText(/Review waits/)).toBeNull();
+      live.fresh = new Set();
+      rerender(page());
+      expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+      expect(
+        screen.getAllByText(
+          changesWaitText(
+            ["CamundaManagementCluster"],
+            ["CamundaManagementCluster"],
+          ),
+        ).length,
+      ).toBeGreaterThan(0);
+    });
+
+    it("says that a list of the Claim tab is not current while its first snapshot is overdue", () => {
+      window.history.replaceState(null, "", "?tab=claim");
+      live.overdue = new Set(["CamundaCluster"]);
+      render(
+        <GitPushesProvider>
+          <PlaneView
+            data={data({ claimTab })}
+            writeMode="direct"
+            claimActions={{ preview: vi.fn(), apply: vi.fn() }}
+          />
+        </GitPushesProvider>,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Edit When the plane is deleted" }),
+      );
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      expect(
+        screen.getByText(
+          changesWaitText(["CamundaCluster"], ["CamundaCluster"]),
+        ),
+      ).toBeTruthy();
     });
 
     it("offers no edit while the read of the plane failed", () => {

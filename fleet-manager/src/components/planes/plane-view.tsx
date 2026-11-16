@@ -239,7 +239,8 @@ export function PlaneView({
         namespaces={namespaces.items}
         environments={environments.items}
         optimizes={optimizes.items}
-        pageUnread={errors.map((e) => e.kind)}
+        pageUnread={unreadKinds(reads)}
+        pageStale={reads.stale ?? []}
         writeMode={writeMode}
         actions={claimActions}
       >

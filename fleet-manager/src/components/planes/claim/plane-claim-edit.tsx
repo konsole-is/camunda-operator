@@ -27,7 +27,11 @@ import {
   planeFields,
   type Step,
 } from "@/lib/fields";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import {
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import type { FieldPath, KeptField } from "@/lib/merge";
@@ -66,9 +70,9 @@ import type { PlanePageData } from "../plane-view";
  * live. claim is undefined for a plane that no claim made, and while the
  * page cannot tell which claim made the plane. unread names each kind that
  * the checks or the impacts of a change read and that the page could not
- * read or has not read yet. claimUnread says that one of them is the plane
- * or its claim. waiting names the kinds of unread that the page has not
- * read yet.
+ * read or whose list is not current. claimUnread says that one of them is
+ * the plane or its claim. waiting names the kinds of unread whose list is
+ * not current.
  */
 export type PlaneClaimSources = {
   name: string;
@@ -132,7 +136,7 @@ const IDENTITY_STEPS: Step[][] = [
 /**
  * changesWaitText is the reason that a change of the claim cannot be
  * reviewed while the page could not read the kinds of unread that are not
- * in waiting, or has not read the kinds of waiting yet.
+ * in waiting, or the lists of the kinds of waiting are not current.
  */
 export function changesWaitText(
   unread: readonly string[],
@@ -145,7 +149,7 @@ export function changesWaitText(
       : []),
     ...(waiting.length > 0
       ? [
-          `${waiting.join(", ")} ${waiting.length === 1 ? "is" : "are"} not current yet`,
+          `${waiting.join(", ")} ${waiting.length === 1 ? "is" : "are"} not current`,
         ]
       : []),
   ];
@@ -156,11 +160,12 @@ export function changesWaitText(
  * PlaneClaimEditProvider holds the claim edit session of the plane page,
  * through ClaimEditProvider, over claim, the live claim of the plane. It
  * follows the lists of data.claimTab live. optimizes are the
- * CamundaOptimizes of the page, and pageUnread the kinds of the page whose
- * read failed. While a kind that the checks or the impacts read is unread,
- * the session refuses review with one error that names the kinds, and an
- * open review closes. Without actions it opens no session. It needs a
- * GitPushesProvider above it.
+ * CamundaOptimizes of the page. pageUnread are the kinds of the page whose
+ * read failed or whose list is not current, and pageStale the latter. While
+ * a kind that the checks or the impacts read is unread, the session refuses
+ * review with one error that names the kinds, and an open review closes.
+ * Without actions it opens no session. It needs a GitPushesProvider above
+ * it.
  */
 export function PlaneClaimEditProvider({
   data,
@@ -170,6 +175,7 @@ export function PlaneClaimEditProvider({
   environments,
   optimizes = NONE,
   pageUnread,
+  pageStale = NONE,
   writeMode,
   actions,
   children,
@@ -181,6 +187,7 @@ export function PlaneClaimEditProvider({
   environments: readonly Resource<"Environment">[];
   optimizes?: readonly Resource<"CamundaOptimize">[];
   pageUnread: readonly string[];
+  pageStale?: readonly string[];
   writeMode: WriteMode | undefined;
   actions?: ClaimActions;
   children: ReactNode;
@@ -216,7 +223,12 @@ export function PlaneClaimEditProvider({
     registrations: lists.registrations,
     requests: lists.requests,
     unread,
-    waiting: lists.waiting,
+    waiting: [
+      ...new Set([
+        ...pageStale.filter((k) => PAGE_KINDS.includes(k as KindName)),
+        ...lists.waiting,
+      ]),
+    ],
     claimUnread: unread.some((k) => OBJECT_KINDS.includes(k)),
   };
 
@@ -519,9 +531,9 @@ function lockedFields(
 }
 
 // useClaimTabLists follows the lists of data.claimTab live. unread names
-// each kind whose read failed or that the page has not read yet, and
-// waiting the kinds that it has not read yet. Before its first answer, a
-// list is the read of the server.
+// each kind whose read failed or whose list is not current, and waiting the
+// kinds whose list is not current, by the rule of the cluster page. Before
+// its first answer, a list is the read of the server.
 function useClaimTabLists(data: PlanePageData) {
   const initial = data.claimTab;
   const { namespace, name } = data;
@@ -563,14 +575,17 @@ function useClaimTabLists(data: PlanePageData) {
     { kind: "PluginRequest", opts: requestOpts },
   ] as const;
   const fresh = useWatchesFresh(followed);
+  const overdue = useWatchesOverdue(followed);
   const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
   const added = followed
     .filter(({ kind }, i) => fresh[i] && !answered.has(kind))
     .map(({ kind }) => kind);
   if (added.length > 0) setAnswered(new Set([...answered, ...added]));
-  const waiting = initial
-    ? []
-    : followed.map(({ kind }) => kind).filter((kind) => !answered.has(kind));
+  const waiting = followed
+    .filter(({ kind }, i) =>
+      answered.has(kind) ? !fresh[i] : overdue[i] || !initial,
+    )
+    .map(({ kind }) => kind);
   const unread = [
     ...results.flatMap(([kind, r]) => (r.error ? [kind] : [])),
     ...(initial?.readErrors ?? [])
