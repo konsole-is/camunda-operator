@@ -5,6 +5,7 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { byCodeUnit, environmentOf, isObject } from "@/lib/policy";
 import type { KindName } from "@/lib/k8s/kinds";
 import { allowedIn, type PresetKind, presetUsers } from "@/lib/usage";
+import { ENV_SCOPES } from "@/components/setup/releases/env";
 import type { PresetObject } from "./kinds";
 import { GUARD_KINDS } from "./rows";
 import type { PresetSources } from "./sources";
@@ -59,7 +60,7 @@ export function secretNamespaces(
   return [...new Set(names)].sort(byCodeUnit);
 }
 
-/** MissingSecret is a Secret key that the body names and that a namespace lacks. env says that an extraEnv entry names it. */
+/** MissingSecret is a Secret key that the body names and that a namespace lacks. env says that an entry of a list of ENV_SCOPES names it. */
 export type MissingSecret = {
   name: string;
   key: string;
@@ -78,9 +79,9 @@ export function missingSecrets(
   missingIn: (name: string, key: string) => readonly string[],
 ): MissingSecret[] {
   const found = new Map<string, MissingSecret>();
-  const visit = (value: unknown, env: boolean) => {
+  const visit = (value: unknown, path: readonly string[], env: boolean) => {
     if (Array.isArray(value)) {
-      for (const item of value) visit(item, env);
+      for (const item of value) visit(item, path, env);
       return;
     }
     if (!isObject(value)) return;
@@ -93,7 +94,7 @@ export function missingSecrets(
           ? { name: child.name, key: child.key }
           : undefined;
       if (!ref) {
-        visit(child, env || field === "extraEnv");
+        visit(child, [...path, field], env || isScopeEnv([...path, field]));
         continue;
       }
       const id = `${ref.name}/${ref.key}`;
@@ -102,6 +103,15 @@ export function missingSecrets(
         found.set(id, { ...ref, namespaces, env });
     }
   };
-  visit(body, false);
+  visit(body, [], false);
   return [...found.values()];
+}
+
+const SCOPE_BLOCKS: readonly string[] = ENV_SCOPES.map((s) => s.scope);
+
+function isScopeEnv(path: readonly string[]): boolean {
+  return (
+    path.at(-1) === "extraEnv" &&
+    (path.length === 1 || (path.length === 2 && SCOPE_BLOCKS.includes(path[0])))
+  );
 }

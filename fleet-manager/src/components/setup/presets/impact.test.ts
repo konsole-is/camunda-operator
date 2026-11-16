@@ -27,11 +27,21 @@ function cluster(
   } as Resource<"CamundaCluster">;
 }
 
-// orders sets zeebe.replicas 1 itself; billing sets nothing of its own.
+// orders sets zeebe.replicas 1 itself and runs no Connectors. billing
+// runs Connectors with basic auth.
 const sources: PresetSources = {
   ...fixtures,
-  clusters: [...fixtures.clusters, cluster("billing", {})],
+  clusters: [
+    ...fixtures.clusters,
+    cluster("billing", {
+      platformConfigRef: "shared",
+      connectors: { enabled: true },
+    }),
+  ],
 };
+
+const marks = (impact: { rows: { name: string; mark: string }[] }) =>
+  impact.rows.map((r) => [r.name, r.mark]);
 
 const input = {
   kind: "CamundaClusterPreset" as const,
@@ -77,7 +87,7 @@ describe("presetImpact of a cluster preset", () => {
     );
   });
 
-  it("marks Connectors restart for a rotation that reaches the cluster", () => {
+  it("marks Connectors restart for a rotation that reaches a cluster with Connectors and basic auth", () => {
     const impact = presetImpact({ ...input, after: rotated });
     expect(impact.rows[0]).toMatchObject({
       name: "billing",
@@ -87,22 +97,90 @@ describe("presetImpact of a cluster preset", () => {
     expect(impact.notes).toEqual([CONNECTORS_RESTART]);
   });
 
-  it("marks Connectors restart for a change of the Connectors service account annotations", () => {
+  it("marks No roll for a rotation of a cluster without Connectors", () => {
+    expect(marks(presetImpact({ ...input, after: rotated }))[1]).toEqual([
+      "orders",
+      "No roll",
+    ]);
+  });
+
+  it("marks No roll for a rotation of a cluster with OIDC", () => {
+    const oidc = {
+      ...sources,
+      platformConfigs: [
+        {
+          ...sources.platformConfigs[0],
+          spec: { auth: { method: "oidc" } },
+        } as Resource<"CamundaPlatformConfig">,
+      ],
+    };
+    expect(
+      marks(presetImpact({ ...input, after: rotated, sources: oidc }))[0],
+    ).toEqual(["billing", "No roll"]);
+  });
+
+  it("marks No roll when the rotation is cleared, because nothing rotates", () => {
+    const impact = presetImpact({ ...input, before: rotated, after: before });
+    expect(marks(impact)[0]).toEqual(["billing", "No roll"]);
+    expect(impact.notes).toEqual([]);
+  });
+
+  it("marks Connectors restart for new annotations of a Connectors account that the operator creates", () => {
     const impact = presetImpact({
       ...input,
       after: withCluster((c) => {
         c.connectors = {
-          ...c.connectors,
           serviceAccount: {
             annotations: { "eks.amazonaws.com/role-arn": "x" },
           },
         };
       }),
     });
-    expect(impact.rows.map((r) => r.mark)).toEqual([
-      "Connectors restart",
-      "Connectors restart",
+    expect(marks(impact)).toEqual([
+      ["billing", "Connectors restart"],
+      ["orders", "No roll"],
     ]);
+  });
+
+  it("marks No roll for new annotations of a Connectors account that the user owns", () => {
+    const owned = (annotations: Record<string, string>) =>
+      withCluster((c) => {
+        c.connectors = { serviceAccount: { create: false, annotations } };
+      });
+    const impact = presetImpact({
+      ...input,
+      before: owned({}),
+      after: owned({ "example.com/owner": "team" }),
+    });
+    expect(marks(impact)[0]).toEqual(["billing", "No roll"]);
+  });
+
+  it("marks No roll when an account without annotations stops being created", () => {
+    const account = (create: boolean) =>
+      withCluster((c) => {
+        c.connectors = { serviceAccount: { create } };
+      });
+    const impact = presetImpact({
+      ...input,
+      before: account(true),
+      after: account(false),
+    });
+    expect(marks(impact)[0]).toEqual(["billing", "No roll"]);
+  });
+
+  it("marks Connectors restart for an Azure client ID on a Connectors account that the user owns", () => {
+    const impact = presetImpact({
+      ...input,
+      after: withCluster((c) => {
+        c.connectors = {
+          serviceAccount: {
+            create: false,
+            annotations: { "azure.workload.identity/client-id": "id" },
+          },
+        };
+      }),
+    });
+    expect(marks(impact)[0]).toEqual(["billing", "Connectors restart"]);
   });
 
   it("marks Unchanged a cluster that sets its own auth.basic, so the rotation does not reach it", () => {
@@ -272,7 +350,7 @@ describe("presetImpact while a list cannot be read", () => {
 });
 
 describe("impactUnread", () => {
-  it("names the users and the releases of a cluster preset that are not read or not current", () => {
+  it("names the users, the releases, and the platform configs of a cluster preset that are not read or not current", () => {
     expect(
       impactUnread(
         "CamundaClusterPreset",
@@ -280,9 +358,9 @@ describe("impactUnread", () => {
           { kind: "CamundaRelease", message: "forbidden" },
           { kind: "PluginRequest", message: "forbidden" },
         ],
-        ["CamundaCluster", "DatabaseServer"],
+        ["CamundaCluster", "DatabaseServer", "CamundaPlatformConfig"],
       ),
-    ).toEqual(["CamundaCluster", "CamundaRelease"]);
+    ).toEqual(["CamundaCluster", "CamundaRelease", "CamundaPlatformConfig"]);
   });
 
   it("names only the users of an Elasticsearch or PostgreSQL preset", () => {

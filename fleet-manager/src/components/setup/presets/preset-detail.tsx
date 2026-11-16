@@ -45,8 +45,8 @@ import {
  * editor of its fields and description with the merge rule of each field
  * that it sets, the fields that it cannot set, and the resources that
  * inherit it. A save shows a review with the dry run and the impact on
- * each inheriting resource. The save waits while the users or the releases
- * of the impact cannot be read. A cluster preset offers the rotation of the
+ * each inheriting resource. The save waits while a list that the impact
+ * reads cannot be read. A cluster preset offers the rotation of the
  * admin password of its clusters while the form has no pending change. A
  * preset that can be deleted offers a delete after a typed confirm and a
  * review. The delete review closes before its write starts when the preset

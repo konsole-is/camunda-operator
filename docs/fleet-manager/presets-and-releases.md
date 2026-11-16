@@ -132,10 +132,10 @@ The review lists each resource that inherits the preset, as `<namespace>/<name>`
 
 | Mark | Meaning |
 | --- | --- |
-| `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The fields of `Connectors restart` and `No roll` are the only exceptions. |
-| `Connectors restart` | The change reaches the cluster and restarts only its Connectors pods: a new `auth.basic.passwordRotation`, or a change of a field under `connectors.serviceAccount`. |
-| `No roll` | The change reaches the cluster but restarts no pods: a change of `auth.basic.adminEmail`. |
-| `Unchanged` | The change does not reach the resource. For a cluster, this occurs only when the change touches no field of `spec.cluster` other than the fields of `Connectors restart` and `No roll`. A change of the description only is an example. A cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
+| `Pods roll` | The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The only exceptions are `auth.basic.passwordRotation`, `auth.basic.adminEmail`, and the fields under `connectors.serviceAccount`. |
+| `Connectors restart` | The change restarts only the Connectors pods of the cluster. A new `auth.basic.passwordRotation` does this for a cluster with basic auth. A change under `connectors.serviceAccount` does this when it reaches the Connectors pods. A cluster without Connectors never gets this mark. |
+| `No roll` | The change reaches the cluster but restarts no pods, for example a change of `auth.basic.adminEmail`. |
+| `Unchanged` | The change does not reach the resource. For a cluster, this occurs only when the change touches no field of `spec.cluster` other than the exceptions of `Pods roll`. A change of the description only is an example. A cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
 | `Pods may roll` | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
 
 The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field that stays, because another field manager set it, does not count as a change.
@@ -143,13 +143,13 @@ The API server checks the change before the review shows it, and the preset does
 Under the marks, the review shows a note for each rule that the change touches:
 
 - `The brokers restart one at a time. The other processes restart.` when a cluster rolls.
-- `Connectors pods restart.` when a new password rotation or a change under `connectors.serviceAccount` reaches a cluster.
+- `Connectors pods restart.` when the Connectors pods of a cluster restart.
 - A note about a smaller storage size, and for a cluster or an Elasticsearch preset a note about a new storage class. A resource that already has larger volumes keeps them, and a resource with existing volumes keeps its storage class.
 - For a PostgreSQL preset, a note about a cleared `walStorageSize`. A running server keeps its write-ahead log volume.
 
 The rules of each kind are in [CamundaClusterPreset: Changes](../crds/camundaclusterpreset.md#changes), [ElasticsearchClusterPreset: Changes](../crds/elasticsearchclusterpreset.md#changes), and [DatabaseServerPreset: Changes](../crds/databaseserverpreset.md#changes).
 
-The marks need the list of the resources of the preset kind, and for a cluster preset the list of releases. If the fleet manager cannot read one of these lists, the review shows no mark and **Save** stays disabled. The same applies until the fleet manager has the current version of each list. The review names the lists:
+The marks need the list of the resources of the preset kind, and for a cluster preset the lists of releases and platform configs. If the fleet manager cannot read one of these lists, the review shows no mark and **Save** stays disabled. The same applies until the fleet manager has the current version of each list. The review names the lists:
 
 > The impact is not known while the fleet manager cannot read CamundaCluster. Save is possible when it can read them.
 

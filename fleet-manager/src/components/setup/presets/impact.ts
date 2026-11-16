@@ -3,7 +3,7 @@ import type { ReadError } from "@/components/planes/planes-table";
 import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpreset";
 import type { DatabaseServerPresetSpec } from "@/generated/crds/databaseserverpreset";
 import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
-import type { KindName } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import {
   mergeCluster,
   mergeDatabaseServer,
@@ -81,7 +81,11 @@ export const STORAGE_NOTES: Record<
 
 // IMPACT_KINDS are the lists that the marks of each preset kind read.
 const IMPACT_KINDS: Record<PresetKind, readonly KindName[]> = {
-  CamundaClusterPreset: ["CamundaCluster", "CamundaRelease"],
+  CamundaClusterPreset: [
+    "CamundaCluster",
+    "CamundaRelease",
+    "CamundaPlatformConfig",
+  ],
   ElasticsearchClusterPreset: ["ElasticsearchCluster"],
   DatabaseServerPreset: ["DatabaseServer"],
 };
@@ -127,8 +131,9 @@ export function impactUnread(
  * name of kind from before to after on each resource that inherits it,
  * sorted by namespace, then name. A cluster gets "Pods roll" when the
  * preset fingerprint moves, whatever it sets itself. connectorsRestart is
- * set when the change reaches the merged password rotation or Connectors
- * service account of a cluster. An Elasticsearch cluster or a database
+ * set when the change restarts the Connectors pods of a cluster: a new
+ * rotation under basic auth, or a change of what the pods take from the
+ * Connectors service account. An Elasticsearch cluster or a database
  * server gets "Unchanged" when its merged spec stays, else "Pods may roll".
  * unread are the lists of impactUnread. The notes name, in this order, the
  * restart of the brokers when a cluster rolls, the restart of the
@@ -180,13 +185,13 @@ function rowsOf(input: {
         )?.spec;
         const was = mergeCluster(before, release, cluster.spec).spec;
         const will = mergeCluster(after, release, cluster.spec).spec;
+        const rotation = will.auth?.basic?.passwordRotation;
         const connectorsRestart =
-          was.auth?.basic?.passwordRotation !==
-            will.auth?.basic?.passwordRotation ||
-          !equalJSON(
-            was.connectors?.serviceAccount,
-            will.connectors?.serviceAccount,
-          );
+          will.connectors?.enabled === true &&
+          ((basicAuth(cluster, sources) &&
+            !!rotation &&
+            rotation !== was.auth?.basic?.passwordRotation) ||
+            !equalJSON(connectorsAccount(was), connectorsAccount(will)));
         const mark: RollMark = moved
           ? "Pods roll"
           : equalJSON(was, will)
@@ -247,6 +252,38 @@ function rowsOf(input: {
     }
   }
 }
+
+type MergedCluster = ReturnType<typeof mergeCluster>["spec"];
+
+// basicAuth says whether the platform config of cluster sets basic auth or
+// no method. Only then does the operator rotate the admin password.
+function basicAuth(
+  cluster: Resource<"CamundaCluster">,
+  sources: PresetSources,
+): boolean {
+  const config = sources.platformConfigs.find(
+    (p) => p.metadata.name === cluster.spec.platformConfigRef,
+  );
+  const method = config?.spec.auth?.method;
+  return config !== undefined && (method === undefined || method === "basic");
+}
+
+// connectorsAccount returns what the Connectors pod template takes from
+// connectors.serviceAccount in pkg/components/camundacluster.
+function connectorsAccount(spec: MergedCluster): unknown {
+  const account = spec.connectors?.serviceAccount;
+  if (!account) return undefined;
+  const annotations = account.annotations ?? {};
+  return {
+    hashed:
+      account.create !== false && Object.keys(annotations).length > 0
+        ? annotations
+        : undefined,
+    azure: AZURE_CLIENT_ID in annotations,
+  };
+}
+
+const AZURE_CLIENT_ID = "azure.workload.identity/client-id";
 
 function bodyOf(kind: PresetKind, spec: PresetObject["spec"]): unknown {
   const s = spec as { cluster?: unknown; server?: unknown };

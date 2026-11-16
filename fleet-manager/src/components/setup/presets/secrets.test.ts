@@ -127,6 +127,31 @@ describe("missingSecrets", () => {
     ]);
   });
 
+  it("marks an env entry outside the env lists of the top level and the process blocks as not env", () => {
+    const body = {
+      backup: {
+        dump: {
+          extraEnv: [
+            {
+              name: "PGPASSWORD",
+              valueFrom: {
+                secretKeyRef: { name: "db-credentials", key: "password" },
+              },
+            },
+          ],
+        },
+      },
+    };
+    expect(missingSecrets(body, missingIn)).toEqual([
+      {
+        name: "db-credentials",
+        key: "password",
+        namespaces: ["team-b"],
+        env: false,
+      },
+    ]);
+  });
+
   it("lists nothing for a body without Secret keys", () => {
     expect(missingSecrets({ replicas: 3 }, () => ["team-b"])).toEqual([]);
     expect(missingSecrets(undefined, () => ["team-b"])).toEqual([]);

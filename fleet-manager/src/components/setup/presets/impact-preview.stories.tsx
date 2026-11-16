@@ -44,13 +44,23 @@ export const PodsRoll: Story = { name: "Pods roll" };
 export const ConnectorsRestart: Story = {
   name: "Connectors restart",
   args: {
-    impact: cluster(
-      after((c) => {
+    impact: presetImpact({
+      kind: "CamundaClusterPreset",
+      name: "medium",
+      before: medium.spec,
+      after: after((c) => {
         c.auth = {
           basic: { ...c.auth?.basic, passwordRotation: "2026-11-15T10:42Z" },
         };
       }),
-    ),
+      sources: {
+        ...sources,
+        clusters: sources.clusters.map((c) => ({
+          ...c,
+          spec: { ...c.spec, connectors: { enabled: true } },
+        })),
+      },
+    }),
   },
 };
 
