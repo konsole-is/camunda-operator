@@ -203,13 +203,13 @@ spec:
   # ... the rest of your claim
 ```
 
-If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind, and the count can be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. So `Environment`, `Namespace`, `PluginRegistration`, and `PluginRequest` count as kinds that can use a contract too.
+If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. So `Environment`, `Namespace`, `PluginRegistration`, and `PluginRequest` count as kinds that can use a contract too.
 
 ### Change a contract
 
 You can change a contract that is `Created by hand` or `Kept from <registration>`. On its page, the panel **Settings** is a form. The page of any other contract shows **Settings** as text, with no form and no delete.
 
-The form edits the values of the contract: for example the bucket, the region, the endpoint, the credentials, the host and port of a server, or the URLs of Management Identity. It shows the storage type and the auth type as text, and a save keeps them. To change a type, apply the contract again with `kubectl` or with your GitOps tool.
+The form edits the values of the contract. For example, you can change a bucket, a region, an endpoint, the credentials, or the host and port of a server. It shows the storage type and the auth type as text, and a save keeps them. To change a type, apply the contract again with `kubectl` or with your GitOps tool.
 
 Each Secret reference names a Secret of the namespace of the contract and the key of each value. A Management Identity contract has no namespace, so its client secret also names the namespace of the Secret. A username key or a password key that you leave at **Default** is left out, and the operator reads `username` or `password`. The page shows names and keys only, never a Secret value. A Secret or key that does not exist stays picked and shows as `<name> (not found)`. When the fleet manager cannot read the Secrets of the namespace, the picker shows the read error and marks nothing as not found.
 
