@@ -97,8 +97,8 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 to 4 against the newest data. A list that cannot be
- * read blocks each step that reads it. The picks of a section that goes
- * away leave the draft. Step 3 edits the release, the platform config, and
+ * read, other than the Secrets, blocks each step that reads it. The picks
+ * of a section that goes away leave the draft. Step 3 edits the release, the platform config, and
  * the settings, and step 4 the attachments. A claim value that a step 2
  * option fills leaves the draft. Step 5 holds no fields yet, and the flow
  * writes nothing. The review step holds the Back of the last step.
