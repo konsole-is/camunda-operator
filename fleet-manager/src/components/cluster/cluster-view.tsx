@@ -71,8 +71,9 @@ import { TopologyView } from "./topology-view";
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
  * registrations every PluginSection and PluginRegistration.
- * platformConfigs and managementAuthConfigs are cluster-scoped. fieldDocs
- * holds the help of the settings fields by field key.
+ * platformConfigs and managementAuthConfigs are cluster-scoped. grants and
+ * elasticsearchClusters hold the Grants and ElasticsearchClusters of the
+ * namespace. fieldDocs holds the help of the settings fields by field key.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -107,6 +108,8 @@ export type ClusterPageData = {
   registrations: Resource<"PluginRegistration">[];
   platformConfigs: Resource<"CamundaPlatformConfig">[];
   managementAuthConfigs: Resource<"ManagementAuthConfig">[];
+  grants: Resource<"Grant">[];
+  elasticsearchClusters: Resource<"ElasticsearchCluster">[];
   fieldDocs: Record<string, FieldDoc>;
 };
 
@@ -272,6 +275,12 @@ export function ClusterView({
     {},
     initial.managementAuthConfigs,
   );
+  const grants = useResources("Grant", { namespace: ns }, initial.grants);
+  const elasticsearchClusters = useResources(
+    "ElasticsearchCluster",
+    { namespace: ns },
+    initial.elasticsearchClusters,
+  );
   useEffect(() => {
     const selector = focusNext.current;
     if (!selector) return;
@@ -321,6 +330,8 @@ export function ClusterView({
       ["PluginRegistration", registrations],
       ["CamundaPlatformConfig", platformConfigs],
       ["ManagementAuthConfig", managementAuthConfigs],
+      ["Grant", grants],
+      ["ElasticsearchCluster", elasticsearchClusters],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],

@@ -93,6 +93,8 @@ describe("loadClusterPage", () => {
       "DatabaseServer",
       "BackupSchedule",
       "CamundaOptimize",
+      "Grant",
+      "ElasticsearchCluster",
     ]) {
       expect(listOf(kind)).toEqual({ namespace: "team-a" });
     }
@@ -143,6 +145,16 @@ describe("loadClusterPage", () => {
     const data = await loadClusterPage("team-a", "orders");
     expect(data?.cluster.metadata?.name).toBe("orders");
     expect(data?.backupStorage.schedules).toEqual([]);
+  });
+
+  it("gives empty lists of grants and Elasticsearch clusters when their reads fail", async () => {
+    named("orders");
+    k8s.failing = "Grant";
+    expect((await loadClusterPage("team-a", "orders"))?.grants).toEqual([]);
+    k8s.failing = "ElasticsearchCluster";
+    expect(
+      (await loadClusterPage("team-a", "orders"))?.elasticsearchClusters,
+    ).toEqual([]);
   });
 
   it("gives the docs of the fields of the cluster", async () => {

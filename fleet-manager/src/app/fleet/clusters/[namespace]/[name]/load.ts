@@ -50,6 +50,8 @@ export async function loadClusterPage(
     registrations,
     platformConfigs,
     managementAuthConfigs,
+    grants,
+    elasticsearchClusters,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
     listOrEmpty("Environment", {}),
@@ -78,6 +80,8 @@ export async function loadClusterPage(
     listOrEmpty("PluginRegistration", {}),
     listOrEmpty("CamundaPlatformConfig", {}),
     listOrEmpty("ManagementAuthConfig", {}),
+    listOrEmpty("Grant", inNamespace),
+    listOrEmpty("ElasticsearchCluster", inNamespace),
   ]);
   const fields = clusterFields(
     clusterFieldsInputOf({
@@ -125,6 +129,8 @@ export async function loadClusterPage(
     registrations,
     platformConfigs,
     managementAuthConfigs,
+    grants,
+    elasticsearchClusters,
     fieldDocs: fieldDocsOf(fields),
   };
 }

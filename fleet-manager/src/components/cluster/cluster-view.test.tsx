@@ -176,6 +176,8 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     registrations: [],
     platformConfigs: [],
     managementAuthConfigs: [],
+    grants: [],
+    elasticsearchClusters: [],
     fieldDocs: {},
     ...over,
   };
@@ -448,6 +450,26 @@ describe("ClusterView", () => {
         .getByRole("tab", { name: "Overview" })
         .getAttribute("aria-selected"),
     ).toBe("true");
+  });
+
+  it("follows the Grants and ElasticsearchClusters of the namespace of the cluster", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "Grant",
+      opts: { namespace: "team-a" },
+    });
+    expect(live.calls).toContainEqual({
+      kind: "ElasticsearchCluster",
+      opts: { namespace: "team-a" },
+    });
+  });
+
+  it("names a failed read of the Grants", () => {
+    live.errors.Grant = "forbidden";
+    render(view());
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read Grant: forbidden",
+    );
   });
 
   it("shows a failed read with its kind and keeps the page", () => {

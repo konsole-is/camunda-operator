@@ -85,6 +85,8 @@ function data(managed = true): ClusterPageData {
     registrations: [],
     platformConfigs: [],
     managementAuthConfigs: [],
+    grants: [],
+    elasticsearchClusters: [],
     fieldDocs: {},
   };
 }
