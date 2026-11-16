@@ -132,11 +132,23 @@ export function grantPreviews(input: {
       // Before the write, no request of the claim exists.
       requests: [],
     });
-    const marked = withTemplateParameters(data, registration);
-    const parameters =
-      "error" in marked
-        ? {}
-        : shownParameters(marked.value, selection, registration, environment);
+    const shown = shownParameters(
+      data.parameters,
+      selection,
+      registration,
+      environment,
+    );
+    // The plugin renders the real values, so its errors come from them. The
+    // preview renders the shown values, so that a template parameter cannot
+    // copy an ARN into the preview.
+    const real = withTemplateParameters(data, registration);
+    const display = withTemplateParameters(
+      { ...data, parameters: shown },
+      registration,
+    );
+    const failed =
+      "error" in real ? real : "error" in display ? display : undefined;
+    const parameters = "error" in display ? {} : display.value;
     return (registration.spec.grantTemplates ?? []).flatMap(
       (template): GrantPreview[] => {
         const onlyWhen = template.requiresInputs ?? [];
@@ -169,13 +181,12 @@ export function grantPreviews(input: {
             ...(template.description && { description: template.description }),
             ...(onlyWhen.length > 0 && { onlyWhen }),
             result:
-              "error" in marked
-                ? marked
-                : renderJSON(
-                    template.template,
-                    { ...data, parameters, outputs },
-                    "grant",
-                  ),
+              failed ??
+              renderJSON(
+                template.template,
+                { ...data, parameters, outputs },
+                "grant",
+              ),
           },
         ];
       },

@@ -419,6 +419,34 @@ describe("grantPreviews", () => {
       });
     });
 
+    it("shows a picked choice that it copies by its label", () => {
+      const copying = registration("s3", {
+        ...s3.spec,
+        parameters: {
+          type: "object",
+          properties: {
+            policy: { type: "string", title: "policy" },
+            note: { type: "string", "x-fleet-template": true },
+          },
+        },
+        grantTemplates: [template({ Note: "{{ .parameters.note }}" })],
+      });
+      const [preview] = grantPreviews({
+        claim,
+        sections: [backup],
+        registrations: [copying],
+        environment: environmentWith({
+          s3: {
+            ...environment.spec.parameters!.s3,
+            note: { value: "Policy={{ .parameters.policy }}" },
+          },
+        }),
+      });
+      expect(preview.result).toEqual({
+        value: { Effect: "Allow", Note: "Policy=<policy: SQS access>" },
+      });
+    });
+
     it("gives its error, with its path, to each template", () => {
       expect(previewOf("{{ .outputs.bucketArn }}").result).toMatchObject({
         path: "parameters.prefix",
