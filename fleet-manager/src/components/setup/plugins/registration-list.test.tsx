@@ -11,6 +11,7 @@ import {
 } from "./fixtures";
 import { registrationGroups, registrationSummary } from "./groups";
 import { RegistrationList, RegistrationListLive } from "./registration-list";
+import { REGISTRATION_SOURCE_KINDS } from "./source-kinds";
 
 const watch = vi.hoisted(() => ({
   unanswered: [] as string[],
@@ -294,6 +295,50 @@ describe("RegistrationList", () => {
     );
     expect(labels.filter((l) => /plugin/i.test(l))).toEqual([]);
   });
+
+  it.each([
+    ["the catalog error", { catalogError: "reading catalog: ENOENT" }],
+    ["the charts not known", { charts: officialCharts }],
+  ])(
+    "says plugin in no label or line on lists not read, with %s",
+    (_, catalogProps) => {
+      const lost = pluginRegistration("lost", { sections: ["gone"] });
+      const reads = {
+        errors: [{ kind: "PluginRequest", message: "forbidden" }],
+        stale: ["PluginRegistration", "PluginSection"],
+      };
+      const unread = {
+        ...sources,
+        registrations: [...sources.registrations, lost],
+        ...reads,
+      };
+      const { container } = list({
+        groups: registrationGroups(unread),
+        ...reads,
+        ...catalogProps,
+      });
+      const kinds = new RegExp(
+        Object.values(REGISTRATION_SOURCE_KINDS).join("|"),
+        "g",
+      );
+      const texts = [
+        ...screen.getAllByRole("heading"),
+        ...screen.getAllByRole("columnheader"),
+        ...container.querySelectorAll("p"),
+      ]
+        .filter((e) => !(e.tagName === "H1"))
+        .map((e) => (e.textContent ?? "").replace(kinds, ""));
+      expect(texts).toContain("Section not known");
+      expect(texts).toContain("Options not known");
+      expect(texts.some((t) => t.startsWith("Not read:"))).toBe(true);
+      expect(texts).toContain(
+        "catalogError" in catalogProps
+          ? "Could not read the chart catalog: reading catalog: ENOENT"
+          : "Which charts are installed is not known.",
+      );
+      expect(texts.filter((t) => /plugin/i.test(t))).toEqual([]);
+    },
+  );
 });
 
 describe("RegistrationListLive", () => {
