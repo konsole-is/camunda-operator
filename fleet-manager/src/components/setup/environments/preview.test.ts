@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Environment } from "@/generated/crds/environment";
-import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { environmentFixtures, sectionFixtures } from "./fixtures";
+import { sectionFixtures } from "./fixtures";
 import {
   emptyPreviewText,
   previewClaims,
@@ -11,11 +9,8 @@ import {
 } from "./preview";
 
 const sources = sectionFixtures();
-const production = sources.environments[0];
 const registration = (name: string) =>
   sources.registrations.find((r) => r.metadata.name === name)!;
-const section = (name: string) =>
-  sources.sections.find((s) => s.metadata.name === name)!;
 
 const orders = {
   kind: "CamundaClusterClaim" as const,
