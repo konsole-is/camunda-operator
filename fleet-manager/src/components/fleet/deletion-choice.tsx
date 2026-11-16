@@ -39,10 +39,12 @@ export function DeletionChoiceField({
   subject,
   choice,
   onChange,
+  disabled = false,
 }: {
   subject: "cluster" | "management plane";
   choice: DeletionChoice;
   onChange: (policy: DeletionPolicy) => void;
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
@@ -65,6 +67,7 @@ export function DeletionChoiceField({
               ? undefined
               : "Some options always delete what they made."
           }
+          disabled={disabled}
           onPick={() => onChange("Orphan")}
         />
         <PolicyCard
@@ -73,6 +76,7 @@ export function DeletionChoiceField({
           description={`They are deleted with the ${subject}.`}
           checked={choice.policy === "Delete"}
           isDefault={choice.defaultPolicy === "Delete"}
+          disabled={disabled}
           onPick={() => onChange("Delete")}
         />
       </div>
@@ -108,6 +112,7 @@ function PolicyCard({
   checked,
   isDefault,
   disabledReason,
+  disabled,
   onPick,
 }: {
   name: string;
@@ -116,20 +121,22 @@ function PolicyCard({
   checked: boolean;
   isDefault: boolean;
   disabledReason?: string;
+  disabled: boolean;
   onPick: () => void;
 }) {
+  const off = disabled || !!disabledReason;
   return (
     <label
       className={cn(
         "flex min-w-0 gap-3 rounded-md border bg-panel p-3",
         checked ? "border-accent" : "border-border",
-        disabledReason ? "cursor-not-allowed" : "cursor-pointer",
+        off ? "cursor-not-allowed" : "cursor-pointer",
       )}
     >
       <Radio
         name={name}
         checked={checked}
-        disabled={!!disabledReason}
+        disabled={off}
         onChange={onPick}
         className="mt-1"
       />

@@ -190,6 +190,7 @@ export function DeleteClusterView({
             subject="cluster"
             choice={model.choice}
             onChange={onPick}
+            disabled={writing}
           />
           {model.keepRefused && model.choice.policy !== "Orphan" && (
             <p className="-mt-3 text-sm text-warn">{KEEP_REFUSED_ON_DELETE}</p>

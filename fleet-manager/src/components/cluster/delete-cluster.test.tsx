@@ -325,6 +325,32 @@ describe("DeleteCluster", () => {
     expect(fakeWriter.applied[1]).toEqual(remove("42"));
   });
 
+  it("disables the choice while the delete is sent, so that the page cannot show another policy than the write", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <GitPushesProvider>
+          <DeleteCluster
+            initial={data()}
+            writeMode="direct"
+            actions={{ ...actions, remove: () => new Promise(() => {}) }}
+          />
+        </GitPushesProvider>
+      </QueryClientProvider>,
+    );
+    await readAll();
+    const keep = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Keep the resources/,
+    });
+    expect(keep.disabled).toBe(false);
+    await confirm("Delete the cluster");
+    await waitFor(() => expect(keep.disabled).toBe(true));
+    expect(
+      screen.getByRole<HTMLInputElement>("radio", {
+        name: /Delete the resources/,
+      }).disabled,
+    ).toBe(true);
+  });
+
   it("direct mode: the default sends only the delete", async () => {
     page();
     await readAll();
