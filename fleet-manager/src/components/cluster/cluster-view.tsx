@@ -675,16 +675,18 @@ export function ClusterView({
                         {settingsUnread.length > 0 ? (
                           <NotRead kinds={settingsUnread} />
                         ) : (
-                          <ComponentSettings
-                            groups={sectionBlocks}
-                            docs={initial.fieldDocs}
-                            operatorVersion={operatorVersionOf(
-                              registrations.items,
-                            )}
-                            cluster={{ namespace: ns, name: name ?? "" }}
-                          />
+                          <>
+                            <ComponentSettings
+                              groups={sectionBlocks}
+                              docs={initial.fieldDocs}
+                              operatorVersion={operatorVersionOf(
+                                registrations.items,
+                              )}
+                              cluster={{ namespace: ns, name: name ?? "" }}
+                            />
+                            {slot("component.settings.editor")}
+                          </>
                         )}
-                        {slot("component.settings.editor")}
                       </div>
                     }
                     now={clock}

@@ -2164,6 +2164,19 @@ describe("The detail of a section", () => {
     expect(screen.queryByRole("table", { name: /settings$/ })).toBeNull();
   });
 
+  it("offers no editor in the Settings tab while the claim is out of date", async () => {
+    open("section:secondary-storage");
+    renderOutOfDate(
+      view({
+        initial: withClaim(),
+        slots: { "component.settings.editor": <p>Editor</p> },
+      }),
+      ["CamundaClusterClaim"],
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("Editor")).toBeNull();
+  });
+
   it("shows the Not known line of the Settings tab, not No settings, when the registrations could not be read", async () => {
     live.errors.PluginRegistration = "forbidden";
     open("section:secondary-storage");
