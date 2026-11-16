@@ -76,15 +76,26 @@ export function ContractTab({
         />
       </Panel>
       <Panel label="Deletion">
-        <ul className="flex flex-col gap-1 text-sm">
-          {(["Delete", "Orphan"] as const).map((policy) => (
-            <li key={policy}>
-              {`${policy}: ${contract.deletionPolicies.includes(policy) ? "supported" : "not supported"}`}
-            </li>
-          ))}
-        </ul>
+        <DeletionPolicies policies={contract.deletionPolicies} />
       </Panel>
     </div>
+  );
+}
+
+function DeletionPolicies({
+  policies,
+}: {
+  policies: ContractView["deletionPolicies"];
+}) {
+  if (isInvalid(policies)) return <ValueError text={policies.error} />;
+  return (
+    <ul className="flex flex-col gap-1 text-sm">
+      {(["Delete", "Orphan"] as const).map((policy) => (
+        <li key={policy}>
+          {`${policy}: ${policies.includes(policy) ? "supported" : "not supported"}`}
+        </li>
+      ))}
+    </ul>
   );
 }
 

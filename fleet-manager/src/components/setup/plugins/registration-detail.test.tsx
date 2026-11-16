@@ -93,6 +93,28 @@ describe("RegistrationDetail", () => {
     expect(screen.getByRole("tablist")).toBeTruthy();
   });
 
+  it.each(["about", "contract", "parameters", "grants"] as const)(
+    "says on the %s tab that the registration can be old while PluginRegistration is not read",
+    (tab) => {
+      detail({ stale: ["PluginRegistration"] }, tab);
+      expect(
+        screen.getByText(
+          "This is the registration as the page last read it. It can be old.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Not read: PluginRegistration. What needs them shows as not known, and the registration as the page last read it.",
+        ),
+      ).toBeTruthy();
+    },
+  );
+
+  it("does not say that the registration can be old while it is read", () => {
+    detail();
+    expect(screen.queryByText(/It can be old\./)).toBeNull();
+  });
+
   it("shows each read error and names each list that is not read", () => {
     detail({
       errors: [{ kind: "Grant", message: "forbidden" }],

@@ -31,8 +31,8 @@ import { UsedByTab } from "./used-by-tab";
  * list whose watch has no snapshot on its current connection. While
  * PluginRegistration is read and has no registration of the name, the page
  * says that it no longer exists. While it is not read, the page shows the
- * registration of its list, else data.registration. now is the time that
- * the ages count to.
+ * registration of its list, else data.registration, and says on each tab
+ * that shows it that it can be old. now is the time that the ages count to.
  */
 export function RegistrationDetail({
   data,
@@ -55,9 +55,15 @@ export function RegistrationDetail({
   };
   const unread = unreadKinds({ errors, stale });
   const { sources } = data;
+  const registrationUnread = unread.includes("PluginRegistration");
   const registration =
     sources.registrations.find((r) => r.metadata.name === data.name) ??
-    (unread.includes("PluginRegistration") ? data.registration : undefined);
+    (registrationUnread ? data.registration : undefined);
+  const old = registrationUnread && (
+    <p className="mb-4 text-sm text-muted">
+      This is the registration as the page last read it. It can be old.
+    </p>
+  );
   return (
     <div className="flex flex-col gap-6">
       <header className="flex min-w-0 flex-col gap-1">
@@ -73,7 +79,7 @@ export function RegistrationDetail({
       ))}
       {unread.length > 0 && (
         <p className="text-sm text-muted">
-          {`Not read: ${unread.join(", ")}. What needs them shows as not known.`}
+          {`Not read: ${unread.join(", ")}. What needs them shows as not known${registrationUnread ? ", and the registration as the page last read it" : ""}.`}
         </p>
       )}
       {!registration ? (
@@ -88,6 +94,7 @@ export function RegistrationDetail({
             ))}
           </TabsList>
           <TabsContent value="about">
+            {old}
             <AboutTab
               registration={registration}
               registrations={sources.registrations}
@@ -95,17 +102,20 @@ export function RegistrationDetail({
             />
           </TabsContent>
           <TabsContent value="contract">
+            {old}
             <ContractTab
               contract={contractOf(registration, sources.sections, unread)}
             />
           </TabsContent>
           <TabsContent value="parameters">
+            {old}
             <ParametersTab
               rows={parameterRows(registration, sources.environments, unread)}
               unread={unread}
             />
           </TabsContent>
           <TabsContent value="grants">
+            {old}
             <GrantsTab
               registration={registration}
               grants={data.grants}

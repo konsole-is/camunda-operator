@@ -37,7 +37,7 @@ export type ContractView = {
   sectionsUnknown?: true;
   inputs: (ContractInput | Invalid)[];
   outputs: (ContractOutput | Invalid)[];
-  deletionPolicies: readonly ("Delete" | "Orphan")[];
+  deletionPolicies: readonly ("Delete" | "Orphan")[] | Invalid;
 };
 
 /**
@@ -54,7 +54,7 @@ export function contractOf(
   const { spec } = registration;
   const sectionOf = (name: string) =>
     sections.find((s) => s.metadata.name === name);
-  const policies = listOf(spec.deletionPolicies) ?? [];
+  const policies = listOf(spec.deletionPolicies);
   return {
     sections: itemsOf(spec.sections, isName, "Section", "sections").map(
       (item) => {
@@ -91,9 +91,9 @@ export function contractOf(
             ...(item.format && { format: item.format }),
           },
     ),
-    deletionPolicies: (["Delete", "Orphan"] as const).filter((p) =>
-      policies.includes(p),
-    ),
+    deletionPolicies: policies
+      ? (["Delete", "Orphan"] as const).filter((p) => policies.includes(p))
+      : { error: "The deletion policies are not a list." },
   };
 }
 

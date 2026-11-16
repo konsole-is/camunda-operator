@@ -102,6 +102,17 @@ describe("contractOf", () => {
     expect(contract.deletionPolicies).toEqual(["Delete"]);
   });
 
+  it("gives an error for deletion policies that are not a list", () => {
+    const contract = contractOf(
+      pluginRegistration("x", { deletionPolicies: "Delete" as never }),
+      [],
+      [],
+    );
+    expect(contract.deletionPolicies).toEqual({
+      error: "The deletion policies are not a list.",
+    });
+  });
+
   it("knows no section while PluginSection is not read", () => {
     const contract = contractOf(es, [], ["PluginSection"]);
     expect(contract.sectionsUnknown).toBe(true);
