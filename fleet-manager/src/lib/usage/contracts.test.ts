@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaOptimize } from "@/generated/crds/camundaoptimize";
 import type { Database } from "@/generated/crds/database";
 import type { DatabaseConfig } from "@/generated/crds/databaseconfig";
@@ -12,6 +13,7 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
@@ -315,6 +317,9 @@ function sourcesWith(
     elasticsearchBackups: [],
     rdbmsBackups: [],
     pointInTimeRestores: [],
+    planeClaims: [],
+    registrations: [],
+    requests: [],
     ...partial,
   };
 }
@@ -792,6 +797,153 @@ describe("contractUsage", () => {
     ]);
   });
 
+  describe("a claim that selects a contract through a registration", () => {
+    const claim = (
+      namespace: string,
+      registration: string,
+      parameters?: object,
+      resolved?: object,
+    ) =>
+      object<CamundaClusterClaim>(
+        "CamundaClusterClaim",
+        namespace,
+        "orders",
+        {
+          plugins: [
+            {
+              section: "backup-storage",
+              registration,
+              ...(parameters && { parameters }),
+            },
+          ],
+        },
+        resolved && { resolvedPolicy: { parameters: resolved } },
+      );
+
+    it("counts a cluster claim whose selection names the contract", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-a", "existing-object-storage", { name: "backups" }),
+        ],
+      });
+      expect(usersOf(sources, objectStorage("team-a", "backups"))).toEqual([
+        {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+          fields: ["spec.plugins.existing-object-storage.parameters.name"],
+        },
+      ]);
+    });
+
+    it("counts the contract that the claim policy gives the selection", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-a", "existing-object-storage", undefined, {
+            "existing-object-storage": { name: { value: "backups" } },
+          }),
+        ],
+      });
+      expect(
+        usersOf(sources, objectStorage("team-a", "backups")).map((u) => u.name),
+      ).toEqual(["orders"]);
+    });
+
+    it("resolves the selection in the namespace of the claim", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-b", "existing-object-storage", { name: "backups" }),
+        ],
+      });
+      expect(usersOf(sources, objectStorage("team-a", "backups"))).toEqual([]);
+    });
+
+    it("counts a claim that selects secondary storage", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-a", "existing-secondary-storage", { name: "shared-es" }),
+        ],
+      });
+      expect(
+        usersOf(sources, {
+          kind: "SecondaryStorageConfig",
+          namespace: "team-a",
+          name: "shared-es",
+        }).map((u) => u.fields),
+      ).toEqual([["spec.plugins.existing-secondary-storage.parameters.name"]]);
+    });
+
+    it("counts a plane claim under each database config that it selects", () => {
+      const sources = sourcesWith({
+        planeClaims: [
+          object<CamundaManagementClusterClaim>(
+            "CamundaManagementClusterClaim",
+            "platform",
+            "plane-a",
+            {
+              plugins: [
+                {
+                  section: "management-database",
+                  registration: "existing-database-configs",
+                  parameters: { keycloak: "kc-db", identity: "id-db" },
+                },
+              ],
+            },
+          ),
+        ],
+      });
+      const dbConfig = (name: string): ContractRef => ({
+        kind: "DatabaseConfig",
+        namespace: "platform",
+        name,
+      });
+      expect(usersOf(sources, dbConfig("kc-db"))).toEqual([
+        {
+          kind: "CamundaManagementClusterClaim",
+          namespace: "platform",
+          name: "plane-a",
+          fields: [
+            "spec.plugins.existing-database-configs.parameters.keycloak",
+          ],
+        },
+      ]);
+      expect(usersOf(sources, dbConfig("id-db")).map((u) => u.fields)).toEqual([
+        ["spec.plugins.existing-database-configs.parameters.identity"],
+      ]);
+    });
+
+    it("counts a request of a registration that publishes the contract", () => {
+      const sources = sourcesWith({
+        requests: [
+          {
+            metadata: { namespace: "team-a", name: "orders-backup-storage" },
+            spec: {
+              registration: "existing-object-storage",
+              parameters: { name: "backups" },
+            },
+          } as unknown as PluginRequest,
+        ],
+      });
+      expect(usersOf(sources, objectStorage("team-a", "backups"))).toEqual([
+        {
+          kind: "PluginRequest",
+          namespace: "team-a",
+          name: "orders-backup-storage",
+          fields: ["spec.parameters.name"],
+        },
+      ]);
+    });
+
+    it("ignores a parameter that names no contract", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-a", "elasticsearch", { preset: "backups" }),
+        ],
+      });
+      expect(contractUsage(sources).size).toBe(0);
+    });
+  });
+
   it("lists the database configs and databases of a database server config", () => {
     const sources = sourcesWith({
       databaseConfigs: [
@@ -1003,7 +1155,19 @@ describe("unreadUserKinds", () => {
         "ElasticsearchClusterPreset",
         "CamundaCluster",
       ]),
-    ).toEqual(["CamundaCluster", "ElasticsearchClusterPreset"]);
+    ).toEqual([
+      "CamundaCluster",
+      "ElasticsearchClusterPreset",
+      "PluginRequest",
+    ]);
+  });
+
+  it("names the lists that resolve a claim selection for a kind that a claim can select", () => {
+    const unread = ["Environment", "Namespace", "PluginRegistration"];
+    expect(unreadUserKinds("ObjectStorageConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("SecondaryStorageConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("DatabaseConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("ManagementAuthConfig", unread)).toEqual([]);
   });
 
   it("is empty when no unread kind can use a contract of the kind", () => {
@@ -1098,6 +1262,31 @@ describe("unreadUserKinds", () => {
           {},
           { bucketRef: "o" },
         ),
+      ],
+      planeClaims: [
+        object<CamundaManagementClusterClaim>(
+          "CamundaManagementClusterClaim",
+          "ns",
+          "pc",
+          {
+            plugins: [
+              {
+                section: "management-database",
+                registration: "existing-database-configs",
+                parameters: { identity: "dc" },
+              },
+            ],
+          },
+        ),
+      ],
+      requests: [
+        {
+          metadata: { namespace: "ns", name: "rq" },
+          spec: {
+            registration: "existing-secondary-storage",
+            parameters: { name: "s" },
+          },
+        } as unknown as PluginRequest,
       ],
       pointInTimeRestores: [
         object<PointInTimeRestore>(

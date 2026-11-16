@@ -2,6 +2,7 @@
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaOptimize } from "@/generated/crds/camundaoptimize";
 import type { Database } from "@/generated/crds/database";
 import type { DatabaseConfig } from "@/generated/crds/databaseconfig";
@@ -12,6 +13,7 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
@@ -23,7 +25,18 @@ import {
 } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 import { mergeDatabaseServer, mergeElasticsearch } from "@/lib/merge";
-import { byCodeUnit, environmentNameOf } from "@/lib/policy";
+import {
+  BUILTIN_OPTIONS,
+  byCodeUnit,
+  decodeObject,
+  environmentNameOf,
+  environmentOf,
+  nameOf,
+  own,
+  type PluginSelection,
+  type ResolvedPolicy,
+  resolve,
+} from "@/lib/policy";
 
 /** CONTRACT_KINDS are the kinds of the connection contracts, in the order of the Connections tabs. */
 export const CONTRACT_KINDS = [
@@ -162,7 +175,11 @@ export type ContractUser = {
   environment?: string;
 };
 
-/** ContractUserSources holds every list that can name a contract, in all namespaces, with the lists that give a user its preset and its environment. */
+/**
+ * ContractUserSources holds every list that can name a contract, in all
+ * namespaces, with the lists that give a user its preset and its
+ * environment, and the lists that resolve the parameters of a claim.
+ */
 export type ContractUserSources = {
   namespaces: readonly {
     metadata?: { name?: string; labels?: Record<string, string> };
@@ -182,6 +199,25 @@ export type ContractUserSources = {
   elasticsearchBackups: readonly LogicalBackupElasticsearch[];
   rdbmsBackups: readonly LogicalBackupRDBMS[];
   pointInTimeRestores: readonly PointInTimeRestore[];
+  planeClaims: readonly CamundaManagementClusterClaim[];
+  registrations: readonly PluginRegistration[];
+  requests: readonly SelectingRequest[];
+};
+
+type SelectingRequest = {
+  metadata: { namespace?: string; name?: string };
+  spec: { registration: string; parameters?: unknown };
+};
+
+type SelectingClaim = {
+  metadata: { namespace?: string; name?: string };
+  spec: {
+    plugins?: { section: string; registration: string; parameters?: unknown }[];
+  };
+  status?: {
+    resolvedPolicy?: ResolvedPolicy;
+    conditions?: readonly Condition[];
+  };
 };
 
 /** contractKey is the key of a contract in the map of contractUsage: "<kind>/<namespace>/<name>". */
@@ -214,7 +250,13 @@ type Condition = {
 /**
  * contractUsage returns the users of each contract that any object names, by
  * contractKey. A namespaced reference resolves in the namespace of the user.
- * Each list is sorted by kind, namespace, and name.
+ * A claim of either kind names a contract through a parameter of a built-in
+ * registration that publishes contracts already in its namespace, such as
+ * existing-object-storage: by the parameter of its selection, or by the one
+ * that its request gets from the claim policy. It names the contract this
+ * way before its cluster or plane exists. A request of such a registration
+ * names it by its parameter. Each list is sorted by kind, namespace, and
+ * name.
  */
 export function contractUsage(
   sources: ContractUserSources,
@@ -456,6 +498,30 @@ export function contractUsage(
       },
     ]);
   }
+  for (const claim of sources.clusterClaims) {
+    add("CamundaClusterClaim", claim, selectedContracts(claim, sources));
+  }
+  for (const claim of sources.planeClaims) {
+    add(
+      "CamundaManagementClusterClaim",
+      claim,
+      selectedContracts(claim, sources),
+    );
+  }
+  for (const request of sources.requests) {
+    add(
+      "PluginRequest",
+      request,
+      contractParameters(
+        request.spec.registration,
+        request.spec.parameters,
+      ).map(([kind, name, parameter]) => ({
+        kind,
+        name,
+        field: `spec.parameters.${parameter}`,
+      })),
+    );
+  }
   for (const optimize of sources.optimizes) {
     add("CamundaOptimize", optimize, [
       {
@@ -492,8 +558,83 @@ export function contractUsage(
   return usage;
 }
 
+// selectedContracts returns the contracts that the selections of claim
+// name, by the parameters of each selection and of its request.
+function selectedContracts(
+  claim: SelectingClaim,
+  sources: ContractUserSources,
+): Reference[] {
+  const selections = claim.spec.plugins ?? [];
+  const selects = selections.some((s) =>
+    Object.values(own(BUILTIN_OPTIONS, s.registration)?.lists ?? {}).some(
+      isContractKind,
+    ),
+  );
+  if (!selects) return [];
+  const requested = requestedParameters(claim, sources);
+  return selections.flatMap((s, i) =>
+    [
+      ...contractParameters(s.registration, s.parameters),
+      ...contractParameters(s.registration, requested[i]),
+    ].map(([kind, name, parameter]) => ({
+      kind,
+      name,
+      field: `spec.plugins.${s.registration}.parameters.${parameter}`,
+    })),
+  );
+}
+
+// contractParameters returns each parameter of parameters that names a
+// contract by the built-in entry of registration, with its contract kind
+// and the name.
+function contractParameters(
+  registration: string,
+  parameters: unknown,
+): [ContractKind, string, string][] {
+  const lists = own(BUILTIN_OPTIONS, registration)?.lists ?? {};
+  const values = decodeObject(parameters) ?? {};
+  return Object.entries(lists).flatMap(([parameter, kind]) => {
+    const name = nameOf(values[parameter]);
+    return isContractKind(kind) && name ? [[kind, name, parameter]] : [];
+  });
+}
+
+function isContractKind(kind: string): kind is ContractKind {
+  return (CONTRACT_KINDS as readonly string[]).includes(kind);
+}
+
+// requestedParameters gives the parameters of the request of each selection
+// of claim, in claim order, or none when the policy cannot be resolved.
+function requestedParameters(
+  claim: SelectingClaim,
+  sources: ContractUserSources,
+): unknown[] {
+  const namespace = sources.namespaces.find(
+    (n) => n.metadata?.name === claim.metadata.namespace,
+  );
+  const resolved = resolve({
+    recorded: claim.status?.resolvedPolicy,
+    environment:
+      namespace && environmentOf(namespace, sources.environments).environment,
+    registrations: [...sources.registrations],
+    selections: (claim.spec.plugins ?? []) as PluginSelection[],
+  });
+  if (!("value" in resolved)) return [];
+  return resolved.value.requests?.map((r) => r.parameters) ?? [];
+}
+
 // USER_KINDS holds, for each contract kind, the kinds whose objects
-// contractUsage reads for its users, the presets of those objects included.
+// contractUsage reads for its users, the presets of those objects included,
+// and the lists that resolve the parameters of a claim.
+// SELECTION_KINDS are the lists that give the contracts that a claim
+// selects through a registration.
+const SELECTION_KINDS = [
+  "Environment",
+  "Namespace",
+  "PluginRegistration",
+  "PluginRequest",
+];
+
 const USER_KINDS: Record<ContractKind, readonly string[]> = {
   ObjectStorageConfig: [
     "CamundaCluster",
@@ -504,15 +645,26 @@ const USER_KINDS: Record<ContractKind, readonly string[]> = {
     "ElasticsearchClusterPreset",
     "LogicalBackupElasticsearch",
     "LogicalBackupRDBMS",
+    ...SELECTION_KINDS,
   ],
-  SecondaryStorageConfig: ["CamundaCluster", "LogicalBackupElasticsearch"],
+  SecondaryStorageConfig: [
+    "CamundaCluster",
+    "CamundaClusterClaim",
+    "LogicalBackupElasticsearch",
+    ...SELECTION_KINDS,
+  ],
   DatabaseServerConfig: [
     "Database",
     "DatabaseConfig",
     "DatabaseServer",
     "PointInTimeRestore",
   ],
-  DatabaseConfig: ["CamundaManagementCluster", "SecondaryStorageConfig"],
+  DatabaseConfig: [
+    "CamundaManagementCluster",
+    "CamundaManagementClusterClaim",
+    "SecondaryStorageConfig",
+    ...SELECTION_KINDS,
+  ],
   ManagementAuthConfig: ["CamundaClusterClaim", "CamundaOptimize"],
 };
 
@@ -525,7 +677,7 @@ export function unreadUserKinds(
   kind: ContractKind,
   unread: readonly string[],
 ): string[] {
-  return USER_KINDS[kind].filter((k) => unread.includes(k));
+  return USER_KINDS[kind].filter((k) => unread.includes(k)).sort(byCodeUnit);
 }
 
 function readyOf(user: User): ContractUser["ready"] {
