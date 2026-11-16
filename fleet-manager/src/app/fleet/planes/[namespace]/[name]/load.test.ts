@@ -14,11 +14,11 @@ type Fixture = {
 const k8s = vi.hoisted(() => ({
   objects: [] as Fixture[],
   lists: [] as { kind: string; opts: unknown }[],
-  failing: "",
+  failing: [] as string[],
 }));
 vi.mock("@/lib/k8s/read", () => ({
   get: async (kind: string, namespace: string, name: string) => {
-    if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
+    if (k8s.failing.includes(kind)) throw new Error(`${kind} is forbidden`);
     return k8s.objects.find(
       (o) =>
         o.kind === kind &&
@@ -28,7 +28,7 @@ vi.mock("@/lib/k8s/read", () => ({
   },
   list: async (kind: string, opts: unknown) => {
     k8s.lists.push({ kind, opts });
-    if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
+    if (k8s.failing.includes(kind)) throw new Error(`${kind} is forbidden`);
     return [];
   },
 }));
@@ -36,7 +36,7 @@ vi.mock("@/lib/k8s/read", () => ({
 beforeEach(() => {
   k8s.objects = [];
   k8s.lists = [];
-  k8s.failing = "";
+  k8s.failing = [];
 });
 
 const plane = (name: string, labels: Record<string, string>): Fixture => ({
@@ -82,20 +82,67 @@ describe("loadPlanePage", () => {
     }
   });
 
-  it("returns a plane whose claim read fails, without a claim", async () => {
+  it("returns a plane whose claim read fails, without a claim and with the read error", async () => {
     k8s.objects = [plane("plane-a", { [CLAIM_LABEL]: "plane-a" })];
-    k8s.failing = "CamundaManagementClusterClaim";
+    k8s.failing = ["CamundaManagementClusterClaim"];
     const data = await loadPlanePage("platform", "plane-a");
     expect(data?.plane).toBeDefined();
     expect(data?.claim).toBeUndefined();
+    expect(data?.readErrors).toEqual([
+      {
+        kind: "CamundaManagementClusterClaim",
+        message: "CamundaManagementClusterClaim is forbidden",
+      },
+    ]);
   });
 
-  it("lists the namespaces and the environments everywhere, and a failed list gives none", async () => {
+  it("returns the claim and the read error when the plane read fails", async () => {
     k8s.objects = [claim("plane-a")];
-    k8s.failing = "Environment";
+    k8s.failing = ["CamundaManagementCluster"];
+    const data = await loadPlanePage("platform", "plane-a");
+    expect(data?.plane).toBeUndefined();
+    expect(data?.claim?.metadata.name).toBe("plane-a");
+    expect(data?.readErrors).toEqual([
+      {
+        kind: "CamundaManagementCluster",
+        message: "CamundaManagementCluster is forbidden",
+      },
+    ]);
+  });
+
+  it("returns the page with the read error, not undefined, when the plane read fails and no claim exists", async () => {
+    k8s.failing = ["CamundaManagementCluster"];
+    const data = await loadPlanePage("platform", "plane-a");
+    expect(data).toBeDefined();
+    expect(data?.readErrors?.map((e) => e.kind)).toEqual([
+      "CamundaManagementCluster",
+    ]);
+  });
+
+  it("returns the page with both read errors when both object reads fail", async () => {
+    k8s.failing = ["CamundaManagementCluster", "CamundaManagementClusterClaim"];
+    const data = await loadPlanePage("platform", "plane-a");
+    expect(data).toBeDefined();
+    expect(data?.readErrors?.map((e) => e.kind).sort()).toEqual([
+      "CamundaManagementCluster",
+      "CamundaManagementClusterClaim",
+    ]);
+  });
+
+  it("returns undefined when neither object exists, also when a list fails", async () => {
+    k8s.failing = ["Environment"];
+    expect(await loadPlanePage("platform", "plane-a")).toBeUndefined();
+  });
+
+  it("lists the namespaces and the environments everywhere, and a failed list gives none and a read error", async () => {
+    k8s.objects = [claim("plane-a")];
+    k8s.failing = ["Environment"];
     const data = await loadPlanePage("platform", "plane-a");
     expect(listOf("Namespace")).toEqual({});
     expect(listOf("Environment")).toEqual({});
     expect(data?.environments).toEqual([]);
+    expect(data?.readErrors).toEqual([
+      { kind: "Environment", message: "Environment is forbidden" },
+    ]);
   });
 });

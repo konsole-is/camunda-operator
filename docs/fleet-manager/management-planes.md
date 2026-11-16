@@ -159,7 +159,7 @@ The header shows the name of the plane and its `Ready` condition. A reason other
 | Identity provider | `Keycloak`, `External Keycloak`, or `OIDC` |
 | Namespace | The namespace of the plane |
 | Platform config | The platform config of the plane, or of its environment when the claim names none |
-| Serves | The environments of the claim. A plane that no claim made shows its namespace selector, or `Every namespace`. |
+| Serves | The environments of the claim. A plane that no claim made shows its namespace selector, or `Every namespace`. A plane that no claim made and that has no `spec.clusterSelector` serves no cluster, and shows `No cluster, because it has no cluster selector`. |
 
 ### Conditions
 
@@ -197,6 +197,10 @@ A condition with the reason `Disabled` does not hold `Ready` back. The [Status](
 After you create a plane, its claim can exist before the `CamundaManagementCluster`. The page then shows the `Ready` condition of the claim in the header, and the line `The claim controller has not created the management plane yet.` The **Conditions** section shows only the group **Claim**. The page shows the plane when the `CamundaManagementCluster` appears. If the plane does not appear, read the reason and the message of `RequestsReady` and `ManagementClusterReady`. The [Status](../crds/camundamanagementclusterclaim.md#status) section of the claim lists each reason and what to do.
 
 When the plane and its claim are both deleted, the page shows `This management plane no longer exists.` and a link to all management planes.
+
+### A plane that the page could not read
+
+When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted.
 
 ### A plane that no claim made
 

@@ -8,8 +8,8 @@ import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useResource, useResources } from "@/lib/k8s/hooks";
-import type { Resource } from "@/lib/k8s/kinds";
+import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { environmentNameOf } from "@/lib/policy";
 import type { WriteMode } from "@/lib/write/types";
@@ -17,11 +17,14 @@ import { planesOf } from "./plane";
 import { PlaneConditions } from "./plane-conditions";
 import { PlaneHeader } from "./plane-header";
 import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
+import type { ReadError } from "./planes-table";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined
- * for a claim-only plane. claim is undefined for a plane that no claim made,
- * or whose claim is not in the namespace. now is the time of the server.
+ * for a claim-only plane, or when its read failed. claim is undefined for a
+ * plane that no claim made, whose claim is not in the namespace, or whose
+ * read failed. now is the time of the server. readErrors holds the kinds
+ * whose first read failed.
  */
 export type PlanePageData = {
   namespace: string;
@@ -31,6 +34,7 @@ export type PlanePageData = {
   claim?: Resource<"CamundaManagementClusterClaim">;
   namespaces: Resource<"Namespace">[];
   environments: Resource<"Environment">[];
+  readErrors?: ReadError[];
 };
 
 /**
@@ -40,8 +44,10 @@ export type PlanePageData = {
  * when the CamundaManagementCluster carries CLAIM_LABEL with the claim
  * name. It selects the tab that the tab query parameter names, and a click
  * on a tab replaces that parameter. writeMode is the write mode of the
- * fleet manager, undefined when the page could not read it. When both
- * objects are gone, the page says so and shows nothing else.
+ * fleet manager, undefined when the page could not read it. The page
+ * names each kind that it could not read. When both objects are gone and
+ * neither read failed, the page says that the plane no longer exists and
+ * links to all management planes.
  */
 export function PlaneView({
   data,
@@ -73,14 +79,44 @@ export function PlaneView({
   const environments = useResources("Environment", {}, data.environments);
   const clock = useClock(data.now, tab === "overview");
 
+  const watched = [
+    ["CamundaManagementCluster", planeResult],
+    ["CamundaManagementClusterClaim", claimResult],
+    ["Namespace", namespaces],
+    ["Environment", environments],
+  ] as const;
+  const liveErrors = watched.flatMap(([kind, result]) =>
+    result.error ? [{ kind, message: result.error }] : [],
+  );
+  const answered = useAnswered([
+    { kind: "CamundaManagementCluster", opts: { namespace, name } },
+    { kind: "CamundaManagementClusterClaim", opts: { namespace, name } },
+    { kind: "Namespace", opts: {} },
+    { kind: "Environment", opts: {} },
+  ]);
+  const firstErrors = (data.readErrors ?? []).filter(
+    (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
+  );
+  const errors = [...liveErrors, ...firstErrors];
+  const unread = (kind: KindName) => errors.some((e) => e.kind === kind);
+  const alerts = errors.map((e, i) => (
+    <p key={i} role="alert" className="text-sm text-bad">
+      Could not read {e.kind}: {e.message}
+    </p>
+  ));
+
   const plane = planeResult.item;
   const live = claimResult.item;
   if (!plane && !live) {
     return (
       <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted">
-          This management plane no longer exists.
-        </p>
+        {alerts}
+        {!unread("CamundaManagementCluster") &&
+          !unread("CamundaManagementClusterClaim") && (
+            <p className="text-sm text-muted">
+              This management plane no longer exists.
+            </p>
+          )}
         <Link
           href="/fleet/planes"
           className="relative w-fit text-sm font-medium text-text underline underline-offset-4 hit-area hover:text-accent"
@@ -117,17 +153,6 @@ export function PlaneView({
     environments.items.find((e) => e.metadata?.name === environmentName)?.spec
       .platformConfigRef;
 
-  const errors = (
-    [
-      ["CamundaManagementCluster", planeResult],
-      ["CamundaManagementClusterClaim", claimResult],
-      ["Namespace", namespaces],
-      ["Environment", environments],
-    ] as const
-  ).flatMap(([kind, result]) =>
-    result.error ? [{ kind, message: result.error }] : [],
-  );
-
   const selectTab = (value: string) => {
     const next = planeTabOf(value);
     setTab(next);
@@ -136,11 +161,7 @@ export function PlaneView({
 
   return (
     <div className="flex flex-col gap-4">
-      {errors.map((e, i) => (
-        <p key={i} role="alert" className="text-sm text-bad">
-          Could not read {e.kind}: {e.message}
-        </p>
-      ))}
+      {alerts}
       {!managed && <UnmanagedBanner subject="management plane" />}
       <PlaneHeader
         name={name}
@@ -160,7 +181,7 @@ export function PlaneView({
         </TabsList>
         <TabsContent value="overview">
           <div className="flex flex-col gap-4">
-            {!plane && (
+            {!plane && !unread("CamundaManagementCluster") && (
               <p className="text-sm text-muted">
                 The claim controller has not created the management plane yet.
               </p>
@@ -175,6 +196,24 @@ export function PlaneView({
       </Tabs>
     </div>
   );
+}
+
+// useAnswered gives the kinds whose watch got a snapshot at least once. A
+// kind stays in it after a reconnect, so a failed first read does not come
+// back then.
+function useAnswered(
+  lists: readonly {
+    kind: KindName;
+    opts: { namespace?: string; name?: string };
+  }[],
+): ReadonlySet<string> {
+  const fresh = useWatchesFresh(lists);
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  const added = lists
+    .filter(({ kind }, i) => fresh[i] && !answered.has(kind))
+    .map(({ kind }) => kind);
+  if (added.length > 0) setAnswered(new Set([...answered, ...added]));
+  return answered;
 }
 
 // conditionRows gives the conditions of a status as the table rows. The

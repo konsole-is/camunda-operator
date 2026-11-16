@@ -5,27 +5,48 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type PlanePageData, PlaneView } from "./plane-view";
 
-// live holds the objects that the mocked watches report. A kind that it
-// does not name reports the snapshot of the server.
+// live holds what the mocked watches report. useResource reports the
+// snapshot of the server for a kind that live.objects does not name.
 const live = vi.hoisted(() => ({
   objects: new Map<string, unknown>(),
+  errors: new Map<string, string>(),
+  fresh: new Set<string>(),
 }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
-  useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
+  useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
+    ...(live.errors.has(kind) && { error: live.errors.get(kind) }),
   }),
   useResource: (kind: string, _ref: unknown, initial?: unknown) => ({
     item: live.objects.has(kind) ? live.objects.get(kind) : initial,
+    ...(live.errors.has(kind) && { error: live.errors.get(kind) }),
   }),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map((l) => live.fresh.has(l.kind)),
 }));
+// The page lists one tab today. A second one shows that the view takes the
+// tab from the URL and not from its default.
+vi.mock("./plane-tabs", () => {
+  const tabs = [
+    { id: "overview", label: "Overview" },
+    { id: "clusters", label: "Clusters" },
+  ];
+  return {
+    PLANE_TABS: tabs,
+    planeTabOf: (value: string | undefined) =>
+      tabs.find((t) => t.id === value)?.id ?? "overview",
+  };
+});
 
 const now = "2026-11-15T12:00:00Z";
 
 beforeEach(() => {
   live.objects = new Map();
+  live.errors = new Map();
+  live.fresh = new Set();
   window.history.replaceState(null, "", "/fleet/planes/platform/plane-a");
 });
 afterEach(cleanup);
@@ -50,6 +71,7 @@ function planeOf(
       identityProvider: { oidc: {} },
       identity: {},
       namespaceSelector: { matchLabels: { team: "a" } },
+      clusterSelector: { matchLabels: { fleet: "a" } },
     },
     status: {
       conditions: [
@@ -163,6 +185,15 @@ describe("PlaneView", () => {
     expect(fact("Serves")).toBe("team=a");
   });
 
+  it("an unlabelled plane without a cluster selector serves no cluster", () => {
+    const plane = planeOf({});
+    delete (plane.spec as { clusterSelector?: unknown }).clusterSelector;
+    render(<PlaneView data={data({ plane })} />);
+    expect(fact("Serves")).toBe(
+      "No cluster, because it has no cluster selector",
+    );
+  });
+
   it("shows the plane once it exists", () => {
     live.objects.set("CamundaManagementCluster", undefined);
     const page = data({ plane: undefined });
@@ -198,12 +229,109 @@ describe("PlaneView", () => {
   });
 
   it("selects the tab of the tab query parameter", () => {
-    window.history.replaceState(null, "", "?tab=overview");
+    window.history.replaceState(null, "", "?tab=clusters");
     render(<PlaneView data={data()} />);
+    expect(
+      screen
+        .getByRole("tab", { name: "Clusters" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     expect(
       screen
         .getByRole("tab", { name: "Overview" })
         .getAttribute("aria-selected"),
-    ).toBe("true");
+    ).toBe("false");
+  });
+
+  const notCreated =
+    "The claim controller has not created the management plane yet.";
+  const planeError = {
+    kind: "CamundaManagementCluster",
+    message: "CamundaManagementCluster is forbidden",
+  };
+  const claimError = {
+    kind: "CamundaManagementClusterClaim",
+    message: "CamundaManagementClusterClaim is forbidden",
+  };
+  const alerts = () => screen.queryAllByRole("alert").map((a) => a.textContent);
+
+  it("names a failed plane read beside the claim and does not say the plane is missing", () => {
+    render(
+      <PlaneView data={data({ plane: undefined, readErrors: [planeError] })} />,
+    );
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementCluster: CamundaManagementCluster is forbidden",
+    ]);
+    expect(screen.queryByText(notCreated)).toBeNull();
+    expect(within(table()).getByText("RequestsReady")).toBeTruthy();
+  });
+
+  it("names a failed plane read without a claim and does not say the plane is gone", () => {
+    render(
+      <PlaneView
+        data={data({
+          plane: undefined,
+          claim: undefined,
+          readErrors: [planeError],
+        })}
+      />,
+    );
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementCluster: CamundaManagementCluster is forbidden",
+    ]);
+    expect(
+      screen.queryByText("This management plane no longer exists."),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "All management planes" }),
+    ).toBeTruthy();
+  });
+
+  it("names both failed reads when neither object could be read", () => {
+    render(
+      <PlaneView
+        data={data({
+          plane: undefined,
+          claim: undefined,
+          readErrors: [planeError, claimError],
+        })}
+      />,
+    );
+    expect(alerts()).toHaveLength(2);
+    expect(
+      screen.queryByText("This management plane no longer exists."),
+    ).toBeNull();
+  });
+
+  it("drops a failed first read once the watch of its kind got a snapshot", () => {
+    live.fresh.add("CamundaManagementCluster");
+    live.objects.set("CamundaManagementCluster", planeOf());
+    render(
+      <PlaneView data={data({ plane: undefined, readErrors: [planeError] })} />,
+    );
+    expect(alerts()).toEqual([]);
+    expect(within(table()).getByText("SecretsReady")).toBeTruthy();
+  });
+
+  it("names a watch error after a good first read and does not say the plane is missing", () => {
+    live.errors.set("CamundaManagementCluster", "The API server is down");
+    render(<PlaneView data={data({ plane: undefined })} />);
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementCluster: The API server is down",
+    ]);
+    expect(screen.queryByText(notCreated)).toBeNull();
+  });
+
+  it("names a watch error and does not say the plane is gone when the watches report no object", () => {
+    live.objects.set("CamundaManagementCluster", undefined);
+    live.objects.set("CamundaManagementClusterClaim", undefined);
+    live.errors.set("CamundaManagementCluster", "The API server is down");
+    render(<PlaneView data={data()} />);
+    expect(alerts()).toEqual([
+      "Could not read CamundaManagementCluster: The API server is down",
+    ]);
+    expect(
+      screen.queryByText("This management plane no longer exists."),
+    ).toBeNull();
   });
 });
