@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -26,17 +25,18 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -66,12 +66,16 @@ type simulator struct {
 	client     client.Client
 	namespaces []string
 	steps      map[objectKey]workloadStep
+	// uids holds the scenario UID of each real UID that recordUIDs saw.
+	uids map[string]string
+	// conflict is the last write of a pass that lost a race.
+	conflict error
 }
 
 // newSimulator returns a simulator that writes through c and watches no
 // namespace yet.
 func newSimulator(c client.Client) *simulator {
-	return &simulator{client: c, steps: map[objectKey]workloadStep{}}
+	return &simulator{client: c, steps: map[objectKey]workloadStep{}, uids: map[string]string{}}
 }
 
 // watch adds namespaces to the namespaces that a pass covers.
@@ -91,8 +95,15 @@ func (s *simulator) add(steps []workloadStep) {
 	}
 }
 
+// recordUIDs records the UID of each object of objs, so that a pod template
+// that holds one hashes the same in each run.
+func (s *simulator) recordUIDs(objs []unstructured.Unstructured) {
+	maps.Copy(s.uids, scenarioUIDs(objs))
+}
+
 // pass makes one round over the watched namespaces. It returns the number of
-// writes it made, so a caller knows when the simulator has nothing to do.
+// writes it made. A write that loses a race with a controller ends the round
+// without an error, and s.conflict holds it.
 func (s *simulator) pass(ctx context.Context) (int, error) {
 	writes := 0
 	for _, ns := range s.namespaces {
@@ -101,6 +112,10 @@ func (s *simulator) pass(ctx context.Context) (int, error) {
 		} {
 			n, err := step(ctx, ns)
 			writes += n
+			if apierrors.IsConflict(err) {
+				s.conflict = err
+				return writes, nil
+			}
 			if err != nil {
 				return writes, err
 			}
@@ -133,7 +148,7 @@ func (s *simulator) statefulSets(ctx context.Context, ns string) (int, error) {
 func (s *simulator) statefulSet(ctx context.Context, sts *appsv1.StatefulSet) (int, error) {
 	replicas := ptr.Deref(sts.Spec.Replicas, 1)
 	ready := s.readyCount(kindStatefulSet, sts.Namespace, sts.Name, replicas)
-	revision := sts.Name + "-" + templateHash(sts.Spec.Template, sts)
+	revision := sts.Name + "-" + templateHash(sts.Spec.Template, s.uids)
 	writes := 0
 
 	pods, err := s.ownedPods(ctx, sts.Namespace, "StatefulSet", sts.Name)
@@ -324,7 +339,7 @@ func (s *simulator) deployments(ctx context.Context, ns string) (int, error) {
 func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, error) {
 	replicas := ptr.Deref(d.Spec.Replicas, 1)
 	ready := s.readyCount(kindDeployment, d.Namespace, d.Name, replicas)
-	hash := templateHash(d.Spec.Template, d)
+	hash := templateHash(d.Spec.Template, s.uids)
 	rsName := d.Name + "-" + hash
 	writes := 0
 
@@ -855,35 +870,28 @@ func (s *simulator) writePodStatus(ctx context.Context, pod *corev1.Pod, status 
 	return 1, nil
 }
 
+// uuidPattern matches a UID as the API server writes it.
+var uuidPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
 // templateHash returns the first 10 hex characters of the SHA-256 of the
-// JSON of t, the template of workload. Two templates of workload that differ
-// only in the UID of an owner of workload, in the value of a label or
-// annotation that is a UID, or in the value of the config hash annotation
-// get one hash.
-func templateHash(t corev1.PodTemplateSpec, workload metav1.Object) string {
-	t.Labels = withFixedUIDs(t.Labels)
-	t.Annotations = withFixedUIDs(t.Annotations)
+// JSON of t, with each real UID of uids in t read as its scenario UID, and
+// with the value of the config hash annotation ignored. The API server draws
+// each UID at random, so a hash that read one would change on each run.
+func templateHash(t corev1.PodTemplateSpec, uids map[string]string) string {
+	t.Annotations = maps.Clone(t.Annotations)
 	if _, ok := t.Annotations[camundamanagementcluster.ConfigHashAnnotation]; ok {
 		t.Annotations[camundamanagementcluster.ConfigHashAnnotation] = scenarioConfigHash
 	}
 
 	data, _ := json.Marshal(t)
-	for _, owner := range workload.GetOwnerReferences() {
-		derived := scenarioUID(owner.Kind, workload.GetNamespace(), owner.Name)
-		data = bytes.ReplaceAll(data, []byte(owner.UID), []byte(derived))
-	}
+	data = uuidPattern.ReplaceAllFunc(data, func(id []byte) []byte {
+		if scenario, ok := uids[string(id)]; ok {
+			return []byte(scenario)
+		}
+		return id
+	})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])[:10]
-}
-
-func withFixedUIDs(values map[string]string) map[string]string {
-	out := maps.Clone(values)
-	for key, value := range out {
-		if id, err := uuid.Parse(value); err == nil && id.String() == value {
-			out[key] = uuid.Nil.String()
-		}
-	}
-	return out
 }
 
 // podSuffix returns 5 characters from the alphabet of the generated names

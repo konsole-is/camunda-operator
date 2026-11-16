@@ -57,6 +57,8 @@ vi.mock("@/lib/secrets", () => ({
 vi.mock("@/app/setup/releases/actions", () => ({
   previewReleaseChange: vi.fn(),
   applyReleaseChange: vi.fn(),
+  previewReleaseMove: vi.fn(),
+  applyReleaseMove: vi.fn(),
 }));
 vi.mock("@/components/setup/releases/release-detail", () => ({
   ReleaseDetail: (props: { data: { name: string }; tab: string }) => {

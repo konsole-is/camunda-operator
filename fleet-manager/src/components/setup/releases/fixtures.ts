@@ -9,6 +9,7 @@ import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster
 import type { Environment } from "@/generated/crds/environment";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { ImagesTable } from "@/startup/bundled-data";
+import type { RolloutLists } from "./rollout-sources";
 import type { ReleasesData } from "./sources";
 
 /** release returns a CamundaRelease named name with spec, for stories and tests. */
@@ -129,6 +130,18 @@ export function releaseFixtures(): ReleasesData {
       claim("team-orders", "orders", "camunda-8-9-0"),
       claim("team-new", "billing", "camunda-8-10-0"),
     ],
+  };
+}
+
+/** rolloutListsFixture is RolloutLists with every list empty. */
+export function rolloutListsFixture(): RolloutLists {
+  return {
+    clusterPresets: [],
+    sections: [],
+    registrations: [],
+    requests: [],
+    elasticsearchBackups: [],
+    rdbmsBackups: [],
   };
 }
 

@@ -162,9 +162,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     preconditions: DeletePreconditions,
     dryRun: boolean,
   ) =>
-    send<unknown>("DELETE", `${pathOf(ref)}${dryRun ? "?dryRun=All" : ""}`, {
+    // The API server reads the options of a delete from its body when it
+    // has one, and then ignores the query, so dryRun goes in the body.
+    send<unknown>("DELETE", pathOf(ref), {
       apiVersion: "v1",
       kind: "DeleteOptions",
+      ...(dryRun ? { dryRun: ["All"] } : {}),
       ...(preconditionsSet(preconditions) ? { preconditions } : {}),
     });
 

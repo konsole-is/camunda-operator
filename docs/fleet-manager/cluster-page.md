@@ -11,7 +11,7 @@ The cluster page shows one Camunda cluster: its processes and pods, their logs a
 | **Endpoints** | The address of each app: its public URL, its Service, its protocol, and the process that serves it. |
 | **Claim** | The choices of the claim for the whole cluster, as [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) shows. |
 
-A cluster that a claim made also has the button **Change topology** in the **Topology** panel, as [Change the topology](change-a-cluster.md#change-the-topology) shows.
+A cluster that a claim made also has the button **Change topology** in the **Topology** panel, as [Change the topology](change-a-cluster.md#change-the-topology) shows. It also has the button **Delete** in its header, as [Delete the cluster](#delete-the-cluster) shows.
 
 ## The tabs of a component
 
@@ -102,6 +102,93 @@ Each event shows its age, its reason, the object that it is about, and its messa
 The tab reads the events of the namespace of the cluster only. Kubernetes keeps an event for one hour by default, so an older event does not show.
 
 When a read fails, the tab shows "The list can miss events, because a read failed." Below it, a line names each read that failed, for example `Could not read PersistentVolumeClaim:` and the error. The other events still show.
+
+## Delete the cluster
+
+Select **Delete** in the header of the cluster. The delete page opens at `/fleet/clusters/<namespace>/<name>/delete`. Only a cluster that a claim made has **Delete**, because the page deletes the claim. The page stays open while the cluster goes.
+
+### Keep or delete the resources
+
+The page asks what happens to the resources of the storage and access options when the cluster is deleted:
+
+- **Keep the resources**: the resources stay after the cluster is gone.
+- **Delete the resources**: the resources go with the cluster.
+
+The choice starts at the deletion policy of the claim. A claim without a deletion policy starts at the policy that it recorded when it was made. Without that, the choice starts at **Delete the resources**. The label **Default** marks the policy that the claim recorded, or **Delete the resources** when it recorded none.
+
+Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. It names the registration of the option, for example `PluginRegistration "gateway" of section "access" cannot keep the resources. Choose Delete the resources.` Choose **Delete the resources** to delete the cluster.
+
+The page checks this again before it sends the delete, and again after the wait for the deletion policy. If a registration stops supporting Keep before that check, the page sends no delete and shows the same message. If a registration stops supporting Keep after the page sent the delete, the operator refuses the delete, and the claim stays. The page then says what to do. Set the deletion policy of the claim to Delete. Or add `Orphan`, the policy of Keep, back to the deletion policies of the registration.
+
+### The resources of each option
+
+The page lists each resource that an option made, under the name of its section. Each row shows the kind, the name, the ID, and what happens to the resource: **Kept** or **Deleted**. Under **Keep the resources**, an option can still delete some of its resources, for example a route. An option that made no resources says "This option made no resources."
+
+### What always goes
+
+The delete always removes these objects, whatever you choose:
+
+- The `CamundaCluster`, when the claim made it.
+- The `CamundaOptimize` `<name>-optimize` and the `BackupSchedule` `<name>-backups`, when the claim made them.
+- The claim.
+
+A `CamundaCluster`, a `CamundaOptimize`, or a `BackupSchedule` of the cluster that the claim did not make stays. The page lists it under **Kept**, with "Kept: the claim did not make it". When the `CamundaCluster` stays, the page ends with "The claim my-cluster is deleted. The cluster my-cluster stays: the claim did not make it."
+
+By default, the broker volumes go with the `CamundaCluster`, and the page says "Volumes deleted" next to it. The choice between keeping and deleting the resources does not change this. To keep the volumes for a later cluster of the same name, set `whenDeleted: Retain` in the claim. Apply this change to the claim before you open the delete page. In Git mode, wait until GitOps applied it:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  cluster:
+    zeebe:
+      persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Retain
+  # ... the rest of your claim
+```
+
+The page then says "Volumes kept for a cluster of the same name" next to the `CamundaCluster`. It says this, or "Volumes deleted", only after the operator applied the current spec of the `CamundaCluster`. Until then, the volumes keep the earlier setting of the cluster. If that setting is Delete, a delete now removes the volumes. In that time, the page says one of these:
+
+- "Volumes not known: the operator has not applied the current spec of the cluster yet". Wait until the note changes before you delete the cluster.
+- "Volumes not known: the Ready condition of the cluster reports a problem that can block its spec". Correct the cause that the `Ready` condition of the `CamundaCluster` names, for example a missing `CamundaRelease` or preset.
+- "Volumes not known: the cluster takes its volume policy from its preset, and the page cannot tell if the operator applied it". With a preset, the page knows the policy only when the claim sets it. Set `whenDeleted: Retain` in the claim, as above.
+- "Volumes not known: the page could not read what decides them". A read of the `CamundaCluster`, its preset, or its release failed.
+
+### Backups
+
+The backups of the cluster stay, and their artifacts stay in the bucket. When the backup storage option deletes its bucket under your choice, the backups have nowhere to stay. The page then warns "You cannot restore my-cluster after this: the backup bucket goes too."
+
+### Confirm the delete
+
+1. Type the name of the cluster.
+2. Select **Delete the cluster**. In Git mode, the button is **Push the delete to Git**.
+
+You cannot undo the delete. In direct mode, the fleet manager first writes your choice to the claim when the claim has another deletion policy. The options read the choice from there. The page shows "Waiting for the operator to read the deletion policy." Then the fleet manager deletes the claim. The page lists each object that goes, with **Waiting**, **Deleting**, or **Deleted**, until the claim is gone. Then it says "The cluster my-cluster is deleted."
+
+The wait ends only when the operator reads the deletion policy. If the operator does not run, select **Stop waiting**. The fleet manager then sends no delete. The deletion policy that the fleet manager wrote stays in the claim. The page shows the deletion policy that the claim has, also after another change.
+
+If the claim changed after the page read it, the delete fails, and the page shows the claim again for a new review. This also applies when someone else changes the claim during the wait. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
+
+### When the page cannot read a list
+
+The page reads the requests, the registrations, and the other objects of the delete. When a read fails, the page says, for example, "Could not read PluginRequest:" and the error. What happens to the resources then shows as **Not known**, and the page shows no review. It says "Delete is possible when the fleet manager can read PluginRequest." The page reads each list again by itself, and the review comes back when the fleet manager can read every list.
+
+When the page cannot read the `CamundaCluster`, the `CamundaOptimize`, or the `BackupSchedule` objects, it lists each of them under **Not known**. This includes an object that the claim did not make.
+
+While the delete runs, an object of a kind that the page cannot read shows **Not known** in place of **Waiting**, **Deleting**, or **Deleted**.
+
+### Delete in Git mode
+
+When your choice is the deletion policy of the claim, the delete is one commit, which removes the claim file. When your choice differs, the delete is two commits. The first commit sets the deletion policy. The page shows "Waiting for GitOps to apply the deletion policy." When the claim in the cluster carries that commit, the fleet manager pushes the second commit, which removes the claim file.
+
+To stop the wait without a delete, select **Stop waiting**. The first commit stays in the repository. The page shows the choice again. Until GitOps applies the commit, the page says "The cluster is not deleted. The repository holds the commit that sets the deletion policy of my-cluster to Keep, and GitOps has not applied it yet. The claim my-cluster has the deletion policy Delete." After GitOps applies the commit, the page says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
+
+After the delete commit, the page shows "Waiting for GitOps to delete my-cluster" until the cluster starts to delete the claim. Your GitOps tool must prune: it deletes the claim only when it removes the objects of deleted files. [Waiting for GitOps](settings.md#waiting-for-gitops) shows how the fleet manager follows a push.
+
+If the claim has no file in the repository, the review refuses the delete before the first commit, with either choice. For example, with an empty `git.path`, it shows `my-cluster-ns/camundaclusterclaims/my-cluster.yaml is not in the repository. GitOps does not manage CamundaClusterClaim my-cluster.` Commit the claim to the folder of `git.path`, then delete it again. Or delete the claim with `kubectl delete camundaclusterclaim my-cluster -n my-cluster-ns`.
 
 ## What the tabs need
 

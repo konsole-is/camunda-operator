@@ -2,6 +2,7 @@
 
 import {
   claimChangeSchema,
+  claimDeleteSchema,
   runBackupChange,
   runChange,
   runPreview,
@@ -16,6 +17,16 @@ export async function previewClaimChange(change: Change): Promise<Preview> {
 /** applyClaimChange writes a change of one claim with the writer of the settings. */
 export async function applyClaimChange(change: Change): Promise<WriteResult> {
   return runChange(change, claimChangeSchema);
+}
+
+/** previewClaimDelete is the dry run of the delete of one claim. */
+export async function previewClaimDelete(change: Change): Promise<Preview> {
+  return runPreview(change, claimDeleteSchema);
+}
+
+/** applyClaimDelete deletes one claim with the writer of the settings. */
+export async function applyClaimDelete(change: Change): Promise<WriteResult> {
+  return runChange(change, claimDeleteSchema);
 }
 
 /**

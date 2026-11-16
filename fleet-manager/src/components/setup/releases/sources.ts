@@ -64,9 +64,12 @@ export function useReleaseSources(
   };
 }
 
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the release pages do not read.
-function useLive<K extends KindName, T>(
+/**
+ * useLive follows the list of kind from initial, as useResources does. A
+ * Resource is plain JSON, so it differs from its model type only in its
+ * timestamps, which the release pages do not read.
+ */
+export function useLive<K extends KindName, T>(
   kind: K,
   initial: T[],
 ): { items: T[]; error?: string } {

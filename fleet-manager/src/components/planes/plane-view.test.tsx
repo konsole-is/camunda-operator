@@ -27,20 +27,6 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map((l) => live.fresh.has(l.kind)),
 }));
-// A second tab shows that the view takes the tab from the URL and not from
-// its default.
-vi.mock("./plane-tabs", () => {
-  const tabs = [
-    { id: "overview", label: "Overview" },
-    { id: "clusters", label: "Clusters" },
-  ];
-  return {
-    PLANE_TABS: tabs,
-    planeTabOf: (value: string | undefined) =>
-      tabs.find((t) => t.id === value)?.id ?? "overview",
-  };
-});
-
 const now = "2026-11-15T12:00:00Z";
 
 beforeEach(() => {
@@ -128,6 +114,8 @@ function data(page: Partial<PlanePageData> = {}): PlanePageData {
         spec: { platformConfigRef: "env-platform" },
       } as unknown as Resource<"Environment">,
     ],
+    optimizes: [],
+    managementAuthConfigs: [],
     ...page,
   };
 }
@@ -233,7 +221,7 @@ describe("PlaneView", () => {
     render(<PlaneView data={data()} />);
     expect(
       screen
-        .getByRole("tab", { name: "Clusters" })
+        .getByRole("tab", { name: "Clusters served" })
         .getAttribute("aria-selected"),
     ).toBe("true");
     expect(
@@ -366,5 +354,166 @@ describe("PlaneView", () => {
     expect(
       screen.queryByText("This management plane no longer exists."),
     ).toBeNull();
+  });
+
+  describe("the read tabs", () => {
+    const empties: [string, string][] = [
+      ["clusters", "This plane lists no clusters yet."],
+      [
+        "optimize",
+        "No Optimize with an external URL reads the contract of this plane.",
+      ],
+      ["contract", "This plane has not written its contract yet."],
+      ["endpoints", "This plane reports no endpoints yet."],
+    ];
+    const unreadPlane =
+      "The page could not read CamundaManagementCluster, so this tab can be incomplete or out of date.";
+
+    it("lists Overview, Clusters served, Optimize, Contract, and Endpoints in that order", () => {
+      render(<PlaneView data={data()} />);
+      expect(
+        screen
+          .getAllByRole("tab")
+          .map((t) => t.textContent)
+          .slice(0, 5),
+      ).toEqual([
+        "Overview",
+        "Clusters served",
+        "Optimize",
+        "Contract",
+        "Endpoints",
+      ]);
+    });
+
+    it.each(empties)(
+      "a claim-only plane shows the empty text of the %s tab",
+      (tab, text) => {
+        window.history.replaceState(null, "", `?tab=${tab}`);
+        render(<PlaneView data={data({ plane: undefined })} />);
+        expect(screen.getByText(text)).toBeTruthy();
+      },
+    );
+
+    it.each(empties)(
+      "the %s tab does not show its empty text while the plane read fails, and names the kind",
+      (tab, text) => {
+        window.history.replaceState(null, "", `?tab=${tab}`);
+        render(
+          <PlaneView
+            data={data({ plane: undefined, readErrors: [planeError] })}
+          />,
+        );
+        expect(screen.queryByText(text)).toBeNull();
+        expect(screen.getByText(unreadPlane)).toBeTruthy();
+      },
+    );
+
+    it("shows the routes of a plane on the Endpoints tab", () => {
+      window.history.replaceState(null, "", "?tab=endpoints");
+      const plane = planeOf();
+      plane.spec.identity = {
+        externalUrl: "https://management.example.com/identity",
+      } as typeof plane.spec.identity;
+      plane.status = {
+        ...plane.status,
+        endpoints: [
+          {
+            name: "identity",
+            pathPrefix: "/identity",
+            port: 80,
+            protocol: "HTTP",
+            service: "plane-a-identity",
+          },
+        ],
+      };
+      render(<PlaneView data={data({ plane })} />);
+      const table = screen.getByRole("table", { name: "Endpoints" });
+      expect(within(table).getByText("identity")).toBeTruthy();
+      expect(
+        within(table).getByText("https://management.example.com/identity"),
+      ).toBeTruthy();
+    });
+
+    it("shows the Web Modeler routes with their URLs and apps on the Endpoints tab", () => {
+      window.history.replaceState(null, "", "?tab=endpoints");
+      const plane = planeOf();
+      const host = "https://management.example.com";
+      (plane.spec as Record<string, unknown>).webModeler = {
+        externalUrl: `${host}/modeler`,
+        websocketsExternalUrl: `${host}/modeler-ws`,
+      };
+      const route = (name: string, pathPrefix: string) => ({
+        name,
+        pathPrefix,
+        port: 80,
+        protocol: "HTTP" as const,
+        service: `plane-a-${name}`,
+      });
+      plane.status = {
+        ...plane.status,
+        endpoints: [
+          route("web-modeler", "/modeler"),
+          route("web-modeler-websockets", "/modeler-ws"),
+        ],
+      };
+      render(<PlaneView data={data({ plane })} />);
+      const table = screen.getByRole("table", { name: "Endpoints" });
+      const rowOf = (name: string) =>
+        within(table).getByRole("row", { name: new RegExp(`^${name} `) });
+      expect(
+        within(rowOf("web-modeler")).getByRole("link", {
+          name: `${host}/modeler`,
+        }),
+      ).toBeTruthy();
+      expect(
+        within(rowOf("web-modeler")).getByText("Web Modeler"),
+      ).toBeTruthy();
+      expect(
+        within(rowOf("web-modeler-websockets")).getByRole("link", {
+          name: `${host}/modeler-ws`,
+        }),
+      ).toBeTruthy();
+      expect(
+        within(rowOf("web-modeler-websockets")).getByText(
+          "Web Modeler websockets",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("does not say that no Optimize reads the contract while the Optimize watch fails", () => {
+      window.history.replaceState(null, "", "?tab=contract");
+      live.errors.set("CamundaOptimize", "The API server is down");
+      const plane = planeOf();
+      plane.status = { ...plane.status, managementAuthConfig: "plane-a" };
+      render(<PlaneView data={data({ plane })} />);
+      expect(screen.queryByText("No Optimize reads this contract.")).toBeNull();
+      expect(
+        screen.getByText(
+          "The page could not read CamundaOptimize, so this tab can be incomplete or out of date.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("names a list whose watch answered once and is not current now", () => {
+      window.history.replaceState(null, "", "?tab=contract");
+      const plane = planeOf();
+      plane.status = { ...plane.status, managementAuthConfig: "plane-a" };
+      const page = data({ plane });
+      live.fresh.add("ManagementAuthConfig");
+      const { rerender } = render(<PlaneView data={page} />);
+      expect(
+        screen.getByText("The contract plane-a does not exist."),
+      ).toBeTruthy();
+      live.fresh.delete("ManagementAuthConfig");
+      rerender(<PlaneView data={page} />);
+      expect(
+        screen.queryByText("The contract plane-a does not exist."),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
+        ),
+      ).toBeTruthy();
+    });
   });
 });
