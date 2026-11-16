@@ -291,3 +291,14 @@ states:
           releaseRef: camunda-8-9
           externalUrl: "https://orders.example.com"
           storageRef: orders-storage
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaOptimize
+        metadata:
+          name: orders
+          namespace: team-orders
+        spec:
+          version: "8.9.23"
+          managementAuthRef: plane-a
+          clusterRef:
+            name: orders
+          externalUrl: "https://orders.example.com/optimize"

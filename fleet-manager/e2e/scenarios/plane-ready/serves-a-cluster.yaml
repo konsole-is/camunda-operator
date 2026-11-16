@@ -1190,6 +1190,673 @@ status:
   updatedReplicas: 1
 ---
 apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-importer
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:strategy:
+          f:type: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              f:camunda.io/config-hash: {}
+            f:labels:
+              f:camunda.io/cluster: {}
+              f:camunda.io/cluster-uid: {}
+              f:camunda.io/component: {}
+              f:camunda.io/optimize-uid: {}
+              f:camunda.io/storage-claim: {}
+          f:spec:
+            f:containers:
+              k:{"name":"optimize"}:
+                .: {}
+                f:env:
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:livenessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:name: {}
+                f:ports:
+                  k:{"containerPort":8090,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8092,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+            f:securityContext:
+              f:fsGroup: {}
+              f:runAsGroup: {}
+              f:runAsNonRoot: {}
+              f:runAsUser: {}
+    manager: CamundaOptimize/optimize-importer/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-importer
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: 570f08a0-d19a-5701-9c85-09a8844194f4
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      camunda.io/cluster: orders
+      camunda.io/component: optimize-importer
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/cluster: orders
+        camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+        camunda.io/component: optimize-importer
+        camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+        camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: orders-es-http
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "1"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: https://management.example.com/identity
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: orders-optimize-auth-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: orders-optimize-license
+        image: registry.example.com/camunda/optimize:8.9.23
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health
+            port: management
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: ReplicaSet "orders-importer-1fad606b7f" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-webapp
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:strategy:
+          f:type: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              f:camunda.io/config-hash: {}
+            f:labels:
+              f:camunda.io/cluster: {}
+              f:camunda.io/cluster-uid: {}
+              f:camunda.io/component: {}
+              f:camunda.io/optimize-uid: {}
+              f:camunda.io/storage-claim: {}
+          f:spec:
+            f:containers:
+              k:{"name":"optimize"}:
+                .: {}
+                f:env:
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_CONTEXT_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:livenessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:name: {}
+                f:ports:
+                  k:{"containerPort":8090,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8092,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    f:path: {}
+                    f:port: {}
+                  f:periodSeconds: {}
+            f:securityContext:
+              f:fsGroup: {}
+              f:runAsGroup: {}
+              f:runAsNonRoot: {}
+              f:runAsUser: {}
+    manager: CamundaOptimize/optimize-webapp/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-webapp
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: 0a90d55c-b6d7-5a04-a507-364480fb99d8
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      camunda.io/cluster: orders
+      camunda.io/component: optimize-webapp
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/cluster: orders
+        camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+        camunda.io/component: optimize-webapp
+        camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+        camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: CAMUNDA_OPTIMIZE_CONTEXT_PATH
+          value: /optimize
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: orders-es-http
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "false"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "1"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: https://management.example.com/identity
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: orders-optimize-auth-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: orders-optimize-license
+        image: registry.example.com/camunda/optimize:8.9.23
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health
+            port: management
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /optimize/api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /optimize/api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    lastUpdateTime: "2026-01-01T00:00:00Z"
+    message: ReplicaSet "orders-webapp-afd3ee4607" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
@@ -2344,6 +3011,684 @@ status:
   replicas: 1
 ---
 apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/cluster: orders
+    camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+    camunda.io/component: optimize-importer
+    camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    pod-template-hash: 1fad606b7f
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/cluster-uid: {}
+          f:camunda.io/component: {}
+          f:camunda.io/optimize-uid: {}
+          f:camunda.io/storage-claim: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"570f08a0-d19a-5701-9c85-09a8844194f4"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              .: {}
+              f:camunda.io/config-hash: {}
+            f:labels:
+              .: {}
+              f:camunda.io/cluster: {}
+              f:camunda.io/cluster-uid: {}
+              f:camunda.io/component: {}
+              f:camunda.io/optimize-uid: {}
+              f:camunda.io/storage-claim: {}
+              f:pod-template-hash: {}
+          f:spec:
+            f:containers:
+              k:{"name":"optimize"}:
+                .: {}
+                f:env:
+                  .: {}
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:livenessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":8090,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8092,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext:
+              .: {}
+              f:fsGroup: {}
+              f:runAsGroup: {}
+              f:runAsNonRoot: {}
+              f:runAsUser: {}
+            f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:fullyLabeledReplicas: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-importer-1fad606b7f
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: orders-importer
+    uid: 570f08a0-d19a-5701-9c85-09a8844194f4
+  uid: 81d10869-65d4-5054-8f95-f129ad0cdb5b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/cluster: orders
+      camunda.io/component: optimize-importer
+      pod-template-hash: 1fad606b7f
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/cluster: orders
+        camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+        camunda.io/component: optimize-importer
+        camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+        camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+        pod-template-hash: 1fad606b7f
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: orders-es-http
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "1"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: https://management.example.com/identity
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: orders-optimize-auth-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: orders-optimize-license
+        image: registry.example.com/camunda/optimize:8.9.23
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health
+            port: management
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/cluster: orders
+    camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+    camunda.io/component: optimize-webapp
+    camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    pod-template-hash: afd3ee4607
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/cluster-uid: {}
+          f:camunda.io/component: {}
+          f:camunda.io/optimize-uid: {}
+          f:camunda.io/storage-claim: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"0a90d55c-b6d7-5a04-a507-364480fb99d8"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:annotations:
+              .: {}
+              f:camunda.io/config-hash: {}
+            f:labels:
+              .: {}
+              f:camunda.io/cluster: {}
+              f:camunda.io/cluster-uid: {}
+              f:camunda.io/component: {}
+              f:camunda.io/optimize-uid: {}
+              f:camunda.io/storage-claim: {}
+              f:pod-template-hash: {}
+          f:spec:
+            f:containers:
+              k:{"name":"optimize"}:
+                .: {}
+                f:env:
+                  .: {}
+                  k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_CONTEXT_PATH"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:livenessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":8090,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                  k:{"containerPort":8092,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:readinessProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:resources: {}
+                f:startupProbe:
+                  .: {}
+                  f:failureThreshold: {}
+                  f:httpGet:
+                    .: {}
+                    f:path: {}
+                    f:port: {}
+                    f:scheme: {}
+                  f:periodSeconds: {}
+                  f:successThreshold: {}
+                  f:timeoutSeconds: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext:
+              .: {}
+              f:fsGroup: {}
+              f:runAsGroup: {}
+              f:runAsNonRoot: {}
+              f:runAsUser: {}
+            f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:fullyLabeledReplicas: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-webapp-afd3ee4607
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: orders-webapp
+    uid: 0a90d55c-b6d7-5a04-a507-364480fb99d8
+  uid: e5d4fcb8-01a8-5881-891a-52f9c3c02078
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      camunda.io/cluster: orders
+      camunda.io/component: optimize-webapp
+      pod-template-hash: afd3ee4607
+  template:
+    metadata:
+      annotations:
+        camunda.io/config-hash: scenario
+      labels:
+        camunda.io/cluster: orders
+        camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+        camunda.io/component: optimize-webapp
+        camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+        camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+        pod-template-hash: afd3ee4607
+    spec:
+      containers:
+      - env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: ccsm
+        - name: CAMUNDA_OPTIMIZE_DATABASE
+          value: elasticsearch
+        - name: CAMUNDA_OPTIMIZE_CONTEXT_PATH
+          value: /optimize
+        - name: OPTIMIZE_ELASTICSEARCH_HOST
+          value: orders-es-http
+        - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+          value: "9200"
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: orders-storage-credentials
+        - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+          value: "true"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+          value: "false"
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+          value: zeebe-record
+        - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+          value: "1"
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+          value: https://login.example.com/realms/camunda
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+          value: https://management.example.com/identity
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+          value: optimize
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+          valueFrom:
+            secretKeyRef:
+              key: client-secret
+              name: orders-optimize-auth-client
+        - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+          value: optimize
+        - name: CAMUNDA_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: license-key
+              name: orders-optimize-license
+        image: registry.example.com/camunda/optimize:8.9.23
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /actuator/health
+            port: management
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: optimize
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        - containerPort: 8092
+          name: management
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /optimize/api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /optimize/api/readyz
+            port: http
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 1001
+        runAsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+---
+apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
@@ -2429,6 +3774,28 @@ metadata:
                     f:name: {}
                     f:value: {}
                   k:{"name":"CAMUNDA_CONSOLE_PING_PINGPERIOD"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      f:secretKeyRef: {}
+                  k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"}:
                     .: {}
                     f:name: {}
                     f:value: {}
@@ -2685,6 +4052,22 @@ spec:
           value: orders
         - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
           value: 1m
+        - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME
+          value: io.camunda.zeebe.exporter.ElasticsearchExporter
+        - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL
+          value: https://orders-es-http:9200
+        - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX
+          value: zeebe-record
+        - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: orders-storage-credentials
+        - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: orders-storage-credentials
         image: registry.example.com/camunda/camunda:8.9.23
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -2768,11 +4151,11 @@ spec:
 status:
   availableReplicas: 1
   currentReplicas: 1
-  currentRevision: orders-zeebe-f4dfd82678
+  currentRevision: orders-zeebe-63064580f6
   observedGeneration: 1
   readyReplicas: 1
   replicas: 1
-  updateRevision: orders-zeebe-f4dfd82678
+  updateRevision: orders-zeebe-63064580f6
   updatedReplicas: 1
 ---
 apiVersion: coordination.k8s.io/v1
@@ -2859,6 +4242,37 @@ metadata:
             f:name: {}
             f:value: {}
     manager: camunda-operator/camundamanagementcluster-ping
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:zeebe:
+          f:extraEnv:
+            k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"}:
+              .: {}
+              f:name: {}
+              f:valueFrom:
+                f:secretKeyRef: {}
+            k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME"}:
+              .: {}
+              f:name: {}
+              f:valueFrom:
+                f:secretKeyRef: {}
+            k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX"}:
+              .: {}
+              f:name: {}
+              f:value: {}
+            k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL"}:
+              .: {}
+              f:name: {}
+              f:value: {}
+            k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"}:
+              .: {}
+              f:name: {}
+              f:value: {}
+    manager: camunda-operator/camundaoptimize
     operation: Apply
     time: "2026-01-01T00:00:00Z"
   - apiVersion: core.camunda.io/v1
@@ -3046,6 +4460,24 @@ spec:
   presetRef: small
   releaseRef: camunda-8-9
   storageRef: orders-storage
+  zeebe:
+    extraEnv:
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME
+      value: io.camunda.zeebe.exporter.ElasticsearchExporter
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL
+      value: https://orders-es-http:9200
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX
+      value: zeebe-record
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: orders-storage-credentials
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: orders-storage-credentials
 status:
   conditions:
   - lastTransitionTime: "2026-01-01T00:00:00Z"
@@ -3512,6 +4944,132 @@ status:
   managementAuthConfig: plane-a
   observedGeneration: 1
   serviceAccountName: plane-a-management
+---
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  finalizers:
+  - core.camunda.io/camundaoptimize-exporter
+  generation: 1
+  managedFields:
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:clusterRef:
+          f:name: {}
+        f:externalUrl: {}
+        f:managementAuthRef: {}
+        f:version: {}
+    manager: kubectl
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:finalizers:
+          .: {}
+          v:"core.camunda.io/camundaoptimize-exporter": {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: core.camunda.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"ImporterReady"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"MirroredSecretsReady"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"WebappReady"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:endpoints:
+          .: {}
+          k:{"name":"optimize"}:
+            .: {}
+            f:name: {}
+            f:pathPrefix: {}
+            f:port: {}
+            f:protocol: {}
+            f:service: {}
+        f:observedGeneration: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+spec:
+  clusterRef:
+    name: orders
+  externalUrl: https://orders.example.com/optimize
+  managementAuthRef: plane-a
+  version: 8.9.23
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: Component is healthy.
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: MirroredSecretsReady
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: Component is healthy.
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: WebappReady
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: Component is healthy.
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: ImporterReady
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: 'optimize-secrets: Component is healthy.'
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Ready
+  endpoints:
+  - name: optimize
+    pathPrefix: /optimize
+    port: 8090
+    protocol: HTTP
+    service: orders-webapp
+  observedGeneration: 1
 ---
 apiVersion: core.camunda.io/v1
 kind: CamundaPlatformConfig
@@ -4799,6 +6357,52 @@ reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
 type: Normal
 ---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.0d35e3829e07c632
+  namespace: team-orders
+  uid: 7057ee83-b96f-5231-8bec-aed71395f5d4
+note: Created Deployment 'orders-webapp'
+reason: CreatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: orders-webapp
+  namespace: team-orders
+  uid: 0a90d55c-b6d7-5a04-a507-364480fb99d8
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
 action: Update
 apiVersion: events.k8s.io/v1
 deprecatedFirstTimestamp: null
@@ -4843,6 +6447,52 @@ related:
   uid: 2478e48a-40fa-50a5-9909-c5edd6ab3406
 reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
+type: Normal
+---
+action: Update
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.464e0ecd8a405180
+  namespace: team-orders
+  uid: 1466af56-8d38-5fb0-83d3-1bb387d197f7
+note: Updated Deployment 'orders-importer'
+reason: UpdatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: orders-importer
+  namespace: team-orders
+  uid: 570f08a0-d19a-5701-9c85-09a8844194f4
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
 type: Normal
 ---
 action: Create
@@ -4937,6 +6587,98 @@ reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
 type: Normal
 ---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.6cc3de83cab4fae1
+  namespace: team-orders
+  uid: 01e7b91e-8fe3-5d95-a887-4f0ce6c2ddb5
+note: Created Service 'orders-importer'
+reason: CreatedService
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: v1
+  kind: Service
+  name: orders-importer
+  namespace: team-orders
+  uid: fdcbe2c1-1635-552a-bc3e-5f533dcbc3bf
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.739b8a1988c426b8
+  namespace: team-orders
+  uid: 3b60d539-d235-5ccf-be01-2b1e2b8fd073
+note: Created Service 'orders-webapp'
+reason: CreatedService
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: v1
+  kind: Service
+  name: orders-webapp
+  namespace: team-orders
+  uid: d2a0246b-e15f-5500-b242-78ec5d1f7f7c
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
 action: Reconcile
 apiVersion: events.k8s.io/v1
 deprecatedFirstTimestamp: null
@@ -5021,6 +6763,230 @@ related:
   uid: 09f383fe-cbf1-5c92-b720-91bc649b510d
 reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
+type: Normal
+---
+action: Suspend
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.a5be2b58506ff8f2
+  namespace: team-orders
+  uid: 07253cb6-d8c2-5c81-b8ca-e16a5ce59ee7
+note: CamundaCluster "orders" holds its backend and is not suspended, the Optimize
+  workloads follow their spec
+reason: ClusterResumed
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.ac6595f7efc92a71
+  namespace: team-orders
+  uid: 04d07460-ef24-530d-8088-a8008862ac53
+note: Created Secret 'orders-optimize-license'
+reason: CreatedSecret
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: v1
+  kind: Secret
+  name: orders-optimize-license
+  namespace: team-orders
+  uid: f0e8df0e-ad8d-52ee-a647-5c1bfcf83696
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
+action: Update
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.b0ee35aa2801cd87
+  namespace: team-orders
+  uid: 790a2414-3e02-5ceb-bbc4-c910e5542872
+note: Updated Deployment 'orders-webapp'
+reason: UpdatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: orders-webapp
+  namespace: team-orders
+  uid: 0a90d55c-b6d7-5a04-a507-364480fb99d8
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.c5ea40890f21359b
+  namespace: team-orders
+  uid: 6d3fc68b-2085-5f5c-9de8-99a0dc320dc9
+note: Created Deployment 'orders-importer'
+reason: CreatedDeployment
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: orders-importer
+  namespace: team-orders
+  uid: 570f08a0-d19a-5701-9c85-09a8844194f4
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
+type: Normal
+---
+action: Create
+apiVersion: events.k8s.io/v1
+deprecatedFirstTimestamp: null
+deprecatedLastTimestamp: null
+deprecatedSource: {}
+eventTime: "2026-01-01T00:00:00.000000Z"
+kind: Event
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  managedFields:
+  - apiVersion: events.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:action: {}
+      f:eventTime: {}
+      f:note: {}
+      f:reason: {}
+      f:regarding: {}
+      f:related: {}
+      f:reportingController: {}
+      f:reportingInstance: {}
+      f:type: {}
+    manager: manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  name: orders.c898d8bb7b8c5ad8
+  namespace: team-orders
+  uid: dfdc9afe-4ec3-5b16-9919-099ec75f0239
+note: Created Secret 'orders-optimize-auth-client'
+reason: CreatedSecret
+regarding:
+  apiVersion: core.camunda.io/v1
+  kind: CamundaOptimize
+  name: orders
+  namespace: team-orders
+  uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+related:
+  apiVersion: v1
+  kind: Secret
+  name: orders-optimize-auth-client
+  namespace: team-orders
+  uid: 14e3c210-2af7-5a23-9ba8-311c59f886e7
+reportingController: camundaoptimize
+reportingInstance: camundaoptimize-scenario-node
 type: Normal
 ---
 action: Create
@@ -8323,12 +10289,762 @@ metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
+    camunda.io/cluster: orders
+    camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+    camunda.io/component: optimize-importer
+    camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    pod-template-hash: 1fad606b7f
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:camunda.io/config-hash: {}
+        f:labels:
+          .: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/cluster-uid: {}
+          f:camunda.io/component: {}
+          f:camunda.io/optimize-uid: {}
+          f:camunda.io/storage-claim: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"81d10869-65d4-5054-8f95-f129ad0cdb5b"}: {}
+      f:spec:
+        f:containers:
+          k:{"name":"optimize"}:
+            .: {}
+            f:env:
+              .: {}
+              k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:livenessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8090,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+              k:{"containerPort":8092,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+            f:readinessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:resources: {}
+            f:startupProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:nodeName: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext:
+          .: {}
+          f:fsGroup: {}
+          f:runAsGroup: {}
+          f:runAsNonRoot: {}
+          f:runAsUser: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          .: {}
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"PodScheduled"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:phase: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-importer-1fad606b7f-kkhm6
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: orders-importer-1fad606b7f
+    uid: 81d10869-65d4-5054-8f95-f129ad0cdb5b
+  uid: 0addcdf9-f9d9-5362-9a96-afee0b39504e
+spec:
+  containers:
+  - env:
+    - name: SPRING_PROFILES_ACTIVE
+      value: ccsm
+    - name: CAMUNDA_OPTIMIZE_DATABASE
+      value: elasticsearch
+    - name: OPTIMIZE_ELASTICSEARCH_HOST
+      value: orders-es-http
+    - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+      value: "9200"
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: orders-storage-credentials
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: orders-storage-credentials
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+      value: "true"
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+      value: "true"
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+      value: zeebe-record
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+      value: "1"
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+      value: https://login.example.com/realms/camunda
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+      value: https://login.example.com/realms/camunda
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+      value: https://management.example.com/identity
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+      value: optimize
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+      valueFrom:
+        secretKeyRef:
+          key: client-secret
+          name: orders-optimize-auth-client
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+      value: optimize
+    - name: CAMUNDA_LICENSE_KEY
+      valueFrom:
+        secretKeyRef:
+          key: license-key
+          name: orders-optimize-license
+    image: registry.example.com/camunda/optimize:8.9.23
+    imagePullPolicy: IfNotPresent
+    livenessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /actuator/health
+        port: management
+        scheme: HTTP
+      periodSeconds: 30
+      successThreshold: 1
+      timeoutSeconds: 1
+    name: optimize
+    ports:
+    - containerPort: 8090
+      name: http
+      protocol: TCP
+    - containerPort: 8092
+      name: management
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /api/readyz
+        port: http
+        scheme: HTTP
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources: {}
+    startupProbe:
+      failureThreshold: 60
+      httpGet:
+        path: /api/readyz
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      successThreshold: 1
+      timeoutSeconds: 1
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: scenario-node
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext:
+    fsGroup: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: PodScheduled
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Ready
+  containerStatuses:
+  - image: registry.example.com/camunda/optimize:8.9.23
+    imageID: ""
+    lastState: {}
+    name: optimize
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-01-01T00:00:00Z"
+  phase: Running
+  qosClass: BestEffort
+  startTime: "2026-01-01T00:00:00Z"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    camunda.io/config-hash: scenario
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
+    camunda.io/cluster: orders
+    camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
+    camunda.io/component: optimize-webapp
+    camunda.io/optimize-uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
+    pod-template-hash: afd3ee4607
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:camunda.io/config-hash: {}
+        f:labels:
+          .: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/cluster-uid: {}
+          f:camunda.io/component: {}
+          f:camunda.io/optimize-uid: {}
+          f:camunda.io/storage-claim: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"e5d4fcb8-01a8-5881-891a-52f9c3c02078"}: {}
+      f:spec:
+        f:containers:
+          k:{"name":"optimize"}:
+            .: {}
+            f:env:
+              .: {}
+              k:{"name":"CAMUNDA_LICENSE_KEY"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_CONTEXT_PATH"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_DATABASE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_NAME"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"OPTIMIZE_ELASTICSEARCH_HOST"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"OPTIMIZE_ELASTICSEARCH_HTTP_PORT"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"SPRING_PROFILES_ACTIVE"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+            f:image: {}
+            f:imagePullPolicy: {}
+            f:livenessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:name: {}
+            f:ports:
+              .: {}
+              k:{"containerPort":8090,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+              k:{"containerPort":8092,"protocol":"TCP"}:
+                .: {}
+                f:containerPort: {}
+                f:name: {}
+                f:protocol: {}
+            f:readinessProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:resources: {}
+            f:startupProbe:
+              .: {}
+              f:failureThreshold: {}
+              f:httpGet:
+                .: {}
+                f:path: {}
+                f:port: {}
+                f:scheme: {}
+              f:periodSeconds: {}
+              f:successThreshold: {}
+              f:timeoutSeconds: {}
+            f:terminationMessagePath: {}
+            f:terminationMessagePolicy: {}
+        f:dnsPolicy: {}
+        f:enableServiceLinks: {}
+        f:nodeName: {}
+        f:restartPolicy: {}
+        f:schedulerName: {}
+        f:securityContext:
+          .: {}
+          f:fsGroup: {}
+          f:runAsGroup: {}
+          f:runAsNonRoot: {}
+          f:runAsUser: {}
+        f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:conditions:
+          .: {}
+          k:{"type":"ContainersReady"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Initialized"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"PodScheduled"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastProbeTime: {}
+            f:lastTransitionTime: {}
+            f:status: {}
+            f:type: {}
+        f:containerStatuses: {}
+        f:phase: {}
+        f:startTime: {}
+    manager: kubelet
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+  name: orders-webapp-afd3ee4607-xdhlw
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: orders-webapp-afd3ee4607
+    uid: e5d4fcb8-01a8-5881-891a-52f9c3c02078
+  uid: ce3451ba-0770-5e96-b0b8-f2b43c812815
+spec:
+  containers:
+  - env:
+    - name: SPRING_PROFILES_ACTIVE
+      value: ccsm
+    - name: CAMUNDA_OPTIMIZE_DATABASE
+      value: elasticsearch
+    - name: CAMUNDA_OPTIMIZE_CONTEXT_PATH
+      value: /optimize
+    - name: OPTIMIZE_ELASTICSEARCH_HOST
+      value: orders-es-http
+    - name: OPTIMIZE_ELASTICSEARCH_HTTP_PORT
+      value: "9200"
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_USERNAME
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: orders-storage-credentials
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: orders-storage-credentials
+    - name: CAMUNDA_OPTIMIZE_ELASTICSEARCH_SSL_ENABLED
+      value: "true"
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_ENABLED
+      value: "false"
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_NAME
+      value: zeebe-record
+    - name: CAMUNDA_OPTIMIZE_ZEEBE_PARTITION_COUNT
+      value: "1"
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_URL
+      value: https://login.example.com/realms/camunda
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_ISSUER_BACKEND_URL
+      value: https://login.example.com/realms/camunda
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_BASE_URL
+      value: https://management.example.com/identity
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTID
+      value: optimize
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_CLIENTSECRET
+      valueFrom:
+        secretKeyRef:
+          key: client-secret
+          name: orders-optimize-auth-client
+    - name: CAMUNDA_OPTIMIZE_IDENTITY_AUDIENCE
+      value: optimize
+    - name: CAMUNDA_LICENSE_KEY
+      valueFrom:
+        secretKeyRef:
+          key: license-key
+          name: orders-optimize-license
+    image: registry.example.com/camunda/optimize:8.9.23
+    imagePullPolicy: IfNotPresent
+    livenessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /actuator/health
+        port: management
+        scheme: HTTP
+      periodSeconds: 30
+      successThreshold: 1
+      timeoutSeconds: 1
+    name: optimize
+    ports:
+    - containerPort: 8090
+      name: http
+      protocol: TCP
+    - containerPort: 8092
+      name: management
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        path: /optimize/api/readyz
+        port: http
+        scheme: HTTP
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 1
+    resources: {}
+    startupProbe:
+      failureThreshold: 60
+      httpGet:
+        path: /optimize/api/readyz
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      successThreshold: 1
+      timeoutSeconds: 1
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: scenario-node
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext:
+    fsGroup: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: PodScheduled
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2026-01-01T00:00:00Z"
+    status: "True"
+    type: Ready
+  containerStatuses:
+  - image: registry.example.com/camunda/optimize:8.9.23
+    imageID: ""
+    lastState: {}
+    name: optimize
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2026-01-01T00:00:00Z"
+  phase: Running
+  qosClass: BestEffort
+  startTime: "2026-01-01T00:00:00Z"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    camunda.io/config-hash: scenario
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  labels:
     apps.kubernetes.io/pod-index: "0"
     camunda.io/cluster: orders
     camunda.io/cluster-uid: 2810522a-07cb-52ab-926e-443b927a774b
     camunda.io/component: zeebe
     camunda.io/storage-claim: camunda-storage-ae94f6f59ac2aa5fdb9944a5db3486c3c2315550
-    controller-revision-hash: orders-zeebe-f4dfd82678
+    controller-revision-hash: orders-zeebe-63064580f6
     statefulset.kubernetes.io/pod-name: orders-zeebe-0
   managedFields:
   - apiVersion: v1
@@ -8394,6 +11110,30 @@ metadata:
                 f:name: {}
                 f:value: {}
               k:{"name":"CAMUNDA_CONSOLE_PING_PINGPERIOD"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME"}:
+                .: {}
+                f:name: {}
+                f:valueFrom:
+                  .: {}
+                  f:secretKeyRef: {}
+              k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL"}:
+                .: {}
+                f:name: {}
+                f:value: {}
+              k:{"name":"CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"}:
                 .: {}
                 f:name: {}
                 f:value: {}
@@ -8688,6 +11428,22 @@ spec:
       value: orders
     - name: CAMUNDA_CONSOLE_PING_PINGPERIOD
       value: 1m
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME
+      value: io.camunda.zeebe.exporter.ElasticsearchExporter
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_URL
+      value: https://orders-es-http:9200
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_INDEX_PREFIX
+      value: zeebe-record
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_USERNAME
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: orders-storage-credentials
+    - name: CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_ARGS_AUTHENTICATION_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: orders-storage-credentials
     image: registry.example.com/camunda/camunda:8.9.23
     imagePullPolicy: IfNotPresent
     livenessProbe:
@@ -9164,6 +11920,84 @@ type: Opaque
 ---
 apiVersion: v1
 data:
+  client-secret: c2NlbmFyaW8=
+kind: Secret
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-secrets
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:client-secret: {}
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:type: {}
+    manager: CamundaOptimize/optimize-secrets/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: orders-optimize-auth-client
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: 14e3c210-2af7-5a23-9ba8-311c59f886e7
+type: Opaque
+---
+apiVersion: v1
+data:
+  license-key: c2NlbmFyaW8=
+kind: Secret
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-secrets
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:license-key: {}
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:type: {}
+    manager: CamundaOptimize/optimize-secrets/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: orders-optimize-license
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: f0e8df0e-ad8d-52ee-a647-5c1bfcf83696
+type: Opaque
+---
+apiVersion: v1
+data:
   password: c2NlbmFyaW8=
   username: c2NlbmFyaW8=
 kind: Secret
@@ -9469,6 +12303,150 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: camunda-operator
     camunda.io/cluster: orders
+    camunda.io/component: optimize-importer
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:spec:
+        f:ports:
+          k:{"port":8090,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+          k:{"port":8092,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+    manager: CamundaOptimize/optimize-importer/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: orders-importer
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: fdcbe2c1-1635-552a-bc3e-5f533dcbc3bf
+spec:
+  clusterIP: 10.0.0.14
+  clusterIPs:
+  - 10.0.0.14
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8090
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8092
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-importer
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-webapp
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:camunda.io/cluster: {}
+          f:camunda.io/component: {}
+        f:ownerReferences:
+          k:{"uid":"d9325be3-c4b9-52c6-aa56-3f0187f7062f"}: {}
+      f:spec:
+        f:ports:
+          k:{"port":8090,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+          k:{"port":8092,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+    manager: CamundaOptimize/optimize-webapp/d9325be3-c4b9-52c6-aa56-3f0187f7062f
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: orders-webapp
+  namespace: team-orders
+  ownerReferences:
+  - apiVersion: core.camunda.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: CamundaOptimize
+    name: orders
+    uid: d9325be3-c4b9-52c6-aa56-3f0187f7062f
+  uid: d2a0246b-e15f-5500-b242-78ec5d1f7f7c
+spec:
+  clusterIP: 10.0.0.15
+  clusterIPs:
+  - 10.0.0.15
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8090
+    protocol: TCP
+    targetPort: http
+  - name: management
+    port: 8092
+    protocol: TCP
+    targetPort: management
+  selector:
+    camunda.io/cluster: orders
+    camunda.io/component: optimize-webapp
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    camunda.io/cluster: orders
     camunda.io/component: zeebe
   managedFields:
   - apiVersion: v1
@@ -9616,9 +12594,9 @@ metadata:
     uid: 2810522a-07cb-52ab-926e-443b927a774b
   uid: bf31d2d6-042e-5271-b517-fcfb31b7b56f
 spec:
-  clusterIP: 10.0.0.14
+  clusterIP: 10.0.0.16
   clusterIPs:
-  - 10.0.0.14
+  - 10.0.0.16
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
