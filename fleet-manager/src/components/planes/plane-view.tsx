@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UnmanagedBanner } from "@/components/cluster/banners";
+import { ComponentCards } from "@/components/cluster/component-card";
 import { EndpointsTab } from "@/components/cluster/endpoints-tab";
+import type { ClaimActions } from "@/components/fleet/claim-edit";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
@@ -14,14 +16,27 @@ import {
 } from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { planeFields } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL, isManaged } from "@/lib/labels";
+import { CLAIM_LABEL, isManaged, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
+import { usePodUsage } from "@/lib/observe/use-observe";
 import { environmentNameOf } from "@/lib/policy";
 import type { WriteMode } from "@/lib/write/types";
 import { ContractTab } from "./contract-tab";
 import { OptimizeTab } from "./optimize-tab";
 import { planesOf } from "./plane";
+import { PlaneActions } from "./plane-actions";
+import {
+  type PlaneCardId,
+  planeCardHref,
+  planeCardOf,
+  planeCards,
+} from "./plane-cards";
 import { PlaneConditions } from "./plane-conditions";
+import { PlaneComponentDetail } from "./plane-detail";
 import { planeEndpointRows } from "./plane-endpoints";
 import { contractReaders, isOidc, optimizeRows } from "./plane-optimize";
 import { PlaneHeader } from "./plane-header";
@@ -29,7 +44,7 @@ import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
 import type { ReadError } from "./planes-table";
 import { servedClusters } from "./served-clusters";
 import { ServedClustersTab } from "./served-clusters-tab";
-import { unreadText } from "./unread-note";
+import { UnreadNote, unreadText } from "./unread-note";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined
@@ -39,7 +54,11 @@ import { unreadText } from "./unread-note";
  * which the page does not join to the plane. now is the time of the server.
  * optimizes holds every CamundaOptimize, or none when its read failed.
  * managementAuthConfigs holds every ManagementAuthConfig, or none when its
- * read failed. readErrors holds the kinds whose first read failed.
+ * read failed. pods holds the pods of the plane in its namespace, which
+ * carry MANAGEMENT_CLUSTER_LABEL with ownerName of the plane name.
+ * platformConfigs and registrations hold every CamundaPlatformConfig and
+ * PluginRegistration. Each of them is empty when its read failed.
+ * readErrors holds the kinds whose first read failed.
  */
 export type PlanePageData = {
   namespace: string;
@@ -51,6 +70,9 @@ export type PlanePageData = {
   environments: Resource<"Environment">[];
   optimizes: Resource<"CamundaOptimize">[];
   managementAuthConfigs: Resource<"ManagementAuthConfig">[];
+  pods: Resource<"Pod">[];
+  platformConfigs: Resource<"CamundaPlatformConfig">[];
+  registrations: Resource<"PluginRegistration">[];
   readErrors?: ReadError[];
 };
 
@@ -64,13 +86,19 @@ export type PlanePageData = {
  * fleet manager, undefined when the page could not read it. The page
  * names each kind that it could not read. When both objects are gone and
  * neither read failed, the page says that the plane no longer exists and
- * links to all management planes.
+ * links to all management planes. The Overview tab shows a card for each
+ * component of the plane, and the component query parameter opens the
+ * detail of a card. With claimActions, a plane that a claim made gets
+ * Suspend, Resume, and Delete in its header. It needs a GitPushesProvider
+ * and a QueryClientProvider above it.
  */
 export function PlaneView({
   data,
+  claimActions,
 }: {
   data: PlanePageData;
   writeMode?: WriteMode;
+  claimActions?: ClaimActions;
 }) {
   const { namespace, name } = data;
   const params = useSearchParams();
@@ -81,6 +109,21 @@ export function PlaneView({
     setSeenUrlTab(urlTab);
     setTab(urlTab);
   }
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const focusNext = useRef<string | null>(null);
+  const urlComponent = params.get("component");
+  const [component, setComponent] = useState(urlComponent);
+  const [seenUrlComponent, setSeenUrlComponent] = useState(urlComponent);
+  if (urlComponent !== seenUrlComponent) {
+    setSeenUrlComponent(urlComponent);
+    setComponent(urlComponent);
+  }
+  useEffect(() => {
+    const selector = focusNext.current;
+    if (!selector) return;
+    focusNext.current = null;
+    overviewRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [component]);
 
   const planeResult = useResource(
     "CamundaManagementCluster",
@@ -100,6 +143,22 @@ export function PlaneView({
     {},
     data.managementAuthConfigs,
   );
+  const inPlane = {
+    namespace,
+    labelSelector: `${MANAGEMENT_CLUSTER_LABEL}=${ownerName(name)}`,
+  };
+  const pods = useResources("Pod", inPlane, data.pods);
+  const platformConfigs = useResources(
+    "CamundaPlatformConfig",
+    {},
+    data.platformConfigs,
+  );
+  const registrations = useResources(
+    "PluginRegistration",
+    {},
+    data.registrations,
+  );
+  const usage = usePodUsage(namespace, inPlane.labelSelector);
   const clock = useClock(data.now, tab === "overview");
 
   const watched = [
@@ -109,6 +168,9 @@ export function PlaneView({
     ["Environment", environments],
     ["CamundaOptimize", optimizes],
     ["ManagementAuthConfig", managementAuthConfigs],
+    ["Pod", pods],
+    ["CamundaPlatformConfig", platformConfigs],
+    ["PluginRegistration", registrations],
   ] as const;
   const liveErrors = watched.flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -120,6 +182,9 @@ export function PlaneView({
     { kind: "Environment", opts: {} },
     { kind: "CamundaOptimize", opts: {} },
     { kind: "ManagementAuthConfig", opts: {} },
+    { kind: "Pod", opts: inPlane },
+    { kind: "CamundaPlatformConfig", opts: {} },
+    { kind: "PluginRegistration", opts: {} },
   ] as const;
   const answered = useAnswered(followed);
   const fresh = useWatchesFresh(followed);
@@ -198,13 +263,56 @@ export function PlaneView({
 
   const contractName = textOf(plane?.status?.managementAuthConfig);
   const oidc = isOidc(plane);
+  const environment = environments.items.find(
+    (e) => e.metadata?.name === environmentName,
+  );
+  const unreadAll = unreadKinds(reads);
+  const cards = plane
+    ? planeCards({
+        plane,
+        pods: pods.items,
+        config: platformConfigs.items.find(
+          (c) => c.metadata?.name === plane.spec.platformConfigRef,
+        ),
+        usage,
+        unread: unreadAll,
+      })
+    : [];
+  const openId = planeCardOf(component, cards);
+  // Only the Settings tab of an open detail shows the fields. The cache
+  // objects differ from the generated types only in their timestamps,
+  // which planeFields does not read.
+  const fields =
+    claim && openId
+      ? planeFields({
+          claim,
+          plane,
+          registrations: registrations.items as unknown as PluginRegistration[],
+          environment: environment as unknown as Environment | undefined,
+        })
+      : [];
+  const actionsUnread = unreadOf([
+    "CamundaManagementCluster",
+    "CamundaManagementClusterClaim",
+  ]);
   const endpointRows = planeEndpointRows(plane);
   const endpointsUnread = unreadOf(["CamundaManagementCluster"]);
 
   const selectTab = (value: string) => {
     const next = planeTabOf(value);
     setTab(next);
+    setComponent(null);
     window.history.replaceState(null, "", `?tab=${next}`);
+  };
+  const openComponent = (id: PlaneCardId | null) => {
+    focusNext.current = id
+      ? "h2"
+      : openId
+        ? `a[href="${planeCardHref(openId)}"]`
+        : null;
+    setTab("overview");
+    setComponent(id);
+    window.history.replaceState(null, "", planeCardHref(id) ?? "?tab=overview");
   };
 
   return (
@@ -220,6 +328,26 @@ export function PlaneView({
         mode={summary?.mode}
         platformConfig={platformConfig}
         serves={summary?.serves}
+        readyUnknown={
+          unreadOf([
+            plane
+              ? "CamundaManagementCluster"
+              : "CamundaManagementClusterClaim",
+          ]).length > 0 || planeUnknown
+        }
+        actions={
+          claim &&
+          claimActions && (
+            <PlaneActions
+              claim={claim}
+              served={summary?.attached ?? 0}
+              apply={claimActions.apply}
+              deleteHref={`/fleet/planes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/delete`}
+              unread={actionsUnread}
+              now={clock}
+            />
+          )
+        }
       />
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
@@ -229,29 +357,70 @@ export function PlaneView({
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="overview">
-          <div className="flex flex-col gap-4">
-            {!plane &&
-              !unread("CamundaManagementCluster") &&
-              !unread("CamundaManagementClusterClaim") && (
+        <TabsContent value="overview" ref={overviewRef}>
+          {plane && openId ? (
+            <div className="flex flex-col gap-3">
+              <a
+                href={planeCardHref(null)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  openComponent(null);
+                }}
+                className="w-fit text-sm text-text-2 underline-offset-4 hover:text-text hover:underline"
+              >
+                All components
+              </a>
+              <PlaneComponentDetail
+                id={openId}
+                cards={cards}
+                plane={plane}
+                podSelector={inPlane.labelSelector}
+                fields={fields}
+                unread={unreadAll}
+                now={clock}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {!plane &&
+                !unread("CamundaManagementCluster") &&
+                !unread("CamundaManagementClusterClaim") && (
+                  <p className="text-sm text-muted">
+                    The claim controller has not created the management plane
+                    yet.
+                  </p>
+                )}
+              {planeUnknown && (
                 <p className="text-sm text-muted">
-                  The claim controller has not created the management plane yet.
+                  The page could not read the management plane, so it cannot
+                  tell if the claim {name} made it.
                 </p>
               )}
-            {planeUnknown && (
-              <p className="text-sm text-muted">
-                The page could not read the management plane, so it cannot tell
-                if the claim {name} made it.
-              </p>
-            )}
-            <PlaneConditions
-              plane={conditionRows(plane?.status?.conditions)}
-              claim={conditionRows(
-                (planeUnknown ? live : claim)?.status?.conditions,
+              {plane && (
+                <>
+                  <UnreadNote
+                    kinds={unreadOf([
+                      "CamundaManagementCluster",
+                      "Pod",
+                      "CamundaPlatformConfig",
+                    ])}
+                  />
+                  <ComponentCards<PlaneCardId>
+                    cards={cards}
+                    hrefOf={planeCardHref}
+                    onOpen={openComponent}
+                  />
+                </>
               )}
-              now={clock}
-            />
-          </div>
+              <PlaneConditions
+                plane={conditionRows(plane?.status?.conditions)}
+                claim={conditionRows(
+                  (planeUnknown ? live : claim)?.status?.conditions,
+                )}
+                now={clock}
+              />
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="clusters">
           <ServedClustersTab

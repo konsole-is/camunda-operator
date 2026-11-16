@@ -58,6 +58,13 @@ describe("ComponentCards", () => {
     expect(valueOf(card, "Partitions with a leader")).toBe("2/3");
   });
 
+  it("a card whose condition the page could not read says Not known on its dot", () => {
+    render(<ComponentCards cards={[{ ...brokers, unknown: true }]} />);
+    expect(
+      screen.getByRole("img", { name: "Brokers: Not known" }),
+    ).toBeTruthy();
+  });
+
   it("a card that is not used says so and is not a link", () => {
     render(
       <ComponentCards

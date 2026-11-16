@@ -3,7 +3,8 @@ import type { PlanePageData } from "@/components/planes/plane-view";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list } from "@/lib/k8s/read";
-import { CLAIM_LABEL } from "@/lib/labels";
+import { CLAIM_LABEL, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 
 /**
  * loadPlanePage reads the first snapshot of the plane page. It returns
@@ -12,6 +13,8 @@ import { CLAIM_LABEL } from "@/lib/labels";
  * CamundaManagementCluster is known, or when the CamundaManagementCluster
  * carries CLAIM_LABEL with the value name. When it returns a page, a failed
  * read of a kind gives no objects of that kind and an entry in readErrors.
+ * pods are the pods of the plane in its namespace, which carry
+ * MANAGEMENT_CLUSTER_LABEL with ownerName of the plane name.
  */
 export async function loadPlanePage(
   namespace: string,
@@ -34,6 +37,9 @@ export async function loadPlanePage(
     environments,
     optimizes,
     managementAuthConfigs,
+    pods,
+    platformConfigs,
+    registrations,
   ] = await Promise.all([
     get("CamundaManagementCluster", namespace, name).catch(
       failed("CamundaManagementCluster", undefined),
@@ -45,6 +51,14 @@ export async function loadPlanePage(
     list("Environment", {}).catch(failed("Environment", [])),
     list("CamundaOptimize", {}).catch(failed("CamundaOptimize", [])),
     list("ManagementAuthConfig", {}).catch(failed("ManagementAuthConfig", [])),
+    list("Pod", {
+      namespace,
+      labelSelector: `${MANAGEMENT_CLUSTER_LABEL}=${ownerName(name)}`,
+    }).catch(failed("Pod", [])),
+    list("CamundaPlatformConfig", {}).catch(
+      failed("CamundaPlatformConfig", []),
+    ),
+    list("PluginRegistration", {}).catch(failed("PluginRegistration", [])),
   ]);
   const objectUnread = readErrors.some(
     (e) =>
@@ -64,6 +78,9 @@ export async function loadPlanePage(
     environments,
     optimizes,
     managementAuthConfigs,
+    pods,
+    platformConfigs,
+    registrations,
     readErrors,
   };
 }

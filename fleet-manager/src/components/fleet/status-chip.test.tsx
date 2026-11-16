@@ -76,4 +76,12 @@ describe("StatusChip", () => {
         ?.getAttribute("aria-busy"),
     ).toBe("true");
   });
+
+  it("says Not known, and not the old state, for a condition the page could not read", () => {
+    render(
+      <StatusChip condition={{ status: "True", reason: "Healthy" }} unknown />,
+    );
+    expect(screen.getByText("Not known")).toBeTruthy();
+    expect(screen.queryByText("Ready")).toBeNull();
+  });
 });

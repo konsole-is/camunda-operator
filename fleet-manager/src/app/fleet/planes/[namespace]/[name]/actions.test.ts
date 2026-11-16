@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeWriter } from "../../../../../../test/fakes/writer";
-import { applyPlaneClaimChange, previewPlaneClaimChange } from "./actions";
+import {
+  applyPlaneClaimChange,
+  applyPlaneClaimDelete,
+  previewPlaneClaimChange,
+  previewPlaneClaimDelete,
+} from "./actions";
 
 vi.mock(
   "@/lib/write/writer",
@@ -17,6 +22,21 @@ const change = (kind = "CamundaManagementClusterClaim") => ({
       spec: { suspend: true },
     },
   ],
+  preconditions: { [`${kind}/platform/plane-a` as const]: "7" },
+});
+
+const remove = (kind = "CamundaManagementClusterClaim") => ({
+  intent: "Delete the management plane plane-a",
+  apply: [],
+  delete: [
+    {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind,
+      namespace: "platform",
+      name: "plane-a",
+    },
+  ],
+  uids: { [`${kind}/platform/plane-a`]: "uid-1" },
   preconditions: { [`${kind}/platform/plane-a` as const]: "7" },
 });
 
@@ -52,6 +72,47 @@ describe("previewPlaneClaimChange", () => {
 
   it("previewPlaneClaimChange refuses a change of another kind and previews nothing", async () => {
     const result = await previewPlaneClaimChange(change("Environment"));
+    expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+describe("applyPlaneClaimDelete", () => {
+  it("applyPlaneClaimDelete deletes one plane claim through the writer", async () => {
+    expect(await applyPlaneClaimDelete(remove())).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([remove()]);
+  });
+
+  it("applyPlaneClaimDelete refuses a delete of another kind and writes nothing", async () => {
+    const result = await applyPlaneClaimDelete(remove("Environment"));
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("applyPlaneClaimDelete refuses a change that applies an object and writes nothing", async () => {
+    const result = await applyPlaneClaimDelete({
+      ...remove(),
+      apply: change().apply,
+    });
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("previewPlaneClaimDelete", () => {
+  it("previewPlaneClaimDelete previews the delete through the writer", async () => {
+    expect(await previewPlaneClaimDelete(remove())).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fakeWriter.previewed).toEqual([remove()]);
+  });
+
+  it("previewPlaneClaimDelete refuses a delete of another kind and previews nothing", async () => {
+    const result = await previewPlaneClaimDelete(remove("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
     expect(fakeWriter.previewed).toEqual([]);
   });

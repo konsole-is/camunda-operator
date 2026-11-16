@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type PlanePageData, PlaneView } from "./plane-view";
@@ -26,6 +30,19 @@ vi.mock("@/lib/k8s/hooks", () => ({
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map((l) => live.fresh.has(l.kind)),
+  useGitSync: () => "waiting",
+  useGitGone: () => "waiting",
+}));
+vi.mock("@/lib/observe/use-observe", () => ({
+  usePodUsage: () => undefined,
+}));
+// The detail of a component is tested on its own. Here it shows its title.
+vi.mock("@/components/cluster/component-detail", () => ({
+  ComponentDetail: ({ title }: { title: string }) => (
+    <section aria-label={title}>
+      <h2 tabIndex={-1}>{title}</h2>
+    </section>
+  ),
 }));
 const now = "2026-11-15T12:00:00Z";
 
@@ -79,7 +96,13 @@ function claimOf(
     metadata: { namespace: "platform", name: "plane-a", resourceVersion: "7" },
     spec: {
       environments: ["platform"],
-      management: { identityProvider: { oidc: {} }, identity: {} },
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          admin: { claimName: "email", claimValue: "a@example.com" },
+        },
+      },
+      versions: { identity: "8.9.14" },
     },
     status: {
       conditions: [
@@ -116,6 +139,9 @@ function data(page: Partial<PlanePageData> = {}): PlanePageData {
     ],
     optimizes: [],
     managementAuthConfigs: [],
+    pods: [],
+    platformConfigs: [],
+    registrations: [],
     ...page,
   };
 }
@@ -256,7 +282,7 @@ describe("PlaneView", () => {
     expect(screen.queryByText(notCreated)).toBeNull();
     expect(screen.getByText(planeUnknown)).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByText("No status")).toBeTruthy();
+    expect(screen.getByText("Not known")).toBeTruthy();
     expect(fact("Identity provider")).toBe("-");
     expect(fact("Platform config")).toBe("-");
     expect(fact("Serves")).toBe("-");
@@ -514,6 +540,176 @@ describe("PlaneView", () => {
           "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
+    });
+  });
+
+  describe("the component cards", () => {
+    const cardsRegion = () =>
+      screen.getByRole("region", { name: "Components" });
+
+    it("a managed plane shows the cards before the Conditions section", () => {
+      render(<PlaneView data={data()} />);
+      const cards = cardsRegion();
+      expect(within(cards).getByText("Management Identity")).toBeTruthy();
+      expect(within(cards).getByText("Identity provider")).toBeTruthy();
+      expect(
+        cards.compareDocumentPosition(table()) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("IdentityReady False turns the Identity dot red and stays out of the Conditions section", () => {
+      render(<PlaneView data={data()} />);
+      const dot = within(cardsRegion()).getByRole("img", {
+        name: "Management Identity: Not ready (Down)",
+      });
+      expect(dot.className).toContain("bg-bad");
+      expect(within(table()).queryByText("IdentityReady")).toBeNull();
+    });
+
+    it("a click on a card opens its detail and All components goes back", async () => {
+      render(<PlaneView data={data()} />);
+      await userEvent.click(
+        within(cardsRegion()).getByRole("link", {
+          name: "Management Identity",
+        }),
+      );
+      expect(window.location.search).toBe("?tab=overview&component=identity");
+      expect(
+        screen.getByRole("region", { name: "Management Identity" }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+      await userEvent.click(
+        screen.getByRole("link", { name: "All components" }),
+      );
+      expect(cardsRegion()).toBeTruthy();
+    });
+
+    it("opens the detail that the component query parameter names", () => {
+      window.history.replaceState(null, "", "?tab=overview&component=identity");
+      render(<PlaneView data={data()} />);
+      expect(
+        screen.getByRole("region", { name: "Management Identity" }),
+      ).toBeTruthy();
+    });
+
+    it("the identity provider card is no link and opens no detail", () => {
+      window.history.replaceState(
+        null,
+        "",
+        "?tab=overview&component=identityProvider",
+      );
+      render(<PlaneView data={data()} />);
+      expect(
+        within(cardsRegion()).queryByRole("link", {
+          name: "Identity provider",
+        }),
+      ).toBeNull();
+    });
+
+    it("a claim-only plane shows no cards", () => {
+      render(<PlaneView data={data({ plane: undefined })} />);
+      expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+    });
+
+    it("says Not known on each dot and names the kind while the plane watch is out of date", () => {
+      live.fresh = new Set(["CamundaManagementCluster"]);
+      const { rerender } = render(<PlaneView data={data()} />);
+      live.fresh = new Set();
+      rerender(<PlaneView data={data()} />);
+      expect(
+        within(cardsRegion()).getByRole("img", {
+          name: "Management Identity: Not known",
+        }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/could not read CamundaManagementCluster/),
+      ).toBeTruthy();
+    });
+  });
+
+  describe("the actions", () => {
+    const claimActions = {
+      preview: vi.fn(),
+      apply: vi.fn(async () => ({
+        ok: true as const,
+        mode: "direct" as const,
+      })),
+    };
+    const withProviders = (node: ReactNode) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <GitPushesProvider>{node}</GitPushesProvider>
+      </QueryClientProvider>
+    );
+    const header = () =>
+      screen.getByRole("heading", { level: 1 }).closest("header")!;
+
+    it("a managed plane shows Suspend and Delete in the header", () => {
+      render(
+        withProviders(<PlaneView data={data()} claimActions={claimActions} />),
+      );
+      expect(
+        within(header()).getByRole("button", { name: "Suspend" }),
+      ).toBeTruthy();
+      expect(
+        within(header())
+          .getByRole("link", { name: "Delete" })
+          .getAttribute("href"),
+      ).toBe("/fleet/planes/platform/plane-a/delete");
+    });
+
+    it("an unlabelled plane has no Suspend and no Delete", () => {
+      render(
+        withProviders(
+          <PlaneView
+            data={data({ plane: planeOf({}) })}
+            claimActions={claimActions}
+          />,
+        ),
+      );
+      expect(screen.queryByRole("button", { name: "Suspend" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Delete" })).toBeNull();
+    });
+
+    it("a plane without claimActions shows no actions", () => {
+      render(<PlaneView data={data()} />);
+      expect(screen.queryByRole("button", { name: "Suspend" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Delete" })).toBeNull();
+    });
+
+    it("Ready with reason Suspended shows Suspended and Resume", () => {
+      const plane = planeOf();
+      plane.status!.conditions = [
+        condition("Ready", "True", "Suspended"),
+      ] as never;
+      const claim = claimOf();
+      (claim.spec as { suspend?: boolean }).suspend = true;
+      render(
+        withProviders(
+          <PlaneView
+            data={data({ plane, claim })}
+            claimActions={claimActions}
+          />,
+        ),
+      );
+      expect(within(header()).getByText("Ready · Suspended")).toBeTruthy();
+      expect(
+        within(header()).getByRole("button", { name: "Resume" }),
+      ).toBeTruthy();
+    });
+
+    it("turns Suspend and Delete off while the plane read fails", () => {
+      live.errors.set("CamundaManagementCluster", "connection lost");
+      render(
+        withProviders(<PlaneView data={data()} claimActions={claimActions} />),
+      );
+      expect(
+        within(header()).getByRole("button", { name: "Suspend" }),
+      ).toHaveProperty("disabled", true);
+      expect(
+        within(header()).queryByRole("link", { name: "Delete" }),
+      ).toBeNull();
+      expect(within(header()).getByText("Not known")).toBeTruthy();
     });
   });
 });

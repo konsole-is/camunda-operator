@@ -33,6 +33,7 @@ type DetailProps = {
   subtitle?: string;
   conditions: ConditionRow[];
   ready: ConditionRow | undefined;
+  readyUnknown?: boolean;
   settings?: ReactNode;
   children?: ReactNode;
   now: string;
@@ -61,7 +62,9 @@ type ObserveProps = {
  * that relatedSelector selects (podSelector without it), and of eventRefs.
  * A missing or empty podSelector selects no pods: the detail watches no
  * pods and no usage, says that the component runs no pods, and lists only
- * the events of eventRefs. It needs a QueryClientProvider above it.
+ * the events of eventRefs. readyUnknown shows the state as not known, for
+ * a condition that the page could not read. It needs a
+ * QueryClientProvider above it.
  */
 export function ComponentDetail({
   podSelector,
@@ -191,6 +194,7 @@ export function ComponentDetailView({
   subtitle,
   conditions,
   ready,
+  readyUnknown = false,
   pods,
   usage,
   settings,
@@ -224,7 +228,7 @@ export function ComponentDetailView({
           >
             {title}
           </h2>
-          <StatusChip condition={ready} readyReason />
+          <StatusChip condition={ready} readyReason unknown={readyUnknown} />
         </div>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
       </header>

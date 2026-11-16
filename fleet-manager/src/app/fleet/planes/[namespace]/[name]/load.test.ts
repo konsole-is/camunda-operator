@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_LABEL } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 import { loadPlanePage } from "./load";
 
 type Fixture = {
@@ -161,6 +162,46 @@ describe("loadPlanePage", () => {
       {
         kind: "ManagementAuthConfig",
         message: "ManagementAuthConfig is forbidden",
+      },
+    ]);
+  });
+
+  it("lists the pods of the plane in its namespace by its owner label", async () => {
+    k8s.objects = [claim("plane-a")];
+    await loadPlanePage("platform", "plane-a");
+    expect(listOf("Pod")).toEqual({
+      namespace: "platform",
+      labelSelector: "camunda.io/management-cluster=plane-a",
+    });
+  });
+
+  it("selects the pods of a plane with a long name by the owner value of ownerName", async () => {
+    const name = `plane-${"a".repeat(70)}`;
+    k8s.objects = [claim(name)];
+    await loadPlanePage("platform", name);
+    expect(listOf("Pod")).toEqual({
+      namespace: "platform",
+      labelSelector: `camunda.io/management-cluster=${ownerName(name)}`,
+    });
+    expect(ownerName(name)).not.toBe(name);
+  });
+
+  it("lists the platform configs and the registrations everywhere, and a failed list gives none and a read error", async () => {
+    k8s.objects = [claim("plane-a")];
+    k8s.failing = ["Pod", "PluginRegistration"];
+    const data = await loadPlanePage("platform", "plane-a");
+    expect(listOf("CamundaPlatformConfig")).toEqual({});
+    expect(listOf("PluginRegistration")).toEqual({});
+    expect(data).toMatchObject({
+      pods: [],
+      platformConfigs: [],
+      registrations: [],
+    });
+    expect(data?.readErrors).toEqual([
+      { kind: "Pod", message: "Pod is forbidden" },
+      {
+        kind: "PluginRegistration",
+        message: "PluginRegistration is forbidden",
       },
     ]);
   });

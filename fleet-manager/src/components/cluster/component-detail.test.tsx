@@ -390,6 +390,19 @@ describe("ComponentDetailView", () => {
     ).toBeTruthy();
   });
 
+  it("shows the state as Not known, not as the old condition, with readyUnknown", () => {
+    render(
+      view({
+        ready: { type: "OperateReady", status: "True", reason: "Healthy" },
+        readyUnknown: true,
+      }),
+    );
+    const header = screen.getByRole("heading", { name: "Operate" })
+      .parentElement as HTMLElement;
+    expect(within(header).getByText("Not known")).toBeTruthy();
+    expect(within(header).queryByText("Ready")).toBeNull();
+  });
+
   it("shows the state of the component beside the title on every tab", async () => {
     render(
       view({

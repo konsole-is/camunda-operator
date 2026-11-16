@@ -66,6 +66,7 @@ function ComponentCard<Id extends string>({
             label={card.label}
             condition={card.condition}
             off={!card.used}
+            unknown={card.unknown}
           />
         </span>
         {href ? (

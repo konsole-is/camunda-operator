@@ -54,13 +54,15 @@ type Condition = ConditionLike & { type: string };
  * ComponentCardModel is one card. pods are the names of the pods that the
  * card counts, and a section card counts none. embedded are the apps that
  * run in the card, each with its own id. A card that is not used has no
- * condition and no numbers.
+ * condition and no numbers. unknown says that the page could not read the
+ * condition of the card, so its state is not known.
  */
 export type ComponentCardModel<Id extends string = CardId> = {
   id: Id;
   label: string;
   used: boolean;
   condition?: Condition;
+  unknown?: true;
   embedded: { process: Id; label: string }[];
   pods: string[];
   numbers: CardNumber[];
