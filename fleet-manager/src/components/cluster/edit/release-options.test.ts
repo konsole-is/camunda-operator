@@ -56,6 +56,25 @@ const option = (result: ReturnType<typeof releaseChoices>, name: string) =>
   result.options.find((o) => o.name === name);
 
 describe("releaseChoices", () => {
+  it("keeps the options of a cluster with a running backup, because the Claim tab only warns", () => {
+    const backups = [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "LogicalBackupRDBMS",
+        metadata: { namespace: "team-a", name: "nightly" },
+        spec: { clusterRef: { name: "orders" } },
+        status: { phase: "Running" },
+      },
+    ] as unknown as Parameters<typeof releaseChoices>[0]["backups"];
+    expect(option(choices({ backups }), "camunda-8-9-1")?.downgrade).toEqual({
+      from: "8.9.3",
+      to: "8.9.1",
+    });
+    expect(option(choices({ backups }), "camunda-8-11-0")?.disabled).toBe(
+      "Skips 8.10. Move to an 8.10 release first.",
+    );
+  });
+
   it("gives an allowed downgrade both versions", () => {
     expect(option(choices(), "camunda-8-9-1")).toMatchObject({
       version: "8.9.1",
