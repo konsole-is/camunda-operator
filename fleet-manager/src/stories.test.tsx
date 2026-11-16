@@ -121,11 +121,20 @@ describe("the Storybook stories", () => {
       "ConnectionList",
       "UsersTable",
       "ConnectionDetail",
+      "NamespacedSecretRefPicker",
+      "PlatformList",
+      "PlatformDetail",
+      "AuthSection",
+      "ImagesSection",
+      "UsersSection",
       "PresetList",
       "PresetSettings",
       "InheritingTable",
       "PresetDetail",
       "FactsList",
+      "ImpactPreview",
+      "RotateAction",
+      "PresetEditor",
     ]) {
       expect(components).toContain(name);
     }

@@ -114,11 +114,13 @@ function setup({
   result = { ok: true, mode: "direct" },
   mode = "direct",
   gitLabel,
+  hold,
 }: {
   preview?: Preview;
   result?: WriteResult;
   mode?: WriteMode;
   gitLabel?: string;
+  hold?: boolean;
 } = {}) {
   const props = {
     preview: vi.fn(async () => preview),
@@ -136,6 +138,7 @@ function setup({
       effects={["Changes apply to new claims only."]}
       confirm={{ label: "Save", gitLabel }}
       savedMessage="The environment staging is saved."
+      hold={hold}
       {...props}
     />,
   );
@@ -336,5 +339,18 @@ describe("ChangeReview", () => {
     );
     await waitFor(() => expect(screen.getByText("1 object")).toBeTruthy());
     expect(effects).toHaveBeenLastCalledWith(clean);
+  });
+
+  it("keeps the confirm disabled while hold is set, also after a clean preview", async () => {
+    const { preview, apply } = setup({ hold: true });
+    await waitFor(() => expect(preview).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Checking the change with the API server."),
+      ).toBeNull(),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+    fireEvent.click(confirm());
+    expect(apply).not.toHaveBeenCalled();
   });
 });

@@ -25,8 +25,9 @@ import { ReviewPanel } from "./review-panel";
  * previewed object is unchanged. A confirm sends one write, and Back is
  * hidden while it runs. An ok write goes to show with savedMessage, then
  * onWritten. A refused write shows its errors, and the confirm stays
- * disabled unless the API server did not answer. onWriting gets true when
- * the write starts and false when it settles.
+ * disabled unless the API server did not answer. While hold is set, the
+ * confirm stays disabled whatever the preview says; the effects say why.
+ * onWriting gets true when the write starts and false when it settles.
  */
 export function ChangeReview({
   change,
@@ -35,6 +36,7 @@ export function ChangeReview({
   effects,
   caution,
   confirm: confirmProps,
+  hold = false,
   savedMessage,
   preview,
   apply,
@@ -50,6 +52,7 @@ export function ChangeReview({
   effects: ReactNode[] | ((preview: Preview) => ReactNode[]);
   caution?: ReactNode;
   confirm: ReviewConfirm;
+  hold?: boolean;
   savedMessage: string;
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
@@ -98,6 +101,7 @@ export function ChangeReview({
     checked.objects.length > 0 &&
     checked.objects.every((o) => o.diff.every((line) => line.op === "same"));
   const blocked =
+    hold ||
     !checked ||
     checked.errors.length > 0 ||
     changesNothing ||
