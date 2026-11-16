@@ -24,6 +24,11 @@ export type RegistrationRow = {
   mode: "Default" | "Optional";
   accepted?: ConditionRow;
   ready?: ConditionRow;
+  /**
+   * healthUnknown is true while PluginRegistration is not read. accepted,
+   * ready, and healthySince are then unset.
+   */
+  healthUnknown?: boolean;
   /** healthySince is lastTransitionTime of Ready while Ready is True. */
   healthySince?: string;
   /**
@@ -88,14 +93,18 @@ export function registrationRow(
   sources: RegistrationSources & SourceReads,
 ): RegistrationRow {
   const { spec } = registration;
-  const accepted = conditionOf(registration, "Accepted");
-  const ready = conditionOf(registration, "Ready");
   const unread = unreadKinds(sources);
+  const healthUnknown = unread.includes("PluginRegistration");
+  const accepted = healthUnknown
+    ? undefined
+    : conditionOf(registration, "Accepted");
+  const ready = healthUnknown ? undefined : conditionOf(registration, "Ready");
   return {
     name: registration.metadata.name ?? "",
     label: spec.label,
     ...(spec.controller && { controller: spec.controller }),
     mode: spec.mode,
+    ...(healthUnknown && { healthUnknown }),
     ...(accepted && { accepted }),
     ...(ready && { ready }),
     ...(ready?.status === "True" && {

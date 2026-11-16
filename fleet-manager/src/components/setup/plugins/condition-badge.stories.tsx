@@ -31,3 +31,8 @@ export const NoStatus: Story = {
   name: "No status",
   args: { type: "Ready", condition: undefined },
 };
+
+export const NotKnown: Story = {
+  name: "Not known",
+  args: { type: "Ready", unknown: true },
+};

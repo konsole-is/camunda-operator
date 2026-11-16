@@ -286,6 +286,21 @@ describe("registrationRow on lists that are not read", () => {
     }
   });
 
+  it("makes no health claim while PluginRegistration is not read", () => {
+    const sources = registrationSources();
+    for (const reads of [
+      { stale: ["PluginRegistration"] },
+      { errors: [{ kind: "PluginRegistration", message: "watch closed" }] },
+    ]) {
+      const read = { ...sources, ...reads };
+      const row = registrationRow(existing(read), read);
+      expect(row.healthUnknown).toBe(true);
+      expect(row.accepted).toBeUndefined();
+      expect(row.ready).toBeUndefined();
+      expect(row.healthySince).toBeUndefined();
+    }
+  });
+
   it.each(["Namespace", "Environment"])(
     "gives the total but no count by environment while %s is not read",
     (kind) => {

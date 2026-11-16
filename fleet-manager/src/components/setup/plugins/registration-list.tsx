@@ -25,13 +25,15 @@ const MUTED = "block text-xs text-muted";
 
 /**
  * RegistrationList is the Plugins page: the registrations in the groups of
- * their sections, the summary line, and the panel of the charts. charts are
- * the charts that the panel offers, and catalogError the error of the read
- * of the catalog. Each of errors shows above the groups, and the groups
- * stay. stale holds the kinds whose watch has no snapshot on its current
- * connection, as useRegistrationSources gives them. While PluginRegistration
- * is not read, the page shows no health count and no chart as not
- * installed. now is the time that "Healthy since" counts to.
+ * their sections, the summary line, and the panel of the charts. While
+ * PluginRegistration is read, charts are the charts that are not installed.
+ * While it is not read, charts must not be empty when the catalog has a
+ * chart. catalogError is the error of the read of the catalog. Each of
+ * errors shows above the groups, and the groups stay. stale holds the kinds
+ * whose watch has no snapshot on its current connection, as
+ * useRegistrationSources gives them. While PluginRegistration is not read,
+ * the page shows no health count and no chart as not installed. now is the
+ * time that "Healthy since" counts to.
  */
 export function RegistrationList({
   groups,
@@ -104,14 +106,18 @@ export function RegistrationListLive({
   now: string;
 }): ReactNode {
   const sources = useRegistrationSources(initial);
+  const registrationsUnread =
+    unreadKinds(sources).includes("PluginRegistration");
   return (
     <RegistrationList
       groups={registrationGroups(sources)}
       summary={registrationSummary(sources.registrations)}
       charts={
-        "charts" in catalog
-          ? missingCharts(catalog.charts, sources.registrations)
-          : []
+        !("charts" in catalog)
+          ? []
+          : registrationsUnread
+            ? catalog.charts
+            : missingCharts(catalog.charts, sources.registrations)
       }
       catalogError={"error" in catalog ? catalog.error : undefined}
       sections={sources.sections}
@@ -208,10 +214,20 @@ function cellsOf(row: RegistrationRow, now: string): Record<string, ReactNode> {
       ? [row.controller.name, row.controller.version].filter(Boolean).join(" ")
       : "None",
     mode: row.mode,
-    accepted: <ConditionBadge type="Accepted" condition={row.accepted} />,
+    accepted: (
+      <ConditionBadge
+        type="Accepted"
+        condition={row.accepted}
+        unknown={row.healthUnknown}
+      />
+    ),
     ready: (
       <>
-        <ConditionBadge type="Ready" condition={row.ready} />
+        <ConditionBadge
+          type="Ready"
+          condition={row.ready}
+          unknown={row.healthUnknown}
+        />
         {row.healthySince && (
           <time dateTime={row.healthySince} className={`${MUTED} mt-1`}>
             {`Healthy since ${age(row.healthySince, now)} ago`}

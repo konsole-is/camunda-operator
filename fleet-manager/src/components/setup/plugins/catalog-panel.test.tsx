@@ -67,6 +67,13 @@ describe("CatalogPanel", () => {
     expect(within(panel).queryByText("aws-kms")).toBeNull();
   });
 
+  it("renders nothing for no chart while it cannot tell which are installed", () => {
+    const { container } = render(
+      <CatalogPanel charts={[]} sections={[]} installedUnknown />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
   it("names the sections of a chart by their labels and shows its command", () => {
     render(
       <CatalogPanel

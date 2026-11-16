@@ -75,7 +75,7 @@ The page does not show an empty or healthy value for a kind that it has not read
 
 | Kind that is not read | What the page shows |
 | --- | --- |
-| `PluginRegistration` | `Health not known` in place of the count under the title. `Options not known` in a section without a row. `Which charts are installed is not known.` in the panel **Charts you can install**, with no chart. |
+| `PluginRegistration` | `Health not known` in place of the count under the title. `Accepted: Not known` and `Ready: Not known` in each row, with no `Healthy since`. `Options not known` in a section without a row. `Which charts are installed is not known.` in the panel **Charts you can install**, with no chart. |
 | `PluginSection` | A last group **Section not known** in place of **Not in a section**, with each registration that is in no section that the page knows. |
 | `PluginRequest` | `Not known` in the column **Requests**. |
 | `Namespace` or `Environment` | The number of requests in the column **Requests**, with `Environments not known` in place of the number in each environment. |

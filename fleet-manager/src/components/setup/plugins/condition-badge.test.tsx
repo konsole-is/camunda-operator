@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { CHIP_TONE } from "@/components/fleet/status";
 import { ConditionBadge } from "./condition-badge";
 import { condition } from "./fixtures";
 
@@ -19,6 +20,12 @@ describe("ConditionBadge", () => {
   ])("shows %o as %s", (c, text) => {
     render(<ConditionBadge type={c?.type ?? "Ready"} condition={c} />);
     expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it("shows a condition that is not known in the off tone", () => {
+    render(<ConditionBadge type="Ready" unknown />);
+    const badge = screen.getByText("Ready: Not known").parentElement!;
+    expect(badge.className).toContain(CHIP_TONE.off);
   });
 
   it("shows the message as the hover text", () => {

@@ -137,6 +137,18 @@ export const RegistrationsNotRead: Story = {
   },
 };
 
+export const RegistrationsWatchFailed: Story = {
+  name: "The registrations watch failed after the page loaded",
+  args: {
+    ...listOf({
+      ...registrationSources(),
+      errors: [{ kind: "PluginRegistration", message: "watch closed" }],
+    }),
+    errors: [{ kind: "PluginRegistration", message: "watch closed" }],
+    charts: catalog.charts as CatalogChart[],
+  },
+};
+
 export const ListsNotAnswered: Story = {
   name: "Sections, requests, and environments not read yet",
   args: {

@@ -12,10 +12,14 @@ import {
 import { registrationGroups, registrationSummary } from "./groups";
 import { RegistrationList, RegistrationListLive } from "./registration-list";
 
-const watch = vi.hoisted(() => ({ unanswered: [] as string[] }));
+const watch = vi.hoisted(() => ({
+  unanswered: [] as string[],
+  failed: {} as Record<string, string>,
+}));
 vi.mock("@/lib/k8s/hooks", () => ({
-  useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
+  useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
+    ...(watch.failed[kind] && { error: watch.failed[kind] }),
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map(({ kind }) => !watch.unanswered.includes(kind)),
@@ -24,6 +28,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
 afterEach(() => {
   cleanup();
   watch.unanswered = [];
+  watch.failed = {};
 });
 
 const officialCharts = catalog.charts as CatalogChart[];
@@ -202,6 +207,16 @@ describe("RegistrationList", () => {
     expect(within(panel).queryByText("rustfs", { exact: true })).toBeNull();
   });
 
+  it("makes no health claim on a row while PluginRegistration is not read", () => {
+    const unread = { ...sources, stale: ["PluginRegistration"] };
+    list({ groups: registrationGroups(unread), stale: unread.stale });
+    const row = rowOf("Secondary storage", "existing-secondary-storage");
+    expect(within(row).getByText("Accepted: Not known")).toBeTruthy();
+    expect(within(row).getByText("Ready: Not known")).toBeTruthy();
+    expect(within(row).queryByText(/Ready: True/)).toBeNull();
+    expect(within(row).queryByText(/Healthy since/)).toBeNull();
+  });
+
   it("says that the options of a section are not known while PluginRegistration is not read", () => {
     const unread = {
       ...sources,
@@ -329,6 +344,48 @@ describe("RegistrationListLive", () => {
       within(
         screen.getByRole("region", { name: "Charts you can install" }),
       ).queryByText("rustfs", { exact: true }),
+    ).toBeNull();
+  });
+
+  it.each([
+    [
+      "a watch that failed after the page loaded",
+      () => {
+        watch.failed = { PluginRegistration: "watch closed" };
+      },
+    ],
+    [
+      "a watch that has not answered",
+      () => {
+        watch.unanswered = ["PluginRegistration"];
+      },
+    ],
+  ])("shows no row as healthy with %s", (_, setUp) => {
+    setUp();
+    render(
+      <RegistrationListLive
+        initial={sources}
+        catalog={{ charts: officialCharts }}
+        now="2026-11-13T09:00:00Z"
+      />,
+    );
+    const row = rowOf("Secondary storage", "existing-secondary-storage");
+    expect(within(row).getByText("Ready: Not known")).toBeTruthy();
+    expect(within(row).queryByText(/Ready: True/)).toBeNull();
+    expect(within(row).queryByText(/Healthy since/)).toBeNull();
+  });
+
+  it("hides the catalog panel for an empty catalog while PluginRegistration is not read", () => {
+    watch.unanswered = ["PluginRegistration"];
+    render(
+      <RegistrationListLive
+        initial={sources}
+        catalog={{ charts: [] }}
+        now="2026-11-13T09:00:00Z"
+      />,
+    );
+    expect(
+      screen.queryByRole("region", { name: "Charts you can install" }),
     ).toBeNull();
   });
 

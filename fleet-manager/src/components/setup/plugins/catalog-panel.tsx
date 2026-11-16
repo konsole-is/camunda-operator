@@ -10,11 +10,11 @@ const LABEL = "Charts you can install";
 
 /**
  * CatalogPanel lists charts that are not installed, with the sections they
- * bring and the command that installs each. error is the error of the read
- * of the catalog, and installedUnknown is true while the page cannot tell
- * which charts are installed: in both cases the panel says so and lists no
- * chart. Otherwise it renders nothing for no chart. A section that sections
- * does not hold shows by its name.
+ * bring and the command that installs each. It renders nothing for no
+ * chart without an error. error is the error of the read of the catalog,
+ * and installedUnknown is true while the page cannot tell which of charts
+ * are installed: in both cases the panel says so and lists no chart. A
+ * section that sections does not hold shows by its name.
  */
 export function CatalogPanel({
   charts,
@@ -35,6 +35,7 @@ export function CatalogPanel({
         </p>
       </Panel>
     );
+  if (charts.length === 0) return null;
   if (installedUnknown)
     return (
       <Panel label={LABEL}>
@@ -43,7 +44,6 @@ export function CatalogPanel({
         </p>
       </Panel>
     );
-  if (charts.length === 0) return null;
   const labelOf = (name: string) =>
     sections.find((s) => s.metadata.name === name)?.spec.label ?? name;
   return (
