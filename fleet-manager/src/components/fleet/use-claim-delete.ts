@@ -145,6 +145,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
 
   const uid = live?.metadata.uid;
   const version = live?.metadata.resourceVersion;
+  const generation = live?.metadata.generation;
   const spec = JSON.stringify((live ?? initial).spec);
   // ChangeReview keeps a refused write blocked for the same change object.
   // A refusal for a version that the watch has not shown yet ends with the
@@ -158,7 +159,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     // A Git preview clones the repository, so a status write of the claim
     // must not start a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [uid, spec, intent, policy, retry],
+    [uid, generation, spec, intent, policy, retry],
   );
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;

@@ -221,6 +221,15 @@ describe("useClaimDelete", () => {
     expect(hook.result.current.remove).toEqual(reviewOf(2));
   });
 
+  it("gives a new remove step when the generation moved and the spec is back to the one before", async () => {
+    const { hook } = mount(claim());
+    const first = hook.result.current.remove;
+    await live(claim({ metadata: { resourceVersion: "44", generation: 3 } }));
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+    expect(hook.result.current.remove).toEqual(reviewOf(3));
+    expect(await confirm(hook)).toEqual({ ok: true, mode: "direct" });
+  });
+
   it("a status write that the watch has not shown yet does not refuse the delete", async () => {
     const { hook } = mount(claim());
     fakeWriter.objects = [claim({ metadata: { resourceVersion: "43" } })];
