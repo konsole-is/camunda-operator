@@ -26,13 +26,16 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	operatorlabels "github.com/konsole-is/camunda-operator/pkg/labels"
@@ -41,6 +44,13 @@ import (
 // fakeClient returns a fake client with the status subresource of every kind
 // the simulator writes, holding objs.
 func fakeClient(t *testing.T, objs ...client.Object) client.Client {
+	t.Helper()
+
+	return fakeClientWith(t, interceptor.Funcs{}, objs...)
+}
+
+// fakeClientWith is fakeClient with funcs set on the client.
+func fakeClientWith(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) client.Client {
 	t.Helper()
 
 	s := runtime.NewScheme()
@@ -52,6 +62,7 @@ func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 			&batchv1.Job{}, &corev1.Pod{}, &corev1.PersistentVolumeClaim{},
 		).
 		WithObjects(objs...).
+		WithInterceptorFuncs(funcs).
 		Build()
 }
 
@@ -482,4 +493,37 @@ func TestSimulatorLeavesOtherNamespacesAlone(t *testing.T) {
 	var pods corev1.PodList
 	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
 	assert.Empty(t, pods.Items)
+}
+
+func TestSimulatorReadsAgainAfterAStatusWriteLosesARace(t *testing.T) {
+	conflicts := 1
+	c := fakeClientWith(t, interceptor.Funcs{
+		SubResourceUpdate: func(
+			ctx context.Context,
+			c client.Client,
+			subResource string,
+			obj client.Object,
+			opts ...client.SubResourceUpdateOption,
+		) error {
+			if _, ok := obj.(*appsv1.Deployment); ok && conflicts > 0 {
+				conflicts--
+				return apierrors.NewConflict(
+					schema.GroupResource{Group: "apps", Resource: "deployments"}, obj.GetName(), nil,
+				)
+			}
+			return c.SubResource(subResource).Update(ctx, obj, opts...)
+		},
+	}, webapp())
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	writes, err := sim.pass(context.Background())
+	require.NoError(t, err)
+	assert.Positive(t, writes, "a lost race counts as a write, so the scenario is not quiet")
+
+	_, err = sim.pass(context.Background())
+	require.NoError(t, err)
+	var d appsv1.Deployment
+	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "optimize"}, &d))
+	assert.Equal(t, int32(2), d.Status.ReadyReplicas)
 }

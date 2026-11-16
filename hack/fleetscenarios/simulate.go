@@ -92,7 +92,9 @@ func (s *simulator) add(steps []workloadStep) {
 }
 
 // pass makes one round over the watched namespaces. It returns the number of
-// writes it made, so a caller knows when the simulator has nothing to do.
+// writes it made, so a caller knows when the simulator has nothing to do. A
+// write that loses a race with a controller ends the round and counts as a
+// write, so the next round reads the object again.
 func (s *simulator) pass(ctx context.Context) (int, error) {
 	writes := 0
 	for _, ns := range s.namespaces {
@@ -101,6 +103,9 @@ func (s *simulator) pass(ctx context.Context) (int, error) {
 		} {
 			n, err := step(ctx, ns)
 			writes += n
+			if apierrors.IsConflict(err) {
+				return writes + 1, nil
+			}
 			if err != nil {
 				return writes, err
 			}
