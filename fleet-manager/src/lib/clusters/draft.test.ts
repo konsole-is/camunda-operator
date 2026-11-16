@@ -1214,6 +1214,28 @@ describe("Secret references", () => {
     );
   });
 
+  it("checks no reference that is optional", () => {
+    const optional = withClaimValue(
+      {
+        ...withSecrets("team-b"),
+        namespace: { kind: "new", name: "team-new", labels: {} },
+      },
+      [
+        { field: "spec" },
+        { field: "cluster" },
+        { field: "zeebe" },
+        { field: "extraEnvFrom" },
+        { index: 0 },
+        { field: "secretRef" },
+      ],
+      { name: "orders-env", optional: true },
+    );
+    expect(pathsOf(secretErrors(optional, undefined))).toEqual([
+      "auth.clientSecretRef",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+    ]);
+  });
+
   it("refuses each reference in a new namespace, which holds no Secret", () => {
     const fresh: ClusterDraft = {
       ...withSecrets("team-a"),
@@ -1277,6 +1299,29 @@ describe("holdsWrittenSpec", () => {
     );
   });
 
+  it("allows no default inside the parameters of a selection, or at another place", () => {
+    const withParameters = {
+      ...sent,
+      plugins: [{ section: "access", registration: "gateway", parameters: {} }],
+    };
+    expect(
+      holdsWrittenSpec(
+        {
+          ...withParameters,
+          plugins: [
+            {
+              section: "access",
+              registration: "gateway",
+              parameters: { whenDeleted: "Delete" },
+            },
+          ],
+        },
+        withParameters,
+      ),
+    ).toBe(false);
+    expect(holdsWrittenSpec({ ...sent, failed: 3 }, sent)).toBe(false);
+  });
+
   it("refuses a spec with another value or a missing field", () => {
     expect(holdsWrittenSpec({ ...sent, presetRef: "large" }, sent)).toBe(false);
     expect(holdsWrittenSpec({ ...sent, cluster: undefined }, sent)).toBe(false);
@@ -1306,15 +1351,18 @@ describe("holdsWrittenSpec", () => {
       if ("default" in schema)
         defaults.add(`${field}=${JSON.stringify(schema.default)}`);
       for (const [name, child] of Object.entries(schema.properties ?? {}))
-        walk(child, name);
+        walk(child, `${field.split(".").at(-1)}.${name}`);
       walk(schema.items, field);
       walk(schema.additionalProperties, field);
     };
     walk(crd.spec.versions[0].schema.openAPIV3Schema.properties.spec, "spec");
     for (const entry of defaults) {
       const [field, value] = entry.split("=");
-      const live = { x: { [field]: JSON.parse(value) } };
-      expect(holdsWrittenSpec(live, { x: {} }), entry).toBe(true);
+      const [parent, name] = field.split(".");
+      const live = { cluster: { [parent]: { [name]: JSON.parse(value) } } };
+      expect(holdsWrittenSpec(live, { cluster: { [parent]: {} } }), entry).toBe(
+        true,
+      );
     }
     expect(defaults.size).toBeGreaterThan(0);
   });

@@ -532,14 +532,17 @@ export function withoutClaimValue(
   return { ...draft, claim: { ...claim, spec: claim.spec ?? {} } };
 }
 
-// CLAIM_DEFAULTS holds each default of the CRD of the claim, by field name.
-// The API server adds one to an object that a write sent without it.
+// CLAIM_DEFAULTS holds each default of the CRD of the claim. The API server
+// adds one to an object that a write sent without it.
 const CLAIM_DEFAULTS: Record<string, unknown> = {
-  name: "",
-  optional: false,
-  completed: 7,
-  failed: 3,
-  whenDeleted: "Delete",
+  "secretKeyRef.name": "",
+  "configMapKeyRef.name": "",
+  "secretRef.name": "",
+  "configMapRef.name": "",
+  "fileKeyRef.optional": false,
+  "retained.completed": 7,
+  "retained.failed": 3,
+  "persistentVolumeClaimRetentionPolicy.whenDeleted": "Delete",
 };
 
 /**
@@ -547,21 +550,28 @@ const CLAIM_DEFAULTS: Record<string, unknown> = {
  * sent with the defaults that the API server adds, and nothing else.
  */
 export function holdsWrittenSpec(live: unknown, sent: unknown): boolean {
+  return holdsSent(live, sent, "");
+}
+
+function holdsSent(live: unknown, sent: unknown, parent: string): boolean {
   if (Array.isArray(sent))
     return (
       Array.isArray(live) &&
       live.length === sent.length &&
-      sent.every((item, i) => holdsWrittenSpec(live[i], item))
+      sent.every((item, i) => holdsSent(live[i], item, parent))
     );
   if (typeof sent !== "object" || sent === null) return live === sent;
   if (typeof live !== "object" || live === null || Array.isArray(live))
     return false;
   const fields = sent as Record<string, unknown>;
+  // The parameters of a selection are free JSON and get no default.
+  const defaults = parent === "plugins" ? {} : CLAIM_DEFAULTS;
   return (
     Object.entries(live).every(([key, value]) =>
       Object.hasOwn(fields, key)
-        ? holdsWrittenSpec(value, fields[key])
-        : Object.hasOwn(CLAIM_DEFAULTS, key) && value === CLAIM_DEFAULTS[key],
+        ? holdsSent(value, fields[key], parent === "plugins" ? parent : key)
+        : Object.hasOwn(defaults, `${parent}.${key}`) &&
+          value === defaults[`${parent}.${key}`],
     ) && Object.keys(fields).every((key) => Object.hasOwn(live, key))
   );
 }
@@ -632,7 +642,8 @@ export type SecretsRead = {
  * Secret, or key, the namespace of draft does not hold. A new namespace
  * holds no Secret. read must be the answer for the namespace of draft: for
  * an existing namespace, without it or with its error, each reference is
- * an error that says it cannot be checked.
+ * an error that says it cannot be checked. An optional reference is never
+ * an error.
  */
 export function secretErrors(
   draft: ClusterDraft,
@@ -641,10 +652,13 @@ export function secretErrors(
   const namespace = draft.namespace;
   if (namespace === undefined) return [];
   return secretReferences(draft).flatMap(({ path, steps }) => {
-    const { name, key } = valueAt(draft.claim, steps) as {
+    const { name, key, optional } = valueAt(draft.claim, steps) as {
       name?: string;
       key?: string;
+      optional?: boolean;
     };
+    // The pod starts without a Secret or a key that is optional.
+    if (optional === true) return [];
     const ns = namespace.name;
     let error: string | undefined;
     if (namespace.kind === "new")
