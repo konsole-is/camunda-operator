@@ -82,6 +82,27 @@ export async function startEnvtest(
   const users = options.users ?? [];
   checkUsers(users);
   const timeoutMs = options.startTimeoutMs ?? 120_000;
+  const crdDirs = options.crdDirs ?? [CRD_DIR];
+
+  // The ports are free when freePorts closes its probes, and another process
+  // can take one before etcd or the API server binds it.
+  for (let start = 1; ; start++) {
+    try {
+      return await startOnce(assetsDir, users, timeoutMs, crdDirs);
+    } catch (error) {
+      if (start === 3 || !String(error).includes("address already in use")) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function startOnce(
+  assetsDir: string,
+  users: EnvtestUser[],
+  timeoutMs: number,
+  crdDirs: string[],
+): Promise<Envtest> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fleet-envtest-"));
   const running: Running[] = [];
   // A test runner that exits without stop must not leave the processes behind.
@@ -170,13 +191,7 @@ export async function startEnvtest(
       );
     }
 
-    await installCRDs(
-      server,
-      token,
-      options.crdDirs ?? [CRD_DIR],
-      apiserver,
-      timeoutMs,
-    );
+    await installCRDs(server, token, crdDirs, apiserver, timeoutMs);
 
     return {
       ...admin,
