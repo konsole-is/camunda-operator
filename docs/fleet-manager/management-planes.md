@@ -228,7 +228,9 @@ When the plane and its claim are both deleted, the page shows `This management p
 
 When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted.
 
-While the copy of the `CamundaManagementCluster` on the page is not current, the header and the dot of each card show `Not known`. While the page cannot read the pods, a card shows `Could not read Pod`. In the `oidc` mode, the issuer shows `Could not read CamundaPlatformConfig` while the page cannot read the platform config. The buttons **Suspend** and **Delete** are disabled, and an open confirm closes.
+While the copy of the `CamundaManagementCluster` on the page is not current, the header and the dot of each card show `Not known`. While the page cannot read the pods, a card shows `Could not read Pod`. In the `oidc` mode, the issuer shows `Could not read CamundaPlatformConfig` while the page cannot read the platform config.
+
+While the page cannot read the `CamundaManagementCluster` or the claim, **Suspend** and **Delete** are disabled, and an open confirm closes. The same applies while the copy of one of them is not current. A failed read of the pods or the platform config changes only the cards, so **Suspend** and **Delete** stay available.
 
 When the page cannot read the `CamundaManagementCluster`, it does not know if the plane is managed or which claim made it. The **Conditions** section shows the conditions of a claim with the same name in the group **Claim**. The line `The page could not read the management plane, so it cannot tell if the claim <name> made it.` stands above that section. The header shows `Not known` in place of the `Ready` condition. It shows a dash for the identity provider, the platform config, and **Serves**, because the page does not know them. The page also does not show the `Not managed by the fleet manager.` banner.
 
@@ -316,7 +318,7 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
 
 The page first writes your choice to the claim when the claim has another deletion policy, or none of its own and none recorded. The page then shows "Waiting for the operator to read the deletion policy." In direct mode, the fleet manager then deletes the claim. The operator gives your choice to each option before it removes anything. The page shows each object that goes until it is gone. The [Deletion](../crds/camundamanagementclusterclaim.md#deletion) section of the claim explains the order.
 
-If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. A claim without the finalizer `fleet.camunda.io/cleanup` cannot give its deletion policy to its options. Its delete fails until you add the finalizer back.
+If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. The operator records the deletion policy in the claim status. If the claim then lost the finalizer `fleet.camunda.io/cleanup`, it cannot give that policy to its options. Its delete fails until you add the finalizer back.
 
 In Git mode, the confirm is **Push the delete to Git**. A changed policy and the delete are two commits. The page pushes the delete only after GitOps applied the policy and each option has it. While the claim reports an error, the operator does not update the options. The page then names the options and gives the reason, and the fleet manager refuses the push. The fleet manager removes the claim file, so your GitOps tool must prune to delete the claim. [Delete in Git mode](cluster-page.md#delete-in-git-mode) on the cluster page shows the same steps with examples.
 
