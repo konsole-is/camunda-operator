@@ -391,6 +391,161 @@ describe("grantPreviews", () => {
     ).toEqual(["a", "b"]);
   });
 
+  describe("a template parameter", () => {
+    const marked = registration("s3", {
+      ...s3.spec,
+      parameters: {
+        type: "object",
+        properties: {
+          prefix: { type: "string", "x-fleet-template": true },
+        },
+      },
+      grantTemplates: [template({ Prefix: "{{ .parameters.prefix }}" })],
+    });
+    const previewOf = (prefix: string) =>
+      grantPreviews({
+        claim: {
+          ...claim,
+          plugins: [{ section: "backup-storage", registration: "s3" }],
+        },
+        sections: [backup],
+        registrations: [marked],
+        environment: environmentWith({ s3: { prefix: { value: prefix } } }),
+      })[0];
+
+    it("renders before the grant", () => {
+      expect(previewOf("{{ .namespace }}/{{ .claim }}").result).toEqual({
+        value: { Effect: "Allow", Prefix: "team-a/orders" },
+      });
+    });
+
+    it("gives its error, with its path, to each template", () => {
+      expect(previewOf("{{ .outputs.bucketArn }}").result).toMatchObject({
+        path: "parameters.prefix",
+      });
+    });
+  });
+
+  it("keeps a list that a choice gives, so the template reports it", () => {
+    const listed = environmentWith({
+      s3: {
+        policy: {
+          claimEditable: true,
+          allowed: [
+            {
+              name: "sqs",
+              label: "SQS access",
+              value: ["arn:aws:iam::123456789012:policy/sqs"],
+            },
+          ],
+        },
+        region: { value: "eu-west-1" },
+      },
+    });
+    const [preview] = grantPreviews({
+      claim,
+      sections: [backup],
+      registrations: [s3],
+      environment: listed,
+    });
+    expect(preview.result).toMatchObject({
+      path: "Policy",
+      field: "parameters.policy",
+    });
+    expect(JSON.stringify(preview)).not.toContain("arn:");
+  });
+
+  describe("a template with required inputs", () => {
+    const keyed = registration("s3", {
+      ...s3.spec,
+      inputs: [{ name: "keyArn", from: "encryption-key/keyArn" }],
+      grantTemplates: [
+        template({ Region: "{{ .parameters.region }}" }),
+        {
+          ...template({ Action: "kms:Decrypt" }),
+          name: "key-use",
+          requiresInputs: ["keyArn"],
+        },
+      ],
+    });
+
+    it("leaves it out when the claim selects no option of the input's section", () => {
+      const previews = grantPreviews({
+        claim,
+        sections: [backup],
+        registrations: [keyed],
+        environment,
+      });
+      expect(previews.map((p) => p.template)).toEqual(["read"]);
+    });
+
+    it("leaves it out when the input is not declared", () => {
+      const undeclared = registration("s3", {
+        ...keyed.spec,
+        inputs: [],
+      });
+      const previews = grantPreviews({
+        claim: {
+          ...claim,
+          plugins: [
+            ...claim.plugins,
+            { section: "encryption-key", registration: "kms" },
+          ],
+        },
+        sections: [backup],
+        registrations: [undeclared],
+        environment,
+      });
+      expect(previews.map((p) => p.template)).toEqual(["read"]);
+    });
+
+    it("keeps it, only when the input has a value, when the claim selects the input's section", () => {
+      const previews = grantPreviews({
+        claim: {
+          ...claim,
+          plugins: [
+            ...claim.plugins,
+            { section: "encryption-key", registration: "kms" },
+          ],
+        },
+        sections: [backup],
+        registrations: [keyed],
+        environment,
+      });
+      expect(previews.map((p) => [p.template, p.onlyWhen])).toEqual([
+        ["read", undefined],
+        ["key-use", ["keyArn"]],
+      ]);
+    });
+  });
+
+  it("hides an ARN inside an object or a list of an object parameter", () => {
+    const inline = registration("s3", {
+      ...s3.spec,
+      grantTemplates: [template({ Policy: "{{ .parameters.policy }}" })],
+    });
+    const [preview] = grantPreviews({
+      claim: {
+        ...claim,
+        plugins: [{ section: "backup-storage", registration: "s3" }],
+      },
+      sections: [backup],
+      registrations: [inline],
+      environment: environmentWith({
+        s3: {
+          policy: {
+            value: {
+              Statement: [
+                { Resource: "arn:aws:sqs:eu-west-1:123456789012:orders" },
+              ],
+            },
+          },
+        },
+      }),
+    });
+    expect(JSON.stringify(preview)).not.toContain("arn:");
+  });
+
   it("gives nothing for a selection whose registration or section is missing", () => {
     expect(
       grantPreviews({

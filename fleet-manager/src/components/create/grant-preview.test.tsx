@@ -58,6 +58,26 @@ describe("GrantPreviewList", () => {
     ).toBeTruthy();
   });
 
+  it("says which inputs a template needs before the plugin writes it", () => {
+    render(
+      <GrantPreviewList
+        previews={[
+          picked,
+          { ...picked, template: "key-use", onlyWhen: ["keyArn"] },
+          { ...picked, template: "both", onlyWhen: ["keyArn", "queueArn"] },
+        ]}
+      />,
+    );
+    const items = screen.getAllByRole("listitem");
+    expect(items[0].textContent).not.toContain("Only when");
+    expect(items[1].textContent).toContain(
+      "Only when the input keyArn has a value",
+    );
+    expect(items[2].textContent).toContain(
+      "Only when the inputs keyArn, queueArn have a value",
+    );
+  });
+
   it("renders nothing without previews", () => {
     const { container } = render(<GrantPreviewList previews={[]} />);
     expect(container.textContent).toBe("");

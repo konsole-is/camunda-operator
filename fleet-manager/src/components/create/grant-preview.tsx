@@ -43,6 +43,13 @@ export function GrantPreviewList({
                 {preview.description && (
                   <p className="text-xs text-text-2">{preview.description}</p>
                 )}
+                {preview.onlyWhen && (
+                  <p className="text-xs text-text-2">
+                    {preview.onlyWhen.length === 1
+                      ? `Only when the input ${preview.onlyWhen[0]} has a value`
+                      : `Only when the inputs ${preview.onlyWhen.join(", ")} have a value`}
+                  </p>
+                )}
               </div>
               {"error" in preview.result ? (
                 <p role="alert" className="text-sm text-bad">

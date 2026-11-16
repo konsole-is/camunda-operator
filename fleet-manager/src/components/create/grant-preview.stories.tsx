@@ -45,6 +45,28 @@ export const PickedChoiceAndPlaceholder: Story = {
   args: { previews: [read, connectors] },
 };
 
+export const NeedsAnInput: Story = {
+  name: "Needs an input",
+  args: {
+    previews: [
+      read,
+      {
+        ...read,
+        template: "key-use",
+        description: "Lets the cluster encrypt its backups with the key.",
+        onlyWhen: ["keyArn"],
+        result: {
+          value: {
+            Effect: "Allow",
+            Action: ["kms:GenerateDataKey", "kms:Decrypt"],
+            Resource: "<key ARN from Encryption key>",
+          },
+        },
+      },
+    ],
+  },
+};
+
 export const TemplateError: Story = {
   name: "Template error",
   args: {

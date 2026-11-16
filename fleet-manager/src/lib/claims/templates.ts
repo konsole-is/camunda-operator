@@ -81,8 +81,10 @@ export function templateData(input: {
 
 /**
  * GrantPreview is one grant template of one selection, rendered before the
- * write. result is the rendered template, or the error of the template
- * with the path of the string that failed.
+ * write. result is the rendered template, or the first error of the
+ * template or of a parameter that the plugin renders first, with the path
+ * of the string that failed. onlyWhen names the inputs that must have a
+ * value before the plugin writes the grant.
  */
 export type GrantPreview = {
   section: string;
@@ -91,16 +93,18 @@ export type GrantPreview = {
   optionLabel: string;
   template: string;
   description?: string;
+  onlyWhen?: string[];
   result: { value: unknown } | (TemplateError & { path: string });
 };
 
 /**
  * grantPreviews renders each grant template of each selection of claim, in
  * claim order and then in template order. A selection whose section or
- * registration is missing gives nothing. No ARN shows: a parameter value
- * that a choice gives shows as <label: choice label>, any other ARN as
- * <label: An ARN that you entered> when the selection sets it, else as
- * <label: Set by your admin>. An output, which exists only after the
+ * registration is missing gives nothing, and so does a template that
+ * requires an input of a section that claim does not select. No ARN of a
+ * parameter shows: a string, number, or boolean value that a choice gives
+ * shows as <label: choice label>, any other ARN as <label: An ARN that you
+ * entered> when the selection sets it, else as <label: Set by your admin>. An output, which exists only after the
  * write, shows as <description from section label>.
  */
 export function grantPreviews(input: {
@@ -128,14 +132,25 @@ export function grantPreviews(input: {
       // Before the write, no request of the claim exists.
       requests: [],
     });
-    const parameters = shownParameters(
-      data.parameters,
-      selection,
-      registration,
-      environment,
-    );
-    return (registration.spec.grantTemplates ?? []).map(
-      (template): GrantPreview => {
+    const marked = withTemplateParameters(data, registration);
+    const parameters =
+      "error" in marked
+        ? {}
+        : shownParameters(marked.value, selection, registration, environment);
+    return (registration.spec.grantTemplates ?? []).flatMap(
+      (template): GrantPreview[] => {
+        const onlyWhen = template.requiresInputs ?? [];
+        const selected = onlyWhen.every((name) => {
+          const from = registration.spec.inputs?.find(
+            (i) => i.name === name,
+          )?.from;
+          const inputSection = from?.split("/")[0];
+          return claim.plugins.some((p) => p.section === inputSection);
+        });
+        // The plugin writes no Grant for a template whose required input
+        // has no value, and an input of a section without a selection has
+        // none.
+        if (!selected) return [];
         const outputs = Object.fromEntries(
           outputKeys(template.template).map((key) => {
             const description =
@@ -144,22 +159,60 @@ export function grantPreviews(input: {
             return [key, `<${description} from ${sectionLabel}>`];
           }),
         );
-        return {
-          section: selection.section,
-          sectionLabel,
-          registration: selection.registration,
-          optionLabel: registration.spec.label || selection.registration,
-          template: template.name,
-          ...(template.description && { description: template.description }),
-          result: renderJSON(
-            template.template,
-            { ...data, parameters, outputs },
-            "grant",
-          ),
-        };
+        return [
+          {
+            section: selection.section,
+            sectionLabel,
+            registration: selection.registration,
+            optionLabel: registration.spec.label || selection.registration,
+            template: template.name,
+            ...(template.description && { description: template.description }),
+            ...(onlyWhen.length > 0 && { onlyWhen }),
+            result:
+              "error" in marked
+                ? marked
+                : renderJSON(
+                    template.template,
+                    { ...data, parameters, outputs },
+                    "grant",
+                  ),
+          },
+        ];
       },
     );
   });
+}
+
+// withTemplateParameters returns the parameters of data with each one that
+// the schema of registration marks with x-fleet-template rendered, as the
+// plugin renders them before a grant template. It returns the first error,
+// in name order.
+function withTemplateParameters(
+  data: TemplateData,
+  registration: PluginRegistration,
+): { value: Record<string, unknown> } | (TemplateError & { path: string }) {
+  const schema = registration.spec.parameters as
+    | { properties?: Record<string, { "x-fleet-template"?: unknown }> }
+    | undefined;
+  const parameters = { ...data.parameters };
+  for (const name of Object.keys(schema?.properties ?? {}).sort()) {
+    if (schema?.properties?.[name]?.["x-fleet-template"] !== true) continue;
+    if (!Object.hasOwn(parameters, name)) continue;
+    const rendered = renderJSON(
+      parameters[name],
+      { ...data, outputs: {} },
+      "parameter",
+    );
+    if ("error" in rendered) {
+      const at = rendered.path.startsWith("[") ? "" : ".";
+      return {
+        ...rendered,
+        path: `parameters.${name}${rendered.path && at}${rendered.path}`,
+      };
+    }
+    parameters[name] = rendered.value;
+  }
+  return { value: parameters };
 }
 
 function shownParameters(
@@ -173,6 +226,9 @@ function shownParameters(
   const set = selection.parameters ?? {};
   return Object.fromEntries(
     Object.entries(values).map(([name, value]) => {
+      // A grant template cannot print a list or an object, so such a value
+      // stays for render to refuse.
+      if (typeof value === "object") return [name, value];
       const rule = rules.find((r) => r.name === name);
       const label = rule?.label ?? name;
       const named = (text: string) => `<${label}: ${text}>`;
@@ -197,15 +253,12 @@ function shownParameters(
       const arn = Object.hasOwn(set, name)
         ? named("An ARN that you entered")
         : named("Set by your admin");
-      return [name, withoutArns(value, arn)];
+      return [
+        name,
+        typeof value === "string" && value.startsWith("arn:") ? arn : value,
+      ];
     }),
   );
-}
-
-function withoutArns(value: unknown, arn: string): unknown {
-  if (typeof value === "string") return value.startsWith("arn:") ? arn : value;
-  if (Array.isArray(value)) return value.map((item) => withoutArns(item, arn));
-  return value;
 }
 
 // outputKeys returns each output key that a string of template references.
