@@ -42,6 +42,13 @@ describe("PlaneHeader", () => {
     expect(fact("Serves")).toBe("team=a, !legacy");
   });
 
+  it("says that a plane without a claim and a cluster selector serves no cluster", () => {
+    render(header({ serves: { selector: "team=a", noClusterSelector: true } }));
+    expect(fact("Serves")).toBe(
+      "No cluster, because it has no cluster selector",
+    );
+  });
+
   it("shows a dash for a mode and a platform config that are not known", () => {
     render(header({ mode: undefined, platformConfig: undefined }));
     expect(fact("Identity provider")).toBe("-");

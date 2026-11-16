@@ -33,7 +33,9 @@ export function PlaneHeader({
       "Serves",
       "environments" in serves
         ? serves.environments.join(", ")
-        : serves.selector,
+        : serves.noClusterSelector
+          ? "No cluster, because it has no cluster selector"
+          : serves.selector,
     ],
   ];
   return (
