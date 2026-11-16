@@ -434,10 +434,13 @@ describe("PlatformDetail", () => {
       sources: {
         ...base,
         clusters: base.clusters.map((c) => ({ ...c, status: undefined })),
-        planes: base.planes.map((p) => ({
-          ...p,
-          spec: { ...p.spec, identity: undefined },
-        })),
+        planes: base.planes.map(
+          (p) =>
+            ({
+              ...p,
+              spec: { platformConfigRef: "oidc-prod" },
+            }) as unknown as typeof p,
+        ),
       },
     });
 

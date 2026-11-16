@@ -75,8 +75,8 @@ export function ImagesSection({
             : versionsUnresolved
               ? "No Camunda version is known for the clusters and management planes that use this config. "
               : unreadMinorKinds.length === 0
-              ? "No cluster or management plane uses this config. "
-              : ""}
+                ? "No cluster or management plane uses this config. "
+                : ""}
           The defaults are those of Camunda {defaults.minors[0]}, the newest in
           the images table.
         </p>
