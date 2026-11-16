@@ -9,7 +9,12 @@ import type {
 } from "@/components/fleet/namespace-picker";
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
-import { type ClusterField, lockLabel, type Step } from "@/lib/fields";
+import {
+  type ClusterField,
+  lockLabel,
+  pathFrom,
+  type Step,
+} from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster, type Merged } from "@/lib/merge";
@@ -21,6 +26,8 @@ import {
 } from "@/lib/policy";
 import { filledClaimSteps } from "@/lib/session/locks";
 import { valueAt, without, withValue } from "@/lib/session/steps";
+import { createChangeOf } from "@/lib/write/create";
+import type { Change } from "@/lib/write/types";
 import {
   MANAGEMENT_AUTH_CONFIGS_UNREAD,
   optimizeBlocked,
@@ -39,6 +46,9 @@ export type ClusterClaimSpec = Omit<CamundaClusterClaim["spec"], "plugins"> & {
  * unset while no Environment exists. storage holds the selections of each
  * section by section name, as step 2 last reported them. A section that
  * has a key was shown; an empty list is a picked empty option.
+ * secretsPickedIn maps the path of each Secret reference of the claim, as
+ * secretReferences gives it, to the namespace that it was picked in;
+ * withSecretPicks keeps it.
  */
 export type ClusterDraft = {
   environment?: string;
@@ -48,6 +58,7 @@ export type ClusterDraft = {
     spec: Partial<Omit<ClusterClaimSpec, "plugins">>;
   };
   storage?: Record<string, PluginSelection[]>;
+  secretsPickedIn?: Record<string, string>;
 };
 
 /** ClusterClaimObject is the claim that a create writes. */
@@ -223,6 +234,29 @@ export function clusterClaimOf(
       ...(plugins.length > 0 && { plugins }),
     },
   };
+}
+
+/**
+ * clusterCreateChange returns the change that creates the cluster of
+ * draft: the new namespace first, with the labels of syncedNamespace, then
+ * the claim of clusterClaimOf. Without an Environment the new namespace
+ * keeps the labels of the draft.
+ */
+export function clusterCreateChange(
+  draft: ClusterDraft,
+  environment: Environment | undefined,
+  deletion: DeletionChoice,
+): Change {
+  const claim = clusterClaimOf(draft, environment, deletion);
+  const { name, namespace } = claim.metadata;
+  const choice = syncedNamespace(draft.namespace, environment);
+  return createChangeOf(
+    `Create the cluster ${name} in ${namespace}`,
+    claim,
+    choice?.kind === "new"
+      ? { name: choice.name, labels: choice.labels }
+      : undefined,
+  );
 }
 
 /**
@@ -500,4 +534,91 @@ export function withoutClaimValue(
 ): ClusterDraft {
   const claim = without(draft.claim, steps);
   return { ...draft, claim: { ...claim, spec: claim.spec ?? {} } };
+}
+
+/**
+ * SecretReference is one Secret reference of a draft claim. path is the
+ * path under spec.cluster, or under spec and starting with "attachments."
+ * for an attachment. steps lead from the root of the claim to it.
+ */
+export type SecretReference = { path: string; steps: Step[] };
+
+/**
+ * secretReferences returns each Secret reference in spec.cluster and
+ * spec.attachments of the draft claim, in document order: a secretKeyRef or
+ * a secretRef, and an object whose name ends in Ref with exactly the
+ * fields name and key.
+ */
+export function secretReferences(draft: ClusterDraft): SecretReference[] {
+  const found: SecretReference[] = [];
+  const walk = (value: unknown, steps: Step[], root: string, from: number) => {
+    const entries: [Step, unknown][] = Array.isArray(value)
+      ? value.map((item, index) => [{ index }, item])
+      : typeof value === "object" && value !== null
+        ? Object.entries(value).map(([field, item]) => [{ field }, item])
+        : [];
+    for (const [step, item] of entries) {
+      const at = [...steps, step];
+      if ("field" in step && isSecretReference(step.field, item))
+        found.push({ path: pathFrom(root, at.slice(from)), steps: at });
+      else walk(item, at, root, from);
+    }
+  };
+  const spec = draft.claim.spec;
+  walk(spec.cluster, [{ field: "spec" }, { field: "cluster" }], "", 2);
+  walk(
+    spec.attachments,
+    [{ field: "spec" }, { field: "attachments" }],
+    "attachments",
+    2,
+  );
+  return found;
+}
+
+function isSecretReference(field: string, value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  if (field === "secretKeyRef" || field === "secretRef") return true;
+  const keys = Object.keys(value).sort();
+  return field.endsWith("Ref") && keys.join() === "key,name";
+}
+
+/**
+ * withSecretPicks returns after, the draft that an edit of before made,
+ * with secretsPickedIn for its Secret references: a reference that the edit
+ * added or changed counts as picked in the namespace of after, and every
+ * other one keeps the namespace that before records for it.
+ */
+export function withSecretPicks(
+  before: ClusterDraft,
+  after: ClusterDraft,
+): ClusterDraft {
+  const namespace = after.namespace?.name ?? "";
+  const picks: Record<string, string> = {};
+  for (const { path, steps } of secretReferences(after)) {
+    const kept = before.secretsPickedIn?.[path];
+    const same =
+      JSON.stringify(valueAt(before.claim, steps)) ===
+      JSON.stringify(valueAt(after.claim, steps));
+    picks[path] = same && kept !== undefined ? kept : namespace;
+  }
+  return { ...after, secretsPickedIn: picks };
+}
+
+/**
+ * movedSecretErrors returns one error for each Secret reference of draft
+ * that was picked in another namespace than the namespace of draft. A
+ * Secret of one namespace does not exist in another, so the claim must
+ * not name it.
+ */
+export function movedSecretErrors(draft: ClusterDraft): string[] {
+  const namespace = draft.namespace?.name ?? "";
+  return secretReferences(draft).flatMap(({ path }) => {
+    const picked = draft.secretsPickedIn?.[path] ?? namespace;
+    return picked === namespace
+      ? []
+      : [
+          `${path}: The Secret was picked in the namespace ${picked}. Pick a Secret of ${namespace}, or reset the field.`,
+        ];
+  });
 }

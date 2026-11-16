@@ -5,7 +5,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL } from "@/lib/labels";
+import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   NO_MANAGEMENT_AUTH_CONFIG,
   OPTIMIZE_NEEDS_ELASTICSEARCH,
@@ -17,16 +17,20 @@ import {
   attachmentsErrors,
   basicsErrors,
   clusterClaimOf,
+  clusterCreateChange,
   draftCluster,
   draftOptimize,
   draftSelections,
+  movedSecretErrors,
   offeredPresets,
   pickerEnvironment,
+  secretReferences,
   settingsErrors,
   syncedNamespace,
   withClaimValue,
   withoutClaimValue,
   withoutClaimValues,
+  withSecretPicks,
 } from "./draft";
 import type { StorageSummary } from "./storage";
 import type { DeletionChoice } from "@/lib/policy";
@@ -1046,5 +1050,171 @@ describe("draftOptimize", () => {
 
   it("gives nothing while Optimize is off", () => {
     expect(draftOptimize(draftWith({ presetRef: "small" }))).toBeUndefined();
+  });
+});
+
+describe("clusterCreateChange", () => {
+  const deletion: DeletionChoice = {
+    defaultPolicy: "Delete",
+    keepAllowed: true,
+    alwaysDeleted: [],
+    policy: "Delete",
+  };
+  const creating = environment("prod", {
+    namespaceCreation: {
+      allowed: true,
+      requiredLabelKeys: ["team"],
+      labels: { tier: "prod" },
+    },
+  });
+  const draft: ClusterDraft = {
+    environment: "prod",
+    namespace: { kind: "new", name: "team-new", labels: { team: "orders" } },
+    claim: { metadata: { name: "orders" }, spec: { presetRef: "small" } },
+    storage: { access: [{ section: "access", registration: "gateway" }] },
+  };
+
+  it("creates the new namespace with the environment labels, then the claim", () => {
+    expect(clusterCreateChange(draft, creating, deletion)).toEqual({
+      intent: "Create the cluster orders in team-new",
+      apply: [
+        {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: {
+            name: "team-new",
+            labels: {
+              tier: "prod",
+              team: "orders",
+              [ENVIRONMENT_LABEL]: "prod",
+            },
+          },
+        },
+        clusterClaimOf(draft, creating, deletion),
+      ],
+      create: ["Namespace//team-new", "CamundaClusterClaim/team-new/orders"],
+    });
+  });
+
+  it("creates only the claim in an existing namespace", () => {
+    const existing: ClusterDraft = {
+      ...draft,
+      namespace: { kind: "existing", name: "team-a" },
+    };
+    expect(clusterCreateChange(existing, creating, deletion)).toEqual({
+      intent: "Create the cluster orders in team-a",
+      apply: [clusterClaimOf(existing, creating, deletion)],
+      create: ["CamundaClusterClaim/team-a/orders"],
+    });
+  });
+
+  it("writes no environment label without an Environment", () => {
+    const change = clusterCreateChange(
+      { ...draft, environment: undefined },
+      undefined,
+      deletion,
+    );
+    expect(change.apply[0]).toEqual({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "team-new", labels: { team: "orders" } },
+    });
+  });
+});
+
+describe("Secret references", () => {
+  const ref = { name: "orders-oidc", key: "secret" };
+  const withSecrets = (namespace: string): ClusterDraft => ({
+    ...draftWith({
+      presetRef: "small",
+      cluster: {
+        auth: { clientId: "orders", clientSecretRef: ref },
+        zeebe: {
+          extraEnv: [
+            { name: "A", value: "a" },
+            { name: "B", valueFrom: { secretKeyRef: ref } },
+          ],
+          extraEnvFrom: [{ secretRef: { name: "orders-env" } }],
+        },
+      } as unknown as CamundaClusterSpec,
+    }),
+    namespace: { kind: "existing", name: namespace },
+  });
+
+  it("finds each Secret reference of the claim, and nothing else", () => {
+    expect(secretReferences(withSecrets("team-a")).map((r) => r.path)).toEqual([
+      "auth.clientSecretRef",
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+      "zeebe.extraEnvFrom[0].secretRef",
+    ]);
+    expect(secretReferences(draftWith({ presetRef: "small" }))).toEqual([]);
+  });
+
+  it("refuses nothing while each reference was picked in the namespace of the draft", () => {
+    const picked = withSecretPicks(
+      draftWith({ presetRef: "small" }),
+      withSecrets("team-a"),
+    );
+    expect(movedSecretErrors(picked)).toEqual([]);
+  });
+
+  it("names each reference that was picked in another namespace", () => {
+    const picked = withSecretPicks(
+      draftWith({ presetRef: "small" }),
+      withSecrets("team-a"),
+    );
+    const moved: ClusterDraft = {
+      ...picked,
+      namespace: { kind: "new", name: "team-new", labels: {} },
+    };
+    const errors = movedSecretErrors(moved);
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toBe(
+      "auth.clientSecretRef: The Secret was picked in the namespace team-a. Pick a Secret of team-new, or reset the field.",
+    );
+  });
+
+  it("takes a reference that changes after the move as picked in the new namespace", () => {
+    const picked = withSecretPicks(
+      draftWith({ presetRef: "small" }),
+      withSecrets("team-a"),
+    );
+    const moved: ClusterDraft = {
+      ...picked,
+      namespace: { kind: "existing", name: "team-b" },
+    };
+    const repicked = withSecretPicks(
+      moved,
+      withClaimValue(
+        moved,
+        [
+          { field: "spec" },
+          { field: "cluster" },
+          { field: "auth" },
+          { field: "clientSecretRef" },
+        ],
+        { name: "orders-oidc-b", key: "secret" },
+      ),
+    );
+    expect(movedSecretErrors(repicked).map((e) => e.split(":")[0])).toEqual([
+      "zeebe.extraEnv[1].valueFrom.secretKeyRef",
+      "zeebe.extraEnvFrom[0].secretRef",
+    ]);
+  });
+
+  it("forgets a reference that leaves the draft", () => {
+    const picked = withSecretPicks(
+      draftWith({ presetRef: "small" }),
+      withSecrets("team-a"),
+    );
+    const moved: ClusterDraft = {
+      ...picked,
+      namespace: { kind: "existing", name: "team-b" },
+    };
+    const reset = withSecretPicks(
+      moved,
+      withoutClaimValue(moved, [{ field: "spec" }, { field: "cluster" }]),
+    );
+    expect(movedSecretErrors(reset)).toEqual([]);
   });
 });
