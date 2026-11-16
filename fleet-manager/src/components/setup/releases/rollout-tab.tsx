@@ -33,7 +33,11 @@ import {
 
 const EMPTY = <span className="text-muted">-</span>;
 
-type Review = { plan: MovePlan & { change: Change }; picks: MovePick[] };
+type Review = {
+  plan: MovePlan & { change: Change };
+  picks: MovePick[];
+  version: string | undefined;
+};
 
 // Failed is a refused move: the clusters it picked, by key, and the errors.
 type Failed = {
@@ -81,7 +85,8 @@ export function RolloutTab({
   if (
     review &&
     !writing &&
-    review.picks.some((p) => actionOf(p.row.key) !== p.row.action)
+    (review.version !== release.spec?.version ||
+      review.picks.some((p) => actionOf(p.row.key) !== p.row.action))
   )
     setReview(undefined);
 
@@ -93,7 +98,11 @@ export function RolloutTab({
       return;
     }
     setPlanErrors([]);
-    setReview({ plan: { ...plan, change: plan.change }, picks });
+    setReview({
+      plan: { ...plan, change: plan.change },
+      picks,
+      version: release.spec?.version,
+    });
   };
   const movable = rows.filter(
     (r) => r.status.kind === "canMove" && selected.includes(r.key),

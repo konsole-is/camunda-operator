@@ -72,18 +72,17 @@ function renderTab(opts: { data?: Data; mode?: WriteMode } = {}) {
       mode: "direct" as const,
     })),
   };
-  const view = (data: Data) => (
+  const view = (data: Data, release = targetRelease) => (
     <GitPushesProvider>
-      <RolloutTab
-        release={targetRelease}
-        data={data}
-        mode={mode}
-        actions={actions}
-      />
+      <RolloutTab release={release} data={data} mode={mode} actions={actions} />
     </GitPushesProvider>
   );
   const { rerender } = render(view(opts.data ?? rolloutData()));
-  return { actions, rerender: (data: Data) => rerender(view(data)) };
+  return {
+    actions,
+    rerender: (data: Data, release?: typeof targetRelease) =>
+      rerender(view(data, release)),
+  };
 }
 
 const rowOf = (name: string) =>
@@ -427,6 +426,24 @@ describe("RolloutTab", () => {
         "Backup orders-now is pending. The move waits until it ends.",
       ),
     ).toBeTruthy();
+  });
+
+  it("closes an open review when the version of the release changes", async () => {
+    const data = rolloutData();
+    const { rerender } = renderTab({ data });
+    await userEvent.click(
+      within(rowOf("orders")).getByRole("button", { name: "Move" }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Review the move" }),
+    ).toBeTruthy();
+    rerender(data, {
+      ...targetRelease,
+      spec: { ...targetRelease.spec, version: "8.9.99" },
+    });
+    expect(
+      screen.queryByRole("region", { name: "Review the move" }),
+    ).toBeNull();
   });
 
   it("closes the review of a refused downgrade when a backup of its cluster starts", async () => {
