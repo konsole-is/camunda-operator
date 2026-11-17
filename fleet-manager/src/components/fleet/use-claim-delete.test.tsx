@@ -5,10 +5,10 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  applyClaimChange,
-  applyClaimDelete,
-  previewClaimDelete,
-} from "@/app/fleet/clusters/[namespace]/[name]/actions";
+  applyPlaneClaimChange,
+  applyPlaneClaimDelete,
+  previewPlaneClaimDelete,
+} from "@/app/fleet/planes/[namespace]/[name]/actions";
 import { watchId } from "@/lib/k8s/shared-watch";
 import { REVISION_ANNOTATION } from "@/lib/labels";
 import type { DeletionPolicy } from "@/lib/policy";
@@ -70,9 +70,9 @@ const claim = (
 });
 
 const actions: ClaimDeleteActions = {
-  preview: previewClaimDelete,
-  remove: applyClaimDelete,
-  applyPolicy: applyClaimChange,
+  preview: previewPlaneClaimDelete,
+  remove: applyPlaneClaimDelete,
+  applyPolicy: applyPlaneClaimChange,
 };
 // reviewOf is the remove that the hook gives to the review and sends.
 const reviewOf = (generation = 1) => ({
@@ -501,7 +501,7 @@ describe("useClaimDelete", () => {
     "Git mode: after the policy write, the push waits while %s",
     async (_, c, requests) => {
       fakeWriter.reset("git");
-      const remove = vi.fn(applyClaimDelete);
+      const remove = vi.fn(applyPlaneClaimDelete);
       const { hook } = mount(claim(), {
         policy: "Orphan",
         mode: "git",

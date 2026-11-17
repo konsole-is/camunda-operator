@@ -38,7 +38,9 @@ describe("suspendChange", () => {
 
   it("a suspend change passes claimChangeSchema", () => {
     expect(
-      claimChangeSchema.safeParse(suspendChange(claim, true)).success,
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse(
+        suspendChange(claim, true),
+      ).success,
     ).toBe(true);
   });
 

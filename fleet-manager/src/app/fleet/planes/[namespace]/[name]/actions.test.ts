@@ -224,3 +224,21 @@ describe("previewPlaneClaimDelete", () => {
     expect(fakeWriter.previewed).toEqual([]);
   });
 });
+
+describe("the plane actions refuse a cluster claim", () => {
+  it("each plane action refuses a cluster claim as Invalid and writes nothing", async () => {
+    const cluster = "CamundaClusterClaim";
+    const changed = await applyPlaneClaimChange(change(cluster));
+    expect(!changed.ok && changed.errors[0].code).toBe("Invalid");
+    expect(
+      (await previewPlaneClaimChange(change(cluster))).errors[0].code,
+    ).toBe("Invalid");
+    const removed = await applyPlaneClaimDelete(remove(cluster));
+    expect(!removed.ok && removed.errors[0].code).toBe("Invalid");
+    expect(
+      (await previewPlaneClaimDelete(remove(cluster))).errors[0].code,
+    ).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});

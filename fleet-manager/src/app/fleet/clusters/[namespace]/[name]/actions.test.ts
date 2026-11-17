@@ -128,6 +128,24 @@ describe("previewClaimDelete", () => {
   });
 });
 
+describe("the cluster actions refuse a plane claim", () => {
+  it("each cluster claim action refuses a plane claim as Invalid and writes nothing", async () => {
+    const plane = "CamundaManagementClusterClaim";
+    const changed = await applyClaimChange(change(plane));
+    expect(!changed.ok && changed.errors[0].code).toBe("Invalid");
+    expect((await previewClaimChange(change(plane))).errors[0].code).toBe(
+      "Invalid",
+    );
+    const removed = await applyClaimDelete(remove(plane));
+    expect(!removed.ok && removed.errors[0].code).toBe("Invalid");
+    expect((await previewClaimDelete(remove(plane))).errors[0].code).toBe(
+      "Invalid",
+    );
+    expect(fakeWriter.applied).toEqual([]);
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
 describe("applyBackupChange", () => {
   const orders = { namespace: "team-a", name: "orders" };
   const object = (kind: string, name: string, namespace = "team-a") => ({
