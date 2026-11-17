@@ -277,7 +277,12 @@ describe("PlatformDetail", () => {
       objects: [],
       errors: [
         change.takeOver
-          ? { code: "Invalid", message: rule, path: "spec.auth", ref: CONFIG_REF }
+          ? {
+              code: "Invalid",
+              message: `Invalid value: ${rule}`,
+              path: "spec.auth",
+              ref: CONFIG_REF,
+            }
           : {
               code: "Conflict",
               message: 'conflict with "kubectl-client-side-apply"',
