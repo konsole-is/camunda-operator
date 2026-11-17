@@ -39,8 +39,8 @@ export type EnvironmentSources = {
 };
 
 /**
- * EnvironmentSnapshot is the first snapshot of the Environments pages. readErrors holds the error of
- * each kind that the server could not read.
+ * EnvironmentSnapshot is the first snapshot of the Environments pages.
+ * readErrors holds the error of each kind that the server could not read.
  */
 export type EnvironmentSnapshot = EnvironmentSources & {
   readErrors?: ReadError[];

@@ -21,19 +21,19 @@ export type RegistrationSources = {
 };
 
 /**
- * RegistrationSnapshot is the first snapshot of the Plugins pages. readErrors holds the error of
- * each kind that the server could not read.
+ * RegistrationSnapshot is the first snapshot of the Plugins pages. readErrors
+ * holds the error of each kind that the server could not read.
  */
 export type RegistrationSnapshot = RegistrationSources & {
   readErrors?: ReadError[];
 };
 
 /**
- * useRegistrationSources follows each list of initial live. errors holds
- * the error of each failed watch, and the error of initial.readErrors of
- * each other kind until the watch of that kind answers. The lists then
- * keep their last items, which can be out of date. stale holds the kind of each list whose watch
- * is not fresh (freshKey).
+ * useRegistrationSources follows each list of initial live. errors holds the
+ * error of each failed watch, and the error of initial.readErrors of each other
+ * kind until the watch of that kind answers. The lists then keep their last
+ * items, which can be out of date. stale holds the kind of each list whose
+ * watch is not fresh (freshKey).
  */
 export function useRegistrationSources(
   initial: RegistrationSnapshot,

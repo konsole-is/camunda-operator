@@ -33,17 +33,17 @@ export type PlatformSources = {
 };
 
 /**
- * PlatformSnapshot is the first snapshot of the Platform pages. readErrors holds the error of
- * each kind that the server could not read.
+ * PlatformSnapshot is the first snapshot of the Platform pages. readErrors
+ * holds the error of each kind that the server could not read.
  */
 export type PlatformSnapshot = PlatformSources & { readErrors?: ReadError[] };
 
 /**
- * usePlatformSources follows each list of initial live. errors holds the
- * error of each failed watch, and the error of initial.readErrors of each
- * other kind until the watch of that kind answers. The lists then keep
- * their last items, which can be out of date. stale holds the kind of each list whose watch is not
- * fresh (freshKey).
+ * usePlatformSources follows each list of initial live. errors holds the error
+ * of each failed watch, and the error of initial.readErrors of each other kind
+ * until the watch of that kind answers. The lists then keep their last items,
+ * which can be out of date. stale holds the kind of each list whose watch is
+ * not fresh (freshKey).
  */
 export function usePlatformSources(
   initial: PlatformSnapshot,

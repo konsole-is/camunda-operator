@@ -26,8 +26,8 @@ export type RolloutLists = {
 };
 
 /**
- * RolloutSnapshot is the first snapshot of the lists of the Rollout tab. readErrors holds the error of
- * each kind that the server could not read.
+ * RolloutSnapshot is the first snapshot of the lists of the Rollout tab.
+ * readErrors holds the error of each kind that the server could not read.
  */
 export type RolloutSnapshot = RolloutLists & { readErrors?: ReadError[] };
 

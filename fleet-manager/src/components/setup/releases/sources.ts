@@ -25,17 +25,17 @@ export type ReleasesData = {
 };
 
 /**
- * ReleasesSnapshot is the first snapshot of the release pages. readErrors holds the error of
- * each kind that the server could not read.
+ * ReleasesSnapshot is the first snapshot of the release pages. readErrors holds
+ * the error of each kind that the server could not read.
  */
 export type ReleasesSnapshot = ReleasesData & { readErrors?: ReadError[] };
 
 /**
- * useReleaseSources follows each list of initial live. errors holds the
- * error of each failed watch, and the error of initial.readErrors of each
- * other kind until the watch of that kind answers. The lists then keep
- * their last items, which can be out of date. stale holds the kind of each list whose watch is not
- * fresh (freshKey).
+ * useReleaseSources follows each list of initial live. errors holds the error
+ * of each failed watch, and the error of initial.readErrors of each other kind
+ * until the watch of that kind answers. The lists then keep their last items,
+ * which can be out of date. stale holds the kind of each list whose watch is
+ * not fresh (freshKey).
  */
 export function useReleaseSources(
   initial: ReleasesSnapshot,
