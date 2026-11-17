@@ -1,5 +1,5 @@
 import { PlaneCreateFlow } from "@/components/planes/create/plane-create-flow";
-import { getBundledData } from "@/lib/bundled";
+import { loadImagesTable } from "@/lib/bundled/images";
 import { list } from "@/lib/k8s/read";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 import { writeMode } from "@/lib/write/writer";
@@ -44,12 +44,7 @@ export default async function NewPlanePage() {
     list("ManagementAuthConfig").catch(() => []),
     list("DatabaseServerPreset").catch(() => []),
     list("DatabaseConfig").catch(() => []),
-    // The server checked both files at start. A table that cannot be read
-    // now prefills no version.
-    getBundledData().then(
-      (bundled) => bundled.imagesTable,
-      () => ({ schemaVersion: 1 as const, minors: {} }),
-    ),
+    loadImagesTable(),
     writeMode(),
   ]);
   return (

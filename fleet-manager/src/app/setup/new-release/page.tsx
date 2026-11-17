@@ -1,5 +1,5 @@
 import { ReleaseCreateLive } from "@/components/setup/releases/release-create";
-import { getBundledData } from "@/lib/bundled";
+import { loadImagesTable } from "@/lib/bundled/images";
 import { writeMode } from "@/lib/write/writer";
 import {
   applyReleaseChange,
@@ -20,12 +20,7 @@ export default async function NewReleasePage({
   const [sources, mode, imagesTable] = await Promise.all([
     loadReleases(),
     writeMode().catch(() => undefined),
-    // The server checked the table at start. A table that cannot be read
-    // now gives no default image.
-    getBundledData().then(
-      (bundled) => bundled.imagesTable,
-      () => ({ schemaVersion: 1 as const, minors: {} }),
-    ),
+    loadImagesTable(),
   ]);
   return (
     <ReleaseCreateLive
