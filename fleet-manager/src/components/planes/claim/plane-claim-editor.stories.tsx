@@ -147,6 +147,9 @@ const data: PlanePageData = {
   environments: [],
   optimizes: [],
   managementAuthConfigs: [],
+  pods: [],
+  platformConfigs: [],
+  registrations: [],
   claimTab: {
     clusters: [
       cluster("team-orders", "orders", { team: "orders" }),

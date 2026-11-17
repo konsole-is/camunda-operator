@@ -92,6 +92,19 @@ export const OPTIMIZE_COMPONENTS = [
 ] as const;
 
 /**
+ * PLANE_COMPONENTS are the COMPONENT_LABEL values of the pods of a
+ * management plane. They are the Component constants of
+ * pkg/components/camundamanagementcluster.
+ */
+export const PLANE_COMPONENTS = {
+  keycloak: "keycloak",
+  identity: "management-identity",
+  console: "console",
+  webModelerRestapi: "web-modeler-restapi",
+  webModelerWebsockets: "web-modeler-websockets",
+} as const;
+
+/**
  * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
  * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
  */

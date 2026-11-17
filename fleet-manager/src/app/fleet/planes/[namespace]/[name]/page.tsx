@@ -4,6 +4,11 @@ import { writeMode } from "@/lib/write/writer";
 import { applyPlaneClaimChange, previewPlaneClaimChange } from "./actions";
 import { loadPlanePage } from "./load";
 
+const claimActions = {
+  preview: previewPlaneClaimChange,
+  apply: applyPlaneClaimChange,
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function PlanePage({
@@ -13,14 +18,5 @@ export default async function PlanePage({
   const data = await loadPlanePage(namespace, name);
   if (!data) notFound();
   const mode = await writeMode().catch(() => undefined);
-  return (
-    <PlaneView
-      data={data}
-      writeMode={mode}
-      claimActions={{
-        preview: previewPlaneClaimChange,
-        apply: applyPlaneClaimChange,
-      }}
-    />
-  );
+  return <PlaneView data={data} writeMode={mode} claimActions={claimActions} />;
 }

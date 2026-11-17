@@ -13,6 +13,7 @@ import {
   MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
   OPTIMIZE_COMPONENTS,
   OPTIMIZE_UID_LABEL,
+  PLANE_COMPONENTS,
   PLUGIN_CLUSTER_LABEL,
   REGISTRATION_LABEL,
   REQUEST_LABEL,
@@ -140,6 +141,17 @@ it("OPTIMIZE_COMPONENTS match ComponentWebapp and ComponentImporter of pkg/compo
     goConstant(names, "ComponentWebapp"),
     goConstant(names, "ComponentImporter"),
   ]);
+});
+
+it("PLANE_COMPONENTS match the component constants of pkg/components/camundamanagementcluster", () => {
+  const names = "pkg/components/camundamanagementcluster/names.go";
+  expect(PLANE_COMPONENTS).toEqual({
+    keycloak: goConstant(names, "ComponentKeycloak"),
+    identity: goConstant(names, "ComponentIdentity"),
+    console: goConstant(names, "ComponentConsole"),
+    webModelerRestapi: goConstant(names, "ComponentWebModelerRestapi"),
+    webModelerWebsockets: goConstant(names, "ComponentWebModelerWebsockets"),
+  });
 });
 
 describe("isManaged", () => {

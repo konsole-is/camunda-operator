@@ -67,4 +67,17 @@ describe("PlaneHeader", () => {
     render(header({ actions: <button type="button">Suspend</button> }));
     expect(screen.getByRole("button", { name: "Suspend" })).toBeTruthy();
   });
+
+  it("shows Not known, not the old Ready, while the page cannot read it", () => {
+    render(
+      <PlaneHeader
+        name="plane-a"
+        namespace="platform"
+        ready={{ status: "True", reason: "Healthy" }}
+        readyUnknown
+      />,
+    );
+    expect(screen.getByText("Not known")).toBeTruthy();
+    expect(screen.queryByText("Ready")).toBeNull();
+  });
 });

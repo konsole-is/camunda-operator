@@ -23,4 +23,15 @@ describe("StatusDot", () => {
       expect(screen.getByRole("img", { name })).toBeTruthy();
     },
   );
+
+  it("says Not known for a component whose condition the page could not read", () => {
+    render(
+      <StatusDot
+        label="Zeebe"
+        condition={{ status: "True", reason: "Healthy" }}
+        unknown
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Zeebe: Not known" })).toBeTruthy();
+  });
 });

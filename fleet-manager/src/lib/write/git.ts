@@ -350,10 +350,25 @@ export function gitWriter(options: GitWriterOptions): Writer {
           errors.push(staleError(ref));
           continue;
         }
-        if (committed === undefined) continue;
         const annotations = object.metadata.annotations as
           Record<string, string> | undefined;
-        if (annotations?.[REVISION_ANNOTATION] === committed) continue;
+        const live = annotations?.[REVISION_ANNOTATION];
+        if (committed === undefined) {
+          // GitOps applied the object from a file that the branch no longer
+          // holds, so a write would undo a pushed delete.
+          if (
+            live !== undefined &&
+            appliedRef(change, ref) &&
+            !(await exists(path.join(dir, file)))
+          )
+            errors.push({
+              code: "Conflict",
+              message: `${target.url} holds a delete of the ${ref.kind} ${ref.name} that GitOps has not applied yet. Wait until GitOps applies it. To keep the ${ref.kind}, restore ${file} in the repository.`,
+              ref,
+            });
+          continue;
+        }
+        if (live === committed) continue;
         errors.push({
           code: "Conflict",
           message: `${file} in ${target.url} holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert ${file} in the repository.`,
@@ -743,6 +758,10 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
     code: "Unavailable",
     message: `Could not reach ${target.url}: ${reasonOf(error)}`,
   };
+}
+
+function appliedRef(change: Change, ref: ObjectRef): boolean {
+  return change.apply.some((o) => refKey(refOf(o)) === refKey(ref));
 }
 
 function noFileError(file: string, ref: ObjectRef): ApiError {

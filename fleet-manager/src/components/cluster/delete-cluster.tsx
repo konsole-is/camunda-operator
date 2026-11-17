@@ -1,25 +1,24 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
+import {
+  useDeleteReads,
+  useDeleteStage,
+} from "@/components/fleet/claim-delete-page";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
-import type { ReadError } from "@/components/planes/planes-table";
-import { unreadKinds } from "@/components/setup/releases/rows";
 import {
   type ClaimDeleteActions,
   useClaimDelete,
 } from "@/components/fleet/use-claim-delete";
-import { useResource, useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import { useResource, useResources } from "@/lib/k8s/hooks";
 import type { WriteMode } from "@/lib/write/types";
 import {
   clusterDeletionChoice,
   type DeleteClusterData,
   deleteClusterModel,
-  deleteProgress,
-  type DeleteTarget,
   initialPolicy,
-  mergeTargets,
 } from "./delete-cluster-model";
-import { type DeleteStage, DeleteClusterView } from "./delete-cluster-view";
+import { DeleteClusterView } from "./delete-cluster-view";
 
 /**
  * DeleteCluster is the delete page of the cluster of initial.claim. It
@@ -112,26 +111,7 @@ export function DeleteCluster({
     { kind: "LogicalBackupElasticsearch", opts: inNamespace, ...backupsES },
     { kind: "LogicalBackupRDBMS", opts: inNamespace, ...backupsRDBMS },
   ] as const;
-  const fresh = useWatchesFresh(watched);
-  // A current snapshot of a watch replaces the list that the server could
-  // not read.
-  const replaced = watched
-    .filter((w, i) => fresh[i] && !w.error)
-    .map((w): string => w.kind);
-  const errors: ReadError[] = [
-    ...initial.errors.filter((e) => !replaced.includes(e.kind)),
-    ...watched.flatMap((w) =>
-      w.error ? [{ kind: w.kind, message: w.error }] : [],
-    ),
-    ...run.reads.errors,
-  ];
-  const unread = unreadKinds({
-    errors,
-    stale: [
-      ...watched.filter((_, i) => !fresh[i]).map((w) => w.kind),
-      ...run.reads.stale,
-    ],
-  });
+  const { errors, unread } = useDeleteReads(watched, initial.errors, run.reads);
 
   const model = deleteClusterModel(
     {
@@ -152,34 +132,18 @@ export function DeleteCluster({
     picked,
     unread,
   );
-  // A target stays once the delete started, so that an object that is gone
-  // shows as Deleted instead of leaving the list.
-  const [targets, setTargets] = useState<DeleteTarget[]>();
-  if (run.stage.kind === "deleting") {
-    const merged = mergeTargets(targets ?? [], model.targets);
-    if (JSON.stringify(merged) !== JSON.stringify(targets)) setTargets(merged);
-  }
-
-  let stage: DeleteStage;
-  if (run.stage.kind === "deleting") {
-    stage = {
-      kind: "deleting",
-      progress: deleteProgress(
-        mergeTargets(targets ?? [], model.targets),
-        {
-          CamundaCluster: cluster.item ? [cluster.item] : [],
-          CamundaOptimize: optimizes.items,
-          BackupSchedule: schedules.items,
-          PluginRequest: requests.items,
-          CamundaClusterClaim: run.claim ? [run.claim] : [],
-        },
-        unread,
-      ),
-      gitWaiting: run.stage.gitWaiting,
-      ...(run.claim && { claim: run.claim }),
-      ...(run.stage.keepRefused && { keepRefused: run.stage.keepRefused }),
-    };
-  } else stage = run.stage;
+  const stage = useDeleteStage(
+    run,
+    model.targets,
+    {
+      CamundaCluster: cluster.item ? [cluster.item] : [],
+      CamundaOptimize: optimizes.items,
+      BackupSchedule: schedules.items,
+      PluginRequest: requests.items,
+      CamundaClusterClaim: run.claim ? [run.claim] : [],
+    },
+    unread,
+  );
 
   return (
     <>

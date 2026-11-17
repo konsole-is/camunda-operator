@@ -342,8 +342,10 @@ const TARGET_ORDER: readonly KindName[] = [
   "CamundaOptimize",
   "BackupSchedule",
   "CamundaCluster",
+  "CamundaManagementCluster",
   "PluginRequest",
   "CamundaClusterClaim",
+  "CamundaManagementClusterClaim",
 ];
 
 /**

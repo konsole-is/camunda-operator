@@ -6,12 +6,14 @@ import type { IdentityMode, Plane } from "./plane";
 /**
  * PlaneHeader names the plane and shows its Ready state, its identity mode,
  * its namespace, its platform config, and what it serves. actions holds the
- * buttons of a managed plane.
+ * buttons of a managed plane. readyUnknown shows the Ready state as not
+ * known, for a Ready condition that the page could not read.
  */
 export function PlaneHeader({
   name,
   namespace,
   ready,
+  readyUnknown = false,
   mode,
   platformConfig,
   serves,
@@ -20,6 +22,7 @@ export function PlaneHeader({
   name: string;
   namespace: string;
   ready?: ConditionLike;
+  readyUnknown?: boolean;
   mode?: IdentityMode;
   platformConfig?: string;
   serves?: Plane["serves"];
@@ -47,7 +50,7 @@ export function PlaneHeader({
           <h1 className="min-w-0 font-heading text-3xl font-bold tracking-[-0.02em] break-all">
             {name}
           </h1>
-          <StatusChip condition={ready} readyReason />
+          <StatusChip condition={ready} readyReason unknown={readyUnknown} />
         </div>
         {actions && (
           <div className="flex flex-wrap items-center gap-2">{actions}</div>

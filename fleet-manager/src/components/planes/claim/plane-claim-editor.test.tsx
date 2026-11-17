@@ -135,6 +135,9 @@ function dataOf(over: Partial<PlaneClaimTabData> = {}): PlanePageData {
     environments: [],
     optimizes: [],
     managementAuthConfigs: [],
+    pods: [],
+    platformConfigs: [],
+    registrations: [],
     claimTab: {
       clusters: [cluster("team-orders", "orders"), cluster("team-qa", "qa")],
       platformConfigs: [basicConfig, ssoConfig],
