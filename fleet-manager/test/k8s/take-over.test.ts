@@ -397,6 +397,60 @@ describe("a take-over against the API server", () => {
     ).toBe(true);
   });
 
+  it("the preview of a removal shows a null inside a value as the save keeps it", async () => {
+    const name = unique("env");
+    const tier = (extra: object) => ({
+      claimEditable: true,
+      ...extra,
+    });
+    await createClientSideApplied(
+      api,
+      environment(name, {
+        displayName: "Stage",
+        parameters: {
+          "aws-s3": {
+            tier: tier({
+              allowed: [
+                { name: "x", label: "X", value: { a: null } },
+                { name: "y", label: "Y", value: 1 },
+              ],
+            }),
+          },
+        },
+      }),
+    );
+    const parameters = {
+      "aws-s3": {
+        tier: tier({
+          value: { b: null },
+          allowed: [{ name: "x", label: "X", value: { a: null } }],
+        }),
+      },
+    };
+    const object = environment(name, { parameters });
+    const change = updateOf("Clear", await read(object), object);
+    const chosen = withTakeOver(
+      change,
+      (await previewEnvironmentChange(change)).ownership ?? [],
+    );
+    expect(chosen.remove).toEqual({
+      [keyOf(object)]: [
+        "spec.displayName",
+        "spec.parameters.aws-s3.tier.allowed[name=y]",
+      ],
+    });
+
+    const preview = await previewEnvironmentChange(chosen);
+    expect(preview.errors).toEqual([]);
+    expect(await applyEnvironmentChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const saved = await read(object);
+    expect(preview.objects[0].after?.spec).toEqual(saved.spec);
+    expect(saved.spec.parameters).toEqual(parameters);
+  });
+
   it("a field of an operator controller is not offered and a request that lists it writes nothing", async () => {
     const made = environment(unique("env"), { displayName: "Stage" });
     await applyAs(operator, made);

@@ -17,10 +17,11 @@ import {
   type KindName,
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
+import { equalJSON } from "@/lib/policy/json";
 import type { Settings } from "@/lib/settings/keys";
 import { apiErrorsOf, existsError, staleError } from "./errors";
 import { gitWriter } from "./git";
-import { clientSideApplyPatch, mergePatch } from "./merge-patch";
+import { clientSideApplyPatch } from "./merge-patch";
 import {
   foreignFields,
   offered,
@@ -144,7 +145,7 @@ export function diffView(
  * at the precondition. Then a dry run with force must take no field
  * that takeOver does not list, or the object fails with Conflict. apply
  * applies such an object with force only when takeOver lists a field, and
- * then removes the fields of remove with a JSON merge patch at the
+ * then removes the fields of remove with a JSON patch at the
  * resourceVersion that the apply returned. The preview shows the object
  * after the removal. When the removal fails, apply stops, the apply stays,
  * and each error says which fields the fleet manager did not remove. A
@@ -225,7 +226,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     }
   };
 
-  const mergePatchObject = (
+  const replaceObject = (
     ref: ObjectRef,
     from: KubeObject,
     to: KubeObject,
@@ -235,8 +236,9 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     send<KubeObject>(
       "PATCH",
       `${pathOf(ref)}?fieldManager=${encodeURIComponent(APP_FIELD_MANAGER)}${dryRun ? "&dryRun=All" : ""}`,
-      removalPatch(from, to, resourceVersion),
-      "application/merge-patch+json",
+      replacePatch(from, to, resourceVersion),
+      // A JSON merge patch reads a null inside a value as a removal.
+      "application/json-patch+json",
     );
 
   // uids holds the uid of each object of the apply list that exists. plans
@@ -337,7 +339,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           const shown =
             cleared.length === 0
               ? after
-              : await mergePatchObject(
+              : await replaceObject(
                   ref,
                   before!,
                   withoutFields(after, cleared),
@@ -462,7 +464,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       }
       if (plan === undefined || plan.cleared.length === 0) continue;
       try {
-        await mergePatchObject(
+        await replaceObject(
           ref,
           written,
           withoutFields(written, plan.cleared),
@@ -609,23 +611,57 @@ function samePaths(a: string[], b: string[]): boolean {
   );
 }
 
-// removalPatch is the JSON merge patch from from to to without server
-// fields, with resourceVersion as its precondition. A list goes whole, and
-// its items that stay keep their field managers.
-function removalPatch(
+type JsonPatchOp =
+  | { op: "add" | "replace"; path: string; value: unknown }
+  | { op: "remove"; path: string };
+
+// replacePatch is the JSON patch from from to to of each top-level field
+// but apiVersion, kind, metadata, and status, and of metadata.labels and
+// metadata.annotations, with resourceVersion as its precondition.
+function replacePatch(
   from: KubeObject,
   to: KubeObject,
   resourceVersion: string | undefined,
-): Record<string, unknown> {
-  const patch = mergePatch(applyBody(from), applyBody(to));
-  const metadata = (patch.metadata ?? {}) as Record<string, unknown>;
-  return {
-    ...patch,
-    metadata:
-      resourceVersion === undefined
-        ? metadata
-        : { ...metadata, resourceVersion },
+): JsonPatchOp[] {
+  const ops: JsonPatchOp[] =
+    resourceVersion === undefined
+      ? []
+      : [
+          {
+            op: "replace",
+            path: "/metadata/resourceVersion",
+            value: resourceVersion,
+          },
+        ];
+  const a = applyBody(from) as Record<string, unknown>;
+  const b = applyBody(to) as Record<string, unknown>;
+  const differ = (
+    at: string,
+    x: Record<string, unknown>,
+    y: Record<string, unknown>,
+    keys: string[],
+  ) => {
+    for (const key of keys) {
+      const path = `${at}/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+      if (!Object.hasOwn(y, key)) {
+        if (Object.hasOwn(x, key)) ops.push({ op: "remove", path });
+      } else if (!Object.hasOwn(x, key) || !equalJSON(x[key], y[key]))
+        // A field of a list item that the patch sends with its old value
+        // keeps its field managers. The fleet manager does not become a
+        // manager of a field that the patch sends with its old value.
+        ops.push({ op: "add", path, value: y[key] });
+    }
   };
+  const top = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of ["apiVersion", "kind", "metadata"]) top.delete(key);
+  differ("", a, b, [...top]);
+  differ(
+    "/metadata",
+    from.metadata as Record<string, unknown>,
+    to.metadata as Record<string, unknown>,
+    ["labels", "annotations"],
+  );
+  return ops;
 }
 
 function deletePreconditions(

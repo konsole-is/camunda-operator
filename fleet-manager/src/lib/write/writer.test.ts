@@ -681,8 +681,11 @@ describe("directWriter with a take-over", () => {
     const removal = writes().at(-1)!;
     expect(removal).toMatchObject({
       method: "PATCH",
-      contentType: "application/merge-patch+json",
-      body: { metadata: { resourceVersion: "8" }, spec: { displayName: null } },
+      contentType: "application/json-patch+json",
+      body: [
+        { op: "replace", path: "/metadata/resourceVersion", value: "8" },
+        { op: "add", path: "/spec", value: { color: "blue" } },
+      ],
     });
     expect(removal.url).toContain("fieldManager=fleet-manager");
   });
