@@ -92,22 +92,26 @@ describe("PlaneActions", () => {
     expect(
       screen.getByRole("group", { name: "Suspend" }).textContent,
     ).toContain(
-      "The served clusters that use OIDC sign in at the Keycloak of this plane. Their users and API clients cannot sign in or get tokens until the plane resumes.",
+      "Each cluster that uses the Keycloak of this plane as its OIDC issuer loses sign-in: its users and API clients cannot sign in or get tokens until the plane resumes.",
     );
   });
 
-  it("states nothing about the Keycloak of the plane without one or without a served cluster", async () => {
+  it("states nothing about a Keycloak of the plane without one", async () => {
     actions({ ownKeycloak: false });
     await userEvent.click(button("Suspend"));
     expect(
       screen.getByRole("group", { name: "Suspend" }).textContent,
     ).not.toContain("Keycloak");
-    cleanup();
+  });
+
+  it("in the keycloak mode warns also while no cluster is attached", async () => {
     actions({ ownKeycloak: true, served: 0 });
     await userEvent.click(button("Suspend"));
     expect(
       screen.getByRole("group", { name: "Suspend" }).textContent,
-    ).not.toContain("Keycloak");
+    ).toContain(
+      "Each cluster that uses the Keycloak of this plane as its OIDC issuer loses sign-in: its users and API clients cannot sign in or get tokens until the plane resumes.",
+    );
   });
 
   it("offers no Suspend and no Resume while the claim is being deleted, and says why", () => {
@@ -217,26 +221,45 @@ describe("PlaneActions", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
-  it("in Git mode keeps Suspend, Resume, and Delete off while a pushed delete of the claim waits for GitOps", async () => {
-    const key = "CamundaManagementClusterClaim/platform/plane-a";
-    await act(async () => {
-      actions(
-        {},
-        {
-          ok: true,
-          mode: "git",
-          commit: "a".repeat(40),
-          revisions: {},
-          paths: {},
-          deleted: { [key]: "planes/plane-a.yaml" },
-        },
+  it.each([
+    ["Suspend", {}],
+    ["Resume", { suspend: true }],
+  ])(
+    "in Git mode keeps %s and Delete off while a pushed delete of the claim waits for GitOps",
+    async (label, spec) => {
+      const key = "CamundaManagementClusterClaim/platform/plane-a";
+      await act(async () => {
+        actions(
+          { claim: claimOf(spec) },
+          {
+            ok: true,
+            mode: "git",
+            commit: "a".repeat(40),
+            revisions: {},
+            paths: {},
+            deleted: { [key]: "planes/plane-a.yaml" },
+          },
+        );
+      });
+      expect(screen.getByRole("status").textContent).toContain(
+        "1 delete waiting for GitOps",
       );
+      expect(button(label)).toHaveProperty("disabled", true);
+      expect(button("Delete")).toHaveProperty("disabled", true);
+    },
+  );
+
+  it("shows a refusal of the save after a reload as an alert", async () => {
+    const { apply } = actions();
+    const message =
+      "The repository holds a delete of the CamundaManagementClusterClaim plane-a that GitOps has not applied yet.";
+    apply.mockResolvedValueOnce({
+      ok: false,
+      errors: [{ code: "Conflict", message }],
     });
-    expect(screen.getByRole("status").textContent).toContain(
-      "1 delete waiting for GitOps",
-    );
-    expect(button("Suspend")).toHaveProperty("disabled", true);
-    expect(button("Delete")).toHaveProperty("disabled", true);
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    expect((await screen.findByRole("alert")).textContent).toContain(message);
   });
 
   it("in Git mode shows the waiting line of a pushed claim and keeps the actions off", async () => {

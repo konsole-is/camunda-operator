@@ -278,7 +278,7 @@ A tab needs some lists. When the page fails to read such a list, or its copy of 
 
 Suspend stops the plane and keeps its data. The header of a plane that a claim made has the button **Suspend**.
 
-1. Select **Suspend**. The page asks you to confirm. It says that every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize then stops for every cluster that the plane serves. It also says that the served clusters keep running, and that the databases keep the data of the plane. In the `keycloak` mode, it says that the served OIDC clusters sign in at the Keycloak of the plane. Their users and API clients cannot sign in or get tokens until the plane resumes.
+1. Select **Suspend**. The page asks you to confirm. It says that every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize then stops for every cluster that the plane serves. It also says that the served clusters keep running, and that the databases keep the data of the plane. In the `keycloak` mode, it warns about each cluster that uses the Keycloak of the plane as OIDC issuer. The users and API clients of such a cluster cannot sign in or get tokens until the plane resumes. The page says this also while no cluster is attached.
 2. Select **Suspend the management plane**.
 
 The page sets `spec.suspend: true` on the claim:
@@ -296,7 +296,9 @@ spec:
 
 When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
 
-The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the header shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled.
+The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the browser tab that pushed it shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled there. In another tab, or after a reload, the fleet manager refuses a save of the claim until GitOps applies the delete. The page then shows that refusal.
+
+While the fleet manager cannot read its settings, **Suspend** and **Resume** are disabled, and the header says `Changes are off: the fleet manager could not read its settings.`
 
 A plane that no claim made has no Suspend and no Delete. While the claim is being deleted, **Suspend** and **Resume** are off.
 
@@ -307,7 +309,7 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
 1. Choose what happens to the resources of the database and access options. **Delete the resources** and **Keep the resources** set `spec.deletionPolicy` of the claim to `Delete` or `Orphan`. The page selects the policy of the claim. Without one, it selects the policy that the claim recorded from its environment, else `Delete`. When an option always deletes what it made, **Keep the resources** is off.
 2. Read what the delete takes. The page lists:
     - The objects that always go: the `CamundaManagementCluster`, with its workloads, Services, and generated Secrets, the requests of the options, and the claim.
-    - The clusters that the plane serves. They stay and keep running. The plane removes its Console settings and its claim from each cluster, and each cluster restarts its pods once. A cluster with basic authentication also loses its `web-modeler` user. Sign-in to Console, Web Modeler, and Optimize stops for these clusters. In the `keycloak` mode, a cluster that uses OIDC signs in at the Keycloak of the plane. Its users and API clients then can no longer sign in or get tokens. When the claim did not make the plane, the page says that the delete does not touch the plane or the clusters that it serves.
+    - The clusters that the plane serves. They stay and keep running. The plane removes its Console settings and its claim from each cluster, and each cluster restarts its pods once. A cluster with basic authentication also loses its `web-modeler` user. Sign-in to Console, Web Modeler, and Optimize stops for these clusters. In the `keycloak` mode, each cluster that uses the Keycloak of the plane as its OIDC issuer loses sign-in. Its users and API clients can no longer sign in or get tokens. The page says this also while no cluster is attached. When the claim did not make the plane, the page says that the delete does not touch the plane or the clusters that it serves.
     - The contract of the plane, which goes. Each `CamundaOptimize` that reads it then reports `InvalidReference`. The page names each of them.
     - The resources of each option, with `Deleted` or `Kept` for each.
     - With **Delete the resources**: `Deleting a Database keeps its data on its server. Deleting a DatabaseServer erases the server and its data.`

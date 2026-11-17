@@ -109,7 +109,7 @@ export function PlaneActions({
             confirmLabel="Suspend the management plane"
             goes={[
               `Every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize stops for every cluster that this plane serves (${served}).`,
-              ...(ownKeycloak && served > 0 ? [KEYCLOAK_SUSPENDED] : []),
+              ...(ownKeycloak ? [KEYCLOAK_SUSPENDED] : []),
             ]}
             stays={[
               "The served clusters keep running, and the databases keep the data of the plane.",
@@ -151,4 +151,4 @@ export function PlaneActions({
 }
 
 const KEYCLOAK_SUSPENDED =
-  "The served clusters that use OIDC sign in at the Keycloak of this plane. Their users and API clients cannot sign in or get tokens until the plane resumes.";
+  "Each cluster that uses the Keycloak of this plane as its OIDC issuer loses sign-in: its users and API clients cannot sign in or get tokens until the plane resumes.";

@@ -56,7 +56,7 @@ export const KeycloakSuspendOpen: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Suspend" }));
     await expect(
-      canvas.getByText(/sign in at the Keycloak of this plane/),
+      canvas.getByText(/uses the Keycloak of this plane as its OIDC issuer/),
     ).toBeVisible();
   },
 };

@@ -719,7 +719,7 @@ describe("PlaneView", () => {
       expect(
         screen.getByRole("group", { name: "Suspend" }).textContent,
       ).toContain(
-        "The served clusters that use OIDC sign in at the Keycloak of this plane.",
+        "Each cluster that uses the Keycloak of this plane as its OIDC issuer loses sign-in",
       );
     });
 

@@ -384,7 +384,7 @@ describe("DeletePlane", () => {
     }) as unknown as DeletePlaneData;
 
   const KEYCLOAK_SIGN_IN =
-    "Those that use OIDC sign in at the Keycloak of this plane, so their users and API clients can no longer sign in or get tokens.";
+    "Each cluster that uses the Keycloak of this plane as its OIDC issuer loses sign-in: its users and API clients can no longer sign in or get tokens.";
   const REALM_ERASED =
     "When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.";
 
@@ -399,10 +399,8 @@ describe("DeletePlane", () => {
     expect(caution.textContent).toContain(KEYCLOAK_SIGN_IN);
     expect(caution.textContent).toContain(REALM_ERASED);
     expect(
-      screen.getByText(
-        /A cluster that uses OIDC signs in at the Keycloak of this plane/,
-      ),
-    ).toBeTruthy();
+      screen.getByText(/These clusters stay and keep running\./).textContent,
+    ).toContain(KEYCLOAK_SIGN_IN);
     fireEvent.click(radio(/Keep the resources/));
     await waitFor(() =>
       expect(
@@ -424,8 +422,30 @@ describe("DeletePlane", () => {
     expect(screen.queryByText(/Keycloak of this plane/)).toBeNull();
   });
 
-  it("the review of a plane that serves no cluster has no caution", async () => {
-    const initial = planeWith({ identityProvider: { keycloak: {} } }, []);
+  it("the review of a plane with its own Keycloak and no attached cluster still warns about the clusters that sign in at that Keycloak", async () => {
+    const initial = planeWith({ identityProvider: { keycloak: {} } }, [
+      {
+        namespace: "team-orders",
+        name: "orders",
+        attached: false,
+        reason: "NotReady",
+      },
+    ]);
+    page(initial);
+    await readAll(initial);
+    await screen.findByRole("button", { name: "Delete the management plane" });
+    expect(screen.queryByText("The plane serves no cluster now.")).toBeNull();
+    expect(
+      screen.getByText(`No cluster is attached now. ${KEYCLOAK_SIGN_IN}`),
+    ).toBeTruthy();
+    expect(screen.queryByText(/still serves/)).toBeNull();
+    expect(
+      await screen.findByText(`${KEYCLOAK_SIGN_IN} ${REALM_ERASED}`),
+    ).toBeTruthy();
+  });
+
+  it("the review of an OIDC plane that serves no cluster has no caution", async () => {
+    const initial = planeWith({ identityProvider: { oidc: {} } }, []);
     page(initial);
     await readAll(initial);
     await screen.findByRole("button", { name: "Delete the management plane" });
