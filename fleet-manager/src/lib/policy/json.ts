@@ -53,6 +53,11 @@ export function byCodeUnit(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** objectOrEmpty returns value when it is a plain JSON object, else an empty object. */
+export function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return isObject(value) ? value : {};
+}
+
 /** isObject says whether value is a plain JSON object: not null, not a list. */
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

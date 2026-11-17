@@ -43,7 +43,11 @@ import {
   userMinors,
   usersOf,
 } from "./model";
-import { type PlatformSources, usePlatformSources } from "./sources";
+import {
+  type PlatformSnapshot,
+  type PlatformSources,
+  usePlatformSources,
+} from "./sources";
 import { UsersSection } from "./users-section";
 
 /** PlatformActions are the writes of the detail: the server actions on the page, fakes in tests and stories. */
@@ -281,7 +285,7 @@ export function PlatformDetailLive({
   mode,
   actions,
 }: {
-  initial: PlatformSources;
+  initial: PlatformSnapshot;
   imagesTable: ImagesTable;
   name: string;
   mode?: WriteMode;

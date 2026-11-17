@@ -49,7 +49,11 @@ import {
   withoutOption,
 } from "./settings";
 import { UnknownNames } from "./unknown-names";
-import { type EnvironmentSources, useEnvironmentSources } from "./sources";
+import {
+  type EnvironmentSnapshot,
+  type EnvironmentSources,
+  useEnvironmentSources,
+} from "./sources";
 import { Radio } from "@/components/ui/radio";
 
 const READY: FleetEnvironmentConditionType = "Ready";
@@ -76,7 +80,7 @@ export function EnvironmentEditor({
 }: {
   sources: EnvironmentSources & {
     errors: ReadError[];
-    namespacesStale?: boolean;
+    stale?: readonly string[];
   };
   name?: string;
   mode?: WriteMode;
@@ -124,7 +128,7 @@ export function EnvironmentEditor({
   );
   const members = labelledNamespaces(name ?? "", sources.namespaces);
   const namespacesUnread =
-    sources.namespacesStale ||
+    (sources.stale ?? []).includes("Namespace") ||
     sources.errors.some((e) => e.kind === "Namespace");
   const blocked =
     errors[0]?.message ??
@@ -421,7 +425,7 @@ export function EnvironmentEditorLive({
   mode,
   actions,
 }: {
-  initial: EnvironmentSources;
+  initial: EnvironmentSnapshot;
   name?: string;
   mode?: WriteMode;
   actions: EnvironmentActions;

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { cloneElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { pluginRegistration } from "@/components/setup/plugins/fixtures";
 import { list } from "@/lib/k8s/read";
@@ -9,6 +10,7 @@ import PluginsPage, { dynamic } from "./page";
 const bundled = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/bundled", () => ({ getBundledData: bundled }));
 const failing = vi.hoisted(() => ({ kind: "" }));
+const watch = vi.hoisted(() => ({ answered: false }));
 const served = vi.hoisted(() => ({ lists: {} as Record<string, unknown[]> }));
 vi.mock("@/lib/k8s/read", () => ({
   list: vi.fn(async (kind: string) => {
@@ -23,7 +25,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
     items: initial,
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
-    lists.map(({ kind }) => kind !== failing.kind),
+    lists.map(({ kind }) => watch.answered || kind !== failing.kind),
 }));
 
 const chart = (name: string): CatalogChart => ({
@@ -44,6 +46,7 @@ afterEach(() => {
   vi.mocked(list).mockClear();
   bundled.mockReset();
   failing.kind = "";
+  watch.answered = false;
   served.lists = {};
 });
 
@@ -97,6 +100,26 @@ describe("PluginsPage", () => {
       screen.queryByText("No option is installed for this section."),
     ).toBeNull();
     expect(within(catalogPanel()).queryByText("rustfs")).toBeNull();
+  });
+
+  it("shows the error of a failed server read until the watch of its kind answers", async () => {
+    failing.kind = "PluginRequest";
+    bundled.mockResolvedValueOnce({
+      catalog: { schemaVersion: 1, charts: [] },
+    });
+    const page = await PluginsPage();
+    const { rerender } = render(page);
+    const readErrors = () =>
+      screen
+        .queryAllByRole("alert")
+        .map((alert) => alert.textContent)
+        .filter((text) => text?.startsWith("Could not read"));
+    expect(readErrors()).toEqual([
+      "Could not read PluginRequest: PluginRequest is forbidden",
+    ]);
+    watch.answered = true;
+    rerender(cloneElement(page));
+    expect(readErrors()).toEqual([]);
   });
 
   it("calls no registration lost after a failed read of PluginSection", async () => {

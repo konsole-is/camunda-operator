@@ -4,7 +4,7 @@ import { type ReactNode, useState } from "react";
 import { EditButton, EditPanel } from "@/components/cluster/edit/claim-editor";
 import { planeExternalUrls } from "@/lib/planes/urls";
 import { claimAfter } from "@/lib/session";
-import { BasicsPanel } from "./basics-panel";
+import { PlaneBasicsPanel } from "./basics-panel";
 import { ComponentsPanel } from "./components-panel";
 import { IdentityPanel } from "./identity-panel";
 import {
@@ -24,7 +24,7 @@ import { ServedPanel } from "./served-panel";
 import { VersionsPanel } from "./versions-panel";
 
 const EDITORS: Record<PlaneClaimPanel, () => ReactNode> = {
-  basics: () => <BasicsPanel />,
+  basics: () => <PlaneBasicsPanel />,
   identity: () => <IdentityPanel />,
   environments: () => <ServedPanel />,
   components: () => <ComponentsPanel />,

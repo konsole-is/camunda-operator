@@ -8,6 +8,7 @@
 // same reason.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { messageOf } from "@/lib/text";
 
 /** ImageEntry is one image of one Camunda minor. */
 export type ImageEntry = {
@@ -182,8 +183,4 @@ function record(value: unknown, where: string): Record<string, unknown> {
     throw new Error(`${where} is not an object`);
   }
   return value as Record<string, unknown>;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

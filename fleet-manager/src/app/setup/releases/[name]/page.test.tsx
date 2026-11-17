@@ -61,7 +61,7 @@ vi.mock("@/app/setup/releases/actions", () => ({
   applyReleaseMove: vi.fn(),
 }));
 vi.mock("@/components/setup/releases/release-detail", () => ({
-  ReleaseDetail: (props: { data: { name: string }; tab: string }) => {
+  ReleaseDetailLive: (props: { data: { name: string }; tab: string }) => {
     seen.props = props;
     return (
       <p>

@@ -7,6 +7,7 @@ import { ACCESS_SECTION } from "@/lib/labels";
 import type { FieldPath } from "@/lib/merge";
 import {
   deletionPolicyOf,
+  objectOrEmpty,
   parameterPolicies,
   type ParameterPolicies,
   type PluginSelection,
@@ -345,11 +346,12 @@ function selectionFields(
     registration,
     environment,
   );
-  const claimed = asObject(s.parameters);
+  // The CRD does not give parameters or their schema a shape.
+  const claimed = objectOrEmpty(s.parameters);
   const names = [
     ...new Set([
       ...Object.keys(
-        asObject(asObject(registration?.spec.parameters).properties),
+        objectOrEmpty(objectOrEmpty(registration?.spec.parameters).properties),
       ),
       ...Object.keys(policies),
       ...Object.keys(claimed),
@@ -418,13 +420,5 @@ function fieldSteps(...names: string[]): Step[] {
 }
 
 function valueAt(value: unknown, names: readonly string[]): unknown {
-  return names.reduce<unknown>((at, name) => asObject(at)[name], value);
-}
-
-// The CRD does not give parameters or their schema a shape, so these read
-// them defensively.
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return names.reduce<unknown>((at, name) => objectOrEmpty(at)[name], value);
 }

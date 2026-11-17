@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { ReleaseDetail } from "@/components/setup/releases/release-detail";
+import { ReleaseDetailLive } from "@/components/setup/releases/release-detail";
 import { releaseTabOf } from "@/components/setup/releases/release-tabs";
-import { getBundledData } from "@/lib/bundled";
+import { loadImagesTable } from "@/lib/bundled/images";
 import { get } from "@/lib/k8s/read";
 import { listSecretRefsIn } from "@/lib/secrets";
 import { releaseSecretNamespaces } from "@/lib/usage";
@@ -29,12 +29,7 @@ export default async function ReleasePage({
     loadReleases(),
     loadRolloutLists(),
     writeMode().catch(() => undefined),
-    // The server checked the table at start. A table that cannot be read
-    // now gives no default image.
-    getBundledData().then(
-      (bundled) => bundled.imagesTable,
-      () => ({ schemaVersion: 1 as const, minors: {} }),
-    ),
+    loadImagesTable(),
   ]);
   if (!found) notFound();
   // The Secret lists are read once, when the page opens.
@@ -42,7 +37,7 @@ export default async function ReleasePage({
     releaseSecretNamespaces(name, sources),
   );
   return (
-    <ReleaseDetail
+    <ReleaseDetailLive
       data={{ name, sources, rollout, imagesTable, secrets }}
       tab={releaseTabOf(tab)}
       mode={mode}

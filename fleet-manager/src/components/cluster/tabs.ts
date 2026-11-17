@@ -1,3 +1,5 @@
+import { tabOf } from "@/lib/tabs";
+
 export type ClusterTab = "overview" | "backups" | "endpoints" | "claim";
 
 export const CLUSTER_TABS: readonly { value: ClusterTab; label: string }[] = [
@@ -8,12 +10,11 @@ export const CLUSTER_TABS: readonly { value: ClusterTab; label: string }[] = [
 ];
 
 /**
- * clusterTabOf returns the tab that the tab query parameter names. Of an
- * array, the first item counts. An unknown or missing value is overview.
+ * clusterTabOf returns the tab that the tab query parameter names, as tabOf
+ * does. The fallback is overview.
  */
 export function clusterTabOf(value: string | string[] | undefined): ClusterTab {
-  const first = Array.isArray(value) ? value[0] : value;
-  return CLUSTER_TABS.find((t) => t.value === first)?.value ?? "overview";
+  return tabOf(CLUSTER_TABS, value, "overview");
 }
 
 /** ClaimPanel names one panel of the Claim tab. A section panel is section:<section name>. */

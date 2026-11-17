@@ -39,7 +39,7 @@ function setup(
   opts: {
     name?: string;
     mode?: WriteMode;
-    sources?: EnvironmentSources & { namespacesStale?: boolean };
+    sources?: EnvironmentSources & { stale?: string[] };
     result?: WriteResult;
     errors?: ReadError[];
   } = {},
@@ -631,7 +631,7 @@ describe("EnvironmentEditor", () => {
   it("offers no Delete while the namespace list is not fresh", () => {
     const sources = environmentFixtures();
     sources.namespaces = [];
-    setup({ sources: { ...sources, namespacesStale: true } });
+    setup({ sources: { ...sources, stale: ["Namespace"] } });
     expect(
       screen.getByText(
         "Delete is possible when the fleet manager can read the namespaces.",
@@ -647,7 +647,7 @@ describe("EnvironmentEditor", () => {
       errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
     });
     const unread =
-      "The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.";
+      "The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.";
     fireEvent.change(displayName(), { target: { value: "Prod" } });
     const note = screen.getByRole("note", { name: "Impact" });
     expect(note.textContent).toContain(unread);

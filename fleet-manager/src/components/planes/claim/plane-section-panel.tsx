@@ -7,6 +7,7 @@ import { LockedField } from "@/components/fleet/locked-field";
 import { SecretRefsReaderContext } from "@/components/fleet/namespaced-secret-ref-picker";
 import { type ClusterField, lockLabel, type PlaneField } from "@/lib/fields";
 import { child } from "@/lib/merge";
+import { objectOrEmpty } from "@/lib/policy/json";
 import type { OpenAPISchema } from "@/lib/schema";
 import { claimAfter } from "@/lib/session";
 import { errorsAt } from "@/components/cluster/settings-editor";
@@ -67,7 +68,7 @@ export function PlaneSectionPanel({
             p.allowed as Choice[] | undefined,
           ]),
         );
-        const claimed = asObject(selection?.parameters);
+        const claimed = objectOrEmpty(selection?.parameters);
         const editable = parameters.some((f) => !f.lock);
         return (
           <section key={option.key} className="flex min-w-0 flex-col gap-3">
@@ -166,10 +167,4 @@ function clusterFieldOf(
     claimPath: field.claimPath,
     claimSteps: field.claimSteps,
   };
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

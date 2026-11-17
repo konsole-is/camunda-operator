@@ -3,6 +3,7 @@ import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
 import type { ValidationError } from "@/lib/schema";
+import { deleteChangeOf } from "@/lib/write/delete";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 
@@ -172,15 +173,10 @@ export function updateChange(
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: CamundaPlatformConfig): Change {
-  const name = live.metadata.name ?? "";
-  const uid = live.metadata.uid;
-  return {
-    intent: `Delete the platform config ${name}`,
-    apply: [],
-    delete: [{ apiVersion: API_VERSION, kind: KIND, name }],
-    ...preconditionOf(name, live.metadata.resourceVersion),
-    ...(uid ? { uids: { [refKey({ kind: KIND, name })]: uid } } : {}),
-  };
+  return deleteChangeOf(
+    [{ apiVersion: API_VERSION, kind: KIND, metadata: live.metadata }],
+    `Delete the platform config ${live.metadata.name ?? ""}`,
+  );
 }
 
 type SecretRef = { namespace?: string; name?: string; key?: string };

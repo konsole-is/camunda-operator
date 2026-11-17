@@ -15,7 +15,7 @@ import {
   releaseFixtures,
   rolloutListsFixture,
 } from "./fixtures";
-import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
+import { type ReleaseActions, ReleaseDetail } from "./release-detail";
 import type { ReleaseTab } from "./release-tabs";
 import { rolloutData } from "./rollout-fixtures";
 import type { RolloutLists } from "./rollout-sources";
@@ -50,7 +50,7 @@ function show(
 ) {
   render(
     <GitPushesProvider>
-      <ReleaseDetailView
+      <ReleaseDetail
         sources={{ ...sources, errors: [] }}
         rollout={rollout}
         name={name}
@@ -64,7 +64,7 @@ function show(
   );
 }
 
-describe("ReleaseDetailView", () => {
+describe("ReleaseDetail", () => {
   it("shows the Settings tab and the Environments card", () => {
     show();
     expect(

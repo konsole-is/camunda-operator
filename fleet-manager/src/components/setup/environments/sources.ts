@@ -14,9 +14,10 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import type { ReadError } from "@/lib/k8s/unread";
+import { useAnswered } from "@/lib/k8s/answered";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { SOURCE_KINDS } from "./source-kinds";
 
 /** EnvironmentSources holds every list that the Environments page reads, in all namespaces. */
@@ -38,17 +39,25 @@ export type EnvironmentSources = {
 };
 
 /**
- * useEnvironmentSources follows each list of initial live. errors holds the
- * error of each failed watch. The lists then keep their last items, which
- * can be out of date. namespacesStale is true while the watch of the
- * namespaces is not fresh (freshKey).
+ * EnvironmentSnapshot is the first snapshot of the Environments pages.
+ * readErrors holds the error of each kind that the server could not read.
+ */
+export type EnvironmentSnapshot = EnvironmentSources & {
+  readErrors?: ReadError[];
+};
+
+/**
+ * useEnvironmentSources follows each list of initial live. errors holds
+ * the error of each failed watch, and the error of initial.readErrors of
+ * each other kind until the watch of that kind answers. The lists then
+ * keep their last items, which can be out of date. stale holds the kind of
+ * each list whose watch is not fresh (freshKey).
  */
 export function useEnvironmentSources(
-  initial: EnvironmentSources,
-): EnvironmentSources & { errors: ReadError[]; namespacesStale: boolean } {
+  initial: EnvironmentSnapshot,
+): EnvironmentSources & { errors: ReadError[]; stale: string[] } {
   const environments = useLive("Environment", initial.environments);
   const namespaces = useLive("Namespace", initial.namespaces);
-  const [namespacesFresh] = useWatchesFresh([{ kind: "Namespace", opts: {} }]);
   const clusterClaims = useLive("CamundaClusterClaim", initial.clusterClaims);
   const planeClaims = useLive(
     "CamundaManagementClusterClaim",
@@ -92,12 +101,16 @@ export function useEnvironmentSources(
     releases,
     platformConfigs,
   };
-  const errors = (Object.keys(results) as (keyof EnvironmentSources)[]).flatMap(
+  const kinds = Object.values(SOURCE_KINDS);
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
+  const answered = useAnswered(kinds);
+  const live = (Object.keys(results) as (keyof EnvironmentSources)[]).flatMap(
     (key) => {
       const error = results[key].error;
       return error ? [{ kind: SOURCE_KINDS[key], message: error }] : [];
     },
   );
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     environments: environments.items,
     namespaces: namespaces.items,
@@ -114,20 +127,6 @@ export function useEnvironmentSources(
     releases: releases.items,
     platformConfigs: platformConfigs.items,
     errors,
-    namespacesStale: !namespacesFresh,
+    stale: kinds.filter((_, i) => !fresh[i]),
   };
-}
-
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the Environments page does not read.
-function useLive<K extends KindName, T>(
-  kind: K,
-  initial: T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

@@ -36,10 +36,16 @@ describe("loadRolloutLists", () => {
     ]);
   });
 
-  it("gives no objects of a kind whose server read fails, and keeps the others", async () => {
+  it("gives no objects and a read error for a kind whose server read fails, and keeps the others", async () => {
     k8s.failing = "LogicalBackupRDBMS";
     const data = await loadRolloutLists();
     expect(data.rdbmsBackups).toEqual([]);
     expect(data.elasticsearchBackups).toHaveLength(1);
+    expect(data.readErrors).toEqual([
+      {
+        kind: "LogicalBackupRDBMS",
+        message: "LogicalBackupRDBMS is forbidden",
+      },
+    ]);
   });
 });

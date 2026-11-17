@@ -47,7 +47,7 @@ A reason of `Ready` comes from the controller of the option. Read its message, a
 
 ## The page of an option
 
-The page of an option shows the label of the registration as its title, and its name under the title. The page has six tabs: **About**, **Contract**, **Parameters**, **Grants**, **Health**, and **Used by**. The address keeps the open tab, for example `/setup/plugins/elasticsearch?tab=usedBy`. If the registration is removed while the page is open, the page says `This registration no longer exists`. It keeps saying so when it cannot read the registrations after that, and then adds `It was gone when the page last read it`.
+The page of an option shows the label of the registration as its title, and its name under the title. The page has six tabs: **About**, **Contract**, **Parameters**, **Grants**, **Health**, and **Used by**. The address keeps the open tab, for example `/setup/plugins/elasticsearch?tab=used-by`. If the registration is removed while the page is open, the page says `This registration no longer exists`. It keeps saying so when it cannot read the registrations after that, and then adds `It was gone when the page last read it`.
 
 ### About
 
