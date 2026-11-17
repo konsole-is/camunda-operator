@@ -7,6 +7,7 @@ import {
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
   isClaimManager,
+  isKnownManager,
   keptRemovals,
   lastChanged,
   managerKind,
@@ -537,6 +538,25 @@ describe("keptRemovals", () => {
       kept: [],
       result: { spec: gone },
     });
+  });
+});
+
+describe("isKnownManager", () => {
+  it.each([
+    ["kubectl", true],
+    ["kubectl-client-side-apply", true],
+    ["kubectl-edit", true],
+    ["kubectl-patch", true],
+    ["kubectl-create", true],
+    ["kubectl-replace", true],
+    ["helm", true],
+    ["fleet-manager", true],
+    ["camunda-operator/camundacluster", true],
+    ["argocd-controller", true],
+    ["my-script", false],
+    ["kubectl-something", false],
+  ])("%s is known: %s", (name, known) => {
+    expect(isKnownManager(name)).toBe(known);
   });
 });
 

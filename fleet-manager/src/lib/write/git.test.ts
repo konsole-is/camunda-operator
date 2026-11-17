@@ -348,7 +348,12 @@ describe("the Git writer", slow, () => {
               path: "spec.color",
               steps: [{ field: "spec" }, { field: "color" }],
               managers: [
-                { name: "kubectl", operation: "Apply", kind: "other" },
+                {
+                  name: "kubectl",
+                  operation: "Apply",
+                  kind: "other",
+                  known: true,
+                },
               ],
             },
           ],

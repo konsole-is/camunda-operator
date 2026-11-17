@@ -168,6 +168,7 @@ describe("a take-over against the API server", () => {
                 name: "kubectl-client-side-apply",
                 operation: "Update",
                 kind: "other",
+                known: true,
               },
             ],
           }),
@@ -239,7 +240,9 @@ describe("a take-over against the API server", () => {
     expect(preview.ownership?.[0].changed).toEqual([
       expect.objectContaining({
         path: "spec.displayName",
-        managers: [{ name: "kubectl", operation: "Apply", kind: "other" }],
+        managers: [
+          { name: "kubectl", operation: "Apply", kind: "other", known: true },
+        ],
       }),
     ]);
     expect(preview.errors).toEqual([
@@ -380,6 +383,18 @@ describe("a take-over against the API server", () => {
         importer: { extraEnv: [{ name: "TZ" }] },
       },
     });
+    const item = [
+      "f:spec",
+      "f:attachments",
+      "f:optimize",
+      "f:importer",
+      "f:extraEnv",
+      'k:{"name":"TZ"}',
+    ];
+    expect(owns(after, "kubectl-client-side-apply", item, "Update")).toBe(true);
+    expect(
+      owns(after, "kubectl-client-side-apply", [...item, "f:name"], "Update"),
+    ).toBe(true);
   });
 
   it("a field of an operator controller is not offered and a request that lists it writes nothing", async () => {
@@ -395,7 +410,7 @@ describe("a take-over against the API server", () => {
     const preview = await previewEnvironmentChange(change);
     const field = preview.ownership![0].changed[0];
     expect(field.managers).toEqual([
-      { name: operator, operation: "Apply", kind: "operator" },
+      { name: operator, operation: "Apply", kind: "operator", known: true },
     ]);
     expect(offered(field)).toBe(false);
     expect(withTakeOver(change, preview.ownership!)).toBe(change);

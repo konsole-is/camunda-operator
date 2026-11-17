@@ -107,11 +107,16 @@ export type PreviewObject = {
   diff: DiffLine[];
 };
 
-/** ForeignManager is a field manager other than the server-side apply of the fleet manager. */
+/**
+ * ForeignManager is a field manager other than the server-side apply of
+ * the fleet manager. known is false for a tool that the fleet manager does
+ * not know (isKnownManager).
+ */
 export type ForeignManager = {
   name: string;
   operation: string;
   kind: ManagerKind;
+  known: boolean;
 };
 
 /**

@@ -321,7 +321,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           const force = lists.takeOver.length > 0;
           const after = await applyObject(object, resourceVersion, force, true);
           if (force) {
-            const unlisted = unlistedTakes(ref, before!, after, lists.takeOver);
+            const unlisted = unlistedTakes(
+              ref,
+              before!,
+              after,
+              foreign!.changed.filter((f) => lists.takeOver.includes(f.path)),
+            );
             if (unlisted.length > 0) {
               errors.push(...unlisted);
               continue;
@@ -544,6 +549,17 @@ function takeOverRefusals(
       });
   }
   if (operator.length > 0) return operator;
+  for (const path of new Set([...lists.takeOver, ...lists.remove])) {
+    if (fields.filter((f) => f.path === path).length > 1)
+      return [
+        {
+          code: "Invalid",
+          message: `${path} names more than one field of the ${ref.kind} ${ref.name}. The fleet manager does not take over a field that it cannot name exactly.`,
+          path,
+          ref,
+        },
+      ];
+  }
   const offeredPaths = (list: ForeignField[]) =>
     list.filter(offered).map((f) => f.path);
   if (
@@ -562,16 +578,18 @@ function takeOverRefusals(
 }
 
 // unlistedTakes gives a Conflict for each field that the forced dry run
-// took from a manager while takeOver does not list it, as the walk of
-// foreignFields can miss a field that the API server counts.
+// took from a manager while listed does not hold it, as the walk of
+// foreignFields can miss a field that the API server counts. Fields are
+// compared by their steps, because two fields can have one path string.
 function unlistedTakes(
   ref: ObjectRef,
   before: KubeObject,
   after: KubeObject,
-  takeOver: string[],
+  listed: ForeignField[],
 ): ApiError[] {
+  const keys = new Set(listed.map((f) => JSON.stringify(f.steps)));
   return takenFields(before, after)
-    .filter((f) => !takeOver.includes(f.path))
+    .filter((f) => !keys.has(JSON.stringify(f.steps)))
     .flatMap((f) =>
       f.managers.map((m): ApiError => ({
         code: "Conflict",

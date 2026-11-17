@@ -582,6 +582,7 @@ describe("directWriter with a take-over", () => {
                 name: "kubectl-client-side-apply",
                 operation: "Update",
                 kind: "other",
+                known: true,
               },
             ],
           },
@@ -672,6 +673,11 @@ describe("directWriter with a take-over", () => {
     expect(error.message).toMatch(
       /^The fleet manager saved the Environment staging, but did not remove spec\.displayName\. /,
     );
+    const applied = writes().find(
+      (r) => r.contentType === "application/apply-patch+yaml",
+    )!;
+    expect(applied.url).toContain("force=false");
+    expect(applied.body).toMatchObject({ metadata: { resourceVersion: "7" } });
     const removal = writes().at(-1)!;
     expect(removal).toMatchObject({
       method: "PATCH",
@@ -679,6 +685,68 @@ describe("directWriter with a take-over", () => {
       body: { metadata: { resourceVersion: "8" }, spec: { displayName: null } },
     });
     expect(removal.url).toContain("fieldManager=fleet-manager");
+  });
+
+  it("applies a take-over once with force at the resourceVersion of the review", async () => {
+    const live = environment({ displayName: "Stage" }, [
+      kubectlOwns("displayName"),
+    ]);
+    const taken = environment({ displayName: "Prod" }, [
+      {
+        manager: "fleet-manager",
+        operation: "Apply",
+        fieldsV1: { "f:spec": { "f:displayName": {} } },
+      },
+    ]);
+    answer = (r) => ({ status: 200, body: r.method === "GET" ? live : taken });
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Rename",
+      apply: [environment({ displayName: "Prod" })],
+      preconditions: { [key]: "7" },
+      takeOver: { [key]: ["spec.displayName"] },
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const applies = writes().filter((r) => r.method === "PATCH");
+    expect(applies).toHaveLength(1);
+    expect(applies[0].url).toContain("force=true");
+    expect(applies[0].body).toMatchObject({
+      metadata: { resourceVersion: "7" },
+    });
+  });
+
+  it("refuses a listed path that names two fields", async () => {
+    const live = environment({ parameters: { "a.b": 1, a: { b: 2 } } }, [
+      {
+        manager: "kubectl",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": { "f:parameters": { "f:a.b": {}, "f:a": { "f:b": {} } } },
+        },
+      },
+    ]);
+    answer = () => ({ status: 200, body: live });
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Change both",
+      apply: [environment({ parameters: { "a.b": 3, a: { b: 4 } } })],
+      preconditions: { [key]: "7" },
+      takeOver: { [key]: ["spec.parameters.a.b"] },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          path: "spec.parameters.a.b",
+          message:
+            "spec.parameters.a.b names more than one field of the Environment staging. The fleet manager does not take over a field that it cannot name exactly.",
+        }),
+      ],
+    });
+    expect(seen.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
   it("refuses lists that differ from the fields of other managers", async () => {

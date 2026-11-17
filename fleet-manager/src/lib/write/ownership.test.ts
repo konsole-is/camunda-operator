@@ -51,6 +51,7 @@ describe("foreignFields", () => {
               name: "kubectl-client-side-apply",
               operation: "Update",
               kind: "other",
+              known: true,
             },
           ],
         },
@@ -81,7 +82,9 @@ describe("foreignFields", () => {
     expect(changed).toEqual([
       expect.objectContaining({
         path: "spec.displayName",
-        managers: [{ name: "kubectl", operation: "Apply", kind: "other" }],
+        managers: [
+          { name: "kubectl", operation: "Apply", kind: "other", known: true },
+        ],
       }),
     ]);
   });
@@ -113,7 +116,9 @@ describe("foreignFields", () => {
       sections: { kept: { required: false } },
       presets: { camundaCluster: ["a"] },
     });
-    const kubectl = [{ name: "kubectl", operation: "Apply", kind: "other" }];
+    const kubectl = [
+      { name: "kubectl", operation: "Apply", kind: "other", known: true },
+    ];
     expect(foreignFields(live, applied)).toEqual({
       changed: [],
       cleared: [
@@ -176,7 +181,9 @@ describe("foreignFields", () => {
           { item: { name: "x" } },
           { field: "label" },
         ],
-        managers: [{ name: "kubectl", operation: "Apply", kind: "other" }],
+        managers: [
+          { name: "kubectl", operation: "Apply", kind: "other", known: true },
+        ],
       },
     ]);
   });
@@ -199,7 +206,12 @@ describe("foreignFields", () => {
       expect.objectContaining({
         path: "spec.displayName",
         managers: [
-          { name: "fleet-manager", operation: "Update", kind: "other" },
+          {
+            name: "fleet-manager",
+            operation: "Update",
+            kind: "other",
+            known: true,
+          },
         ],
       }),
     ]);
@@ -282,13 +294,41 @@ describe("foreignFields", () => {
     expect(changed[0].managers[0].kind).toBe("gitops");
     expect(offered(changed[0])).toBe(true);
   });
+
+  it("marks a tool that the fleet manager does not know", () => {
+    const live = environment({ displayName: "Stage", color: "red" }, [
+      entry("my-script", "Apply", displayName),
+      entry("kubectl-edit", "Update", { "f:spec": { "f:color": {} } }),
+    ]);
+    const { changed } = foreignFields(
+      live,
+      environment({ displayName: "Prod", color: "blue" }),
+    );
+    expect(changed.flatMap((f) => f.managers)).toEqual([
+      { name: "kubectl-edit", operation: "Update", kind: "other", known: true },
+      { name: "my-script", operation: "Apply", kind: "other", known: false },
+    ]);
+    expect(changed.every(offered)).toBe(true);
+  });
+
+  it("leaves out the fields of a subresource entry", () => {
+    const live = environment({ displayName: "Stage" }, [
+      { ...entry("kubectl", "Update", displayName), subresource: "scale" },
+    ]);
+    expect(foreignFields(live, environment({ displayName: "Prod" }))).toEqual({
+      changed: [],
+      cleared: [],
+    });
+  });
 });
 
 describe("withTakeOver", () => {
   const field = (path: string, name: string) => ({
     path,
     steps: [],
-    managers: [{ name, operation: "Apply", kind: "other" as const }],
+    managers: [
+      { name, operation: "Apply", kind: "other" as const, known: true },
+    ],
   });
   const operatorField = (path: string) => ({
     path,
@@ -298,6 +338,7 @@ describe("withTakeOver", () => {
         name: `CamundaClusterClaim/cluster/${uid}`,
         operation: "Apply",
         kind: "operator" as const,
+        known: true,
       },
     ],
   });
@@ -324,6 +365,25 @@ describe("withTakeOver", () => {
       ...change,
       takeOver: { "Environment//staging": ["spec.a"] },
       remove: { "Environment//staging": ["spec.c"] },
+    });
+  });
+
+  it("lists a path once when two fields have it", () => {
+    const live = environment({ parameters: { "a.b": 1, a: { b: 2 } } }, [
+      entry("kubectl", "Apply", {
+        "f:spec": { "f:parameters": { "f:a.b": {}, "f:a": { "f:b": {} } } },
+      }),
+    ]);
+    const fields = foreignFields(
+      live,
+      environment({ parameters: { "a.b": 3, a: { b: 4 } } }),
+    );
+    expect(fields.changed.map((f) => f.path)).toEqual([
+      "spec.parameters.a.b",
+      "spec.parameters.a.b",
+    ]);
+    expect(withTakeOver(change, [{ ref, ...fields }]).takeOver).toEqual({
+      "Environment//staging": ["spec.parameters.a.b"],
     });
   });
 
@@ -359,13 +419,14 @@ describe("takenFields", () => {
             name: "kubectl-client-side-apply",
             operation: "Update",
             kind: "other",
+            known: true,
           },
         ],
       },
     ]);
   });
 
-  it("a field that another entry of the same manager owns is not taken", () => {
+  it("an entry of the same manager with another operation does not keep the field", () => {
     const before = environment({ displayName: "Stage" }, [
       entry("kubectl", "Apply", displayName),
     ]);
@@ -376,6 +437,24 @@ describe("takenFields", () => {
       "spec.displayName",
     ]);
     expect(takenFields(before, before)).toEqual([]);
+  });
+});
+
+describe("takenFields of a subresource entry", () => {
+  it("names a field that a subresource entry lost", () => {
+    const replicas = { "f:spec": { "f:replicas": {} } };
+    const before = environment({ replicas: 3 }, [
+      { ...entry("kubectl", "Update", replicas), subresource: "scale" },
+    ]);
+    const after = environment({ replicas: 5 }, [
+      entry("fleet-manager", "Apply", replicas),
+    ]);
+    expect(takenFields(before, after)).toEqual([
+      expect.objectContaining({
+        path: "spec.replicas",
+        managers: [expect.objectContaining({ name: "kubectl" })],
+      }),
+    ]);
   });
 });
 
@@ -460,5 +539,19 @@ describe("withoutFields", () => {
         },
       ]),
     ).toEqual({ spec: { allowed: [{ name: "y" }] } });
+  });
+
+  it("removes two items by index from the list as it was", () => {
+    const at = (index: number) => ({
+      path: `spec.items[${index}]`,
+      steps: [{ field: "spec" }, { field: "items" }, { index }],
+      managers: [],
+    });
+    expect(
+      withoutFields({ spec: { items: ["a", "b", "c", "d", "e"] } }, [
+        at(1),
+        at(3),
+      ]),
+    ).toEqual({ spec: { items: ["a", "c", "e"] } });
   });
 });

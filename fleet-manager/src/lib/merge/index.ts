@@ -37,6 +37,7 @@ export {
   wholeFieldManagers,
   isApplyOf,
   isClaimManager,
+  isKnownManager,
   itemOwners,
   keptRemovals,
   lastChanged,

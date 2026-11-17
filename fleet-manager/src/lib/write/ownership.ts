@@ -7,6 +7,7 @@ import {
   type OwnedStep,
   type OwnerTree,
   isApplyOf,
+  isKnownManager,
   itemOwners,
   managerKind,
   ownerTree,
@@ -32,6 +33,7 @@ type JsonMap = Record<string, unknown>;
  * fleet manager changes or clears while another field manager owns them.
  * Every managedFields entry other than the Apply entry of the fleet
  * manager is another manager, also an Update entry of the fleet manager.
+ * The fields of an entry of a subresource are in neither list.
  *
  * changed holds each field that applied sets to another value than live.
  * The apply fails on such a field unless it forces. cleared holds the
@@ -47,7 +49,7 @@ export function foreignFields(
 ): { changed: ForeignField[]; cleared: ForeignField[] } {
   const tree = ownerTree(
     live as ManagedObject,
-    (entry) => !isApplyOf(entry, APP_FIELD_MANAGER),
+    (entry) => !entry.subresource && !isApplyOf(entry, APP_FIELD_MANAGER),
   );
   const changed: ForeignField[] = [];
   const cleared: ForeignField[] = [];
@@ -141,6 +143,11 @@ export function offered(field: ForeignField): boolean {
   return field.managers.every((m) => m.kind !== "operator");
 }
 
+// Two fields can have one path string, and a list names each path once.
+function offeredPaths(fields: readonly ForeignField[]): FieldPath[] {
+  return [...new Set(fields.filter(offered).map((f) => f.path))];
+}
+
 /**
  * withTakeOver returns change with takeOver and remove set to the offered
  * changed and cleared fields of each entry of ownership whose object
@@ -157,8 +164,8 @@ export function withTakeOver(
   for (const object of ownership) {
     const key = refKey(object.ref);
     if (!applied.has(key)) continue;
-    const taken = object.changed.filter(offered).map((f) => f.path);
-    const removed = object.cleared.filter(offered).map((f) => f.path);
+    const taken = offeredPaths(object.changed);
+    const removed = offeredPaths(object.cleared);
     if (taken.length > 0) takeOver[key] = taken;
     if (removed.length > 0) remove[key] = removed;
   }
@@ -228,17 +235,27 @@ export function withoutFields<T extends object>(
   fields: readonly ForeignField[],
 ): T {
   const copy = copyJSON(object) as T;
+  // Find each item before the first splice, which moves the items after it.
+  const items = new Map<unknown[], Set<number>>();
+  const keys: [JsonMap, string][] = [];
   for (const field of fields) {
     const last = field.steps.at(-1);
     if (last === undefined) continue;
     const parent = valueAt(copy, field.steps.slice(0, -1));
     if (Array.isArray(parent)) {
       const index = indexIn(parent, last);
-      if (index >= 0) parent.splice(index, 1);
+      if (index < 0) continue;
+      const found = items.get(parent) ?? new Set<number>();
+      items.set(parent, found.add(index));
     } else if (isRecord(parent) && "field" in last) {
-      if (Object.hasOwn(parent, last.field)) delete parent[last.field];
+      keys.push([parent, last.field]);
     }
   }
+  for (const [parent, key] of keys)
+    if (Object.hasOwn(parent, key)) delete parent[key];
+  for (const [list, indexes] of items)
+    for (const index of [...indexes].sort((a, b) => b - a))
+      list.splice(index, 1);
   return copy;
 }
 
@@ -290,11 +307,18 @@ function foreignManagers(
   object: KubeObject,
 ): ForeignManager[] {
   return owners
-    .map((o) => ({
-      name: o.manager,
-      operation: o.operation,
-      kind: managerKind(o.manager, object as Parameters<typeof managerKind>[1]),
-    }))
+    .map((o) => {
+      const kind = managerKind(
+        o.manager,
+        object as Parameters<typeof managerKind>[1],
+      );
+      return {
+        name: o.manager,
+        operation: o.operation,
+        kind,
+        known: kind !== "other" || isKnownManager(o.manager),
+      };
+    })
     .sort((a, b) =>
       a.name === b.name
         ? compare(a.operation, b.operation)

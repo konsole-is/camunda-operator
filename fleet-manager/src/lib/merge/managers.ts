@@ -97,6 +97,27 @@ export function managerKind(
   return "other";
 }
 
+// HAND_TOOLS are field managers of tools that a person runs by hand.
+const HAND_TOOLS: readonly string[] = [
+  "kubectl",
+  "kubectl-client-side-apply",
+  "kubectl-edit",
+  "kubectl-patch",
+  "kubectl-create",
+  "kubectl-replace",
+  "helm",
+  APP_FIELD_MANAGER,
+];
+
+/**
+ * isKnownManager reports whether the field manager name is a tool that
+ * the fleet manager knows: kubectl, helm, the fleet manager itself, or a
+ * name that managerKind gives the kind operator or gitops.
+ */
+export function isKnownManager(name: string): boolean {
+  return HAND_TOOLS.includes(name) || managerKind(name) !== "other";
+}
+
 /**
  * revisionManager returns the field manager that applied the annotation
  * REVISION_ANNOTATION of object with server-side apply: the GitOps tool of
@@ -182,7 +203,10 @@ export function keptRemovals(
   after: object,
   applier: string = APP_FIELD_MANAGER,
 ): { kept: KeptField[]; result: object } {
-  const tree = ownerTree(live, (entry) => !isApplyOf(entry, applier));
+  const tree = ownerTree(
+    live,
+    (entry) => !entry.subresource && !isApplyOf(entry, applier),
+  );
   const kept: KeptField[] = [];
   const result = restore(tree, before, after, "", kept) as object;
   return { kept, result };
@@ -207,8 +231,7 @@ export type OwnerTree = {
 /**
  * ownerTree merges the FieldsV1 tree of each entry of
  * object.metadata.managedFields that include accepts. An entry without a
- * manager or without fieldsV1, and an entry of a subresource, owns no field
- * of the object and is never in the tree.
+ * manager or without fieldsV1 is never in the tree.
  */
 export function ownerTree(
   object: ManagedObject,
@@ -216,7 +239,7 @@ export function ownerTree(
 ): OwnerTree {
   const tree = newOwners();
   for (const entry of object.metadata?.managedFields ?? []) {
-    if (!entry.manager || entry.subresource || !entry.fieldsV1) continue;
+    if (!entry.manager || !entry.fieldsV1) continue;
     if (!include(entry)) continue;
     addOwner(tree, entry.fieldsV1 as Record<string, unknown>, {
       manager: entry.manager,
