@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { cloneElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { list } from "@/lib/k8s/read";
 import PlatformPage, { dynamic } from "./page";
 
 const failing = vi.hoisted(() => ({ kind: "" }));
+const watch = vi.hoisted(() => ({ answered: false }));
 vi.mock("@/lib/k8s/read", () => ({
   list: vi.fn(async (kind: string) => {
     if (kind === failing.kind) throw new Error(`${kind} is forbidden`);
@@ -26,13 +28,14 @@ vi.mock("@/lib/k8s/hooks", () => ({
     items: initial,
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
-    lists.map(({ kind }) => kind !== failing.kind),
+    lists.map(({ kind }) => watch.answered || kind !== failing.kind),
 }));
 
 afterEach(() => {
   cleanup();
   vi.mocked(list).mockClear();
   failing.kind = "";
+  watch.answered = false;
 });
 
 describe("PlatformPage", () => {
@@ -69,13 +72,19 @@ describe("PlatformPage", () => {
 
   it("shows the error of a failed server read until the watch of its kind answers", async () => {
     failing.kind = "Environment";
-    render(await PlatformPage());
-    expect(
+    const page = await PlatformPage();
+    const { rerender } = render(page);
+    const readErrors = () =>
       screen
-        .getAllByRole("alert")
+        .queryAllByRole("alert")
         .map((alert) => alert.textContent)
-        .filter((text) => text?.startsWith("Could not read")),
-    ).toEqual(["Could not read Environment: Environment is forbidden"]);
+        .filter((text) => text?.startsWith("Could not read"));
+    expect(readErrors()).toEqual([
+      "Could not read Environment: Environment is forbidden",
+    ]);
+    watch.answered = true;
+    rerender(cloneElement(page));
+    expect(readErrors()).toEqual([]);
   });
 
   it("shows no user count and names the kind whose server read failed until its watch answers", async () => {

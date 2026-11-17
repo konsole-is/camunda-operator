@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
+import { cloneElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { list } from "@/lib/k8s/read";
@@ -8,6 +9,7 @@ import ReleasesPage, { dynamic } from "./page";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 const failing = vi.hoisted(() => ({ kind: "" }));
+const watch = vi.hoisted(() => ({ answered: false }));
 vi.mock("@/lib/k8s/read", () => ({
   list: vi.fn(async (kind: string) => {
     if (kind === failing.kind) throw new Error(`${kind} is forbidden`);
@@ -20,7 +22,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
     items: initial,
   }),
   useWatchesFresh: (lists: { kind: string }[]) =>
-    lists.map(({ kind }) => kind !== failing.kind),
+    lists.map(({ kind }) => watch.answered || kind !== failing.kind),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
@@ -47,6 +49,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(list).mockClear();
   failing.kind = "";
+  watch.answered = false;
   fakeWriter.reset();
 });
 
@@ -86,12 +89,18 @@ describe("ReleasesPage", () => {
 
   it("shows the error of a failed server read until the watch of its kind answers", async () => {
     failing.kind = "Environment";
-    await show();
-    expect(
+    const page = await ReleasesPage();
+    const { rerender } = render(page, { wrapper: GitPushesProvider });
+    const readErrors = () =>
       screen
-        .getAllByRole("alert")
+        .queryAllByRole("alert")
         .map((alert) => alert.textContent)
-        .filter((text) => text?.startsWith("Could not read")),
-    ).toEqual(["Could not read Environment: Environment is forbidden"]);
+        .filter((text) => text?.startsWith("Could not read"));
+    expect(readErrors()).toEqual([
+      "Could not read Environment: Environment is forbidden",
+    ]);
+    watch.answered = true;
+    rerender(cloneElement(page));
+    expect(readErrors()).toEqual([]);
   });
 });
