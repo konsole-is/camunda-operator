@@ -269,7 +269,7 @@ function removal(field: ForeignField, final: unknown): ReactNode {
 }
 
 function Path({ children }: { children: string }) {
-  return <span className="font-mono text-text">{children}</span>;
+  return <span className="font-mono break-all text-text">{children}</span>;
 }
 
 // A list names each path once, so the server cannot tell two fields of one
