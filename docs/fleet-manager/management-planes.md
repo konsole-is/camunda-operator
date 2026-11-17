@@ -418,6 +418,8 @@ spec:
 
 When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
 
+In direct mode, another tool can own `spec.suspend` of the claim, for example `kubectl apply` of a claim file that sets `suspend`. Then **Suspend** or **Resume** shows the field and the tool, and asks to take it over. **Suspend the management plane** or **Resume the management plane** stays off until you take it over. The next **Suspend** or **Resume** asks again. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does.
+
 The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the browser tab that pushed it shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled there. In another tab, or after a reload, the fleet manager refuses a save of the claim until GitOps applies the delete. The page then shows that refusal.
 
 While the fleet manager cannot read its settings, **Suspend** and **Resume** are disabled, and the header says `Changes are off: the fleet manager could not read its settings.`

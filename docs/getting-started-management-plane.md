@@ -70,6 +70,8 @@ With Podman, use `podman exec`.
 
 Each step shows a manifest. Save it to a file and apply it with `kubectl apply -f <file>`.
 
+You can change these objects later in the [fleet manager](fleet-manager/management-planes.md). `kubectl apply` set their fields, so the review of a save names each field that the save changes or removes, and asks to take it over. [Fields that another tool set](fleet-manager/settings.md#fields-that-another-tool-set) says what a take-over does.
+
 ## 1. Create the namespaces
 
 The management plane runs in `my-management-ns`. The orchestration cluster runs in `my-cluster-ns`.
