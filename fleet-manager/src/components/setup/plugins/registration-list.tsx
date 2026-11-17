@@ -19,11 +19,7 @@ import {
   registrationGroups,
   registrationSummary,
 } from "./groups";
-import {
-  type RegistrationSnapshot,
-  type RegistrationSources,
-  useRegistrationSources,
-} from "./sources";
+import { type RegistrationSnapshot, useRegistrationSources } from "./sources";
 
 const MUTED = "block text-xs text-muted";
 const NOW_INTERVAL_MS = 30_000;

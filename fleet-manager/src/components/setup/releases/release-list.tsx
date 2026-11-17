@@ -25,11 +25,7 @@ import {
   releaseRows,
   usedByText,
 } from "./rows";
-import {
-  type ReleasesData,
-  type ReleasesSnapshot,
-  useReleaseSources,
-} from "./sources";
+import { type ReleasesSnapshot, useReleaseSources } from "./sources";
 
 const EMPTY = <span className="text-muted">-</span>;
 

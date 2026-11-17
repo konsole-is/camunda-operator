@@ -14,11 +14,7 @@ import {
   type UnassignedNamespace,
   unassignedNamespaces,
 } from "./rows";
-import {
-  type EnvironmentSnapshot,
-  type EnvironmentSources,
-  useEnvironmentSources,
-} from "./sources";
+import { type EnvironmentSnapshot, useEnvironmentSources } from "./sources";
 import { UnassignedBanner } from "./unassigned-banner";
 
 /**
