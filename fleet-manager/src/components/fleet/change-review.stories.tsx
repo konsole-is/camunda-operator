@@ -117,6 +117,7 @@ export const KeptField: Story = {
 };
 
 export const Git: Story = { name: "Git", args: { mode: "git" } };
+
 const kubectlField = {
   path: "spec.displayName",
   steps: [{ field: "spec" }, { field: "displayName" }],

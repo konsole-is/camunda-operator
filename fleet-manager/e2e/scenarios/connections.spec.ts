@@ -48,7 +48,7 @@ test("lists a contract created by hand with its user", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("saves a change of a contract created by hand", async ({
+test("saves a change of a contract created by hand after the take-over of its field", async ({
   page,
   scenario,
 }) => {
@@ -64,9 +64,20 @@ test("saves a change of a contract created by hand", async ({
       "CamundaCluster team-a/camundacluster-sample restarts its pods, all but Connectors.",
     ),
   ).toBeVisible();
+  // kubectl applied the contract, so the region is a field of kubectl.
+  const fields = review.getByRole("group", {
+    name: "Fields that another tool set",
+  });
+  await expect(
+    fields.getByText("kubectl set it. The save changes it."),
+  ).toBeVisible();
   const save = review.getByRole("button", { name: "Save" });
-  await expect(save).toBeEnabled();
+  await expect(save).toBeDisabled();
   await checkPage(page, "connection-edit");
+  await review
+    .getByRole("checkbox", { name: "Take over these fields" })
+    .click();
+  await expect(save).toBeEnabled();
   await save.click();
   await expect(page.getByText("The contract backups is saved.")).toBeVisible();
 
