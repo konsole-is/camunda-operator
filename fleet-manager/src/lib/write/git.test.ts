@@ -445,6 +445,114 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Never applied", "Initial commit"]);
   });
 
+  // pushedThenDeleted pushes a save and a delete of the claim orders, and
+  // leaves the live claim as GitOps applied the save: with the revision of
+  // the pushed file, which the repository no longer holds.
+  const pushedThenDeleted = async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    const saved = ok(
+      await writerFor().apply({
+        intent: "Save",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+    const revision = saved.revisions["CamundaClusterClaim/team-a/orders"];
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders", "large"),
+      metadata: {
+        name: "orders",
+        namespace: "team-a",
+        uid: "uid-1",
+        generation: 2,
+        resourceVersion: "8",
+        annotations: { [REVISION_ANNOTATION]: revision },
+      },
+    });
+    ok(
+      await writerFor().apply({
+        intent: "Delete",
+        apply: [],
+        delete: [claimRef("team-a", "orders")],
+        uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/orders": 2 },
+      }),
+    );
+  };
+
+  it("a save of an object whose pushed delete GitOps has not applied fails with Conflict and does not write the file again", async () => {
+    await pushedThenDeleted();
+
+    const result = await writerFor().apply({
+      intent: "Suspend",
+      apply: [claim("team-a", "orders", "medium")],
+      preconditions: { "CamundaClusterClaim/team-a/orders": "8" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          message: expect.stringContaining(
+            "holds a delete of the CamundaClusterClaim orders that GitOps has not applied yet",
+          ),
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Delete", "Save", "Initial commit"]);
+    expect(
+      await repo.show("team-a/camundaclusterclaims/orders.yaml"),
+    ).toBeUndefined();
+  });
+
+  it("a second push of the delete keeps the refusal of a delete without a file", async () => {
+    await pushedThenDeleted();
+
+    const result = await writerFor().apply({
+      intent: "Delete again",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+      uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+      generations: { "CamundaClusterClaim/team-a/orders": 2 },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message: expect.stringContaining("is not in the repository"),
+        }),
+      ],
+    });
+  });
+
+  it("the first save in Git mode of an object without the revision annotation writes its file", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "First save",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+
+    expect(
+      await repo.show("team-a/camundaclusterclaims/orders.yaml"),
+    ).toBeDefined();
+  });
+
   it("a save from an older read fails with Stale when GitOps applies the previous save during the clone", async () => {
     repo = await serveBareRepository();
     live.set("CamundaClusterClaim/team-a/orders", {
