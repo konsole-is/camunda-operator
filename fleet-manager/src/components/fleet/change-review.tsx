@@ -27,16 +27,16 @@ import {
  * effects and the caution. The confirm stays disabled until the preview is
  * clean, and while hold is set.
  *
- * In direct mode, unless change sets force or offerTakeOver is false, it
- * asks in TakeOverChoice before the save takes over a field of another
- * tool. The choice starts off for each new change. While it is on, preview
- * and apply get the change of withTakeOver. Set offerTakeOver to false
- * when apply refuses takeOver and remove.
+ * In direct mode, unless offerTakeOver is false, it asks in TakeOverChoice
+ * before the save takes over a field of another tool. The choice starts off
+ * for each new change. While it is on, preview and apply get the change of
+ * withTakeOver. Set offerTakeOver to false when apply refuses takeOver and
+ * remove.
  *
  * A confirm writes once, and Back is hidden while it runs. An ok write goes
  * to show with savedMessage, then onWritten. A refused write shows its
- * errors. onWriting gets true when the write starts and false when it
- * settles.
+ * errors and keeps the confirm off, unless the API server did not answer.
+ * onWriting gets true when the write starts and false when it settles.
  */
 export function ChangeReview({
   change,
@@ -94,7 +94,7 @@ export function ChangeReview({
   });
 
   const given = previewed?.change === change ? previewed.result : undefined;
-  const choosing = mode === "direct" && !change.force && offerTakeOver;
+  const choosing = mode === "direct" && offerTakeOver;
   const ownership = useMemo(
     () => (choosing ? (given?.ownership ?? []) : []),
     [choosing, given],

@@ -122,9 +122,76 @@ describe("ReleaseSettings", () => {
     expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
       intent: "Change the release camunda-8-9-0",
       preconditions: { "CamundaRelease//camunda-8-9-0": "41" },
-      force: true,
       apply: [{ spec: { version: "8.9.1" } }],
     });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
+  it("a save that changes a field of another tool shows the field and asks", async () => {
+    const { actions } = setup();
+    const ref = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      name: "camunda-8-9-0",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.version",
+            steps: [{ field: "spec" }, { field: "version" }],
+            managers: [
+              {
+                name: "kubectl-client-side-apply",
+                operation: "Update",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    actions.previewChange.mockImplementation(async (change) =>
+      change.takeOver
+        ? { objects: [], errors: [], ownership }
+        : {
+            objects: [],
+            errors: [
+              {
+                code: "Conflict",
+                message: 'conflict with "kubectl-client-side-apply"',
+                path: "spec.version",
+                ref,
+              },
+            ],
+            ownership,
+          },
+    );
+    fireEvent.change(field("Camunda version"), { target: { value: "8.9.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const choice = await screen.findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      screen.getByRole("group", { name: "Fields that another tool set" })
+        .textContent,
+    ).toContain(
+      "spec.version: kubectl-client-side-apply set it. The save changes it.",
+    );
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: { "CamundaRelease//camunda-8-9-0": ["spec.version"] },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
   });
 
   it("shows the notice that a change reaches every user", () => {

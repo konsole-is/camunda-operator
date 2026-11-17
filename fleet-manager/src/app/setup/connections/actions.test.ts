@@ -79,7 +79,6 @@ function update(
       },
     ],
     preconditions: { [key]: "41" },
-    force: true,
   };
 }
 
@@ -154,7 +153,6 @@ describe("applyContractChange", () => {
   it("refuses a change that writes more than one contract, and writes nothing", async () => {
     const change = update("SecondaryStorageConfig", "team-a", "shared-es");
     const removed = remove("DatabaseConfig", "team-a", "orders-db");
-    delete change.force;
     change.delete = removed.delete;
     change.preconditions = {
       ...change.preconditions,

@@ -4,6 +4,7 @@ import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { child } from "@/lib/merge";
 import { equalJSON, isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ContractKind } from "@/lib/usage";
@@ -188,15 +189,22 @@ function countChanged(a: unknown, b: unknown): number {
   return equalJSON(a, b) ? 0 : 1;
 }
 
+// RECOVERY_PATHS are the recovery request of a database server contract
+// and its answer. The editor does not show them, and their own writers
+// keep them.
+const RECOVERY_PATHS = [
+  child("spec", "recovery"),
+  child(child("spec", "pitr"), "lastRecovery"),
+];
+
 /**
  * updateChange applies live with the spec of draft, with the
- * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. It keeps the labels and the
- * annotations of live, without the last applied file of kubectl, so a
- * contract kept from a registration keeps its plugin labels. A field that
- * draft leaves empty is left out. The recovery request of a database
- * server contract and its answer are left out too: their own writers keep
- * them.
+ * resourceVersion of live as its precondition, and without force. It
+ * keeps the labels and the annotations of live, without the last applied
+ * file of kubectl, so a contract kept from a registration keeps its plugin
+ * labels. A field that draft leaves empty is left out. The recovery
+ * request of a database server contract and its answer are left out too,
+ * and the change keeps them.
  */
 export function updateChange(
   live: ContractObject,
@@ -219,11 +227,20 @@ export function updateChange(
     },
     spec: specOf(live.kind, draft),
   };
+  const guarded = preconditionOf(live);
   return {
     intent: `Change the ${kindWords(live.kind)} contract ${name}`,
     apply: [object],
-    ...preconditionOf(live),
-    force: true,
+    ...guarded,
+    ...(live.kind === "DatabaseServerConfig" &&
+      guarded.preconditions && {
+        keep: Object.fromEntries(
+          Object.keys(guarded.preconditions).map((key) => [
+            key,
+            RECOVERY_PATHS,
+          ]),
+        ),
+      }),
   };
 }
 

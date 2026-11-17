@@ -20,7 +20,6 @@ const releaseChange = (kind = "CamundaRelease") => ({
     },
   ],
   preconditions: { [`${kind}//camunda-8-9-0` as const]: "3" },
-  force: true,
 });
 
 const deleteWithout = {

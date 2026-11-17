@@ -89,6 +89,27 @@ function setup(
   };
 }
 
+const CONFIG_REF = {
+  apiVersion: "core.camunda.io/v1",
+  kind: "CamundaPlatformConfig",
+  name: "oidc-prod",
+};
+
+function foreignField(path: string) {
+  return {
+    path,
+    steps: path.split(".").map((field) => ({ field })),
+    managers: [
+      {
+        name: "kubectl-client-side-apply",
+        operation: "Update",
+        kind: "other" as const,
+        known: true,
+      },
+    ],
+  };
+}
+
 const input = (label: string) =>
   screen.getByLabelText(label) as HTMLInputElement;
 
@@ -170,7 +191,7 @@ describe("PlatformDetail", () => {
 
     await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
     const change = actions.previewChange.mock.lastCall![0];
-    expect(change.force).toBe(true);
+    expect(change.force).toBeUndefined();
     expect(change.preconditions).toEqual({
       "CamundaPlatformConfig//oidc-prod": "21",
     });
@@ -182,6 +203,124 @@ describe("PlatformDetail", () => {
       name: "Review the platform config",
     });
     expect(within(review).getByText(ROLL_NOTICE)).toBeDefined();
+  });
+
+  it("a save that changes a field of another tool shows the field and asks", async () => {
+    const { actions } = setup();
+    const path = "spec.images.keycloak";
+    const ownership = [
+      {
+        ref: CONFIG_REF,
+        changed: [foreignField(path)],
+        cleared: [],
+      },
+    ];
+    actions.previewChange.mockImplementation(async (change) => ({
+      objects: [],
+      errors: change.takeOver
+        ? []
+        : [
+            {
+              code: "Conflict",
+              message: 'conflict with "kubectl-client-side-apply"',
+              path,
+              ref: CONFIG_REF,
+            },
+          ],
+      ownership,
+    }));
+
+    fireEvent.change(input("Keycloak"), {
+      target: { value: "mirror.example.com/keycloak" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = screen.getByRole("region", {
+      name: "Review the platform config",
+    });
+    const choice = await within(review).findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      within(review).getByRole("group", {
+        name: "Fields that another tool set",
+      }).textContent,
+    ).toContain(
+      `${path}: kubectl-client-side-apply set it. The save changes it.`,
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: { "CamundaPlatformConfig//oidc-prod": [path] },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
+  it("a switch to Basic names the OIDC block of another tool and keeps Save off with the error of the CRD rule", async () => {
+    const { actions } = setup();
+    const path = "spec.auth.oidc";
+    const rule =
+      "oidc is required when method is oidc and must not be set when method is basic";
+    const ownership = [
+      {
+        ref: CONFIG_REF,
+        changed: [foreignField("spec.auth.method")],
+        cleared: [foreignField(path)],
+      },
+    ];
+    // The save applies the method before it removes the block, so the API
+    // server refuses the take-over too.
+    actions.previewChange.mockImplementation(async (change) => ({
+      objects: [],
+      errors: [
+        change.takeOver
+          ? {
+              code: "Invalid",
+              message: `Invalid value: ${rule}`,
+              path: "spec.auth",
+              ref: CONFIG_REF,
+            }
+          : {
+              code: "Conflict",
+              message: 'conflict with "kubectl-client-side-apply"',
+              path: "spec.auth.method",
+              ref: CONFIG_REF,
+            },
+      ],
+      ownership,
+    }));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Basic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = screen.getByRole("region", {
+      name: "Review the platform config",
+    });
+    const choice = await within(review).findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      within(review).getByRole("group", {
+        name: "Fields that another tool set",
+      }).textContent,
+    ).toContain(
+      `${path}: kubectl-client-side-apply set it. It stays unless you take it over.`,
+    );
+
+    fireEvent.click(choice);
+    await waitFor(() =>
+      expect(within(review).getByRole("alert").textContent).toContain(rule),
+    );
+    expect(within(review).getByRole("button", { name: "Save" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(actions.applyChange).not.toHaveBeenCalled();
   });
 
   it("blocks the review while a field is invalid", () => {
@@ -345,11 +484,44 @@ describe("PlatformDetail", () => {
     ).toBeNull();
   });
 
-  it("warns in the review that a cleared field of another field manager stays", async () => {
+  it("says in the review that a cleared field of another tool stays unless you take it over", async () => {
+    const path = "spec.images.camunda";
+    setup({
+      preview: {
+        objects: [],
+        errors: [],
+        ownership: [
+          { ref: CONFIG_REF, changed: [], cleared: [foreignField(path)] },
+        ],
+      },
+    });
+
+    fireEvent.change(input("Orchestration cluster"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = await screen.findByRole("region", {
+      name: "Review the platform config",
+    });
+    expect(
+      (
+        await within(review).findByRole("group", {
+          name: "Fields that another tool set",
+        })
+      ).textContent,
+    ).toContain(
+      `${path}: kubectl-client-side-apply set it. It stays unless you take it over.`,
+    );
+    expect(
+      within(review).getByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeDefined();
+  });
+
+  it("warns in the Git review that a cleared field of another field manager stays", async () => {
     const live = platformFixtures().platformConfigs.find(
       (c) => c.metadata.name === "oidc-prod",
     ) as unknown as KubeObject;
     setup({
+      mode: "git",
       preview: {
         objects: [
           {

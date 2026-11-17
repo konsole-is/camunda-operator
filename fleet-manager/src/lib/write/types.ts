@@ -54,6 +54,11 @@ export type RefKey = `${string}/${string}/${string}`;
  * Invalid. A change with a list has no force. The Git writer refuses a
  * change with a list and without directOnly.
  *
+ * keep names, for an applied object, paths through maps only that the
+ * page never sends. The review offers no field at or under such a path,
+ * and no field above one that the live object holds, so a list that names
+ * one does not equal the offered fields. The Git writer accepts keep.
+ *
  * The preview of the direct writer applies an object of previewManagers as
  * the field manager that it maps to, unless it sends the object as a merge
  * patch. It sends an object of previewMergePatches as the JSON merge patch
@@ -73,6 +78,7 @@ export type Change = {
   force?: boolean;
   takeOver?: Record<RefKey, FieldPath[]>;
   remove?: Record<RefKey, FieldPath[]>;
+  keep?: Record<RefKey, FieldPath[]>;
   directOnly?: boolean;
   previewManagers?: Record<RefKey, string>;
   previewMergePatches?: RefKey[];

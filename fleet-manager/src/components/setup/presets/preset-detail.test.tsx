@@ -321,6 +321,79 @@ describe("PresetDetail", () => {
     );
   });
 
+  it("a save that changes a field of another tool shows the field and asks", async () => {
+    const ref = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaClusterPreset",
+      name: "medium",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.cluster.zeebe.replicas",
+            steps: ["spec", "cluster", "zeebe", "replicas"].map((field) => ({
+              field,
+            })),
+            managers: [
+              {
+                name: "kubectl-client-side-apply",
+                operation: "Update",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    const { actions } = setup({
+      preview: (change) =>
+        change.takeOver
+          ? { ...dryRun()(change), ownership }
+          : {
+              objects: [],
+              errors: [
+                {
+                  code: "Conflict",
+                  message: 'conflict with "kubectl-client-side-apply"',
+                  path: "spec.cluster.zeebe.replicas",
+                  ref,
+                },
+              ],
+              ownership,
+            },
+    });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    const choice = await within(review).findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      within(review).getByRole("group", {
+        name: "Fields that another tool set",
+      }).textContent,
+    ).toContain(
+      "spec.cluster.zeebe.replicas: kubectl-client-side-apply set it. The save changes it.",
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: {
+        "CamundaClusterPreset//medium": ["spec.cluster.zeebe.replicas"],
+      },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
   it("reads Push to Git in Git mode", async () => {
     setup({ mode: "git", preview: dryRun() });
     editReplicas("5");

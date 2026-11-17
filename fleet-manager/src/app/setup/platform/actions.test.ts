@@ -18,7 +18,6 @@ const configChange = (kind = "CamundaPlatformConfig") => ({
     },
   ],
   preconditions: { [`${kind}//oidc-prod` as const]: "21" },
-  force: true,
 });
 
 const deleteWithout = {

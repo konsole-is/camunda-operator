@@ -337,6 +337,81 @@ describe("ConnectionDetail with changes", () => {
     );
   });
 
+  it("a save that changes a field of another tool shows the field and asks", async () => {
+    const target = inTeamA("DatabaseServerConfig", "postgres");
+    const { actions, live } = edit(target);
+    const ref = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "DatabaseServerConfig",
+      namespace: "team-a",
+      name: "postgres",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.host",
+            steps: [{ field: "spec" }, { field: "host" }],
+            managers: [
+              {
+                name: "kubectl-client-side-apply",
+                operation: "Update",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    actions.previewChange.mockImplementation(async (change) =>
+      change.takeOver
+        ? { ...previewOf(live), ownership }
+        : {
+            objects: [],
+            errors: [
+              {
+                code: "Conflict",
+                message: 'conflict with "kubectl-client-side-apply"',
+                path: "spec.host",
+                ref,
+              },
+            ],
+            ownership,
+          },
+    );
+    fireEvent.change(screen.getByLabelText("Host"), {
+      target: { value: "pg-2.team-a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = await screen.findByRole("region", {
+      name: "Review the contract",
+    });
+    const choice = await within(review).findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      within(review).getByRole("group", {
+        name: "Fields that another tool set",
+      }).textContent,
+    ).toContain(
+      "spec.host: kubectl-client-side-apply set it. The save changes it.",
+    );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: { "DatabaseServerConfig/team-a/postgres": ["spec.host"] },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
   it("names each user and what it does on the change in the review", async () => {
     edit(inTeamA("SecondaryStorageConfig", "shared-es"));
     fireEvent.change(screen.getByLabelText("Endpoint"), {

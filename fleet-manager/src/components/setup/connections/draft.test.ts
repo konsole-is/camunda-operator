@@ -51,7 +51,7 @@ function edited<T extends ContractObject>(
 describe("updateChange", () => {
   const live = withMeta(backups, { resourceVersion: "41", uid: "u-1" });
 
-  it("sends the edited spec with the precondition and force", () => {
+  it("sends the edited spec with the precondition and no force", () => {
     const draft = edited(live, (spec) => {
       spec.s3!.region = "eu-central-1";
     });
@@ -70,7 +70,6 @@ describe("updateChange", () => {
         },
       ],
       preconditions: { "ObjectStorageConfig/team-a/backups": "41" },
-      force: true,
     });
   });
 
@@ -143,14 +142,30 @@ describe("updateChange", () => {
         },
       },
     };
-    const spec = updateChange(recovering, draftOf(recovering)).apply[0]
-      .spec as DatabaseServerConfig["spec"];
+    const change = updateChange(
+      {
+        ...recovering,
+        metadata: { ...recovering.metadata, resourceVersion: "9" },
+      },
+      draftOf(recovering),
+    );
+    const spec = change.apply[0].spec as DatabaseServerConfig["spec"];
     expect(Object.hasOwn(spec, "recovery")).toBe(false);
     expect(spec.pitr).toEqual({
       enabled: true,
       retentionPeriodDays: 7,
       recovery: "operator",
     });
+    expect(change.keep).toEqual({
+      [Object.keys(change.preconditions!)[0]]: [
+        "spec.recovery",
+        "spec.pitr.lastRecovery",
+      ],
+    });
+  });
+
+  it("keeps no field of another kind of contract", () => {
+    expect(updateChange(live, draftOf(live)).keep).toBeUndefined();
   });
 });
 

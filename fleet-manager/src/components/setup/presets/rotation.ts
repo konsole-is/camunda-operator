@@ -60,7 +60,7 @@ export function rotationUnread(
 /**
  * rotationChange applies live with auth.basic.passwordRotation set to the
  * rotationToken of now, and every other field of live as it is. It carries
- * the resourceVersion of live as its precondition and force, as
+ * the resourceVersion of live as its precondition and no force, as
  * presetUpdateChange does.
  */
 export function rotationChange(
