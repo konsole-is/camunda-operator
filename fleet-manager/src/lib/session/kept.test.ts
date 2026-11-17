@@ -210,8 +210,7 @@ describe("savedOf", () => {
       { path: "spec.deletionPolicy", managers: ["fleet-manager"] },
     ]);
     expect(saved.firstSync).toBe(true);
-    expect(claimAfter(saved.applied).spec).toMatchObject({
-      deletionPolicy: "Delete",
-    });
+    // A client-side sync applies the change as written.
+    expect(claimAfter(saved.applied).spec).not.toHaveProperty("deletionPolicy");
   });
 });

@@ -93,14 +93,15 @@ export function IdentityPanel() {
     if (draft.realm !== before.realm)
       if (draft.realm === "") edit.reset([...EXTERNAL, { field: "realm" }]);
       else edit.set([...EXTERNAL, { field: "realm" }], draft.realm);
+    // The form names the default keys, so another Secret drops the keys
+    // of the old one.
+    const liveAdmin = liveExternal?.adminCredentialsSecretRef;
     if (draft.adminSecret !== before.adminSecret)
       edit.set(
-        [
-          ...EXTERNAL,
-          { field: "adminCredentialsSecretRef" },
-          { field: "name" },
-        ],
-        draft.adminSecret,
+        [...EXTERNAL, { field: "adminCredentialsSecretRef" }],
+        draft.adminSecret === liveAdmin?.name
+          ? liveAdmin
+          : { name: draft.adminSecret },
       );
     if (JSON.stringify(draft.caBundle) !== JSON.stringify(before.caBundle))
       setCaBundle(draft.caBundle);

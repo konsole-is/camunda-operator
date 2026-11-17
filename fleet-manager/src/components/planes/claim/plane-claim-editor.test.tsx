@@ -477,6 +477,34 @@ describe("PlaneClaimEditor identity", () => {
     );
   });
 
+  it("a new administrator Secret of the External Keycloak drops the custom keys of the old one", async () => {
+    const claim = claimOf();
+    (
+      claim.spec.management.identityProvider.externalKeycloak as {
+        adminCredentialsSecretRef: object;
+      }
+    ).adminCredentialsSecretRef = {
+      name: "old-admin",
+      usernameKey: "user",
+      passwordKey: "pass",
+    };
+    editor({ claim });
+    open("Identity");
+    fireEvent.change(
+      screen.getByLabelText("Administrator credentials Secret"),
+      {
+        target: { value: "kc-admin" },
+      },
+    );
+    fireEvent.click(reviewButton());
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    const sent = fakeWriter.previewed[0].apply[0] as unknown as PlaneClaim;
+    expect(
+      sent.spec.management.identityProvider.externalKeycloak
+        ?.adminCredentialsSecretRef,
+    ).toEqual({ name: "kc-admin" });
+  });
+
   it("OIDC is not offered while the platform config uses basic authentication", () => {
     editor();
     open("Identity");

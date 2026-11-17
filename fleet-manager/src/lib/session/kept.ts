@@ -63,9 +63,9 @@ export function saveManager(
 /**
  * Saved is what a save keeps: the fields that it leaves out while other
  * field managers own them, and a session whose change gives the claim that
- * the save leaves. firstSync says that the manager of the save is not
- * known yet. kept then names every owned field that the change leaves out,
- * because the first sync of the GitOps tool can keep each of them.
+ * the save leaves. While firstSync, the manager of the save is not known:
+ * kept names each owned field that a server-side sync keeps, and applied
+ * is the change as written, which a client-side sync applies.
  */
 export type Saved<C extends ClaimObject> = {
   kept: KeptField[];
@@ -83,7 +83,7 @@ export function savedOf<C extends ClaimObject>(
   const applier = manager ?? "";
   return {
     kept: keptFields(s, applier),
-    applied: appliedSession(s, applier),
+    applied: manager === undefined ? s : appliedSession(s, applier),
     firstSync: manager === undefined,
   };
 }
