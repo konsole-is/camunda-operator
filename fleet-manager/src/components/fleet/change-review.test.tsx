@@ -493,6 +493,31 @@ describe("ChangeReview with fields of another tool", () => {
     expect(confirm()).toHaveProperty("disabled", true);
   });
 
+  it("keeps the errors of a refused save when the choice changes", async () => {
+    const message =
+      "The fleet manager saved the Environment staging, but did not remove spec.color. The Environment staging changed since you opened it.";
+    setup({
+      change: updated,
+      preview: byChange,
+      result: { ok: false, errors: [{ code: "Stale", message, ref }] },
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    fireEvent.click(confirm());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+
+    fireEvent.click(choice());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(choice().getAttribute("aria-checked")).toBe("true"),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(message);
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
   it("the choice resets for a new change", async () => {
     const { rerender, apply } = setup({ change: updated, preview: byChange });
     await waitFor(() => expect(choice()).toBeTruthy());

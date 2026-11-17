@@ -121,7 +121,7 @@ export function ChangeReview({
     effective === change
       ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
       : (checked?.errors ?? []);
-  const writeErrors = refused?.change === effective ? refused.errors : [];
+  const writeErrors = refused?.change === change ? refused.errors : [];
   const changesNothing =
     checked !== undefined &&
     previewErrors.length === 0 &&
@@ -165,7 +165,7 @@ export function ChangeReview({
         onWritten?.();
         return;
       }
-      setRefused({ change: effective, errors: result.errors });
+      setRefused({ change, errors: result.errors });
     } finally {
       writingNow.current = false;
       setWriting(false);
