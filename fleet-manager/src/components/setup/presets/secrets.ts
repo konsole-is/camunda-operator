@@ -4,10 +4,14 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { ReadError } from "@/lib/k8s/unread";
 import { byCodeUnit, environmentOf, isObject } from "@/lib/policy";
 import type { KindName } from "@/lib/k8s/kinds";
-import { allowedIn, type PresetKind, presetUsers } from "@/lib/usage";
+import {
+  allowedIn,
+  PRESET_DELETE_KINDS,
+  type PresetKind,
+  presetUsers,
+} from "@/lib/usage";
 import { ENV_SCOPES } from "@/components/setup/releases/env";
 import type { PresetObject } from "./kinds";
-import { GUARD_KINDS } from "./rows";
 import type { PresetSources } from "./sources";
 
 /**
@@ -18,9 +22,10 @@ export function secretsUnread(
   kind: PresetKind,
   errors: readonly ReadError[],
 ): KindName[] {
-  const kinds: readonly KindName[] = GUARD_KINDS[kind].includes("Namespace")
-    ? GUARD_KINDS[kind]
-    : [...GUARD_KINDS[kind], "Namespace"];
+  const guard = PRESET_DELETE_KINDS[kind];
+  const kinds: readonly KindName[] = guard.includes("Namespace")
+    ? guard
+    : [...guard, "Namespace"];
   return kinds.filter((k) => errors.some((e) => e.kind === k));
 }
 

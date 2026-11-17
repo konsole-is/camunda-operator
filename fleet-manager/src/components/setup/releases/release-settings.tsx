@@ -29,7 +29,7 @@ import {
 } from "@/lib/k8s/unread";
 import { minorOf } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
-import { releaseUsage } from "@/lib/usage";
+import { RELEASE_IN_USE_TEXT, releaseUsage } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import {
@@ -260,11 +260,7 @@ export function ReleaseSettings({
             ) : unread.length > 0 ? (
               <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
             ) : (
-              <p className="text-sm text-muted">
-                Delete is possible when no cluster, Elasticsearch cluster,
-                database server, or claim names this release and no environment
-                allows it.
-              </p>
+              <p className="text-sm text-muted">{RELEASE_IN_USE_TEXT}</p>
             )}
           </EditorSection>
         )}

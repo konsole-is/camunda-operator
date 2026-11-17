@@ -6,7 +6,6 @@ import {
   type ReleaseUsageSources,
   type ReleaseUser,
   releaseSecretNamespaces,
-  releaseUnused,
   releaseUsage,
 } from "./releases";
 
@@ -84,16 +83,6 @@ describe("releaseUsage", () => {
     });
     expect(releaseUsage("", all)).toEqual(empty);
     expect(releaseUsage("r1", all)).toEqual(empty);
-  });
-});
-
-describe("releaseUnused", () => {
-  it("is unused only when no resource and no claim names it", () => {
-    expect(releaseUnused(empty)).toBe(true);
-    expect(releaseUnused({ ...empty, claims: ["team-a/orders"] })).toBe(false);
-    expect(releaseUnused({ ...empty, databaseServers: ["team-a/db"] })).toBe(
-      false,
-    );
   });
 });
 

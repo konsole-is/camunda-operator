@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { releaseFixtures } from "@/components/setup/releases/fixtures";
+import { RELEASE_SOURCE_KINDS } from "@/components/setup/releases/source-kinds";
+import type { ReleasesData } from "@/components/setup/releases/sources";
+import type { Change } from "@/lib/write/types";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import {
   applyReleaseChange,
@@ -8,6 +12,17 @@ import {
 } from "./actions";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
+
+const cache = vi.hoisted(() => ({
+  lists: {} as Record<string, unknown[]>,
+  failing: [] as string[],
+}));
+vi.mock("@/lib/k8s/read", () => ({
+  list: async (kind: string) => {
+    if (cache.failing.includes(kind)) throw new Error(`${kind} is forbidden`);
+    return cache.lists[kind] ?? [];
+  },
+}));
 
 const releaseChange = (kind = "CamundaRelease") => ({
   intent: "Change the release camunda-8-9-0",
@@ -34,7 +49,109 @@ const deleteWithout = {
   ],
 };
 
-beforeEach(() => fakeWriter.reset());
+beforeEach(() => {
+  fakeWriter.reset();
+  cache.failing = [];
+  const onServer = releaseFixtures();
+  cache.lists = Object.fromEntries(
+    Object.entries(RELEASE_SOURCE_KINDS).map(([key, kind]) => [
+      kind,
+      onServer[key as keyof ReleasesData] as unknown[],
+    ]),
+  );
+});
+
+// remove deletes the releases names, with a precondition and a UID for each.
+function remove(...names: string[]): Change {
+  return {
+    intent: "Delete releases",
+    apply: [],
+    delete: names.map((name) => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      name,
+    })),
+    preconditions: Object.fromEntries(
+      names.map((name) => [`CamundaRelease//${name}`, "41"]),
+    ),
+    uids: Object.fromEntries(
+      names.map((name) => [`CamundaRelease//${name}`, `uid-${name}`]),
+    ),
+  };
+}
+
+const IN_USE =
+  "Delete is possible when no cluster, Elasticsearch cluster, database server, or claim names this release and no environment allows it.";
+
+describe("the delete guard of applyReleaseChange", () => {
+  it("deletes an unused release that no environment allows, with the precondition and the UID of the page", async () => {
+    const change = remove("camunda-8-9-1");
+    expect(await applyReleaseChange(change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([change]);
+  });
+
+  it("refuses a delete of a release in use, names its users, and writes nothing", async () => {
+    const result = await applyReleaseChange(remove("camunda-8-9-0"));
+    expect(!result.ok && result.errors).toEqual([
+      {
+        code: "Forbidden",
+        message: `${IN_USE} Used by CamundaCluster team-orders/orders, ElasticsearchCluster team-orders/orders-search, CamundaClusterClaim team-orders/orders, Environment production, Environment staging.`,
+        ref: {
+          apiVersion: "core.camunda.io/v1",
+          kind: "CamundaRelease",
+          name: "camunda-8-9-0",
+        },
+      },
+    ]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("refuses a delete of a release that only a claim names", async () => {
+    const result = await applyReleaseChange(remove("camunda-8-10-0"));
+    expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
+      `${IN_USE} Used by CamundaClusterClaim team-new/billing.`,
+    ]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("refuses a delete of a release that only an environment allows", async () => {
+    const result = await applyReleaseChange(remove("camunda-8-8-5"));
+    expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
+      `${IN_USE} Used by Environment staging.`,
+    ]);
+  });
+
+  it("refuses a bulk delete when one release is in use, and deletes none of them", async () => {
+    const result = await applyReleaseChange(
+      remove("camunda-8-9-1", "camunda-8-10-0"),
+    );
+    expect(!result.ok && result.errors.map((e) => e.ref?.name)).toEqual([
+      "camunda-8-10-0",
+    ]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("refuses a delete of an unused release while a list of the page cannot be read, and names the list", async () => {
+    cache.failing = ["CamundaClusterClaim"];
+    const result = await applyReleaseChange(remove("camunda-8-9-1"));
+    expect(!result.ok && result.errors).toMatchObject([
+      {
+        code: "Forbidden",
+        message:
+          "Delete is possible when the fleet manager can read CamundaClusterClaim.",
+      },
+    ]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("writes an update of a release in use while a list cannot be read", async () => {
+    cache.failing = ["CamundaClusterClaim"];
+    expect((await applyReleaseChange(releaseChange())).ok).toBe(true);
+  });
+});
 
 describe("applyReleaseChange", () => {
   it("writes a CamundaRelease update", async () => {
@@ -67,6 +184,26 @@ describe("previewReleaseChange", () => {
   it("refuses a change that writes another kind", async () => {
     const result = await previewReleaseChange(releaseChange("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+
+  it("refuses a delete of a release in use as the write does, and previews nothing", async () => {
+    const preview = await previewReleaseChange(
+      remove("camunda-8-9-1", "camunda-8-8-5"),
+    );
+    expect(preview.objects).toEqual([]);
+    expect(preview.errors.map((e) => [e.code, e.message])).toEqual([
+      ["Forbidden", `${IN_USE} Used by Environment staging.`],
+    ]);
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+
+  it("refuses a delete while a list of the page cannot be read", async () => {
+    cache.failing = ["Environment"];
+    const preview = await previewReleaseChange(remove("camunda-8-9-1"));
+    expect(preview.errors.map((e) => e.message)).toEqual([
+      "Delete is possible when the fleet manager can read Environment.",
+    ]);
     expect(fakeWriter.previewed).toEqual([]);
   });
 });

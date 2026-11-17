@@ -3,8 +3,8 @@ import { byCodeUnit } from "@/lib/policy";
 import {
   allowedIn,
   defaultIn,
+  releaseDeleteBlock,
   type ReleaseUsage,
-  releaseUnused,
   releaseUsage,
 } from "@/lib/usage";
 import { environmentLabel } from "./environments";
@@ -15,9 +15,9 @@ export type EnvironmentName = { name: string; label: string };
 
 /**
  * ReleaseRow is one release of the Releases list. The optional versions are
- * unset when the release does not set them. deletable is true only for a
- * release that nothing uses, claims included, and that no environment
- * allows or has as its default, while every list of the sources is read.
+ * unset when the release does not set them. deletable is true only when
+ * releaseDeleteBlock, with every list of the sources that is not read,
+ * does not block the release.
  */
 export type ReleaseRow = {
   name: string;
@@ -33,7 +33,7 @@ export type ReleaseRow = {
 
 /** releaseRows returns one row for each release of sources, sorted by name. */
 export function releaseRows(sources: ReleasesData & SourceReads): ReleaseRow[] {
-  const unread = unreadKinds(sources).length > 0;
+  const unread = unreadKinds(sources);
   const names = (environments: string[]) =>
     environments.map((name) => {
       const environment = sources.environments.find(
@@ -70,11 +70,7 @@ export function releaseRows(sources: ReleasesData & SourceReads): ReleaseRow[] {
         defaultIn: defaults,
         allowedIn: allowed,
         usage,
-        deletable:
-          !unread &&
-          releaseUnused(usage) &&
-          allowed.length === 0 &&
-          defaults.length === 0,
+        deletable: releaseDeleteBlock(name, sources, unread) === undefined,
       };
     })
     .sort((a, b) => byCodeUnit(a.name, b.name));

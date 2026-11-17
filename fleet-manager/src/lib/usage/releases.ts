@@ -53,16 +53,6 @@ export function releaseUsage(
   };
 }
 
-/** releaseUnused says whether usage holds no user of any kind, claims included. */
-export function releaseUnused(usage: ReleaseUsage): boolean {
-  return (
-    usage.clusters.length === 0 &&
-    usage.elasticsearchClusters.length === 0 &&
-    usage.databaseServers.length === 0 &&
-    usage.claims.length === 0
-  );
-}
-
 /**
  * releaseSecretNamespaces returns the namespaces whose Secrets an env entry
  * of release can name, distinct and sorted. They are the namespaces of its
