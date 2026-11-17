@@ -214,9 +214,7 @@ export function ChangeReview({
             <div role="note" aria-label="Kept fields">
               <ul className="flex flex-col gap-1 text-sm text-text-2">
                 {kept.map((path) => (
-                  <li key={path}>
-                    {path} stays, because another tool set it.
-                  </li>
+                  <li key={path}>{path} stays, because another tool set it.</li>
                 ))}
               </ul>
             </div>

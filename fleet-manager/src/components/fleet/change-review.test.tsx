@@ -560,9 +560,7 @@ describe("ChangeReview with fields of another tool", () => {
     });
     await waitFor(() =>
       expect(
-        screen.getByText(
-          "spec.color stays, because another tool set it.",
-        ),
+        screen.getByText("spec.color stays, because another tool set it."),
       ).toBeTruthy(),
     );
     expect(
