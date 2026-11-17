@@ -10,14 +10,10 @@ import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
-import {
-  type ReadError,
-  type SourceReads,
-  unreadDeleteText,
-} from "@/lib/k8s/unread";
+import { type ReadError, type SourceReads } from "@/lib/k8s/unread";
 import { defaultRepositories } from "@/lib/merge";
 import { equalJSON } from "@/lib/policy";
-import { platformUserCount } from "@/lib/usage";
+import { platformDeleteBlock } from "@/lib/usage";
 import type {
   Change,
   Preview,
@@ -95,16 +91,15 @@ export function PlatformDetail({
   const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
   const users = usersOf(name, sources);
-  const userCount = platformUserCount(users);
   const unread = unreadUserKinds(sources);
+  const block = platformDeleteBlock(name, sources, unread);
   const errors = draftErrors(draft);
   const count = changeCount(specOf(draftOf(base)), specOf(draft));
   const deleting = reviewing?.kind === "delete";
   // A user can appear, or a kind that can use the config can turn
   // unreadable, after the delete review opened. A delete that already runs
   // cannot stop.
-  if (deleting && !writing && (userCount > 0 || unread.length > 0))
-    editor.cancel();
+  if (deleting && !writing && block) editor.cancel();
 
   if (!live && !base) {
     return (
@@ -185,13 +180,8 @@ export function PlatformDetail({
         <UsersSection users={users} unread={unread} />
         {live && (
           <EditorSection title="Delete the platform config">
-            {unread.length > 0 ? (
-              <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
-            ) : userCount > 0 ? (
-              <p className="text-sm text-muted">
-                Delete is possible when no cluster, management plane, database
-                server, claim, or environment uses this config.
-              </p>
+            {block ? (
+              <p className="text-sm text-muted">{block.reason}</p>
             ) : (
               <TypedConfirm
                 name={name}

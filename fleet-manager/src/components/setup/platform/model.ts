@@ -5,6 +5,7 @@ import { byMinor, mergeCluster, minorOf } from "@/lib/merge";
 import { authMethod } from "@/lib/planes/identity";
 import { byCodeUnit } from "@/lib/policy";
 import {
+  PLATFORM_USER_KINDS,
   platformUserCount,
   platformUsers,
   type PlatformUsers,
@@ -20,8 +21,8 @@ export type Condition = {
 
 /**
  * PlatformRow is one platform config of the list. users is undefined while
- * a kind of USER_KINDS is not read. ready is undefined while the config has
- * no Ready condition.
+ * a kind of PLATFORM_USER_KINDS is not read. ready is undefined while the
+ * config has no Ready condition.
  */
 export type PlatformRow = {
   name: string;
@@ -29,17 +30,6 @@ export type PlatformRow = {
   users?: number;
   ready?: Condition;
 };
-
-/** USER_KINDS are the kinds whose failed read can hide a user. */
-export const USER_KINDS: readonly KindName[] = [
-  "CamundaCluster",
-  "CamundaManagementCluster",
-  "DatabaseServer",
-  "DatabaseServerPreset",
-  "CamundaClusterClaim",
-  "CamundaManagementClusterClaim",
-  "Environment",
-];
 
 /** MINOR_KINDS are the kinds whose failed read can hide a Camunda minor of the users. */
 export const MINOR_KINDS: readonly KindName[] = [
@@ -57,10 +47,10 @@ export const ROLL_NOTICE =
 export const DELETE_EFFECT =
   "Users of a deleted config report InvalidReference and keep running.";
 
-/** unreadUserKinds returns each kind of USER_KINDS that reads holds as failed or stale, once. */
+/** unreadUserKinds returns each kind of PLATFORM_USER_KINDS that reads holds as failed or stale, once. */
 export function unreadUserKinds(reads: SourceReads): string[] {
   return unreadKinds(reads).filter((kind) =>
-    (USER_KINDS as readonly string[]).includes(kind),
+    (PLATFORM_USER_KINDS as readonly string[]).includes(kind),
   );
 }
 

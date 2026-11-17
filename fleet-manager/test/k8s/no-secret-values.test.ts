@@ -529,23 +529,19 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       create: [`CamundaPlatformConfig//${namespace}`],
     }),
   ),
-  // A precondition for an object that does not exist refuses with Stale,
-  // so this write leaves nothing behind.
+  // Nothing uses the config, so the delete passes the guard. The config
+  // does not exist, so the delete refuses with Stale and removes nothing.
   "app/setup/platform/actions.ts#applyPlatformConfigChange": refused(
     "Stale",
-    () =>
-      applyPlatformConfigChange({
-        ...platformConfigChange(),
-        preconditions: { [`CamundaPlatformConfig//${namespace}`]: "1" },
-      }),
+    () => applyPlatformConfigChange(deleteOf("CamundaPlatformConfig")),
   ),
   "app/setup/presets/actions.ts#previewPresetChange": previewed(() =>
     previewPresetChange(presetCreate()),
   ),
-  // The preset does not exist, so the delete refuses with Stale and
-  // removes nothing.
+  // Nothing uses the preset, so the delete passes the guard. The preset
+  // does not exist, so the delete refuses with Stale and removes nothing.
   "app/setup/presets/actions.ts#applyPresetChange": refused("Stale", () =>
-    applyPresetChange(presetDelete()),
+    applyPresetChange(deleteOf("CamundaClusterPreset")),
   ),
   "app/setup/releases/actions.ts#previewReleaseChange": previewed(() =>
     previewReleaseChange({
@@ -553,13 +549,10 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       create: [`CamundaRelease//${namespace}`],
     }),
   ),
-  // A precondition for an object that does not exist refuses with Stale,
-  // so this write leaves nothing behind.
+  // Nothing uses the release, so the delete passes the guard. The release
+  // does not exist, so the delete refuses with Stale and removes nothing.
   "app/setup/releases/actions.ts#applyReleaseChange": refused("Stale", () =>
-    applyReleaseChange({
-      ...releaseChange(),
-      preconditions: { [`CamundaRelease//${namespace}`]: "1" },
-    }),
+    applyReleaseChange(deleteOf("CamundaRelease")),
   ),
   // A live claim, so the preview passes the checks of the move and reaches
   // the writer.
@@ -609,18 +602,14 @@ function presetCreate() {
   });
 }
 
-function presetDelete() {
+// deleteOf is the delete of the object of kind named after the namespace of
+// the test, which does not exist.
+function deleteOf(kind: string): Change {
   return {
-    intent: "Delete the preset leak",
+    intent: `Delete the ${kind} leak`,
     apply: [],
-    delete: [
-      {
-        apiVersion: "core.camunda.io/v1",
-        kind: "CamundaClusterPreset",
-        name: namespace,
-      },
-    ],
-    preconditions: { [`CamundaClusterPreset//${namespace}`]: "1" },
+    delete: [{ apiVersion: "core.camunda.io/v1", kind, name: namespace }],
+    preconditions: { [`${kind}//${namespace}`]: "1" },
   };
 }
 

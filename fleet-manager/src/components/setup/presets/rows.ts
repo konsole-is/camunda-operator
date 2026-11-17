@@ -2,16 +2,15 @@ import type { V1Namespace } from "@kubernetes/client-node";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { KindName } from "@/lib/k8s/kinds";
-import { type ReadError, unreadDeleteText } from "@/lib/k8s/unread";
+import type { ReadError } from "@/lib/k8s/unread";
 import { presetDescription } from "@/lib/labels";
 import { lastChanged } from "@/lib/merge";
 import { byCodeUnit } from "@/lib/policy";
 import {
-  allowedIn,
   type PresetKind,
   type PresetUser,
   type PresetUserKind,
-  findPresetUsers,
+  presetDeleteChecks,
 } from "@/lib/usage";
 import { PRESET_KINDS, type PresetObject, presetBody } from "./kinds";
 import type { PresetSources } from "./sources";
@@ -40,33 +39,6 @@ export type PresetRow = {
   lastChanged?: string;
   deletable: boolean;
   blockedBy?: string;
-};
-
-/** GUARD_KINDS are the lists that the delete guard of each preset kind reads. */
-export const GUARD_KINDS: Record<PresetKind, readonly KindName[]> = {
-  CamundaClusterPreset: [
-    "Environment",
-    "CamundaCluster",
-    "CamundaClusterClaim",
-  ],
-  ElasticsearchClusterPreset: [
-    "Environment",
-    "Namespace",
-    "PluginRegistration",
-    "ElasticsearchCluster",
-    "CamundaClusterClaim",
-    "CamundaManagementClusterClaim",
-    "PluginRequest",
-  ],
-  DatabaseServerPreset: [
-    "Environment",
-    "Namespace",
-    "PluginRegistration",
-    "DatabaseServer",
-    "CamundaClusterClaim",
-    "CamundaManagementClusterClaim",
-    "PluginRequest",
-  ],
 };
 
 const FACTS: Record<PresetKind, [string, string[]][]> = {
@@ -116,9 +88,9 @@ export function presetFacts(
 
 /**
  * presetRows returns one row for each preset of sources, sorted by the order
- * of PRESET_KINDS, then by name. A preset is deletable only when no list of
- * its GUARD_KINDS is in errors (unread) or pending (not current yet),
- * nothing uses it, and no environment allows it.
+ * of PRESET_KINDS, then by name. A preset is deletable only when
+ * presetDeleteChecks, with the kinds of errors as unread and pending, does
+ * not block it.
  */
 export function presetRows(
   sources: PresetSources,
@@ -131,30 +103,24 @@ export function presetRows(
     DatabaseServerPreset: sources.databasePresets,
   };
   // A Resource is plain JSON, so it differs from its model type only in its
-  // timestamps, which allowedIn and findPresetUsers do not read.
-  const environments = sources.environments as unknown as Environment[];
-  const usersOf = findPresetUsers({
-    ...sources,
-    environments,
-    namespaces: sources.namespaces as unknown as V1Namespace[],
-    registrations: sources.registrations as unknown as PluginRegistration[],
-  });
+  // timestamps, which presetDeleteChecks does not read.
+  const checkOf = presetDeleteChecks(
+    {
+      ...sources,
+      environments: sources.environments as unknown as Environment[],
+      namespaces: sources.namespaces as unknown as V1Namespace[],
+      registrations: sources.registrations as unknown as PluginRegistration[],
+    },
+    errors.map((e) => e.kind),
+    pending,
+  );
   return PRESET_KINDS.flatMap(({ kind, slug }) =>
     [...lists[kind]]
       .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
       .map((preset) => {
         const name = preset.metadata.name ?? "";
-        const users = usersOf(kind, name);
-        const allowed = allowedIn(environments, kind, name);
-        const unread = GUARD_KINDS[kind].filter((k) =>
-          errors.some((e) => e.kind === k),
-        );
-        const blockedBy = blockedByOf(
-          unread,
-          GUARD_KINDS[kind].some((k) => pending.includes(k)),
-          users,
-          allowed,
-        );
+        const { users, allowed, unread, block } = checkOf(kind, name);
+        const blockedBy = block?.reason;
         const description = presetDescription(preset);
         const changed = lastChanged(preset);
         return {
@@ -178,22 +144,6 @@ export function presetRows(
         };
       }),
   );
-}
-
-function blockedByOf(
-  unread: readonly KindName[],
-  pending: boolean,
-  users: readonly PresetUser[],
-  allowed: readonly string[],
-): string | undefined {
-  if (unread.length > 0) return unreadDeleteText(unread);
-  if (pending)
-    return "Delete is possible when the fleet manager has the current lists.";
-  if (users.length > 0)
-    return "Delete is possible when no resource, claim, or request uses the preset.";
-  if (allowed.length > 0)
-    return "Delete is possible when no environment allows the preset.";
-  return undefined;
 }
 
 const USER_WORDS: [readonly PresetUserKind[], string][] = [
