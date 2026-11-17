@@ -1,6 +1,6 @@
 /** RegistrationTab names one tab of the registration page. */
 export type RegistrationTab =
-  "about" | "contract" | "parameters" | "grants" | "health" | "usedBy";
+  "about" | "contract" | "parameters" | "grants" | "health" | "used-by";
 
 /** REGISTRATION_TABS are the tabs that the registration page shows, in order. */
 export const REGISTRATION_TABS: readonly {
@@ -12,7 +12,7 @@ export const REGISTRATION_TABS: readonly {
   { value: "parameters", label: "Parameters" },
   { value: "grants", label: "Grants" },
   { value: "health", label: "Health" },
-  { value: "usedBy", label: "Used by" },
+  { value: "used-by", label: "Used by" },
 ];
 
 /**

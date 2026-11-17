@@ -5,7 +5,7 @@ describe("registrationTabOf", () => {
   it.each([
     [undefined, "about"],
     ["grants", "grants"],
-    [["usedBy", "health"], "usedBy"],
+    [["used-by", "health"], "used-by"],
     ["retain", "about"],
   ])("reads %o as %s", (value, tab) => {
     expect(registrationTabOf(value)).toBe(tab);
