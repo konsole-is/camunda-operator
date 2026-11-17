@@ -326,6 +326,23 @@ describe("TakeOverChoice", () => {
     expect(group.textContent).not.toContain(BLOCKED);
   });
 
+  it("names a namespaced object with its namespace when a path names two fields", () => {
+    const { group } = show([
+      owned(
+        claim("orders"),
+        [field("spec.a.b", kubectl)],
+        [
+          {
+            ...field("spec.a.b", kubectl),
+            steps: [{ field: "spec" }, { field: "a.b" }],
+          },
+        ],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "spec.a.b names more than one field of the CamundaClusterClaim orders in team-a.",
+    );
+  });
 });
 
 describe("takeOverOpen", () => {

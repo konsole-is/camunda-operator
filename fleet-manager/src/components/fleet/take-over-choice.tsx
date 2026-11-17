@@ -82,8 +82,8 @@ export function TakeOverChoice({
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
                   <Path>{path}</Path> names more than one field of the{" "}
-                  {object.ref.kind} {object.ref.name}. The fleet manager does
-                  not take over a field that it cannot name exactly.
+                  {label}. The fleet manager does not take over a field that it
+                  cannot name exactly.
                 </li>
               ))}
             </ul>
