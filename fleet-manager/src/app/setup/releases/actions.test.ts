@@ -61,7 +61,7 @@ beforeEach(() => {
   );
 });
 
-// remove deletes the releases names, with a precondition and a UID for each.
+// remove deletes the releases named, with a precondition and a UID for each.
 function remove(...names: string[]): Change {
   return {
     intent: "Delete releases",
@@ -145,6 +145,11 @@ describe("the delete guard of applyReleaseChange", () => {
       },
     ]);
     expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("deletes an unused release while only a list that cannot name it fails", async () => {
+    cache.failing = ["CamundaRelease", "Namespace"];
+    expect((await applyReleaseChange(remove("camunda-8-9-1"))).ok).toBe(true);
   });
 
   it("writes an update of a release in use while a list cannot be read", async () => {

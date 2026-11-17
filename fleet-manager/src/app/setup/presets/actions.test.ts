@@ -164,6 +164,25 @@ describe("the delete guard of applyPresetChange", () => {
     expect(fakeWriter.applied).toEqual([change]);
   });
 
+  it("refuses a delete when an object that can name the preset is malformed, and writes nothing", async () => {
+    cache.lists.PluginRequest = [
+      ...cache.lists.PluginRequest,
+      { metadata: { namespace: "team-a", name: "broken" } },
+    ];
+    const result = await applyPresetChange(
+      remove(["DatabaseServerPreset", "standard"]),
+    );
+    expect(refusals(result)).toEqual([
+      {
+        code: "Forbidden",
+        message: expect.stringMatching(
+          /^Could not check the users of DatabaseServerPreset standard: /,
+        ),
+      },
+    ]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
   it("passes the precondition and the UID of the page to the writer", async () => {
     const change = remove(["DatabaseServerPreset", "standard"]);
     await applyPresetChange(change);

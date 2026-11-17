@@ -2,14 +2,14 @@
 
 import { PLATFORM_SOURCE_KINDS } from "@/components/setup/platform/source-kinds";
 import type { PlatformSources } from "@/components/setup/platform/sources";
-import { listEach } from "@/lib/k8s/list-each";
-import { deleteRefusalText, platformDeleteBlock } from "@/lib/usage";
+import { PLATFORM_USER_KINDS, platformDeleteBlock } from "@/lib/usage";
+import { type DeleteRule, deleteRefusals } from "@/lib/write/delete-refusals";
 import {
   adminChangeSchema,
   runChange,
   runPreview,
 } from "@/lib/write/run-change";
-import type { ApiError, Change, Preview, WriteResult } from "@/lib/write/types";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 
 const platformConfigSchema = adminChangeSchema(["CamundaPlatformConfig"]);
 
@@ -17,7 +17,11 @@ const platformConfigSchema = adminChangeSchema(["CamundaPlatformConfig"]);
 export async function previewPlatformConfigChange(
   change: Change,
 ): Promise<Preview> {
-  const errors = await deleteRefusals(change);
+  const errors = await deleteRefusals(
+    change,
+    platformConfigSchema,
+    platformRule,
+  );
   if (errors.length > 0) return { objects: [], errors };
   return runPreview(change, platformConfigSchema);
 }
@@ -25,7 +29,7 @@ export async function previewPlatformConfigChange(
 /**
  * applyPlatformConfigChange writes an update or a delete of
  * CamundaPlatformConfigs with the writer of the settings. Before a delete,
- * it reads the lists of the Platform pages from the cache of the server. It
+ * it reads the lists that can name the config from the cache of the server. It
  * refuses with Forbidden the whole change when platformDeleteBlock blocks
  * the delete of one of its configs: a config that a resource, a claim, or
  * an environment uses, with each user named, or a config whose users
@@ -34,26 +38,20 @@ export async function previewPlatformConfigChange(
 export async function applyPlatformConfigChange(
   change: Change,
 ): Promise<WriteResult> {
-  const errors = await deleteRefusals(change);
+  const errors = await deleteRefusals(
+    change,
+    platformConfigSchema,
+    platformRule,
+  );
   if (errors.length > 0) return { ok: false, errors };
   return runChange(change, platformConfigSchema);
 }
 
-// deleteRefusals returns no errors for a change that the schema refuses, so
-// that the writer gives its Invalid errors.
-async function deleteRefusals(input: Change): Promise<ApiError[]> {
-  const parsed = platformConfigSchema.safeParse(input);
-  const deletes = parsed.success ? (parsed.data.delete ?? []) : [];
-  if (deletes.length === 0) return [];
-  const { lists, readErrors } = await listEach(PLATFORM_SOURCE_KINDS);
+const platformRule: DeleteRule<typeof PLATFORM_SOURCE_KINDS> = {
+  kinds: PLATFORM_SOURCE_KINDS,
+  needs: () => PLATFORM_USER_KINDS,
   // A Resource is plain JSON, so it differs from its model type only in its
   // timestamps, which platformDeleteBlock does not read.
-  const sources = lists as unknown as PlatformSources;
-  const unread = readErrors.map((e) => e.kind);
-  return deletes.flatMap((ref): ApiError[] => {
-    const block = platformDeleteBlock(ref.name, sources, unread);
-    return block
-      ? [{ code: "Forbidden", message: deleteRefusalText(block), ref }]
-      : [];
-  });
-}
+  blockOf: (lists, unread) => (ref) =>
+    platformDeleteBlock(ref.name, lists as unknown as PlatformSources, unread),
+};

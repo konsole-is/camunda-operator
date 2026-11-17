@@ -59,7 +59,7 @@ beforeEach(() => {
   );
 });
 
-// remove deletes the platform configs names, with a precondition and a UID
+// remove deletes the platform configs named, with a precondition and a UID
 // for each.
 function remove(...names: string[]): Change {
   return {

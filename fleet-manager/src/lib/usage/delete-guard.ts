@@ -119,6 +119,15 @@ function presetBlockReason(
   return undefined;
 }
 
+/** RELEASE_DELETE_KINDS are the lists that can hold a user of a CamundaRelease. */
+export const RELEASE_DELETE_KINDS: readonly KindName[] = [
+  "Environment",
+  "CamundaCluster",
+  "ElasticsearchCluster",
+  "DatabaseServer",
+  "CamundaClusterClaim",
+];
+
 /** RELEASE_IN_USE_TEXT says why the delete of a release that something uses is not possible. */
 export const RELEASE_IN_USE_TEXT =
   "Delete is possible when no cluster, Elasticsearch cluster, database server, or claim names this release and no environment allows it.";
