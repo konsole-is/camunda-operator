@@ -478,6 +478,82 @@ describe("RolloutTab", () => {
     expect(actions.applyMove).not.toHaveBeenCalled();
   });
 
+  it("a move of three claims asks once, lists the field of each claim that kubectl set, and moves all three", async () => {
+    const data = { ...freshCanMove(), elasticsearchBackups: [] };
+    const { actions } = renderTab({ data });
+    const refOf = (namespace: string, name: string) =>
+      staleErrorOf(namespace, name).ref!;
+    const releaseRef = {
+      path: "spec.releaseRef",
+      steps: [{ field: "spec" }, { field: "releaseRef" }],
+      managers: [
+        {
+          name: "kubectl-client-side-apply",
+          operation: "Update",
+          kind: "other" as const,
+          known: true,
+        },
+      ],
+    };
+    const byKubectl = [
+      refOf("team-orders", "orders"),
+      refOf("team-pay", "fresh"),
+    ];
+    actions.previewMove.mockImplementation(async (c: Change) => ({
+      objects: c.apply.map(changed),
+      errors: c.takeOver
+        ? []
+        : byKubectl.map((ref) => ({
+            code: "Conflict" as const,
+            message: 'conflict with "kubectl-client-side-apply"',
+            path: "spec.releaseRef",
+            manager: "kubectl-client-side-apply",
+            ref,
+          })),
+      ownership: c.takeOver
+        ? undefined
+        : byKubectl.map((ref) => ({ ref, changed: [releaseRef], cleared: [] })),
+    }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Select all that can move" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Move selected" }),
+    );
+    const review = screen.getByRole("region", { name: "Review the move" });
+    const group = await within(review).findByRole("group", {
+      name: "Fields that another tool set",
+    });
+    for (const name of [
+      "CamundaClusterClaim orders in team-orders",
+      "CamundaClusterClaim fresh in team-pay",
+    ])
+      expect(within(group).getByRole("list", { name }).textContent).toContain(
+        "spec.releaseRef: kubectl-client-side-apply set it. The save changes it.",
+      );
+    expect(group.textContent).not.toContain("billing");
+    const move = within(review).getByRole("button", { name: "Move" });
+    expect(move).toHaveProperty("disabled", true);
+
+    await userEvent.click(
+      within(group).getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await waitFor(() => expect(move).toHaveProperty("disabled", false));
+    await userEvent.click(move);
+    await waitFor(() => expect(actions.applyMove).toHaveBeenCalledTimes(1));
+    const written = actions.applyMove.mock.calls[0][0];
+    expect(written.apply.map((o) => o.metadata.name).sort()).toEqual([
+      "billing",
+      "fresh",
+      "orders",
+    ]);
+    expect(written.takeOver).toEqual({
+      "CamundaClusterClaim/team-orders/orders": ["spec.releaseRef"],
+      "CamundaClusterClaim/team-pay/fresh": ["spec.releaseRef"],
+    });
+    expect(written.remove).toBeUndefined();
+  });
+
   it("drops a selected row that a backup now blocks", async () => {
     const { rerender } = renderTab();
     await userEvent.click(
