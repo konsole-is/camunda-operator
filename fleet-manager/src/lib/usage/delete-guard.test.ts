@@ -134,10 +134,11 @@ describe("presetDeleteChecks", () => {
   });
 
   it("names no user while a list that can name the preset is not current", () => {
-    const check = presetDeleteChecks(presetSources(), [], ["CamundaCluster"])(
-      "CamundaClusterPreset",
-      "medium",
-    );
+    const check = presetDeleteChecks(
+      presetSources(),
+      [],
+      ["CamundaCluster"],
+    )("CamundaClusterPreset", "medium");
     expect(check.block).toEqual({
       reason:
         "Delete is possible when the fleet manager has the current lists.",
