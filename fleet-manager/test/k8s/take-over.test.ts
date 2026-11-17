@@ -451,6 +451,40 @@ describe("a take-over against the API server", () => {
     expect(saved.spec.parameters).toEqual(parameters);
   });
 
+  it("takes over a field inside a list item that kubectl made", async () => {
+    const name = unique("env");
+    const tier = (label: string) => ({
+      "aws-s3": {
+        tier: {
+          claimEditable: true,
+          allowed: [{ name: "x", label, value: 1 }],
+        },
+      },
+    });
+    await createClientSideApplied(
+      api,
+      environment(name, { displayName: "Stage", parameters: tier("X") }),
+    );
+    const object = environment(name, {
+      displayName: "Stage",
+      parameters: tier("Y"),
+    });
+    const change = updateOf("Relabel", await read(object), object);
+    const shown = await previewEnvironmentChange(change);
+    expect(changedPaths(shown)).toEqual([
+      "spec.parameters.aws-s3.tier.allowed[name=x].label",
+    ]);
+
+    const chosen = withTakeOver(change, shown.ownership ?? []);
+    expect((await previewEnvironmentChange(chosen)).errors).toEqual([]);
+    expect(await applyEnvironmentChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const saved = await read(object);
+    expect(saved.spec.parameters).toEqual(tier("Y"));
+  });
+
   it("a field of an operator controller is not offered and a request that lists it writes nothing", async () => {
     const made = environment(unique("env"), { displayName: "Stage" });
     await applyAs(operator, made);
