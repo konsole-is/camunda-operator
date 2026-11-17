@@ -101,16 +101,23 @@ export function useClusterEdit(): ClusterEdit {
   return useClaimEdit<ClusterClaim>();
 }
 
+// clusterReview reads saved, the claim that the save leaves, so a reset
+// field that another tool keeps changes nothing in the impacts and the
+// merged diff.
 function clusterReview(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,
-  { mode, close }: { mode: WriteMode; close(): void },
+  {
+    mode,
+    close,
+    saved,
+  }: { mode: WriteMode; close(): void; saved: Session<ClusterClaim> },
 ): ClaimReviewInput {
   const merged = showsMergedDiff(session)
-    ? mergedSpecs(changeInputOf(context, session))
+    ? mergedSpecs(changeInputOf(context, saved))
     : undefined;
   return {
-    ...reviewGuards(context, session, mode, {
+    ...reviewGuards(context, saved, mode, {
       backupsHref: "?tab=backups",
       onOpenBackups: () => {
         close();

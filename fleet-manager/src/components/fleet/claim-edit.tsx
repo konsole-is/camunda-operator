@@ -16,7 +16,6 @@ import {
   WaitingPanel,
 } from "@/components/cluster/edit/waiting-panel";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import type { DiffLine } from "@/lib/diff";
 import { pathFrom, type FieldLock, type Step } from "@/lib/fields";
 import type { KindName } from "@/lib/k8s/kinds";
 import { useGitSync } from "@/lib/k8s/hooks";
@@ -45,7 +44,7 @@ import type {
   WriteResult,
 } from "@/lib/write/types";
 import { ChangeBar } from "./change-bar";
-import { ClaimReview, type ReviewConfirm } from "./claim-review";
+import { ClaimReview, type ClaimReviewInput } from "./claim-review";
 import { useGitPushes } from "./git-pushes";
 import { Toast, useWriteToast } from "./toast";
 
@@ -55,13 +54,7 @@ export type ClaimActions = {
   apply(change: Change): Promise<WriteResult>;
 };
 
-/** ClaimReviewInput is what a page adds to the review of a claim change. */
-export type ClaimReviewInput = {
-  impacts: string[];
-  caution?: ReactNode;
-  confirm?: ReviewConfirm;
-  mergedLines?: DiffLine[];
-};
+export type { ClaimReviewInput } from "./claim-review";
 
 /**
  * ClaimEditHost is what a claim page gives ClaimEditProvider. claim is the
@@ -70,7 +63,9 @@ export type ClaimReviewInput = {
  * and the next change uses the newest one. validate runs only while a change
  * is pending. prepare runs when Review is clicked, and the review shows the
  * session that it returns. review runs only while the review is open, and
- * close closes it.
+ * close closes it. saved is a session whose change gives the claim that
+ * the save leaves with the take-over choice of the review: a cleared field
+ * of another tool stays in it until the take-over.
  */
 export type ClaimEditHost<C extends ClaimObject> = {
   claim: C | undefined;
@@ -81,7 +76,7 @@ export type ClaimEditHost<C extends ClaimObject> = {
   prepare?(s: Session<C>): Session<C>;
   review(
     s: Session<C>,
-    review: { mode: WriteMode; close(): void },
+    review: { mode: WriteMode; close(): void; saved: Session<C> },
   ): ClaimReviewInput;
 };
 
@@ -529,7 +524,7 @@ function ReviewOf<C extends ClaimObject>({
 }) {
   return (
     <ClaimReview
-      {...review(session, { mode, close })}
+      input={(saved) => review(session, { mode, close, saved })}
       session={session}
       mode={mode}
       intent={`Change the claim ${session.claim.metadata.name}`}

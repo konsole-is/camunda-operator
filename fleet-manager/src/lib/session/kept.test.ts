@@ -229,10 +229,13 @@ describe("savedSession", () => {
     operation: "Apply",
     fieldsV1: { "f:spec": { "f:deletionPolicy": {} } },
   };
-  const manager = (entry: typeof kubectl): ForeignManager => ({
+  const manager = (entry: {
+    manager: string;
+    operation: string;
+  }): ForeignManager => ({
     name: entry.manager,
     operation: entry.operation,
-    kind: entry === operator ? "operator" : "other",
+    kind: entry.manager === operator.manager ? "operator" : "other",
     known: true,
   });
   const ref = {

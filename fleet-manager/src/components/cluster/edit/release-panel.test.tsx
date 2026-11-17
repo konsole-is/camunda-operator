@@ -285,3 +285,124 @@ describe("the Release and preset panel", () => {
     ).toBeTruthy();
   });
 });
+
+describe("the Release and preset panel with a field of another tool", () => {
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+  };
+  const key = "CamundaClusterClaim/team-a/orders";
+  const kubectl = {
+    name: "kubectl-client-side-apply",
+    operation: "Update",
+    kind: "other" as const,
+    known: true,
+  };
+  const fieldOf = (name: string) => ({
+    path: `spec.${name}`,
+    steps: [{ field: "spec" }, { field: name }],
+    managers: [kubectl],
+  });
+  // byKubectl is the claim orders as kubectl apply made it: kubectl owns
+  // each field of its spec.
+  const byKubectl = (spec: object) => {
+    const made = claim("41", spec);
+    (made.metadata as { managedFields?: unknown }).managedFields = [
+      {
+        manager: kubectl.name,
+        operation: kubectl.operation,
+        fieldsV1: {
+          "f:spec": Object.fromEntries(
+            Object.keys(made.spec).map((name) => [`f:${name}`, {}]),
+          ),
+        },
+      },
+    ];
+    return made;
+  };
+  const group = () =>
+    within(dialog()).getByRole("group", {
+      name: "Fields that another tool set",
+    });
+  const choice = () =>
+    within(dialog()).getByRole("checkbox", { name: "Take over these fields" });
+  const save = () =>
+    within(dialog()).getByRole<HTMLButtonElement>("button", { name: "Save" });
+  const diff = () => within(dialog()).getByRole("region", { name: "Review" });
+
+  it("a release move of a claim that kubectl apply made asks to take over spec.releaseRef", async () => {
+    fakeWriter.previews = [
+      {
+        objects: [],
+        errors: [
+          {
+            code: "Conflict",
+            message: `conflict with "${kubectl.name}"`,
+            path: "spec.releaseRef",
+            manager: kubectl.name,
+            ref,
+          },
+        ],
+        ownership: [{ ref, changed: [fieldOf("releaseRef")], cleared: [] }],
+      },
+      { objects: [], errors: [] },
+    ];
+    panel(slotContext({ claim: byKubectl({ releaseRef: "camunda-8-9-0" }) }));
+    choose("Release", "camunda-8-9-1");
+    openReview();
+    await waitFor(() =>
+      expect(group().textContent).toContain(
+        "spec.releaseRef: kubectl-client-side-apply set it. The save changes it.",
+      ),
+    );
+    expect(save().disabled).toBe(true);
+
+    fireEvent.click(choice());
+    await confirm("Save");
+    expect(fakeWriter.applied[0].takeOver).toEqual({
+      [key]: ["spec.releaseRef"],
+    });
+    expect(fakeWriter.applied[0].remove).toBeUndefined();
+  });
+
+  it("a reset of a field of another tool says it stays, and removes it after the choice", async () => {
+    const context = slotContext({
+      cluster: cluster({ platformConfigRef: "strict" }),
+      claim: byKubectl({ platformConfigRef: "strict" }),
+      platformConfigs: [platformConfig("base"), platformConfig("strict")],
+    });
+    context.environment!.spec.platformConfigRef = "base";
+    const ownership = [
+      { ref, changed: [], cleared: [fieldOf("platformConfigRef")] },
+    ];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [], ownership },
+    ];
+    panel(context);
+    choose("Platform config", "");
+    openReview();
+    await waitFor(() =>
+      expect(group().textContent).toContain(
+        "spec.platformConfigRef: kubectl-client-side-apply set it. It stays unless you take it over.",
+      ),
+    );
+    await waitFor(() => expect(save().disabled).toBe(false));
+    expect(diff().querySelector("del")).toBeNull();
+
+    fireEvent.click(choice());
+    expect(group().textContent).toContain(
+      "spec.platformConfigRef: kubectl-client-side-apply set it. The save removes it.",
+    );
+    expect(diff().querySelector("del")?.textContent?.trim()).toBe(
+      "platformConfigRef: strict",
+    );
+    const spec = await confirm("Save");
+    expect(spec.platformConfigRef).toBeUndefined();
+    expect(fakeWriter.applied[0].remove).toEqual({
+      [key]: ["spec.platformConfigRef"],
+    });
+  });
+});

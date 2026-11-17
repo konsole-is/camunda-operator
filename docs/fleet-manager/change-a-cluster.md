@@ -182,7 +182,7 @@ A value with an error does not count as a change, and the editor shows the error
 
 ## A claim made outside the fleet manager
 
-Without Git mode, a claim that you made with `kubectl apply` or a GitOps tool keeps the fields that it set. The fleet manager does not take these fields over, so it refuses a change of such a field ([#1134](https://github.com/konsole-is/camunda-operator/issues/1134)).
+You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
 ## The state of a field
 

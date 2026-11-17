@@ -195,6 +195,49 @@ describe("ClusterReviewStep", () => {
     expect(props.onWritten).toHaveBeenCalledWith({ ok: true, mode: "direct" });
   });
 
+  it("a create shows no take-over and sends no list", async () => {
+    // A create has no other owner, because each object must not exist. A
+    // preview that names one still adds no choice and no list.
+    const ref = {
+      apiVersion: claim.apiVersion,
+      kind: claim.kind,
+      namespace: "team-new",
+      name: "orders",
+    };
+    const props = step({
+      preview: vi.fn(async (): Promise<Preview> => ({
+        objects: [],
+        errors: [],
+        ownership: [
+          {
+            ref,
+            changed: [],
+            cleared: [
+              {
+                path: "spec.presetRef",
+                steps: [{ field: "spec" }, { field: "presetRef" }],
+                managers: [
+                  {
+                    name: "kubectl",
+                    operation: "Apply",
+                    kind: "other",
+                    known: true,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })),
+    });
+    await waitFor(() => expect(create().disabled).toBe(false));
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    await userEvent.click(create());
+    expect(props.create).toHaveBeenCalledWith(change);
+  });
+
   it("keeps Create off while blocked", async () => {
     const props = step({ blocked: true });
     await waitFor(() => expect(props.preview).toHaveBeenCalled());
