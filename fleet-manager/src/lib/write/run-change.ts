@@ -117,64 +117,70 @@ export const changeSchema: z.ZodType<Change> = z
     },
   );
 
+/** ClaimKind is the kind of the claim of a cluster or of a management plane. */
+export type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
+
 const CLAIM_KINDS: readonly string[] = [
   "CamundaClusterClaim",
   "CamundaManagementClusterClaim",
-];
+] satisfies ClaimKind[];
 
 /**
- * claimChangeSchema accepts a Change that applies exactly one claim of a
- * cluster or a management plane, with a namespace, and that has no delete,
- * no create, no force, and no directOnly.
+ * claimChangeSchema accepts a Change that applies exactly one claim of
+ * kind, with a namespace, and that has no delete, no create, no force, and
+ * no directOnly.
  */
-export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
-  (c) =>
-    c.apply.length === 1 &&
-    CLAIM_KINDS.includes(c.apply[0].kind) &&
-    c.apply[0].metadata.namespace !== undefined &&
-    c.delete === undefined &&
-    c.create === undefined &&
-    c.force === undefined &&
-    c.directOnly === undefined,
-  { message: "The change must apply one claim and nothing else." },
-);
-
-/**
- * claimDeleteSchema accepts a Change that deletes exactly one claim of a
- * cluster or a management plane and nothing else: an empty apply, one
- * delete ref with the kind and apiVersion of a claim, a namespace, and a
- * name and namespace other than "." and "..", the UID and the generation
- * of that claim in uids and generations, and no preconditions, create,
- * force, or directOnly.
- */
-export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
-  (c) => {
-    const ref = c.delete?.[0];
-    return (
-      c.apply.length === 0 &&
-      c.delete?.length === 1 &&
-      ref !== undefined &&
-      CLAIM_KINDS.includes(ref.kind) &&
-      // The direct writer reports a delete that answers 404 as done, so a
-      // wrong apiVersion would report a delete that never happened.
-      ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
-      ref.namespace !== undefined &&
-      // runClaimDelete and previewClaimDelete read the claim by its path
-      // before the writer checks the ref, and pathSegment throws for "."
-      // and "..".
-      ![ref.name, ref.namespace].some(
-        (part) => part === "." || part === "..",
-      ) &&
-      c.uids?.[refKey(ref)] !== undefined &&
-      c.generations?.[refKey(ref)] !== undefined &&
-      c.preconditions === undefined &&
+export function claimChangeSchema(kind: ClaimKind): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) =>
+      c.apply.length === 1 &&
+      c.apply[0].kind === kind &&
+      c.apply[0].metadata.namespace !== undefined &&
+      c.delete === undefined &&
       c.create === undefined &&
       c.force === undefined &&
-      c.directOnly === undefined
-    );
-  },
-  { message: "The change must delete one claim and nothing else." },
-);
+      c.directOnly === undefined,
+    { message: `The change must apply one ${kind} and nothing else.` },
+  );
+}
+
+/**
+ * claimDeleteSchema accepts a Change that deletes exactly one claim of kind
+ * and nothing else: an empty apply, one delete ref with the kind and its
+ * apiVersion, a namespace, and a name and namespace other than "." and
+ * "..", the UID and the generation of that claim in uids and generations,
+ * and no preconditions, create, force, or directOnly.
+ */
+export function claimDeleteSchema(kind: ClaimKind): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) => {
+      const ref = c.delete?.[0];
+      return (
+        c.apply.length === 0 &&
+        c.delete?.length === 1 &&
+        ref !== undefined &&
+        ref.kind === kind &&
+        // The direct writer reports a delete that answers 404 as done, so a
+        // wrong apiVersion would report a delete that never happened.
+        ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
+        ref.namespace !== undefined &&
+        // runClaimDelete and previewClaimDelete read the claim by its path
+        // before the writer checks the ref, and pathSegment throws for "."
+        // and "..".
+        ![ref.name, ref.namespace].some(
+          (part) => part === "." || part === "..",
+        ) &&
+        c.uids?.[refKey(ref)] !== undefined &&
+        c.generations?.[refKey(ref)] !== undefined &&
+        c.preconditions === undefined &&
+        c.create === undefined &&
+        c.force === undefined &&
+        c.directOnly === undefined
+      );
+    },
+    { message: `The change must delete one ${kind} and nothing else.` },
+  );
+}
 
 /**
  * CLAIM_DELETE_ATTEMPTS is how many deletes runClaimDelete sends before it
@@ -185,8 +191,8 @@ export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
 export const CLAIM_DELETE_ATTEMPTS = 5;
 
 /**
- * runClaimDelete is runChange with claimDeleteSchema, for the delete of a
- * claim. A status write of the claim since the review does not refuse it.
+ * runClaimDelete is runChange with claimDeleteSchema of kind, for the
+ * delete of a claim. A status write of the claim since the review does not refuse it.
  * It refuses with Stale, and deletes nothing, when the claim is gone, has
  * another UID, or has another generation than the change names, that is
  * when its spec changed since the review. It refuses with Invalid a claim
@@ -200,8 +206,11 @@ export const CLAIM_DELETE_ATTEMPTS = 5;
  * that the claim kept changing. In Git mode the Git writer checks the UID
  * and the generation. A failed read gives Unavailable.
  */
-export async function runClaimDelete(input: unknown): Promise<WriteResult> {
-  const parsed = claimDeleteSchema.safeParse(input);
+export async function runClaimDelete(
+  input: unknown,
+  kind: ClaimKind,
+): Promise<WriteResult> {
+  const parsed = claimDeleteSchema(kind).safeParse(input);
   if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
   const change = parsed.data;
   const ref = change.delete![0];
@@ -237,12 +246,15 @@ export async function runClaimDelete(input: unknown): Promise<WriteResult> {
 }
 
 /**
- * previewClaimDelete is runPreview with claimDeleteSchema. It gives no
+ * previewClaimDelete is runPreview with claimDeleteSchema of kind. It gives no
  * objects and the refusal of runClaimDelete when the claim is gone, has
  * another UID or generation, or lost its cleanup finalizer.
  */
-export async function previewClaimDelete(input: unknown): Promise<Preview> {
-  const parsed = claimDeleteSchema.safeParse(input);
+export async function previewClaimDelete(
+  input: unknown,
+  kind: ClaimKind,
+): Promise<Preview> {
+  const parsed = claimDeleteSchema(kind).safeParse(input);
   if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
   const change = parsed.data;
   const ref = change.delete![0];

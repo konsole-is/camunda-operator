@@ -161,6 +161,32 @@ The header shows the name of the plane and its `Ready` condition. A reason other
 | Platform config | The platform config of the plane, or of its environment when the claim names none |
 | Serves | The environments of the claim. A plane that no claim made shows its namespace selector, or `Every namespace`. A plane that no claim made and that has no `spec.clusterSelector` serves no cluster, and shows `No cluster, because it has no cluster selector`. |
 
+### Components
+
+The **Components** section of the **Overview** tab shows a card for each component that runs on the plane:
+
+| Card | When it shows |
+| --- | --- |
+| Keycloak | In the `keycloak` mode |
+| Identity provider | In the `externalKeycloak` and `oidc` modes |
+| Management Identity | Always |
+| Console | When the plane runs Console |
+| Web Modeler REST API, Web Modeler websockets | When the plane runs Web Modeler |
+
+The dot of a card shows the condition of its component: `KeycloakReady`, `IdentityReady`, `ConsoleReady`, or `WebModelerReady`. The two Web Modeler cards both show `WebModelerReady`. For example, `IdentityReady` with the status `False` turns the dot of **Management Identity** red. A card also shows how many of its pods are ready, and the highest CPU or memory use of one pod against its limit.
+
+The **Identity provider** card shows the mode and the issuer URL. In the `externalKeycloak` mode, the issuer is the URL of your Keycloak followed by `/realms/<realm>`. In the `oidc` mode, the issuer comes from the platform config. Your identity provider runs outside the plane, so this card shows no pods and opens no detail.
+
+Select another card to open the detail of its component. The detail shows the pods of the component, its condition, and the events of the `CamundaManagementCluster`. **All components** goes back to the cards. The **Settings** tab of the detail shows the settings of the claim for that component, with the reason when you cannot change one. The tab shows the settings and does not change them:
+
+| Setting | What the tab shows |
+| --- | --- |
+| Administrator claim name and value, in the `oidc` mode | `Fixed after Identity started`, once Management Identity recorded the first administrator. You cannot change them after that. See [The first administrator](../crds/camundamanagementcluster.md#the-first-administrator). |
+| Administrator username, in a Keycloak mode | `A new username creates a second user.` |
+| Web Modeler mail | No reason, because you can change it |
+
+A plane that the claim controller has not created yet shows no cards.
+
 ### Conditions
 
 The **Conditions** section lists the conditions of the `CamundaManagementCluster` that belong to no component: `SecretsReady`, `MirroredSecretsReady`, `ServiceAccountsReady`, `ManagementAuthReady`, and `OptimizeCallbacksReady`. The group **Claim** follows, with `RequestsReady` and `ManagementClusterReady` of the claim. Each row shows the status, the reason, the message, and the time since the last change.
@@ -202,7 +228,11 @@ When the plane and its claim are both deleted, the page shows `This management p
 
 When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted.
 
-When the page cannot read the `CamundaManagementCluster`, it does not know if the plane is managed or which claim made it. The **Conditions** section shows the conditions of a claim with the same name in the group **Claim**. The line `The page could not read the management plane, so it cannot tell if the claim <name> made it.` stands above that section. The header shows `No status`, and a dash for the identity provider, the platform config, and **Serves**, because the page does not know them. The page also does not show the `Not managed by the fleet manager.` banner.
+While the copy of the `CamundaManagementCluster` on the page is not current, the header and the dot of each card show `Not known`. While the page cannot read the pods, a card shows `Could not read Pod`. In the `oidc` mode, the issuer shows `Could not read CamundaPlatformConfig` while the page cannot read the platform config.
+
+While the page cannot read the `CamundaManagementCluster` or the claim, **Suspend** and **Delete** are disabled, and an open confirm closes. The same applies while the copy of one of them is not current. A failed read of the pods or the platform config changes only the cards, so **Suspend** and **Delete** stay available.
+
+When the page cannot read the `CamundaManagementCluster`, it does not know if the plane is managed or which claim made it. The **Conditions** section shows the conditions of a claim with the same name in the group **Claim**. The line `The page could not read the management plane, so it cannot tell if the claim <name> made it.` stands above that section. The header shows `Not known` in place of the `Ready` condition. It shows a dash for the identity provider, the platform config, and **Serves**, because the page does not know them. The page also does not show the `Not managed by the fleet manager.` banner.
 
 ### A plane that no claim made
 
@@ -363,3 +393,55 @@ To change or remove a field that another tool set, make the change with that too
 A tool that writes without server-side apply, such as `kubectl apply` without `--server-side` or `kubectl edit`, does not see a save of the fleet manager. Its next write can set a field back, and nothing warns about it.
 
 The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane in direct mode, the Claim tab can only add fields. Make each other change in the claim file, and apply the file again.
+
+## Suspend a management plane
+
+Suspend stops the plane and keeps its data. The header of a plane that a claim made has the button **Suspend**.
+
+1. Select **Suspend**. The page asks you to confirm. It says that every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize then stops for every cluster that the plane serves. It also says that the served clusters keep running, and that the databases keep the data of the plane. In the `keycloak` mode, it warns about each cluster that uses the Keycloak of the plane as OIDC issuer. The users and API clients of such a cluster cannot sign in or get tokens until the plane resumes. The page says this also while no cluster is attached.
+2. Select **Suspend the management plane**.
+
+The page sets `spec.suspend: true` on the claim:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaManagementClusterClaim
+metadata:
+  name: plane-a
+  namespace: platform
+spec:
+  suspend: true
+  # ... the rest of your claim
+```
+
+When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
+
+The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the browser tab that pushed it shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled there. In another tab, or after a reload, the fleet manager refuses a save of the claim until GitOps applies the delete. The page then shows that refusal.
+
+While the fleet manager cannot read its settings, **Suspend** and **Resume** are disabled, and the header says `Changes are off: the fleet manager could not read its settings.`
+
+A plane that no claim made has no Suspend and no Delete. While the claim is being deleted, **Suspend** and **Resume** are off.
+
+## Delete a management plane
+
+Select **Delete** in the header of the plane. The delete page opens at `/fleet/planes/<namespace>/<name>/delete`.
+
+1. Choose what happens to the resources of the database and access options. **Delete the resources** and **Keep the resources** set `spec.deletionPolicy` of the claim to `Delete` or `Orphan`. The page selects the policy of the claim. Without one, it selects the policy that the claim recorded from its environment, else `Delete`. When an option always deletes what it made, **Keep the resources** is off.
+2. Read what the delete takes. The page lists:
+    - The objects that always go: the `CamundaManagementCluster`, with its workloads, Services, and generated Secrets, the requests of the options, and the claim.
+    - The clusters that the plane serves. They stay and keep running. The plane removes its Console settings and its claim from each cluster, and each cluster restarts its pods once. A cluster with basic authentication also loses its `web-modeler` user. Sign-in to Console, Web Modeler, and Optimize stops for these clusters. In the `keycloak` mode, each cluster that uses the Keycloak of the plane as its OIDC issuer loses sign-in. Its users and API clients can no longer sign in or get tokens. The page says this also while no cluster is attached. When the claim did not make the plane, the page says that the delete does not touch the plane or the clusters that it serves.
+    - The contract of the plane, which goes. Each `CamundaOptimize` that reads it then reports `InvalidReference`. The page names each of them.
+    - The resources of each option, with `Deleted` or `Kept` for each.
+    - With **Delete the resources**: `Deleting a Database keeps its data on its server. Deleting a DatabaseServer erases the server and its data.`
+    - With **Delete the resources**, in the `keycloak` mode and while the plane serves clusters, the review also says: `When a DatabaseServer of an option holds the Keycloak database, the delete erases the users and clients of the realm.`
+    - With **Keep the resources**, a resource that shows `Kept` stays after the plane is gone. An option can still delete some of its resources, for example a route. Those show `Deleted`.
+3. Type the name of the plane.
+4. Select **Delete the management plane**.
+
+The page first writes your choice to the claim when the claim has another deletion policy, or none of its own and none recorded. The page then shows "Waiting for the operator to read the deletion policy." In direct mode, the fleet manager then deletes the claim. The operator gives your choice to each option before it removes anything. The page shows each object that goes until it is gone. The [Deletion](../crds/camundamanagementclusterclaim.md#deletion) section of the claim explains the order.
+
+If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. The operator records the deletion policy in the claim status. If the claim then lost the finalizer `fleet.camunda.io/cleanup`, it cannot give that policy to its options. Its delete fails until you add the finalizer back.
+
+In Git mode, the confirm is **Push the delete to Git**. A changed policy and the delete are two commits. The page pushes the delete only after GitOps applied the policy and each option has it. While the claim reports an error, the operator does not update the options. The page then names the options and gives the reason, and the fleet manager refuses the push. The fleet manager removes the claim file, so your GitOps tool must prune to delete the claim. [Delete in Git mode](cluster-page.md#delete-in-git-mode) on the cluster page shows the same steps with examples.
+
+When the page cannot read a list that the delete needs, it shows `Not known` for each fact that comes from that list. It then shows no confirm. It shows `Delete is possible when the fleet manager can read <kind>.`

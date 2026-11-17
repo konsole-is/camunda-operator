@@ -53,7 +53,8 @@ export function DeletionChoiceField({
         {deletionQuestion(subject)}
       </legend>
       <p className="-mt-1 text-sm text-muted">
-        This applies to the resources of the storage and access options.
+        This applies to the resources of the{" "}
+        {subject === "cluster" ? "storage" : "database"} and access options.
       </p>
       <div className="grid gap-3 md:grid-cols-2 @5xl:grid-cols-3">
         <PolicyCard

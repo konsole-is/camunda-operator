@@ -21,7 +21,9 @@ import {
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
   applyPlaneClaimChange,
+  applyPlaneClaimDelete,
   previewPlaneClaimChange,
+  previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import {
   createCluster,
@@ -437,6 +439,16 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
         },
       }),
     ),
+  // The change passes the schema, so the dry run and the delete read the
+  // plane claim, refuse with Stale, and remove nothing.
+  "app/fleet/planes/[namespace]/[name]/actions.ts#previewPlaneClaimDelete":
+    refused("Stale", async () =>
+      previewPlaneClaimDelete(await stalePlaneClaimDelete()),
+    ),
+  "app/fleet/planes/[namespace]/[name]/actions.ts#applyPlaneClaimDelete":
+    refused("Stale", async () =>
+      applyPlaneClaimDelete(await stalePlaneClaimDelete()),
+    ),
   "app/fleet/clusters/new/actions.ts#previewClusterCreate": previewed(() =>
     previewClusterCreate(clusterCreate({ presetRef: "leak" })),
   ),
@@ -726,6 +738,32 @@ async function staleClaimDelete() {
       {
         apiVersion: "fleet.camunda.io/v1alpha1",
         kind: "CamundaClusterClaim",
+        namespace,
+        name,
+      },
+    ],
+    uids: { [key]: live.metadata?.uid ?? "" },
+    generations: { [key]: (live.metadata?.generation ?? 1) + 1 },
+  };
+}
+// stalePlaneClaimDelete makes a plane claim and returns the change that
+// deletes it, with its UID and a generation that it does not have.
+async function stalePlaneClaimDelete() {
+  const name = `delete-${randomUUID().slice(0, 8)}`;
+  const live: KubernetesObject = await api.create({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name, namespace },
+    spec: planeSpec(),
+  });
+  const key = `CamundaManagementClusterClaim/${namespace}/${name}`;
+  return {
+    intent: `Delete the management plane ${name}`,
+    apply: [],
+    delete: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
         namespace,
         name,
       },

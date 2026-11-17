@@ -237,7 +237,7 @@ To send no delete, select **Stop waiting** while the page waits. The deletion po
 
 If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. This also applies when someone else changes the claim during the wait. A change of the claim status does not stop the delete. If the status changes at each of five tries, the delete fails. The page then says "The CamundaClusterClaim my-cluster kept changing during the delete. Delete it again."
 
-A claim without the finalizer `fleet.camunda.io/cleanup` cannot give its deletion policy to its options. Its delete fails until you add the finalizer back. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
+The operator records the deletion policy in the claim status. If the claim then lost the finalizer `fleet.camunda.io/cleanup`, it cannot give that policy to its options. Its delete fails until you add the finalizer back. When no delete follows the write of your choice, the page shows the deletion policy that the claim has now. For example, it says "The cluster is not deleted. The claim my-cluster has the deletion policy Keep."
 
 ### When the page cannot read a list
 

@@ -5,6 +5,10 @@ import {
   applyClaimDelete,
   previewClaimDelete,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
+import {
+  applyPlaneClaimDelete,
+  previewPlaneClaimDelete,
+} from "@/app/fleet/planes/[namespace]/[name]/actions";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { KubeError, kubeRequest } from "../scenarios/kube";
 
@@ -236,3 +240,147 @@ describe("the delete of a claim against envtest", () => {
     );
   });
 });
+
+const planeClaimsPath = `/apis/fleet.camunda.io/v1alpha1/namespaces/${namespace}/camundamanagementclusterclaims`;
+
+// planeMade creates a plane claim and returns it as the API server answered.
+async function planeMade(spec: object = {}, finalizers: string[] = []) {
+  return kubeRequest<KubeObject>(kc, "POST", planeClaimsPath, {
+    apiVersion,
+    kind: "CamundaManagementClusterClaim",
+    metadata: {
+      name: `plane-${randomUUID().slice(0, 8)}`,
+      namespace,
+      finalizers,
+    },
+    spec: {
+      environments: [namespace],
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          externalUrl: "https://management.example.com/identity",
+          admin: { claimName: "sub", claimValue: "42" },
+        },
+      },
+      versions: { identity: "8.9.14" },
+      ...spec,
+    },
+  });
+}
+
+async function planeRead(name: string): Promise<KubeObject | undefined> {
+  try {
+    return await kubeRequest<KubeObject>(
+      kc,
+      "GET",
+      `${planeClaimsPath}/${name}`,
+    );
+  } catch (error) {
+    if (error instanceof KubeError && error.status === 404) return undefined;
+    throw error;
+  }
+}
+
+// planeReviewed is the delete of a plane claim that the page sends after
+// its review.
+function planeReviewed(claim: KubeObject): Change {
+  const { name } = claim.metadata;
+  const kind = "CamundaManagementClusterClaim";
+  const key = `${kind}/${namespace}/${name}` as const;
+  return {
+    intent: `Delete the management plane ${name}`,
+    apply: [],
+    delete: [{ apiVersion, kind, namespace, name }],
+    uids: { [key]: claim.metadata.uid as string },
+    generations: { [key]: claim.metadata.generation as number },
+  };
+}
+
+describe("the delete of a plane claim against envtest", () => {
+  it("deletes a plane claim after a status write since the review", async () => {
+    const claim = await planeMade();
+    await kubeRequest(
+      kc,
+      "PATCH",
+      `${planeClaimsPath}/${claim.metadata.name}/status`,
+      { status: { environment: "prod" } },
+      "application/merge-patch+json",
+    );
+
+    expect(await previewPlaneClaimDelete(planeReviewed(claim))).toMatchObject({
+      errors: [],
+    });
+    expect(await applyPlaneClaimDelete(planeReviewed(claim))).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(await planeRead(claim.metadata.name)).toBeUndefined();
+  });
+
+  it("deletes a plane claim with the cleanup finalizer whose request still has the old policy", async () => {
+    const claim = await planeMade({ deletionPolicy: "Orphan" }, [
+      "fleet.camunda.io/cleanup",
+    ]);
+    await kubeRequest(
+      kc,
+      "PATCH",
+      `${planeClaimsPath}/${claim.metadata.name}/status`,
+      {
+        status: {
+          observedGeneration: claim.metadata.generation,
+          resolvedPolicy: { deletionPolicy: "Orphan" },
+        },
+      },
+      "application/merge-patch+json",
+    );
+    await planeRequested(claim, "Delete");
+
+    expect(await applyPlaneClaimDelete(planeReviewed(claim))).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    // The cleanup finalizer holds the claim until the operator removes it.
+    expect(
+      (await planeRead(claim.metadata.name))?.metadata.deletionTimestamp,
+    ).toBeDefined();
+  });
+
+  it("refuses a plane claim without the cleanup finalizer while its request has another policy", async () => {
+    const claim = await planeMade({ deletionPolicy: "Orphan" });
+    const request = await planeRequested(claim, "Delete");
+
+    expect(await applyPlaneClaimDelete(planeReviewed(claim))).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it.`,
+        }),
+      ],
+    });
+    expect(await planeRead(claim.metadata.name)).toBeDefined();
+  });
+});
+
+// planeRequested creates a PluginRequest that the plane claim controls,
+// with policy.
+async function planeRequested(claim: KubeObject, policy: "Delete" | "Orphan") {
+  const { name, uid } = claim.metadata;
+  const kind = "CamundaManagementClusterClaim";
+  return kubeRequest<KubeObject>(kc, "POST", requestsPath, {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: {
+      name: `${name}-management-database`,
+      namespace,
+      ownerReferences: [{ apiVersion, kind, name, uid, controller: true }],
+    },
+    spec: {
+      section: "management-database",
+      registration: "echo",
+      claimRef: { kind, name },
+      target: { kind: "CamundaManagementCluster", name },
+      deletionPolicy: policy,
+    },
+  });
+}

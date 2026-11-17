@@ -162,7 +162,10 @@ describe("runPreview", () => {
   });
 
   it("uses the schema of the action", async () => {
-    const result = await runPreview(validChange, claimChangeSchema);
+    const result = await runPreview(
+      validChange,
+      claimChangeSchema("CamundaClusterClaim"),
+    );
 
     expect(result.errors).toEqual([
       expect.objectContaining({ code: "Invalid" }),
@@ -188,20 +191,33 @@ describe("claimChangeSchema", () => {
     spec: {},
   };
 
-  it("accepts one claim of either kind to apply, with a precondition", () => {
+  it("accepts one claim of its kind to apply, with a precondition, and refuses a claim of the other kind", () => {
     expect(
-      claimChangeSchema.safeParse({
+      claimChangeSchema("CamundaClusterClaim").safeParse({
         intent: "x",
         apply: [claim],
         preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
       }).success,
     ).toBe(true);
+    const plane = { ...claim, kind: "CamundaManagementClusterClaim" };
     expect(
-      claimChangeSchema.safeParse({
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
         intent: "x",
-        apply: [{ ...claim, kind: "CamundaManagementClusterClaim" }],
+        apply: [plane],
       }).success,
     ).toBe(true);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse({
+        intent: "x",
+        apply: [plane],
+      }).success,
+    ).toBe(false);
+    expect(
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
+        intent: "x",
+        apply: [claim],
+      }).success,
+    ).toBe(false);
   });
 
   it.each([
@@ -236,7 +252,9 @@ describe("claimChangeSchema", () => {
       },
     ],
   ])("refuses %s", (_, input) => {
-    expect(claimChangeSchema.safeParse(input).success).toBe(false);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(input).success,
+    ).toBe(false);
   });
 });
 
@@ -255,17 +273,28 @@ describe("claimDeleteSchema", () => {
     generations: { "CamundaClusterClaim/team-a/orders": 3 },
   };
 
-  it("accepts one delete of a claim of either kind with its UID and generation", () => {
-    expect(claimDeleteSchema.safeParse(remove).success).toBe(true);
-    const planeKey = "CamundaManagementClusterClaim/team-a/orders";
+  it("accepts one delete of a claim of its kind with its UID and generation, and refuses a claim of the other kind", () => {
     expect(
-      claimDeleteSchema.safeParse({
-        ...remove,
-        delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
-        uids: { [planeKey]: "uid-1" },
-        generations: { [planeKey]: 3 },
-      }).success,
+      claimDeleteSchema("CamundaClusterClaim").safeParse(remove).success,
     ).toBe(true);
+    const planeKey = "CamundaManagementClusterClaim/team-a/orders";
+    const plane = {
+      ...remove,
+      delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
+      uids: { [planeKey]: "uid-1" },
+      generations: { [planeKey]: 3 },
+    };
+    expect(
+      claimDeleteSchema("CamundaManagementClusterClaim").safeParse(plane)
+        .success,
+    ).toBe(true);
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(plane).success,
+    ).toBe(false);
+    expect(
+      claimDeleteSchema("CamundaManagementClusterClaim").safeParse(remove)
+        .success,
+    ).toBe(false);
   });
 
   it.each([
@@ -338,11 +367,15 @@ describe("claimDeleteSchema", () => {
       { ...remove, uids: { "CamundaClusterClaim/team-a/payments": "uid-2" } },
     ],
   ])("refuses %s", (_, change) => {
-    expect(claimDeleteSchema.safeParse(change).success).toBe(false);
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(change).success,
+    ).toBe(false);
   });
 
   it("claimChangeSchema still refuses the delete", () => {
-    expect(claimChangeSchema.safeParse(remove).success).toBe(false);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(remove).success,
+    ).toBe(false);
   });
 
   it("accepts the remove step of deleteClaimSteps, and claimChangeSchema accepts its policy step", () => {
@@ -362,8 +395,12 @@ describe("claimDeleteSchema", () => {
       "Orphan",
       "Delete the cluster orders",
     );
-    expect(claimDeleteSchema.safeParse(steps.remove).success).toBe(true);
-    expect(claimChangeSchema.safeParse(steps.policy).success).toBe(true);
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(steps.remove).success,
+    ).toBe(true);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(steps.policy).success,
+    ).toBe(true);
   });
 });
 
@@ -463,7 +500,10 @@ describe("runClaimDelete and previewClaimDelete", () => {
     listed = [request("orders-backup-storage", "Delete")];
     fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
 
-    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
   });
 
   it("Git mode refuses while a request of the claim does not have its policy, names it, and gives the Ready reason of the claim", async () => {
@@ -474,7 +514,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
       request("orders-access", "Orphan"),
     ];
 
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [
         {
@@ -502,7 +542,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
       request("orders-borrowed", "Delete", { controller: false }),
     ];
 
-    expect(await runClaimDelete(remove)).toMatchObject({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toMatchObject({
       ok: false,
       errors: [
         {
@@ -523,7 +563,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
       fake.mode = "git";
       reads = [set("Orphan", { observedGeneration })];
 
-      expect(await runClaimDelete(remove)).toEqual({
+      expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
         ok: false,
         errors: [
           {
@@ -543,7 +583,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [{ ...bare, spec: { deletionPolicy: "Orphan" } }];
     listed = [request("orders-backup-storage", "Delete")];
 
-    expect(await runClaimDelete(remove)).toMatchObject({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toMatchObject({
       ok: false,
       errors: [{ code: "Stale" }],
     });
@@ -555,7 +595,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [set("Orphan")];
     listObjects.mockRejectedValueOnce(new Error("forbidden"));
 
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [{ code: "Unavailable", message: "forbidden" }],
     });
@@ -570,7 +610,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     listed = [request("orders-backup-storage", "Delete")];
     fake.preview.mockResolvedValue({ objects: [], errors: [] });
 
-    expect(await previewClaimDelete(remove)).toEqual({
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       objects: [],
       errors: [],
     });
@@ -585,16 +625,16 @@ describe("runClaimDelete and previewClaimDelete", () => {
         "The CamundaClusterClaim orders has no finalizer fleet.camunda.io/cleanup, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.",
       ref,
     };
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [refusal],
     });
-    expect(await previewClaimDelete(remove)).toEqual({
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       objects: [],
       errors: [refusal],
     });
     fake.mode = "git";
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [refusal],
     });
@@ -611,14 +651,20 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [deleting];
     fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
 
-    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
   });
 
   it("deletes at the resourceVersion of a fresh read when only the status changed since the review", async () => {
     reads = [live("45")];
     fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
 
-    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
     expect(readLive).toHaveBeenCalledWith(ref);
     expect(fake.apply).toHaveBeenCalledTimes(1);
     expect(fake.apply).toHaveBeenCalledWith({
@@ -634,7 +680,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
   ])("refuses with Stale and deletes nothing when %s", async (_, object) => {
     reads = [object];
 
-    const result = await runClaimDelete(remove);
+    const result = await runClaimDelete(remove, "CamundaClusterClaim");
 
     expect(result).toEqual({
       ok: false,
@@ -649,7 +695,10 @@ describe("runClaimDelete and previewClaimDelete", () => {
       .mockResolvedValueOnce(stale)
       .mockResolvedValueOnce({ ok: true, mode: "direct" });
 
-    expect(await runClaimDelete(remove)).toEqual({ ok: true, mode: "direct" });
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
     expect(fake.apply.mock.calls.map(([c]) => c.preconditions)).toEqual([
       { [key]: "45" },
       { [key]: "46" },
@@ -660,7 +709,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [live("45"), live("46", { generation: 4 })];
     fake.apply.mockResolvedValue(stale);
 
-    const result = await runClaimDelete(remove);
+    const result = await runClaimDelete(remove, "CamundaClusterClaim");
 
     expect(result).toEqual({
       ok: false,
@@ -673,7 +722,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [live("45")];
     fake.apply.mockResolvedValue(stale);
 
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [
         {
@@ -695,7 +744,9 @@ describe("runClaimDelete and previewClaimDelete", () => {
     };
     fake.apply.mockResolvedValue(forbidden);
 
-    expect(await runClaimDelete(remove)).toEqual(forbidden);
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual(
+      forbidden,
+    );
     expect(fake.apply).toHaveBeenCalledTimes(1);
   });
 
@@ -704,7 +755,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [live("45")];
     fake.apply.mockResolvedValue(stale);
 
-    expect(await runClaimDelete(remove)).toEqual(stale);
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual(stale);
     expect(fake.apply).toHaveBeenCalledTimes(1);
     expect(fake.apply).toHaveBeenCalledWith(remove);
   });
@@ -721,11 +772,13 @@ describe("runClaimDelete and previewClaimDelete", () => {
       },
     ],
   ])("refuses input with %s as Invalid and reads nothing", async (_, input) => {
-    expect(await runClaimDelete(input)).toMatchObject({
+    expect(await runClaimDelete(input, "CamundaClusterClaim")).toMatchObject({
       ok: false,
       errors: [expect.objectContaining({ code: "Invalid" })],
     });
-    expect(await previewClaimDelete(input)).toMatchObject({
+    expect(
+      await previewClaimDelete(input, "CamundaClusterClaim"),
+    ).toMatchObject({
       objects: [],
       errors: [expect.objectContaining({ code: "Invalid" })],
     });
@@ -735,7 +788,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
   it("returns Unavailable when the read fails", async () => {
     readLive.mockRejectedValueOnce(new Error("boom"));
 
-    expect(await runClaimDelete(remove)).toEqual({
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       ok: false,
       errors: [{ code: "Unavailable", message: "boom" }],
     });
@@ -745,7 +798,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     reads = [live("45")];
     fake.preview.mockResolvedValue({ objects: [], errors: [] });
 
-    expect(await previewClaimDelete(remove)).toEqual({
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       objects: [],
       errors: [],
     });
@@ -753,7 +806,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
 
     fake.preview.mockClear();
     reads = [live("46", { generation: 4 })];
-    expect(await previewClaimDelete(remove)).toEqual({
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
       objects: [],
       errors: [expect.objectContaining({ code: "Stale", ref })],
     });

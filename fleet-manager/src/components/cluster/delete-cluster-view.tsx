@@ -1,14 +1,11 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
-import Link from "next/link";
-import { type ReactNode, useState } from "react";
-import { ChangeReview } from "@/components/fleet/change-review";
-import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
-import { PrecheckLine } from "@/components/fleet/precheck-line";
-import type { PolicyAfterWrite } from "@/components/fleet/use-claim-delete";
+import type { ReactNode } from "react";
+import {
+  ClaimDeleteView,
+  type DeleteStage,
+} from "@/components/fleet/claim-delete-page";
 import type { ReadError } from "@/components/planes/planes-table";
-import { unreadDeleteText } from "@/components/setup/releases/rows";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -20,84 +17,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DeletionGroup } from "@/lib/claims/deletion";
-import type { Resource } from "@/lib/k8s/kinds";
 import type { DeletionPolicy } from "@/lib/policy";
 import type {
-  ApiError,
   Change,
   Preview,
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
-import type {
-  DeleteClusterModel,
-  DeleteState,
-  DeleteTarget,
-} from "./delete-cluster-model";
-import { CHANGES_OFF } from "./edit/cluster-edit";
-import { WaitingPanel } from "./edit/waiting-panel";
+import type { DeleteClusterModel, DeleteTarget } from "./delete-cluster-model";
 
 /**
- * KEEP_REFUSED_ON_DELETE says that a claim keeps its resources, but an
- * option cannot, so the delete removes them.
- */
-export const KEEP_REFUSED_ON_DELETE =
-  "The claim keeps its resources, but an option below cannot keep them. The delete removes them.";
-
-/**
- * DeleteStage is what the delete page shows. choose holds the errors of a
- * delete refused after the policy write, and the policy of the claim after
- * a policy write that no delete followed. waiting: the delete waits for
- * the policy write, and blocked says why the options do not get it. deleting holds the state of
- * each target, whether the delete commit waits for GitOps, the live claim,
- * and what to do when the operator refuses the delete because an option
- * cannot keep. deleted: the claim is gone. replaced: the claim was made
- * again under its name.
- */
-export type DeleteStage =
-  | {
-      kind: "choose";
-      errors?: ApiError[];
-      afterPolicyWrite?: PolicyAfterWrite;
-    }
-  | { kind: "waiting"; blocked?: string }
-  | {
-      kind: "deleting";
-      progress: { target: DeleteTarget; state: DeleteState }[];
-      gitWaiting: boolean;
-      claim?: Resource<"CamundaClusterClaim">;
-      keepRefused?: string;
-    }
-  | { kind: "deleted" }
-  | { kind: "replaced" };
-
-const PRUNE_NOTE =
-  "Your GitOps tool must prune: the fleet manager removes the claim file, and GitOps deletes the claim.";
-
-/**
- * DeleteClusterView is the delete page of a cluster. It never writes: the
- * confirm of its review calls apply with remove, and the review previews
- * remove once for each remove object. Without a mode it shows CHANGES_OFF
- * and what the delete takes, and no review. While model.unread has a kind
- * it shows what the delete takes, and no review, unless a write runs.
- * While keepRefused is set, a mode is set, and model.unread is empty, it
- * shows keepRefused in place of the review, unless a write runs.
- * policyStep says that the delete writes the deletion policy first.
+ * DeleteClusterView is the delete page of a cluster: ClaimDeleteView with
+ * what the delete of the cluster takes. The other props are those of
+ * ClaimDeleteView.
  */
 export function DeleteClusterView({
   model,
   mode,
-  stage,
-  errors,
-  remove,
   policyStep,
-  keepRefused,
-  onPick,
-  preview,
-  apply,
-  show,
-  onWritten,
-  onStopWaiting,
+  ...rest
 }: {
   model: DeleteClusterModel;
   mode: WriteMode | undefined;
@@ -114,155 +52,30 @@ export function DeleteClusterView({
   onStopWaiting(): void;
 }): ReactNode {
   const { name, namespace } = model;
-  const clusterHref = `/fleet/clusters/${namespace}/${name}`;
-  const effects = effectsOf(model, mode === "git" && policyStep);
   const clusterKept = model.kept.some((t) => t.kind === "CamundaCluster");
-  const [writing, setWriting] = useState(false);
-  const takes = (
-    <section aria-label="What the delete takes">
-      <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-text-2">
-        {effects.map((effect, i) => (
-          <li key={i}>{effect}</li>
-        ))}
-      </ul>
-    </section>
-  );
   return (
-    <div className="flex max-w-3xl min-w-0 flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <Link
-          href={clusterHref}
-          className="relative w-fit text-sm text-muted hit-area hover:text-text"
-        >
-          Back to the cluster
-        </Link>
-        <h1 className="font-heading text-2xl font-bold tracking-[-0.02em] break-all">
-          Delete the cluster {name}
-        </h1>
-      </div>
-      {stage.kind === "deleted" ? (
-        <div className="flex flex-col gap-2 text-sm">
-          <p role="status" className="text-text">
-            {clusterKept
-              ? `The claim ${name} is deleted. The cluster ${name} stays: the claim did not make it.`
-              : `The cluster ${name} is deleted.`}
-          </p>
-          <Link
-            href="/fleet"
-            className="relative w-fit text-accent hit-area hover:underline"
-          >
-            Back to the fleet
-          </Link>
-        </div>
-      ) : stage.kind === "replaced" ? (
-        <div className="flex flex-col gap-2 text-sm">
-          <p role="status" className="text-text">
-            The claim {name} was made again after this page opened. Open the
-            delete page again to delete the new claim.
-          </p>
-          <Link
-            href={clusterHref}
-            className="relative w-fit text-accent hit-area hover:underline"
-          >
-            Back to the cluster
-          </Link>
-        </div>
-      ) : stage.kind === "waiting" ? (
-        <>
-          <ReadErrors errors={errors} />
-          {stage.blocked && (
-            <p role="status" className="text-sm text-warn">
-              {stage.blocked}
-            </p>
-          )}
-          <WaitingPanel
-            text={
-              mode === "git"
-                ? "Waiting for GitOps to apply the deletion policy. The operator then reads it, and the fleet manager removes the claim file."
-                : "Waiting for the operator to read the deletion policy. The fleet manager then deletes the claim."
-            }
-            onStopWaiting={onStopWaiting}
-          />
-        </>
-      ) : stage.kind === "deleting" ? (
-        <>
-          <ReadErrors errors={errors} />
-          <Progress name={name} stage={stage} />
-        </>
-      ) : (
-        <>
-          <DeletionChoiceField
-            subject="cluster"
-            choice={model.choice}
-            onChange={onPick}
-            disabled={writing}
-          />
-          {model.keepRefused && model.choice.policy !== "Orphan" && (
-            <p className="-mt-3 text-sm text-warn">{KEEP_REFUSED_ON_DELETE}</p>
-          )}
-          {mode === "git" && (
-            <p className="text-sm text-text-2">{PRUNE_NOTE}</p>
-          )}
-          <ReadErrors errors={errors} />
-          {stage.errors && stage.errors.length > 0 && (
-            <Alert texts={stage.errors.map((e) => e.message)} />
-          )}
-          {stage.afterPolicyWrite && (
-            <p role="status" className="text-sm text-warn">
-              {policyNote(name, stage.afterPolicyWrite)}
-            </p>
-          )}
-          {mode === undefined ? (
-            <>
-              <p role="alert" className="text-sm text-bad">
-                {CHANGES_OFF}
-              </p>
-              {takes}
-            </>
-          ) : model.unread.length > 0 && !writing ? (
-            <>
-              <p className="text-sm text-muted">
-                {unreadDeleteText(model.unread)}
-              </p>
-              {takes}
-            </>
-          ) : keepRefused && !writing ? (
-            <>
-              <p className="text-sm text-warn">{keepRefused}</p>
-              {takes}
-            </>
-          ) : (
-            <ChangeReview
-              change={remove}
-              mode={mode}
-              diffLabel="The claim that the delete removes"
-              effects={effects}
-              caution={model.warning}
-              confirm={{
-                label: "Delete the cluster",
-                gitLabel: "Push the delete to Git",
-                danger: true,
-                typed: name,
-              }}
-              savedMessage={
-                mode === "direct"
-                  ? policyStep
-                    ? `Set the deletion policy of ${name}. The delete follows when the operator reads it.`
-                    : `The claim ${name} is being deleted.`
-                  : policyStep
-                    ? `Pushed the deletion policy of ${name}. The delete follows when GitOps applies it.`
-                    : `Pushed the delete of ${name}.`
-              }
-              preview={preview}
-              apply={apply}
-              show={show}
-              onWritten={onWritten}
-              onWriting={setWriting}
-            />
-          )}
-        </>
-      )}
-    </div>
+    <ClaimDeleteView
+      subject="cluster"
+      name={name}
+      back={{
+        href: `/fleet/clusters/${namespace}/${name}`,
+        label: "Back to the cluster",
+      }}
+      done={{ href: "/fleet", label: "Back to the fleet" }}
+      deletedText={
+        clusterKept
+          ? `The claim ${name} is deleted. The cluster ${name} stays: the claim did not make it.`
+          : `The cluster ${name} is deleted.`
+      }
+      choice={model.choice}
+      keepRefusedOnDelete={model.keepRefused}
+      unread={model.unread}
+      effects={effectsOf(model, mode === "git" && policyStep)}
+      caution={model.warning}
+      mode={mode}
+      policyStep={policyStep}
+      {...rest}
+    />
   );
 }
 
@@ -326,7 +139,11 @@ function effectsOf(
         ]
       : []),
     ...model.groups.map((group) => (
-      <GroupTable key={group.id} group={group} known={model.fatesKnown} />
+      <DeletionGroupTable
+        key={group.id}
+        group={group}
+        known={model.fatesKnown}
+      />
     )),
     ...(model.backups > 0
       ? [
@@ -343,7 +160,12 @@ function effectsOf(
 
 // The fate is the one emphasis of the page: Deleted in the bad tone, so
 // that a reader sees at a glance what goes.
-function GroupTable({
+
+/**
+ * DeletionGroupTable shows the resources of one option of a claim with the
+ * fate of each. While known is false, each fate reads Not known.
+ */
+export function DeletionGroupTable({
   group,
   known,
 }: {
@@ -410,87 +232,6 @@ function GroupTable({
           This option always deletes what it made.
         </span>
       )}
-    </div>
-  );
-}
-
-function Progress({
-  name,
-  stage,
-}: {
-  name: string;
-  stage: Extract<DeleteStage, { kind: "deleting" }>;
-}) {
-  return (
-    <section aria-label="Delete progress" className="flex flex-col gap-3">
-      {stage.gitWaiting && (
-        <div className="flex flex-col gap-1 text-sm">
-          <p role="status" className="text-text">
-            Waiting for GitOps to delete {name}
-          </p>
-          <p className="text-text-2">{PRUNE_NOTE}</p>
-        </div>
-      )}
-      {stage.claim && <PrecheckLine claim={stage.claim} />}
-      {stage.keepRefused && (
-        <p className="text-sm text-warn">{stage.keepRefused}</p>
-      )}
-      <ol className="flex flex-col divide-y divide-divider rounded-md border border-border">
-        {stage.progress.map(({ target, state }) => (
-          <li
-            key={`${target.kind}/${target.name}`}
-            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 text-sm"
-          >
-            <span className="flex min-w-0 flex-col">
-              <span className="break-all text-text">{target.label}</span>
-              {target.note && <span className="text-muted">{target.note}</span>}
-            </span>
-            <Badge
-              variant={
-                state === "Waiting" || state === "Not known"
-                  ? "outline"
-                  : "secondary"
-              }
-              className={state === "Deleted" ? "text-muted" : undefined}
-            >
-              {state}
-            </Badge>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function policyNote(name: string, after: PolicyAfterWrite): string {
-  const label = (policy: DeletionPolicy) =>
-    policy === "Orphan" ? "Keep" : "Delete";
-  const held = `The claim ${name} has the deletion policy ${label(after.held)}.`;
-  return after.unapplied
-    ? `The cluster is not deleted. The repository holds the commit that sets the deletion policy of ${name} to ${label(after.unapplied)}, and GitOps has not applied it yet. ${held}`
-    : `The cluster is not deleted. ${held}`;
-}
-
-function ReadErrors({ errors }: { errors: readonly ReadError[] }) {
-  return errors.map((e, i) => (
-    <p key={i} role="alert" className="text-sm text-bad">
-      Could not read {e.kind}: {e.message}
-    </p>
-  ));
-}
-
-function Alert({ texts }: { texts: string[] }) {
-  return (
-    <div
-      role="alert"
-      className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
-    >
-      <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-bad" />
-      <ul className="flex flex-col gap-1">
-        {texts.map((text, i) => (
-          <li key={i}>{text}</li>
-        ))}
-      </ul>
     </div>
   );
 }
