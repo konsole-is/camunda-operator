@@ -9,7 +9,7 @@ import {
   type ClaimObject,
   type Session,
 } from "@/lib/session";
-import { ClaimReview } from "./claim-review";
+import { ClaimReview, type ClaimReviewInput } from "./claim-review";
 import { Toast, useWriteToast } from "./toast";
 
 export const now = "2026-10-21T12:00:00Z";
@@ -45,17 +45,23 @@ export const scaleDiff = objectDiff(ordersClaim, {
 /**
  * ClaimReviewHarness shows ClaimReview over a session of claim with changes,
  * where an undefined value is a reset, and shows the toast of the write
- * under it, as a page does.
+ * under it, as a page does. The impacts, the caution, the confirm, and
+ * mergedLines are the input of the review.
  */
 export function ClaimReviewHarness({
   claim,
   changes,
   show,
+  impacts,
+  caution,
+  confirm,
+  mergedLines,
   ...props
-}: Omit<ComponentProps<typeof ClaimReview>, "session" | "intent"> & {
-  claim: ClaimObject;
-  changes: { steps: Step[]; value?: unknown }[];
-}) {
+}: Omit<ComponentProps<typeof ClaimReview>, "session" | "intent" | "input"> &
+  ClaimReviewInput & {
+    claim: ClaimObject;
+    changes: { steps: Step[]; value?: unknown }[];
+  }) {
   // ClaimReview previews again for each new session.
   const session = useMemo(() => {
     let s: Session = openSession({
@@ -77,6 +83,7 @@ export function ClaimReviewHarness({
     <div className="flex flex-col gap-4">
       <ClaimReview
         {...props}
+        input={() => ({ impacts, caution, confirm, mergedLines })}
         session={session}
         intent={`Change the claim ${claim.metadata.name}`}
         show={(result, message) => {

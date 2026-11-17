@@ -49,6 +49,7 @@ export type ReviewConfirm = {
 /** ClaimReviewInput is what a page adds to the review of a claim change. */
 export type ClaimReviewInput = {
   impacts: string[];
+  /** caution is a warning about the change, such as a backup that it makes fail. */
   caution?: ReactNode;
   confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
@@ -73,18 +74,14 @@ export type ClaimReviewInput = {
  * cleared field of another tool stays in it until the take-over.
  * In Git mode it notes each reset field that the preview keeps.
  *
- * input, when given, gives the impacts, the caution, the confirm, and
- * mergedLines in place of those props, from saved: a session whose change
- * gives the claim that the save leaves, as the diff of the claim shows it.
+ * input gives the impacts, the caution, the confirm, and mergedLines from
+ * saved: a session whose change gives the claim that the save leaves, as
+ * the diff of the claim shows it.
  */
 export function ClaimReview<C extends ClaimObject>({
   session,
   mode,
   intent,
-  impacts,
-  caution,
-  confirm: confirmProps,
-  mergedLines,
   input,
   preview,
   apply,
@@ -97,12 +94,7 @@ export function ClaimReview<C extends ClaimObject>({
   mode: WriteMode;
   /** intent is the commit subject in Git mode. */
   intent: string;
-  impacts?: string[];
-  /** caution is a warning about the change, such as a backup that it makes fail. */
-  caution?: ReactNode;
-  confirm?: ReviewConfirm;
-  mergedLines?: DiffLine[];
-  input?: (saved: Session<C>) => ClaimReviewInput;
+  input: (saved: Session<C>) => ClaimReviewInput;
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
   show: (result: WriteResult, message: string) => void;
@@ -169,9 +161,7 @@ export function ClaimReview<C extends ClaimObject>({
       ),
     [session, ownership, chosen, taken],
   );
-  const shown: ClaimReviewInput = input
-    ? input(saved)
-    : { impacts: impacts ?? [], caution, confirm: confirmProps, mergedLines };
+  const shown = input(saved);
 
   useEffect(() => {
     let current = true;
