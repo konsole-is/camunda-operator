@@ -2,7 +2,7 @@ import { refKey } from "./refs";
 import type { Change, RefKey } from "./types";
 
 /** DeletedObject is an object that a page deletes, as the page read it. */
-export type DeletedObject = {
+type DeletedObject = {
   apiVersion: string;
   kind: string;
   metadata: {
