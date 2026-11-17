@@ -39,9 +39,10 @@ import {
  * out. A page whose write refuses takeOver and remove sets offerTakeOver
  * to false.
  *
- * A confirm sends one write, and Back is hidden while it runs. An ok write goes to show with savedMessage, then
- * onWritten. A refused write shows its errors, and the confirm stays
- * disabled unless the API server did not answer. While hold is set, the
+ * A confirm sends one write, and Back is hidden while it runs. An ok write
+ * goes to show with savedMessage, then onWritten. A refused write shows
+ * its errors, and the confirm stays disabled unless the API server did not
+ * answer. While hold is set, the
  * confirm stays disabled whatever the preview says; the effects say why.
  * onWriting gets true when the write starts and false when it settles.
  */
