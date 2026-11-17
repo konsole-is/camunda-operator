@@ -6,6 +6,7 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL, isManaged } from "@/lib/labels";
+import { managerKind } from "@/lib/merge";
 import {
   byCodeUnit,
   declaresRelease,
@@ -381,12 +382,18 @@ export function namedApiErrors(errors: readonly ApiError[]): ApiError[] {
     // over in its take-over choice, so this message is for the others.
     const message =
       error.code === "Conflict" && path
-        ? `${path} belongs to another tool${error.manager ? ` (${error.manager})` : ""}, and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.`
+        ? conflictMessage(path, error.manager)
         : path
           ? `${path}: ${error.message}`
           : error.message;
     return { ...rest, message: `${ref.namespace}/${ref.name}: ${message}` };
   });
+}
+
+function conflictMessage(path: string, manager: string | undefined): string {
+  if (manager !== undefined && managerKind(manager) === "operator")
+    return `${path} belongs to ${manager}, a controller of the operator, and the move cannot change it. Leave this cluster out of the move.`;
+  return `${path} belongs to another tool${manager ? ` (${manager})` : ""}, and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.`;
 }
 
 // movedSession returns the session of the claim of row with the move set,

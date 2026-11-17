@@ -734,6 +734,30 @@ describe("namedErrors", () => {
     ]);
   });
 
+  it("says that the move cannot change a field of an operator controller", () => {
+    const result = namedErrors({
+      ok: false,
+      errors: [
+        {
+          code: "Conflict",
+          message:
+            "spec.releaseRef belongs to camunda-operator/cluster-claim, a controller of the operator. The fleet manager does not take it over.",
+          path: "spec.releaseRef",
+          manager: "camunda-operator/cluster-claim",
+          ref: {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            namespace: "team-orders",
+            name: "orders",
+          },
+        },
+      ],
+    });
+    expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
+      "team-orders/orders: spec.releaseRef belongs to camunda-operator/cluster-claim, a controller of the operator, and the move cannot change it. Leave this cluster out of the move.",
+    ]);
+  });
+
   it("returns an ok result as it is", () => {
     expect(namedErrors({ ok: true, mode: "direct" })).toEqual({
       ok: true,
