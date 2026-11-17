@@ -215,7 +215,7 @@ export function ChangeReview({
               <ul className="flex flex-col gap-1 text-sm text-text-2">
                 {kept.map((path) => (
                   <li key={path}>
-                    {path} stays, because another field manager set it.
+                    {path} stays, because another tool set it.
                   </li>
                 ))}
               </ul>

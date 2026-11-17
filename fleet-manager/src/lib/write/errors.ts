@@ -28,7 +28,7 @@ function withSecretMessage(error: ApiError): ApiError {
   const name = error.ref?.name ?? "";
   const messages: Record<ApiError["code"], string> = {
     Stale: error.message,
-    Conflict: `Another field manager owns a field of the Secret ${name}.`,
+    Conflict: `Another tool owns a field of the Secret ${name}.`,
     Invalid: `The API server refused the Secret ${name}.`,
     Forbidden: `The fleet manager may not write the Secret ${name}.`,
     Unavailable: `The API server did not write the Secret ${name}.`,

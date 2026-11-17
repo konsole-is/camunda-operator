@@ -561,7 +561,7 @@ describe("ChangeReview with fields of another tool", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "spec.color stays, because another field manager set it.",
+          "spec.color stays, because another tool set it.",
         ),
       ).toBeTruthy(),
     );
