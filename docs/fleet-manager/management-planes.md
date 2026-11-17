@@ -396,7 +396,7 @@ In Git mode, to change or remove a field that another tool set, make the change 
 
 A tool that writes without server-side apply, such as `kubectl apply` without `--server-side` or `kubectl edit`, does not see a save of the fleet manager. Its next write can set a field back, and nothing warns about it.
 
-The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane in direct mode, the review asks before a save changes or removes a field of the claim file.
+When you applied the claim of a plane with `kubectl apply` or another tool, the review in direct mode asks before a save changes or removes a field that the tool set.
 
 ## Suspend a management plane
 
@@ -418,9 +418,9 @@ spec:
   # ... the rest of your claim
 ```
 
-When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
+When every workload is at zero, the header shows `Ready · Suspended`. Select **Resume** to start the plane again. Resume sets `spec.suspend: false` and asks no question, unless another tool set `spec.suspend`. The [Suspension](../crds/camundamanagementcluster.md#suspension) section of the `CamundaManagementCluster` lists what stops and what stays.
 
-In direct mode, another tool can own `spec.suspend` of the claim, for example `kubectl apply` of a claim file that sets `suspend`. Then **Suspend** or **Resume** shows the field and the tool, and asks to take it over. **Suspend the management plane** or **Resume the management plane** stays off until you take it over. The next **Suspend** or **Resume** asks again. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does.
+In direct mode, another tool can own `spec.suspend` of the claim, for example `kubectl apply` of a claim file that sets `suspend`. Then **Suspend** or **Resume** shows the field and the tool, and asks to take it over. **Suspend the management plane** or **Resume the management plane** stays off until you take it over. The next **Suspend** or **Resume** asks again. When the claim changes before you confirm, the question closes, and the page shows `The plane changed. Select Suspend again.` or the same line for **Resume**. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does.
 
 The page writes the claim only if nobody changed the claim after the page read it. If somebody changed it, the page shows the error and writes nothing. In Git mode, the header shows `1 change waiting for GitOps` until GitOps applies the commit. **Suspend** and **Resume** are disabled until then. After you push a delete of the plane, the browser tab that pushed it shows `1 delete waiting for GitOps`, and **Suspend**, **Resume**, and **Delete** stay disabled there. In another tab, or after a reload, the fleet manager refuses a save of the claim until GitOps applies the delete. The page then shows that refusal.
 
