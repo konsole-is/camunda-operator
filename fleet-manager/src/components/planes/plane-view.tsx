@@ -380,7 +380,7 @@ export function PlaneView({
         <Tabs value={tab} onValueChange={selectTab}>
           <TabsList>
             {PLANE_TABS.map((t) => (
-              <TabsTrigger key={t.id} value={t.id}>
+              <TabsTrigger key={t.value} value={t.value}>
                 {t.label}
               </TabsTrigger>
             ))}
