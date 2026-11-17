@@ -121,7 +121,8 @@ export function diffView(
  * objects written before it. A delete of an object that is gone succeeds.
  * An apply with a precondition fails with Stale when the object was
  * deleted or changed since the page read it, also when the change would
- * conflict. A delete with a precondition or a UID
+ * conflict. When the read after such a conflict fails, the Conflict stays,
+ * and one more error names the failed read. A delete with a precondition or a UID
  * fails with Stale when the object changed or was created again since.
  * After a delete between the preview and the write, a kind that the app
  * may not delete, such as a Namespace, can exist again, with the error of
@@ -180,9 +181,19 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       !errors.some((e) => e.code === "Conflict")
     )
       return errors;
-    const now = await read(ref).catch(() => null);
-    if (now === null || now?.metadata.resourceVersion === resourceVersion)
-      return errors;
+    let now: KubeObject | undefined;
+    try {
+      now = await read(ref);
+    } catch (error) {
+      return [
+        ...errors,
+        ...apiErrorsOf(error, ref, false).map((e) => ({
+          ...e,
+          message: `The fleet manager could not read the ${ref.kind} ${ref.name} again, so it cannot tell if another write changed it. ${e.message}`,
+        })),
+      ];
+    }
+    if (now?.metadata.resourceVersion === resourceVersion) return errors;
     return [staleError(ref)];
   };
 

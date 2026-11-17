@@ -925,5 +925,44 @@ describe("directWriter with a take-over", () => {
         errors: [expect.objectContaining({ code: "Stale" })],
       });
     });
+
+    it("keeps the Conflict and names a failed read of the object after it", async () => {
+      let reads = 0;
+      answer = (r) => {
+        if (r.method !== "GET") return { status: 409, body: fieldConflict };
+        reads += 1;
+        return reads === 1
+          ? { status: 200, body: live }
+          : {
+              status: 403,
+              body: {
+                ...conflict,
+                reason: "Forbidden",
+                code: 403,
+                message: "environments is forbidden",
+              },
+            };
+      };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({
+          code: "Conflict",
+          path: "spec.displayName",
+          manager: "kubectl-client-side-apply",
+        }),
+        expect.objectContaining({
+          code: "Forbidden",
+          message: expect.stringMatching(
+            /^The fleet manager could not read the Environment staging again, so it cannot tell if another write changed it\. /,
+          ),
+        }),
+      ]);
+    });
   });
 });
