@@ -1,3 +1,4 @@
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { child, indexItem, keyedItem, valueItem, type FieldPath } from "./path";
 
 /** APP_FIELD_MANAGER is the field manager of every write of the app. */
@@ -15,6 +16,101 @@ export function isClaimManager(manager: string): boolean {
     manager.startsWith(CLUSTER_CLAIM_MANAGER_PREFIX) ||
     manager.startsWith(PLANE_CLAIM_MANAGER_PREFIX)
   );
+}
+
+/**
+ * OPERATOR_MANAGER_PREFIXES start the field managers of the operator
+ * controllers. A controller writes its field back on its next pass, so the
+ * fleet manager never takes such a field over.
+ */
+export const OPERATOR_MANAGER_PREFIXES: readonly string[] = [
+  "camunda-operator/",
+  CLUSTER_CLAIM_MANAGER_PREFIX,
+  PLANE_CLAIM_MANAGER_PREFIX,
+];
+
+/** OPERATOR_MANAGERS are the field managers of the operator without a prefix of OPERATOR_MANAGER_PREFIXES. */
+export const OPERATOR_MANAGERS: readonly string[] = [
+  "camunda-operator-builtins",
+];
+
+// An ocf component applies as <Kind>/<component>/<owner uid>.
+const OCF_MANAGER = /^[A-Z][A-Za-z0-9]*\/[^/]+\/[0-9a-f-]{36}$/;
+
+/**
+ * GITOPS_MANAGER_PATTERNS match the field managers of Argo CD and Flux,
+ * which set their own value again on the next sync.
+ */
+export const GITOPS_MANAGER_PATTERNS: readonly RegExp[] = [
+  /^argocd-/,
+  /^kustomize-controller$/,
+  /^helm-controller$/,
+  /^flux/,
+];
+
+/**
+ * GITOPS_MARKERS are the annotations and labels that Argo CD and Flux put
+ * on an object that they sync. Argo CD with client-side apply leaves no
+ * argocd name in managedFields, so only the marker shows it.
+ */
+export const GITOPS_MARKERS: {
+  readonly annotations: readonly string[];
+  readonly labels: readonly string[];
+} = {
+  annotations: ["argocd.argoproj.io/tracking-id"],
+  labels: ["kustomize.toolkit.fluxcd.io/name", "helm.toolkit.fluxcd.io/name"],
+};
+
+/** ManagerKind is who a field manager is: a controller of the operator, a GitOps tool, or any other tool. */
+export type ManagerKind = "operator" | "gitops" | "other";
+
+/**
+ * managerKind returns the kind of the field manager name on object. Every
+ * manager of an object with a GITOPS_MARKERS marker is a GitOps tool,
+ * unless it is the operator. Without object, only the name decides. An
+ * unknown name is "other".
+ */
+export function managerKind(
+  name: string,
+  object?: ManagedObject & {
+    metadata?: {
+      labels?: Record<string, string>;
+      annotations?: Record<string, string>;
+    };
+  },
+): ManagerKind {
+  if (
+    OPERATOR_MANAGERS.includes(name) ||
+    OPERATOR_MANAGER_PREFIXES.some((prefix) => name.startsWith(prefix)) ||
+    OCF_MANAGER.test(name)
+  )
+    return "operator";
+  const annotations = object?.metadata?.annotations ?? {};
+  const labels = object?.metadata?.labels ?? {};
+  if (
+    GITOPS_MARKERS.annotations.some((key) => Object.hasOwn(annotations, key)) ||
+    GITOPS_MARKERS.labels.some((key) => Object.hasOwn(labels, key)) ||
+    GITOPS_MANAGER_PATTERNS.some((pattern) => pattern.test(name)) ||
+    (object !== undefined && revisionManager(object) === name)
+  )
+    return "gitops";
+  return "other";
+}
+
+/**
+ * revisionManager returns the field manager that applied the annotation
+ * REVISION_ANNOTATION of object with server-side apply: the GitOps tool of
+ * the repository of the fleet manager. It is never APP_FIELD_MANAGER. It is
+ * undefined when no such manager exists, for example when the GitOps tool
+ * applies with client-side apply.
+ */
+export function revisionManager(object: ManagedObject): string | undefined {
+  const applied = (object.metadata?.managedFields ?? []).filter(
+    (e) => e.operation === "Apply" && e.manager !== APP_FIELD_MANAGER,
+  );
+  return fieldManagers({ metadata: { managedFields: applied } })[
+    child(child("metadata", "annotations"), REVISION_ANNOTATION)
+  ];
 }
 
 /** ManagedFieldsEntry holds the fields of a managedFields entry that fieldManagers reads. */
