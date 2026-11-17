@@ -208,6 +208,39 @@ describe("TakeOverChoice", () => {
     expect(group.textContent).not.toContain("The save removes it");
   });
 
+  it("cuts a long default value to 80 characters and gives the whole value in its title", () => {
+    const long = "x".repeat(100);
+    const ownership = [
+      owned(claim("orders"), [], [field("spec.color", kubectl)]),
+    ];
+    const { group } = show(
+      ownership,
+      true,
+      undefined,
+      takenPreview(claim("orders"), { color: long }),
+    );
+    expect(group.textContent).toContain(
+      `It gets its default value ${"x".repeat(80)}… again.`,
+    );
+    expect(within(group).getByTitle(long).textContent).toBe(
+      `${"x".repeat(80)}…`,
+    );
+  });
+
+  it("shows a default value of 80 characters whole and with no title", () => {
+    const value = "y".repeat(80);
+    const { group } = show(
+      [owned(claim("orders"), [], [field("spec.color", kubectl)])],
+      true,
+      undefined,
+      takenPreview(claim("orders"), { color: value }),
+    );
+    expect(group.textContent).toContain(
+      `It gets its default value ${value} again.`,
+    );
+    expect(within(group).queryByTitle(value)).toBeNull();
+  });
+
   it("names both outcomes of a chosen cleared field until the preview with the take-over has its object", () => {
     const ownership = [
       owned(claim("orders"), [], [field("spec.color", kubectl)]),
@@ -309,7 +342,7 @@ describe("TakeOverChoice", () => {
       `spec.releaseRef: ${controller.name} of the operator sets it. The fleet manager does not take it over, because the operator sets it again. Leave it as it is to save.`,
     );
     expect(group.textContent).toContain(
-      "The operator sets this field. It stays: spec.deletionPolicy.",
+      `${controller.name} of the operator sets this field. It stays: spec.deletionPolicy.`,
     );
     expect(group.textContent).not.toContain(KUBECTL_LINE);
     expect(group.textContent).not.toContain(BLOCKED);
@@ -332,7 +365,7 @@ describe("TakeOverChoice", () => {
       ),
     ]);
     expect(group.textContent).toContain(
-      "The operator sets these fields. They stay: spec.pitr.lastRecovery, spec.recovery.",
+      `${controller.name} of the operator sets these fields. They stay: spec.pitr.lastRecovery, spec.recovery.`,
     );
     expect(group.textContent).not.toContain("of the operator sets it");
     expect(within(group).getAllByRole("listitem")).toHaveLength(1);
@@ -348,6 +381,33 @@ describe("TakeOverChoice", () => {
     ).toBe(false);
   });
 
+  it("names each controller of the operator with its cleared fields, in one quiet line each", () => {
+    const server: ForeignManager = {
+      ...controller,
+      name: "camunda-operator/pointintimerestore-recovery",
+    };
+    const { group } = show([
+      owned(
+        environment,
+        [],
+        [
+          field("spec.pitr.lastRecovery", controller),
+          field("spec.recovery", server),
+          field("spec.restore", controller),
+        ],
+      ),
+    ]);
+    const items = within(group).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      `${controller.name} of the operator sets these fields. They stay: spec.pitr.lastRecovery, spec.restore.`,
+      `${server.name} of the operator sets this field. It stays: spec.recovery.`,
+    ]);
+    expect(items.every((item) => item.className.includes("text-muted"))).toBe(
+      true,
+    );
+    expect(within(group).queryByRole("checkbox")).toBeNull();
+  });
+
   it("keeps a row for each cleared field of another tool beside the line of the operator", () => {
     const { group } = show([
       owned(
@@ -360,7 +420,7 @@ describe("TakeOverChoice", () => {
       "spec.color: kubectl-client-side-apply set it. It stays unless you take it over.",
     );
     expect(group.textContent).toContain(
-      "The operator sets this field. It stays: spec.recovery.",
+      `${controller.name} of the operator sets this field. It stays: spec.recovery.`,
     );
     expect(
       within(group).getByRole("checkbox", { name: "Take over these fields" }),

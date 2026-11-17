@@ -18,18 +18,17 @@ import type {
 const TITLE = "Fields that another tool set";
 
 /**
- * TakeOverChoice shows the fields of other field managers that a save
- * changes or clears, from Preview.ownership, with one checkbox that takes
- * them over. The cleared fields of an operator controller stay, and one
- * line of each object names them. It heads the fields of each object with
- * labelOf when ownership holds more than one object. It offers no checkbox
- * when no field is offered, or when a path names more than one field of an
- * object, because the server refuses that take-over.
- * onChoose gets the new state of the checkbox. The caller holds chosen,
- * and must reset it for each new change. taken is the preview of the
- * change with the take-over. Without the object in taken, a chosen cleared
- * row says that the save removes the field or that the field gets its
- * default value again.
+ * TakeOverChoice shows the fields of other field managers that a save changes
+ * or clears, from Preview.ownership, with one checkbox that takes them over.
+ * The cleared fields of an operator controller stay, and one quiet line for
+ * each set of controllers of an object names its fields. It heads the fields of
+ * each object with labelOf when ownership holds more than one object. It offers
+ * no checkbox when no field is offered, or when a path names more than one
+ * field of an object, because the server refuses that take-over. onChoose gets
+ * the new state of the checkbox. The caller holds chosen, and must reset it for
+ * each new change. taken is the preview of the change with the take-over.
+ * Without the object in taken, a chosen cleared row says that the save removes
+ * the field or that the field gets its default value again.
  */
 export function TakeOverChoice({
   ownership,
@@ -89,12 +88,13 @@ export function TakeOverChoice({
                   {rowOf(field, "cleared", chosen, choosable, final)}
                 </li>
               ))}
-              {kept(object).length > 0 && (
-                <li key="operator" className="text-muted">
-                  {kept(object).length === 1
-                    ? "The operator sets this field. It stays: "
-                    : "The operator sets these fields. They stay: "}
-                  {kept(object).map((path, j) => (
+              {kept(object).map(({ names, paths }) => (
+                <li key={`operator-${names}`} className="text-muted">
+                  <Path>{names}</Path> of the operator{" "}
+                  {paths.length === 1
+                    ? "sets this field. It stays: "
+                    : "sets these fields. They stay: "}
+                  {paths.map((path, j) => (
                     <span key={path}>
                       {j > 0 && ", "}
                       <Path>{path}</Path>
@@ -102,7 +102,7 @@ export function TakeOverChoice({
                   ))}
                   .
                 </li>
-              )}
+              ))}
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
                   <Path>{path}</Path> names more than one field of the {label}.
@@ -255,21 +255,29 @@ function removal(field: ForeignField, final: unknown): ReactNode {
   if (value === undefined) return "The save removes it.";
   if (typeof value === "object" && value !== null)
     return "It gets its default value again.";
+  const text =
+    typeof value === "string" && value !== "" ? value : JSON.stringify(value);
+  const chars = [...text];
+  const long = chars.length > VALUE_CHARS;
   return (
     <>
       It gets its default value{" "}
-      <Path>
-        {typeof value === "string" && value !== ""
-          ? value
-          : JSON.stringify(value)}
+      <Path title={long ? text : undefined}>
+        {long ? `${chars.slice(0, VALUE_CHARS).join("")}…` : text}
       </Path>{" "}
       again.
     </>
   );
 }
 
-function Path({ children }: { children: string }) {
-  return <span className="font-mono break-all text-text">{children}</span>;
+const VALUE_CHARS = 80;
+
+function Path({ children, title }: { children: string; title?: string }) {
+  return (
+    <span title={title} className="font-mono break-all text-text">
+      {children}
+    </span>
+  );
 }
 
 // A list names each path once, so the server cannot tell two fields of one
@@ -287,11 +295,14 @@ function ambiguousPaths(object: ObjectOwnership): string[] {
 }
 
 // A cleared field of the operator stays, and the operator sets it again,
-// so one line names all of them instead of one row each.
-function kept(object: ObjectOwnership): string[] {
-  return [
-    ...new Set(object.cleared.filter((f) => !offered(f)).map((f) => f.path)),
-  ];
+// so one line for each set of controllers names its fields, not a row each.
+function kept(object: ObjectOwnership): { names: string; paths: string[] }[] {
+  const lines = new Map<string, Set<string>>();
+  for (const field of object.cleared.filter((f) => !offered(f))) {
+    const names = joined(rowManagers(field));
+    lines.set(names, (lines.get(names) ?? new Set()).add(field.path));
+  }
+  return [...lines].map(([names, paths]) => ({ names, paths: [...paths] }));
 }
 
 function canChoose(ownership: readonly ObjectOwnership[]): boolean {

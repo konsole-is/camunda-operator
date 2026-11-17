@@ -2,13 +2,20 @@ import { describe, expect, it } from "vitest";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import type { ManagedFieldsEntry } from "@/lib/merge";
 import {
+  fieldValue,
   foreignFields,
   offered,
   takenFields,
   withTakeOver,
+  withValuesOf,
   withoutFields,
 } from "./ownership";
-import type { Change, KubeObject, ObjectOwnership } from "./types";
+import type {
+  Change,
+  ForeignField,
+  KubeObject,
+  ObjectOwnership,
+} from "./types";
 
 const uid = "0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11";
 const ref = {
@@ -637,5 +644,220 @@ describe("withoutFields", () => {
         at(3),
       ]),
     ).toEqual({ spec: { items: ["a", "c", "e"] } });
+  });
+});
+
+// fieldAt gives a field with steps, as the review names it.
+const fieldAt = (...steps: ForeignField["steps"]): ForeignField => ({
+  path: "",
+  steps,
+  managers: [],
+});
+
+describe("fieldValue", () => {
+  const object = JSON.parse(
+    `{"spec":{"replicas":3,"images":{"zeebe":"8.9"},"zones":["a","b"],
+      "allowed":[{"name":"x","label":"X"}],"labels":{"app.kubernetes.io/name":"c"},
+      "__proto__":{"own":true}}}`,
+  ) as object;
+
+  it("gives a scalar, an object, and a list", () => {
+    expect(
+      fieldValue(object, fieldAt({ field: "spec" }, { field: "replicas" })),
+    ).toBe(3);
+    expect(
+      fieldValue(object, fieldAt({ field: "spec" }, { field: "images" })),
+    ).toEqual({ zeebe: "8.9" });
+    expect(
+      fieldValue(object, fieldAt({ field: "spec" }, { field: "zones" })),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("gives a list item and a field under it", () => {
+    const allowed = [{ field: "spec" }, { field: "allowed" }] as const;
+    expect(
+      fieldValue(object, fieldAt(...allowed, { item: { name: "x" } })),
+    ).toEqual({ name: "x", label: "X" });
+    expect(
+      fieldValue(
+        object,
+        fieldAt(...allowed, { item: { name: "x" } }, { field: "label" }),
+      ),
+    ).toBe("X");
+    expect(
+      fieldValue(
+        object,
+        fieldAt({ field: "spec" }, { field: "zones" }, { value: "b" }),
+      ),
+    ).toBe("b");
+    expect(
+      fieldValue(
+        object,
+        fieldAt({ field: "spec" }, { field: "zones" }, { index: 0 }),
+      ),
+    ).toBe("a");
+  });
+
+  it("gives undefined for a missing field, a missing parent, and a missing item", () => {
+    expect(
+      fieldValue(object, fieldAt({ field: "spec" }, { field: "gone" })),
+    ).toBeUndefined();
+    expect(
+      fieldValue(
+        object,
+        fieldAt({ field: "spec" }, { field: "gone" }, { field: "leaf" }),
+      ),
+    ).toBeUndefined();
+    expect(
+      fieldValue(
+        object,
+        fieldAt({ field: "spec" }, { field: "zones" }, { index: 2 }),
+      ),
+    ).toBeUndefined();
+    expect(
+      fieldValue(
+        object,
+        fieldAt({ field: "spec" }, { field: "replicas" }, { field: "leaf" }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reads __proto__ as a key, and never the prototype", () => {
+    expect(
+      fieldValue(object, fieldAt({ field: "spec" }, { field: "__proto__" })),
+    ).toEqual({ own: true });
+    expect(
+      fieldValue(
+        { spec: {} },
+        fieldAt({ field: "spec" }, { field: "__proto__" }),
+      ),
+    ).toBeUndefined();
+    expect(
+      fieldValue(
+        { spec: {} },
+        fieldAt({ field: "spec" }, { field: "toString" }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("reads a map key with dots as one key", () => {
+    expect(
+      fieldValue(
+        object,
+        fieldAt(
+          { field: "spec" },
+          { field: "labels" },
+          { field: "app.kubernetes.io/name" },
+        ),
+      ),
+    ).toBe("c");
+  });
+});
+
+describe("withValuesOf", () => {
+  const from = JSON.parse(
+    `{"spec":{"replicas":3,"images":{"zeebe":"8.9"},"zones":["a","b"],
+      "allowed":[{"name":"x","label":"X"}],"labels":{"app.kubernetes.io/name":"c"},
+      "__proto__":{"own":true}}}`,
+  ) as object;
+
+  it("sets a scalar, an object, and a list from from, and changes neither input", () => {
+    const object = { spec: { replicas: 1 } };
+    const fromCopy = structuredClone(from);
+    const result = withValuesOf(
+      object,
+      [
+        fieldAt({ field: "spec" }, { field: "replicas" }),
+        fieldAt({ field: "spec" }, { field: "images" }),
+        fieldAt({ field: "spec" }, { field: "zones" }),
+      ],
+      from,
+    );
+    expect(result).toEqual({
+      spec: { replicas: 3, images: { zeebe: "8.9" }, zones: ["a", "b"] },
+    });
+    expect(object).toEqual({ spec: { replicas: 1 } });
+    (result.spec as unknown as { zones: string[] }).zones.push("c");
+    expect(from).toEqual(fromCopy);
+  });
+
+  it("does not set a field whose last step is a list item", () => {
+    const object = { spec: { allowed: [] as unknown[], zones: ["a"] } };
+    expect(
+      withValuesOf(
+        object,
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "x" } },
+          ),
+          fieldAt({ field: "spec" }, { field: "zones" }, { value: "b" }),
+          fieldAt({ field: "spec" }, { field: "zones" }, { index: 1 }),
+        ],
+        from,
+      ),
+    ).toEqual(object);
+  });
+
+  it("sets a field under a list item that object holds", () => {
+    const object = { spec: { allowed: [{ name: "x" }] } };
+    expect(
+      withValuesOf(
+        object,
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "x" } },
+            { field: "label" },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { allowed: [{ name: "x", label: "X" }] } });
+  });
+
+  it("does not set a field whose parent object does not hold, or that from does not hold", () => {
+    const object = { spec: {} };
+    expect(
+      withValuesOf(
+        object,
+        [
+          fieldAt({ field: "spec" }, { field: "images" }, { field: "zeebe" }),
+          fieldAt({ field: "spec" }, { field: "gone" }),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: {} });
+  });
+
+  it("sets __proto__ as a key and leaves the prototype alone", () => {
+    const result = withValuesOf(
+      { spec: {} },
+      [fieldAt({ field: "spec" }, { field: "__proto__" })],
+      from,
+    ) as { spec: object };
+    expect(Object.keys(result.spec)).toEqual(["__proto__"]);
+    expect(Object.getPrototypeOf(result.spec)).toBe(Object.prototype);
+    expect(
+      Object.getOwnPropertyDescriptor(result.spec, "__proto__")?.value,
+    ).toEqual({ own: true });
+  });
+
+  it("sets a map key with dots as one key", () => {
+    expect(
+      withValuesOf(
+        { spec: { labels: {} } },
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "labels" },
+            { field: "app.kubernetes.io/name" },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { labels: { "app.kubernetes.io/name": "c" } } });
   });
 });

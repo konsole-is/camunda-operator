@@ -23,11 +23,17 @@ const now = "2026-11-15T12:00:00Z";
 function claimOf(
   spec: Record<string, unknown> = {},
   resourceVersion = "7",
+  metadata: Record<string, unknown> = {},
 ): Resource<"CamundaManagementClusterClaim"> {
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaManagementClusterClaim",
-    metadata: { namespace: "platform", name: "plane-a", resourceVersion },
+    metadata: {
+      namespace: "platform",
+      name: "plane-a",
+      resourceVersion,
+      ...metadata,
+    },
     spec: { environments: ["platform"], ...spec },
   } as unknown as Resource<"CamundaManagementClusterClaim">;
 }
@@ -412,14 +418,66 @@ describe("PlaneActions with a field of another tool", () => {
     );
   });
 
-  it("a change of the plane drops the take-over and says to select Suspend again", async () => {
-    const { apply, rerender } = conflicted();
+  // ownedBy gives the managedFields of a claim whose spec.suspend manager
+  // set with operation, and a status write of the operator when status is set.
+  const ownedBy = (manager: string, status = false, operation = "Apply") => ({
+    generation: 3,
+    managedFields: [
+      {
+        manager,
+        operation,
+        fieldsType: "FieldsV1",
+        fieldsV1: { "f:spec": { "f:suspend": {} } },
+      },
+      ...(status
+        ? [
+            {
+              manager: "camunda-operator",
+              operation: "Update",
+              subresource: "status",
+              fieldsType: "FieldsV1",
+              fieldsV1: { "f:status": { "f:phase": {} } },
+            },
+          ]
+        : []),
+    ],
+  });
+
+  // asked opens the take-over of Suspend on a claim at generation 3 whose
+  // spec.suspend kubectl set, and makes the choice.
+  async function asked() {
+    const view = conflicted({ claim: claimOf({}, "7", ownedBy("kubectl")) });
     await userEvent.click(button("Suspend"));
     await userEvent.click(button("Suspend the management plane"));
     await userEvent.click(
       await screen.findByRole("checkbox", { name: "Take over these fields" }),
     );
-    rerender({ claim: claimOf({ suspend: false }, "8") });
+    return view;
+  }
+
+  it("a status write of the operator keeps the take-over open, and the save reads the newer version", async () => {
+    const { apply, rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("kubectl", true)) });
+
+    expect(group().textContent).toContain("spec.suspend: kubectl set it.");
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+    await userEvent.click(button("Suspend the management plane"));
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply.mock.calls[1][0].preconditions).toEqual({ [key]: "8" });
+    expect(apply.mock.calls[1][0].takeOver).toEqual({
+      [key]: ["spec.suspend"],
+    });
+    expect(apply.mock.calls[1][0].apply[0]).toMatchObject({
+      metadata: { resourceVersion: "8" },
+      spec: { suspend: true },
+    });
+  });
+
+  it("a change of the spec drops the take-over and says to select Suspend again", async () => {
+    const { apply, rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", { ...ownedBy("kubectl"), generation: 4 }),
+    });
 
     expect(
       screen.queryByRole("group", { name: "Fields that another tool set" }),
@@ -436,16 +494,134 @@ describe("PlaneActions with a field of another tool", () => {
       name: "Take over these fields",
     });
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("a new manager of spec.suspend drops the take-over and says to select Suspend again", async () => {
+    const { apply, rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("helm")) });
+
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("a new operation of the manager of spec.suspend drops the take-over and says to select Suspend again", async () => {
+    const { rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("kubectl", false, "Update")) });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+  });
+
+  it("a new claim of the same name drops the take-over", async () => {
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", { ...ownedBy("kubectl"), uid: "other-uid" }),
+    });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("a take-over that turned off while a kind was unread does not come back with its choice", async () => {
+    const { rerender } = await asked();
+    rerender({ unread: ["CamundaManagementCluster"] });
+    rerender({ claim: claimOf({}, "8", ownedBy("kubectl", true)) });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeNull();
     expect(screen.queryByText(/The plane changed/)).toBeNull();
   });
 
+  it("a delete of the claim drops the take-over and says only why Suspend is off", async () => {
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", {
+        ...ownedBy("kubectl"),
+        generation: 4,
+        deletionTimestamp: now,
+      }),
+    });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Suspend and Resume are off while the claim is being deleted.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a GitOps marker on the claim drops the take-over, as the review names kubectl another way", async () => {
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", {
+        ...ownedBy("kubectl"),
+        labels: { "kustomize.toolkit.fluxcd.io/name": "planes" },
+      }),
+    });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+  });
+
+  it("the old take-over does not come back when the managers come back", async () => {
+    const { rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("helm")) });
+    rerender({ claim: claimOf({}, "9", ownedBy("kubectl")) });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+  });
+
   it("a change of the plane to the asked state says only that the plane changed", async () => {
-    const { rerender } = conflicted();
-    await userEvent.click(button("Suspend"));
-    await userEvent.click(button("Suspend the management plane"));
-    await screen.findByRole("group", { name: "Fields that another tool set" });
-    rerender({ claim: claimOf({ suspend: true }, "8") });
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({ suspend: true }, "8", {
+        ...ownedBy("kubectl"),
+        generation: 4,
+      }),
+    });
     expect(screen.getByText("The plane changed.")).toBeTruthy();
+  });
+
+  it("Suspend clears the line that the plane changed", async () => {
+    const { rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("helm")) });
+    await userEvent.click(button("Suspend"));
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+    expect(button("Suspend the management plane")).toBeTruthy();
+  });
+
+  it("Resume clears the line that the plane changed", async () => {
+    const { apply, rerender } = await asked();
+    apply.mockReturnValueOnce(new Promise(() => {}));
+    rerender({
+      claim: claimOf({ suspend: true }, "8", {
+        ...ownedBy("kubectl"),
+        generation: 4,
+      }),
+    });
+    expect(screen.getByText("The plane changed.")).toBeTruthy();
+    await userEvent.click(button("Resume"));
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
   });
 
   it("Cancel closes the take-over and writes nothing more", async () => {

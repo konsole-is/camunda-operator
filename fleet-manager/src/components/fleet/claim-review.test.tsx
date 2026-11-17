@@ -29,7 +29,7 @@ import {
 import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
-import { ClaimReview } from "./claim-review";
+import { ClaimReview, type ClaimReviewInput } from "./claim-review";
 import { GitPushesProvider } from "./git-pushes";
 import { Toast, useWriteToast } from "./toast";
 
@@ -79,6 +79,12 @@ function resetPartitions(s: Session): Session {
 
 type Props = Partial<Parameters<typeof ClaimReview>[0]> & { mode?: WriteMode };
 
+// inputOf gives the input of a page that adds given to the review.
+const inputOf = (given: Partial<ClaimReviewInput>) => (): ClaimReviewInput => ({
+  impacts: [],
+  ...given,
+});
+
 // Page owns the toast, as a page does, and closes the review after a write.
 function Page(props: Props) {
   const { toast, show, dismiss } = useWriteToast();
@@ -90,7 +96,7 @@ function Page(props: Props) {
           session={session()}
           mode={fakeWriter.mode}
           intent={INTENT}
-          impacts={[]}
+          input={inputOf({})}
           preview={previewClaimChange}
           apply={applyClaimChange}
           show={show}
@@ -137,7 +143,9 @@ describe("ClaimReview", () => {
     expect(screen.queryByRole("note", { name: "Caution" })).toBeNull();
     unmount();
     review({
-      caution: "A backup of orders runs now. The rollout makes it fail.",
+      input: inputOf({
+        caution: "A backup of orders runs now. The rollout makes it fail.",
+      }),
     });
     expect(screen.getByRole("note", { name: "Caution" }).textContent).toContain(
       "A backup of orders runs now.",
@@ -154,10 +162,10 @@ describe("ClaimReview", () => {
     ["direct", "Change anyway"],
     ["git", "Push anyway"],
   ] as const)(
-    "in %s mode the confirm prop gives the danger button %s",
+    "in %s mode the confirm of input gives the danger button %s",
     async (mode, label) => {
       fakeWriter.reset(mode);
-      review({ confirm: ANYWAY });
+      review({ input: inputOf({ confirm: ANYWAY }) });
       expect((await confirm(label)).getAttribute("data-variant")).toBe(
         "destructive",
       );
@@ -168,7 +176,7 @@ describe("ClaimReview", () => {
     ["direct", "Save"],
     ["git", "Push to Git"],
   ] as const)(
-    "without the confirm prop, %s mode shows %s as a default button",
+    "without a confirm in input, %s mode shows %s as a default button",
     async (mode, label) => {
       fakeWriter.reset(mode);
       review();
@@ -180,7 +188,10 @@ describe("ClaimReview", () => {
 
   it("a typed confirm enables only after the preview and the word", async () => {
     const preview = vi.fn(previewClaimChange);
-    review({ preview, confirm: { ...ANYWAY, typed: "orders" } });
+    review({
+      preview,
+      input: inputOf({ confirm: { ...ANYWAY, typed: "orders" } }),
+    });
     const button = screen.getByRole<HTMLButtonElement>("button", {
       name: "Change anyway",
     });
@@ -397,7 +408,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
       ),
     );
     expect((await confirm("Push to Git")).disabled).toBe(false);
@@ -444,7 +455,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
       ),
     );
   });
@@ -493,7 +504,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
       ),
     );
   });
@@ -507,11 +518,13 @@ describe("ClaimReview", () => {
 
   it("shows the impacts and the merged diff", async () => {
     review({
-      impacts: ["Broker pods restart."],
-      mergedLines: [
-        { op: "removed", text: "replicas: 3" },
-        { op: "added", text: "replicas: 5" },
-      ],
+      input: inputOf({
+        impacts: ["Broker pods restart."],
+        mergedLines: [
+          { op: "removed", text: "replicas: 3" },
+          { op: "added", text: "replicas: 5" },
+        ],
+      }),
     });
 
     expect(screen.getByText("Broker pods restart.")).toBeTruthy();
@@ -796,7 +809,7 @@ describe("ClaimReview with fields of another tool", () => {
     const props = {
       mode: "direct" as const,
       intent: INTENT,
-      impacts: [],
+      input: inputOf({}),
       preview: previewClaimChange,
       apply: applyClaimChange,
       show: vi.fn(),
