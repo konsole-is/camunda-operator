@@ -131,7 +131,7 @@ describe("ParametersTab", () => {
     );
     expect(
       screen.getByText(
-        "Values of the environments: Not known: Environment is not read.",
+        "Values of the environments: Not known: the fleet manager has no current list of Environment.",
       ),
     ).toBeTruthy();
     expect(termOf("deletionWindowDays", "Production")).toEqual([]);
@@ -180,7 +180,9 @@ describe("ParametersTab", () => {
     );
     expect(screen.queryByText("This option takes no parameters.")).toBeNull();
     expect(
-      screen.getByText("Not known: Environment is not read."),
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Environment.",
+      ),
     ).toBeTruthy();
   });
 

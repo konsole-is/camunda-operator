@@ -16,7 +16,8 @@ import {
   grantTemplates,
   refusalText,
 } from "./grants";
-import { NotKnown, ValueError } from "./tab-parts";
+import { NotRead } from "@/components/fleet/not-read";
+import { ValueError } from "./tab-parts";
 
 /**
  * GrantsTab shows each grant template of registration with its Grants of
@@ -41,7 +42,7 @@ export function GrantsTab({
     return grantsUnread ? (
       <div className="flex flex-col gap-1">
         <p className="text-sm">This option has no grant template.</p>
-        <NotKnown kinds={["Grant"]} />
+        <NotRead kinds={["Grant"]} />
       </div>
     ) : (
       <p className="text-sm text-muted">
@@ -116,7 +117,7 @@ function TemplatePanel({
         </Term>
         <Term label="Grants">
           {unread ? (
-            <NotKnown kinds={["Grant"]} />
+            <NotRead kinds={["Grant"]} />
           ) : (
             `${template.ready} ready, ${template.refused} refused${template.oldTemplate > 0 ? `, ${template.oldTemplate} on an old template` : ""}`
           )}

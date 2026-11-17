@@ -128,7 +128,7 @@ describe("ServedClustersTab", () => {
     expect(screen.queryByText("This plane lists no clusters yet.")).toBeNull();
     expect(
       screen.getAllByText(
-        "The page could not read CamundaManagementCluster, so this tab can be incomplete or out of date.",
+        "The fleet manager has no current list of CamundaManagementCluster. This tab can be incomplete or out of date.",
       ),
     ).toHaveLength(1);
   });
@@ -150,7 +150,7 @@ describe("ServedClustersTab", () => {
     expect(within(rowOf("orders")).queryByText("No environment")).toBeNull();
     expect(
       screen.getByText(
-        "The page could not read Namespace, so this tab can be incomplete or out of date.",
+        "The fleet manager has no current list of Namespace. This tab can be incomplete or out of date.",
       ),
     ).toBeTruthy();
     const options = within(

@@ -291,7 +291,7 @@ describe("RequestOverview", () => {
     const grants = region("Grants");
     expect(
       within(grants).getByText(
-        "Not known: the page has no current list of PluginRegistration.",
+        "Not known: the fleet manager has no current list of PluginRegistration.",
       ),
     ).toBeTruthy();
     expect(
@@ -332,7 +332,7 @@ describe("RequestOverview", () => {
     show("cloud-identity", { unread: ["PluginSection"] });
     expect(
       within(region("Grants")).getByText(
-        "Not known: the page has no current list of PluginSection.",
+        "Not known: the fleet manager has no current list of PluginSection.",
       ),
     ).toBeTruthy();
   });
@@ -351,7 +351,7 @@ describe("RequestOverview", () => {
     show("backup-storage", { unread: ["Grant"] });
     expect(
       within(region("Grants")).getByText(
-        "Not known: the page has no current list of Grant.",
+        "Not known: the fleet manager has no current list of Grant.",
       ),
     ).toBeTruthy();
   });
@@ -399,7 +399,7 @@ describe("RequestOverview", () => {
     show("cloud-identity", { unread: ["Grant"] });
     expect(
       within(region("Grants")).getByText(
-        "Not known: the page has no current list of Grant.",
+        "Not known: the fleet manager has no current list of Grant.",
       ),
     ).toBeTruthy();
   });
@@ -467,7 +467,7 @@ describe("RequestOverview", () => {
     show("encryption-key", { unread: ["PluginRegistration"] });
     expect(
       within(region("Used by")).getByText(
-        "Not known: the page has no current list of PluginRegistration.",
+        "Not known: the fleet manager has no current list of PluginRegistration.",
       ),
     ).toBeTruthy();
   });

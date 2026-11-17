@@ -430,7 +430,7 @@ describe("ComponentDetailView", () => {
     expect(within(header).queryByText("Ready")).toBeNull();
     expect(
       screen.getByText(
-        "Not known: the page has no current list of PluginRequest.",
+        "Not known: the fleet manager has no current list of PluginRequest.",
       ),
     ).toBeTruthy();
     expect(

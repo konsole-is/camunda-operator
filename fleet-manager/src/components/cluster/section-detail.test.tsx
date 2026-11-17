@@ -235,7 +235,7 @@ describe("SectionComponentDetail", () => {
     expect(detail.seen.unread).toBe("PluginRequest");
     expect(
       screen.getByText(
-        "Not known: the page has no current list of PluginRequest.",
+        "Not known: the fleet manager has no current list of PluginRequest.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Request outputs")).toBeNull();
@@ -272,7 +272,7 @@ describe("SectionComponentDetail", () => {
     );
     expect(
       screen.getByText(
-        "Not known: the page has no current list of PluginRequest.",
+        "Not known: the fleet manager has no current list of PluginRequest.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/has not made the request/)).toBeNull();

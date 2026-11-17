@@ -117,7 +117,7 @@ describe("OptimizeTab", () => {
     expect(screen.queryByText(empty)).toBeNull();
     expect(
       screen.getByText(
-        "The page could not read CamundaOptimize, so this tab can be incomplete or out of date.",
+        "The fleet manager has no current list of CamundaOptimize. This tab can be incomplete or out of date.",
       ),
     ).toBeTruthy();
   });

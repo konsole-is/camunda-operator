@@ -5,7 +5,7 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { labelSelectorString } from "@/lib/labels";
 import { conditionsOf } from "@/lib/policy";
 import { ComponentDetail } from "./component-detail";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 
 /**
  * SectionComponentDetail is the component detail of a selection of the

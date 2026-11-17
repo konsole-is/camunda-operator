@@ -15,7 +15,7 @@ import { DetailEvents } from "./detail-events";
 import { type ControllerLogs, DetailLogs } from "./detail-logs";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 import { NO_PODS, type PodLike, PodTable } from "./pod-table";
 
 /** DetailTab names one tab of a component detail. */

@@ -54,7 +54,7 @@ import {
 } from "@/lib/k8s/unread";
 import { servedClusters } from "./served-clusters";
 import { ServedClustersTab } from "./served-clusters-tab";
-import { UnreadNote, unreadText } from "./unread-note";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined
@@ -424,7 +424,8 @@ export function PlaneView({
                 )}
                 {plane && (
                   <>
-                    <UnreadNote
+                    <NotRead
+                      tab
                       kinds={unreadOf([
                         "CamundaManagementCluster",
                         "Pod",
@@ -498,14 +499,14 @@ export function PlaneView({
             <div className="flex flex-col gap-2">
               {endpointRows.length > 0 && endpointsUnread.length > 0 && (
                 <p className="text-sm text-muted">
-                  {unreadText(endpointsUnread)}
+                  {notReadText(endpointsUnread, true)}
                 </p>
               )}
               <EndpointsTab
                 rows={endpointRows}
                 emptyText={
                   endpointsUnread.length > 0
-                    ? unreadText(endpointsUnread)
+                    ? notReadText(endpointsUnread, true)
                     : "This plane reports no endpoints yet."
                 }
               />

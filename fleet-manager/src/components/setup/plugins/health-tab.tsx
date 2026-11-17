@@ -4,7 +4,8 @@ import { ConditionsTable } from "@/components/fleet/conditions-table";
 import { EventList } from "@/components/fleet/event-list";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { Resource } from "@/lib/k8s/kinds";
-import { NotKnown, ValueError } from "./tab-parts";
+import { NotRead } from "@/components/fleet/not-read";
+import { ValueError } from "./tab-parts";
 import { conditionsOf } from "./values";
 
 const HEALTH = ["Accepted", "Ready"];
@@ -32,7 +33,7 @@ export function HealthTab({
     <div className="flex flex-col gap-4">
       <Panel label="Health">
         {unread.includes("PluginRegistration") ? (
-          <NotKnown kinds={["PluginRegistration"]} />
+          <NotRead kinds={["PluginRegistration"]} />
         ) : "error" in read ? (
           <ValueError text={read.error} />
         ) : (
@@ -44,7 +45,7 @@ export function HealthTab({
       </Panel>
       <Panel label="Events">
         {eventsUnread && events.length === 0 ? (
-          <NotKnown kinds={["Event"]} />
+          <NotRead kinds={["Event"]} />
         ) : (
           <>
             {eventsUnread && (

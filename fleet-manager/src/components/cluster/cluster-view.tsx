@@ -52,7 +52,7 @@ import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
 import { ComponentSettings } from "./component-settings";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 import { endpointRows } from "./endpoints";
 import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";

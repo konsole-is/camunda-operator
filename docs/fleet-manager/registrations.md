@@ -146,7 +146,7 @@ The page does not show an empty or healthy value for a kind that it has not read
 | `PluginRequest` | `Not known` in the column **Requests**. |
 | `Namespace` or `Environment` | The number of requests in the column **Requests**, with `Environments not known` in place of the number in each environment. |
 
-The page of an option shows the same red line and the same `Not read:` line. It also reads `Grant`, and the events. A tab that needs a kind that is not read shows `Not known:` and the kind, for example `Not known: PluginRequest is not read.` It does not show an empty list:
+The page of an option shows the same red line and the same `Not read:` line. It also reads `Grant`, and the events. A tab that needs a kind that is not read shows `Not known:` and the kind, for example `Not known: the fleet manager has no current list of PluginRequest.` It does not show an empty list:
 
 | Kind that is not read | What the page of an option shows |
 | --- | --- |

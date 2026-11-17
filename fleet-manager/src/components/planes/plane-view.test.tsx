@@ -409,7 +409,7 @@ describe("PlaneView", () => {
       ["endpoints", "This plane reports no endpoints yet."],
     ];
     const unreadPlane =
-      "The page could not read CamundaManagementCluster, so this tab can be incomplete or out of date.";
+      "The fleet manager has no current list of CamundaManagementCluster. This tab can be incomplete or out of date.";
 
     it("lists Overview, Clusters served, Optimize, Contract, and Endpoints in that order", () => {
       render(<PlaneView data={data()} />);
@@ -531,7 +531,7 @@ describe("PlaneView", () => {
       expect(screen.queryByText("No Optimize reads this contract.")).toBeNull();
       expect(
         screen.getByText(
-          "The page could not read CamundaOptimize, so this tab can be incomplete or out of date.",
+          "The fleet manager has no current list of CamundaOptimize. This tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });
@@ -558,7 +558,7 @@ describe("PlaneView", () => {
       ).toBeNull();
       expect(
         screen.getByText(
-          "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
+          "The fleet manager has no current list of ManagementAuthConfig. This tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });
@@ -580,7 +580,7 @@ describe("PlaneView", () => {
       ).toBeNull();
       expect(
         screen.getByText(
-          "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
+          "The fleet manager has no current list of ManagementAuthConfig. This tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });
@@ -666,7 +666,7 @@ describe("PlaneView", () => {
         }),
       ).toBeTruthy();
       expect(
-        screen.getByText(/could not read CamundaManagementCluster/),
+        screen.getByText(/has no current list of CamundaManagementCluster/),
       ).toBeTruthy();
     });
   });

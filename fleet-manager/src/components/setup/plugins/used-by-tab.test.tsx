@@ -173,7 +173,9 @@ describe("UsedByTab", () => {
     render(<UsedByTab rows={[]} unread={["PluginRequest"]} />);
     expect(screen.queryByText("No claim uses this option.")).toBeNull();
     expect(
-      screen.getByText("Not known: PluginRequest is not read."),
+      screen.getByText(
+        "Not known: the fleet manager has no current list of PluginRequest.",
+      ),
     ).toBeTruthy();
   });
 
@@ -190,10 +192,14 @@ describe("UsedByTab", () => {
     ).toBe("Ready: Not known");
     expect(
       termOf("team-orders/orders-secondary-storage", "Headline").textContent,
-    ).toBe("Not known: PluginRequest is not read.");
+    ).toBe(
+      "Not known: the fleet manager has no current list of PluginRequest.",
+    );
     expect(
       termOf("team-orders/orders-secondary-storage", "Resources").textContent,
-    ).toBe("Not known: PluginRequest is not read.");
+    ).toBe(
+      "Not known: the fleet manager has no current list of PluginRequest.",
+    );
     expect(
       screen.getByText(
         "The list can miss requests: PluginRequest is not read.",
@@ -211,10 +217,10 @@ describe("UsedByTab", () => {
     render(<UsedByTab rows={rows} unread={["Grant", "Environment"]} />);
     const panel = "team-orders/orders-backup-storage";
     expect(termOf(panel, "Grants").textContent).toBe(
-      "Not known: Grant is not read.",
+      "Not known: the fleet manager has no current list of Grant.",
     );
     expect(termOf(panel, "Environment").textContent).toBe(
-      "Not known: Environment is not read.",
+      "Not known: the fleet manager has no current list of Environment.",
     );
     expect(
       within(termOf(panel, "Ready")).queryByText(/Grants with Ready False/),

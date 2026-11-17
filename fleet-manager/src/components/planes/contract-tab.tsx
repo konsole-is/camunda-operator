@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Resource } from "@/lib/k8s/kinds";
-import { UnreadNote } from "./unread-note";
+import { NotRead } from "@/components/fleet/not-read";
 
 const NOT_SET = <span className="text-muted">Not set</span>;
 
@@ -41,7 +41,7 @@ export function ContractTab({
       className="flex flex-col gap-3 rounded-lg border border-border bg-panel p-4"
     >
       <h2 className="font-heading text-base font-semibold">Contract</h2>
-      <UnreadNote kinds={unread} />
+      <NotRead kinds={unread} tab />
       {name === undefined ? (
         sure && (
           <p className="text-sm text-muted">

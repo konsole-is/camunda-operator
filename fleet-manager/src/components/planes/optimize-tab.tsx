@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { OptimizeRow } from "./plane-optimize";
-import { UnreadNote, unreadText } from "./unread-note";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 
 /**
  * OptimizeTab is the Optimize tab of a plane: the state of callbacks once,
@@ -52,12 +52,12 @@ export function OptimizeTab({
       {rows.length === 0 ? (
         <p className="text-sm text-muted">
           {unread.length > 0
-            ? unreadText(unread)
+            ? notReadText(unread, true)
             : "No Optimize with an external URL reads the contract of this plane."}
         </p>
       ) : (
         <>
-          <UnreadNote kinds={unread} />
+          <NotRead kinds={unread} tab />
           <Table label="Optimize table" aria-label="Optimize">
             <TableHeader>
               <TableRow>

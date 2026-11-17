@@ -203,7 +203,9 @@ describe("GrantsTab", () => {
       within(panel).queryByText("No Grant of this template yet."),
     ).toBeNull();
     expect(
-      within(panel).getByText("Not known: Grant is not read."),
+      within(panel).getByText(
+        "Not known: the fleet manager has no current list of Grant.",
+      ),
     ).toBeTruthy();
   });
 
@@ -222,7 +224,11 @@ describe("GrantsTab", () => {
       ),
     ).toBeNull();
     expect(screen.getByText("This option has no grant template.")).toBeTruthy();
-    expect(screen.getByText("Not known: Grant is not read.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Grant.",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows the error of a Grant whose conditions are not valid", () => {

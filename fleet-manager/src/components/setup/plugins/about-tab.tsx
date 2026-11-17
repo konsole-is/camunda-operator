@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import { LimitsList } from "@/components/fleet/limits-list";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import { LINK, NotKnown, ValueError } from "./tab-parts";
+import { NotRead } from "@/components/fleet/not-read";
+import { LINK, ValueError } from "./tab-parts";
 import { isRecord, isText, listOf } from "./values";
 
 type Limit = { label: string; value: string; description?: string };
@@ -74,7 +75,7 @@ export function AboutTab({
           <Term label="Mode">{isText(spec.mode) ? spec.mode : "-"}</Term>
           <Term label="Other options of this controller">
             {unread.includes("PluginRegistration") ? (
-              <NotKnown kinds={["PluginRegistration"]} />
+              <NotRead kinds={["PluginRegistration"]} />
             ) : others.length === 0 ? (
               <Muted>None</Muted>
             ) : (

@@ -25,7 +25,7 @@ import {
   type RestoreRow,
   type ScheduleView,
 } from "./backups";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 
 const PANEL =
   "flex flex-col gap-3 rounded-lg border border-border bg-panel p-4";

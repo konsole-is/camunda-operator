@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { Term, Terms } from "./claim-tab";
 import { SeverityMark } from "./component-card";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 import type {
   ConnectedRef,
   GrantRow,
@@ -457,7 +457,7 @@ function Resources({
     <>
       <p className="text-xs text-muted">
         {fatesUnknown
-          ? "Not known: the page has no current list of CamundaClusterClaim, so it cannot say what happens to each resource when the claim is deleted."
+          ? "Not known: the fleet manager has no current list of CamundaClusterClaim, so it cannot say what happens to each resource when the claim is deleted."
           : detail.controlled
             ? `When the claim is deleted: ${DELETION_LABELS[detail.policy]}.`
             : "The claim does not control this request, so its deletion does not decide what happens to these resources."}

@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Term, Terms } from "./claim-tab";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "./not-read";
+import { NotRead } from "@/components/fleet/not-read";
 import { type BuiltinStorage as Storage, storageFacts } from "./requests";
 
 const NOT_REPORTED = "Not reported yet";

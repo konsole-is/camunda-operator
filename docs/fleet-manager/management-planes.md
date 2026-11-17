@@ -272,7 +272,7 @@ The public URL comes from the URL of the app on the plane. It is the scheme and 
 
 ### A tab with a list that the page did not read
 
-A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
+A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The fleet manager has no current list of <kind>. This tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
 
 ## Change a management plane
 

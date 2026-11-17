@@ -499,14 +499,14 @@ describe("ClusterView", () => {
     const backups = screen.getByRole("region", { name: "Backups" });
     expect(
       within(backups).getByText(
-        "Not known: the page has no current list of LogicalBackupRDBMS.",
+        "Not known: the fleet manager has no current list of LogicalBackupRDBMS.",
       ),
     ).toBeTruthy();
     expect(within(backups).queryByText("No backups yet.")).toBeNull();
     const restores = screen.getByRole("region", { name: "Restores" });
     expect(
       within(restores).getByText(
-        "Not known: the page has no current list of PointInTimeRestore.",
+        "Not known: the fleet manager has no current list of PointInTimeRestore.",
       ),
     ).toBeTruthy();
     expect(within(restores).queryByText("No restores.")).toBeNull();
@@ -517,14 +517,14 @@ describe("ClusterView", () => {
     render(view({ initial: data({ claims: [] }) }));
     expect(
       screen.getByText(
-        "Not known: the page has no current list of CamundaClusterClaim.",
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
       ),
     ).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
     expect(screen.queryByText(/is not in this namespace/)).toBeNull();
     expect(
       screen.getByText(
-        "Not known: the page has no current list of CamundaClusterClaim.",
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
       ),
     ).toBeTruthy();
   });
@@ -2113,7 +2113,7 @@ describe("The detail of a section", () => {
     renderOutOfDate(view({ initial: withClaim() }), ["Grant"]);
     expect(
       within(detail("Grants")).getByText(
-        "Not known: the page has no current list of Grant.",
+        "Not known: the fleet manager has no current list of Grant.",
       ),
     ).toBeTruthy();
   });
@@ -2134,7 +2134,7 @@ describe("The detail of a section", () => {
     expect(within(backup).getByText("Ready: Not known")).toBeTruthy();
     expect(
       within(backup).getAllByText(
-        "Not known: the page has no current list of PluginRequest.",
+        "Not known: the fleet manager has no current list of PluginRequest.",
       ).length,
     ).toBeGreaterThan(0);
     expect(
@@ -2200,7 +2200,7 @@ describe("The detail of a section", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
     expect(
       screen.getByText(
-        "Not known: the page has no current list of CamundaClusterClaim.",
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("table", { name: /settings$/ })).toBeNull();
@@ -2239,7 +2239,7 @@ describe("The detail of a section", () => {
     const backups = screen.getByRole("region", { name: "Backups" });
     expect(
       within(backups).getByText(
-        "Not known: the page has no current list of LogicalBackupRDBMS.",
+        "Not known: the fleet manager has no current list of LogicalBackupRDBMS.",
       ),
     ).toBeTruthy();
     expect(within(backups).queryByText("No backups yet.")).toBeNull();
@@ -2255,7 +2255,7 @@ describe("The detail of a section", () => {
     );
     expect(
       screen.getByText(
-        "Not known: the page has no current list of CamundaClusterClaim.",
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
       ),
     ).toBeTruthy();
     const card = within(
@@ -2265,7 +2265,7 @@ describe("The detail of a section", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
     expect(
       screen.getByText(
-        "Not known: the page has no current list of CamundaClusterClaim.",
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Claim editor")).toBeNull();
@@ -2292,7 +2292,7 @@ describe("The detail of a section", () => {
     expect(screen.queryByText("No settings.")).toBeNull();
     expect(
       screen.getByText(
-        "Not known: the page has no current list of PluginRegistration.",
+        "Not known: the fleet manager has no current list of PluginRegistration.",
       ),
     ).toBeTruthy();
   });
