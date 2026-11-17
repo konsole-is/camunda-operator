@@ -1,9 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";import{a as n,o as r}from"./iframe-B-ZJnyd5.js";import{o as i,r as a,s as o}from"./status-B-qMFQRy.js";function s({label:e,condition:t,off:r=!1,unknown:o=!1}){let s=i(t),l=r?`Not used`:o?`Not known`:s.reason?`${s.label} (${s.reason})`:s.label;return(0,c.jsx)(`span`,{role:`img`,"aria-label":`${e}: ${l}`,title:r||o?void 0:t?.message,className:n(`inline-block size-2 shrink-0 rounded-full`,a[r?`off`:o?`muted`:s.tone])})}var c;function l(){return(l=e((()=>{c=t(),r(),o(),s.__docgenInfo={description:`StatusDot is the dot of one component in a row, for example Zeebe in the
-fleet table. Its accessible name says the component and its Ready state.
-off marks a component that the cluster does not use. unknown marks a
-component whose condition the page could not read: unless off, the dot
-says "Not known" and ignores condition.`,methods:[],displayName:`StatusDot`,props:{label:{required:!0,tsType:{name:`string`},description:``},condition:{required:!1,tsType:{name:`signature`,type:`object`,raw:`{
-  status: ConditionStatus;
-  reason?: string;
-  message?: string;
-}`,signature:{properties:[{key:`status`,value:{name:`union`,raw:`"True" | "False" | "Unknown"`,elements:[{name:`literal`,value:`"True"`},{name:`literal`,value:`"False"`},{name:`literal`,value:`"Unknown"`}],required:!0}},{key:`reason`,value:{name:`string`,required:!1}},{key:`message`,value:{name:`string`,required:!1}}]}},description:``},off:{required:!1,tsType:{name:`boolean`},description:``,defaultValue:{value:`false`,computed:!1}},unknown:{required:!1,tsType:{name:`boolean`},description:``,defaultValue:{value:`false`,computed:!1}}}}})))()}export{l as n,s as t};
