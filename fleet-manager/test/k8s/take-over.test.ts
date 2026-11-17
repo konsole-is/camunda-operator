@@ -4,12 +4,16 @@ import {
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
-import { beforeAll, describe, expect, inject, it } from "vitest";
+import { beforeAll, describe, expect, inject, it, vi } from "vitest";
 import {
   applyClaimChange,
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { createCluster } from "@/app/fleet/clusters/new/actions";
+import {
+  applyContractChange,
+  previewContractChange,
+} from "@/app/setup/connections/actions";
 import {
   applyEnvironmentChange,
   previewEnvironmentChange,
@@ -23,10 +27,17 @@ import {
   previewReleaseMove,
 } from "@/app/setup/releases/actions";
 import {
+  draftOf as contractDraftOf,
+  updateChange as contractUpdateChange,
+} from "@/components/setup/connections/draft";
+import type { ContractObject } from "@/components/setup/connections/facts";
+import {
   draftOf as platformDraftOf,
   updateChange as platformUpdateChange,
 } from "@/components/setup/platform/draft";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
+import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
+import { get } from "@/lib/k8s/read";
 import {
   APP_FIELD_MANAGER,
   fieldManagers,
@@ -818,5 +829,74 @@ describe("a save of the platform config editor against the API server", () => {
     expect((await read(object)).metadata.resourceVersion).toBe(
       live.metadata.resourceVersion,
     );
+  });
+});
+
+describe("a save of the contract editor against the API server", () => {
+  it("takes over the host and keeps the recovery answer that kubectl set", async () => {
+    const pitr = {
+      enabled: true,
+      retentionPeriodDays: 7,
+      lastRecovery: {
+        requestID: "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b",
+        requestedBy: "team-a/restore",
+        targetTime: "2026-11-10T09:00:00Z",
+        completedAt: "2026-11-10T10:00:00Z",
+        result: "Completed",
+      },
+    };
+    const object: KubeObject = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "DatabaseServerConfig",
+      metadata: { name: unique("postgres"), namespace },
+      spec: {
+        engine: "postgres",
+        host: "pg.old",
+        port: 5432,
+        adminCredentialsSecretRef: { name: "postgres-admin" },
+        pitr,
+      },
+    };
+    await createClientSideApplied(api, object);
+    // The action reads the contract from the cache of the server.
+    const live = await vi.waitFor(async () => {
+      expect(await get("Namespace", undefined, namespace)).toBeDefined();
+      const found = await get(
+        "DatabaseServerConfig",
+        namespace,
+        object.metadata.name,
+      );
+      expect(found).toBeDefined();
+      return found as unknown as ContractObject;
+    });
+    const draft = contractDraftOf(live);
+    (draft.spec as DatabaseServerConfig["spec"]).host = "pg.new";
+    const change = contractUpdateChange(live, draft);
+
+    const preview = await previewContractChange(change);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({ code: "Conflict", path: "spec.host" }),
+    ]);
+    expect(changedPaths(preview)).toEqual(["spec.host"]);
+    expect(clearedPaths(preview)).toEqual([]);
+    const taken = withTakeOver(change, preview.ownership ?? []);
+    expect((await previewContractChange(taken)).errors).toEqual([]);
+    expect(await applyContractChange(taken)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+
+    const after = await read(object);
+    expect(after.spec.host).toBe("pg.new");
+    expect(after.spec.pitr).toEqual(
+      expect.objectContaining({ lastRecovery: pitr.lastRecovery }),
+    );
+    expect(
+      owns(after, "kubectl-client-side-apply", [
+        "f:spec",
+        "f:pitr",
+        "f:lastRecovery",
+      ]),
+    ).toBe(true);
   });
 });

@@ -1404,6 +1404,11 @@ describe("adminChangeSchema", () => {
 
   it.each([
     ["an update with its precondition", schema, update],
+    [
+      "an update with a kept field",
+      schema,
+      { ...update, keep: { "Environment//staging": ["spec.sections"] } },
+    ],
     ["a delete with its precondition", schema, remove],
     [
       "a delete with its precondition and its UID",
@@ -1487,6 +1492,11 @@ describe("adminChangeSchema", () => {
       { ...remove, preconditions: undefined },
     ],
     ["force on an update", schema, { ...update, force: true }],
+    [
+      "a kept field of a create",
+      schema,
+      { ...create, keep: { "Environment//staging": ["spec.sections"] } },
+    ],
     ["force on a create", schema, { ...create, force: true }],
     ["force on a delete", schema, { ...remove, force: true }],
     [
@@ -1511,6 +1521,11 @@ describe("adminChangeSchema", () => {
   ])("refuses %s", (_, s, change) =>
     expect(s.safeParse(change).success).toBe(false),
   );
+
+  it("passes keep on to the writer", () => {
+    const keep = { "Environment//staging": ["spec.sections"] };
+    expect(schema.parse({ ...update, keep }).keep).toEqual(keep);
+  });
 });
 
 describe("namespaceLabelChangeSchema", () => {

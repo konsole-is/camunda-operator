@@ -188,6 +188,55 @@ describe("foreignFields", () => {
     ]);
   });
 
+  it("leaves out a cleared field at or under a kept path", () => {
+    const live = environment(
+      {
+        recovery: { time: "2026-11-01T00:00:00Z" },
+        pitr: { enabled: true, lastRecovery: { at: "now" } },
+      },
+      [
+        entry("kubectl", "Apply", {
+          "f:spec": {
+            "f:recovery": { "f:time": {} },
+            "f:pitr": { "f:enabled": {}, "f:lastRecovery": { "f:at": {} } },
+          },
+        }),
+      ],
+    );
+    expect(
+      foreignFields(live, environment({ pitr: { enabled: true } }), [
+        "spec.recovery",
+        "spec.pitr.lastRecovery",
+      ]),
+    ).toEqual({ changed: [], cleared: [] });
+  });
+
+  it("names the other fields of a cleared field that holds a kept path", () => {
+    const live = environment({ pitr: { enabled: true, lastRecovery: {} } }, [
+      entry("kubectl", "Apply", {
+        "f:spec": {
+          "f:pitr": { ".": {}, "f:enabled": {}, "f:lastRecovery": {} },
+        },
+      }),
+    ]);
+    const { cleared } = foreignFields(live, environment({}), [
+      "spec.pitr.lastRecovery",
+    ]);
+    expect(cleared.map((f) => f.path)).toEqual(["spec.pitr.enabled"]);
+  });
+
+  it("a kept path leaves a changed field in changed", () => {
+    const live = environment({ displayName: "Stage" }, [
+      entry("kubectl", "Apply", displayName),
+    ]);
+    const { changed } = foreignFields(
+      live,
+      environment({ displayName: "Prod" }),
+      ["spec.displayName"],
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.displayName"]);
+  });
+
   it("a cleared field that only the fleet manager owns is not named", () => {
     const live = environment({ displayName: "Stage" }, [
       entry("fleet-manager", "Apply", displayName),

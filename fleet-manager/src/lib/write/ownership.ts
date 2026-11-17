@@ -61,13 +61,16 @@ export function isPartialSave(error: ApiError): boolean {
  * The apply fails on such a field unless it forces. cleared holds the
  * topmost field that live holds and applied leaves out, under a field
  * that applied holds, with every other manager of it or of a field below
- * it. The apply keeps such a field. The annotation
- * LAST_APPLIED_ANNOTATION is in neither list. The fields are in the
- * code-unit order of their paths, and the managers of a field by name.
+ * it. The apply keeps such a field. cleared holds no field at or under a
+ * path of keep, and names the fields beside it instead of a field that
+ * holds one. The annotation LAST_APPLIED_ANNOTATION is in neither list.
+ * The fields are in the code-unit order of their paths, and the managers
+ * of a field by name.
  */
 export function foreignFields(
   live: KubeObject,
   applied: KubeObject,
+  keep: readonly FieldPath[] = [],
 ): { changed: ForeignField[]; cleared: ForeignField[] } {
   const tree = ownerTree(
     live as ManagedObject,
@@ -85,6 +88,17 @@ export function foreignFields(
     steps: OwnedStep[],
   ): void => {
     if (after === undefined) {
+      if (keep.some((k) => k === path || below(path, k))) return;
+      if (keep.some((k) => below(k, path))) {
+        visitChildren(
+          node,
+          before,
+          Array.isArray(before) ? [] : {},
+          path,
+          steps,
+        );
+        return;
+      }
       const owners = ownersBelow(node);
       if (owners.length > 0)
         cleared.push({ path, steps, managers: managersOf(owners) });
@@ -158,6 +172,15 @@ export function foreignFields(
     );
   }
   return { changed: byPath(changed), cleared: byPath(cleared) };
+}
+
+/** overlaps reports whether a and b are one path, or one lies under the other. */
+export function overlaps(a: FieldPath, b: FieldPath): boolean {
+  return a === b || below(a, b) || below(b, a);
+}
+
+function below(path: FieldPath, parent: FieldPath): boolean {
+  return path.startsWith(`${parent}.`) || path.startsWith(`${parent}[`);
 }
 
 /** offered reports whether the review offers field for a take-over: no controller of the operator owns it. */
