@@ -1,6 +1,6 @@
 import { isManaged } from "@/lib/labels";
 import { child } from "@/lib/merge";
-import { resolve, type PluginSelection } from "@/lib/policy";
+import { objectOrEmpty, resolve, type PluginSelection } from "@/lib/policy";
 import type { ClusterFieldsInput } from "./cluster";
 import type { ClusterField, FieldState } from "./types";
 import { pathFrom, type Step } from "./walk";
@@ -29,7 +29,7 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
   for (const [i, s] of selections.entries()) {
     const request = requests?.[i];
     const policies = input.policy?.parameters?.[s.registration] ?? {};
-    const claimed = asObject(s.parameters);
+    const claimed = objectOrEmpty(s.parameters);
     const registration = input.registrations.find(
       (r) => r.metadata?.name === s.registration,
     );
@@ -93,17 +93,11 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
 
 // The CRD does not give parameters or their schema a shape, so these read
 // them defensively.
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function properties(schema: unknown): Record<string, unknown> {
-  return asObject(asObject(schema).properties);
+  return objectOrEmpty(objectOrEmpty(schema).properties);
 }
 
 function describe(property: unknown): string | undefined {
-  const text = asObject(property).description;
+  const text = objectOrEmpty(property).description;
   return typeof text === "string" && text !== "" ? text : undefined;
 }

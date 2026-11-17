@@ -124,7 +124,7 @@ To change a field of a cluster preset, for example the brokers of `medium`:
 
 The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows `Missing in <namespaces>` on its row. Every other key shows `<name>/<key> is missing in <namespaces>.` under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret. If the fleet manager cannot read a list that it needs to find these namespaces, the page names the list. It then shows no Secret list and no missing key. Reload the page when it can read the list.
 
-Another tool, for example `kubectl apply`, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a cleared field stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
+Another tool, for example `kubectl apply`, can set a field that your change changes or removes. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a field that the save removes stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ### The impact of a change
 
@@ -321,7 +321,7 @@ Above the save, the page shows this notice:
 
 Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A resource that sets its own version keeps it. The review of a save names the users and each version that changes. A version line names the kind of resource that runs the version. Clusters run the Camunda and Connectors versions. Elasticsearch clusters run the Elasticsearch version, and database servers run the PostgreSQL version. The rules about a version that a resource refuses are in the [CamundaRelease](../crds/camundarelease.md#versions) reference.
 
-Another tool, for example `kubectl apply`, can set a field that the save changes or clears. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
+Another tool, for example `kubectl apply`, can set a field that the save changes or removes. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ## Move clusters to a release
 

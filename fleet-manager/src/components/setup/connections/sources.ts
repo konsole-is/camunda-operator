@@ -7,8 +7,8 @@ import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
 import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { ContractUserSources } from "@/lib/usage";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
@@ -160,18 +160,4 @@ export function useConnectionSources(
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };
-}
-
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the Connections pages do not read.
-function useLive<K extends KindName, T>(
-  kind: K,
-  initial: readonly T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

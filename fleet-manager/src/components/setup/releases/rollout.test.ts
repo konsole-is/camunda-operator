@@ -729,8 +729,32 @@ describe("namedErrors", () => {
       ],
     });
     expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
-      'team-orders/orders: spec.releaseRef belongs to the field manager "kubectl-client-side-apply". Change it with that tool, or leave this cluster out of the move.',
-      "team-orders/orders: spec.releaseRef belongs to another field manager. Change it with that tool, or leave this cluster out of the move.",
+      "team-orders/orders: spec.releaseRef belongs to another tool (kubectl-client-side-apply), and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.",
+      "team-orders/orders: spec.releaseRef belongs to another tool, and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.",
+    ]);
+  });
+
+  it("says that the move cannot change a field of an operator controller", () => {
+    const result = namedErrors({
+      ok: false,
+      errors: [
+        {
+          code: "Conflict",
+          message:
+            "spec.releaseRef belongs to camunda-operator/cluster-claim, a controller of the operator. The fleet manager does not take it over.",
+          path: "spec.releaseRef",
+          manager: "camunda-operator/cluster-claim",
+          ref: {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            namespace: "team-orders",
+            name: "orders",
+          },
+        },
+      ],
+    });
+    expect(!result.ok && result.errors.map((e) => e.message)).toEqual([
+      "team-orders/orders: spec.releaseRef belongs to camunda-operator/cluster-claim, a controller of the operator, and the move cannot change it. Leave this cluster out of the move.",
     ]);
   });
 

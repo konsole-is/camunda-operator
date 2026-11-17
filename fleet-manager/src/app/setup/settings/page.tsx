@@ -7,7 +7,7 @@ import { metricsServerFound } from "@/lib/observe/kube";
 import { listSecretRefs } from "@/lib/secrets";
 import { appPermissions, readSettings } from "@/lib/settings";
 import { appNamespace, appServiceName } from "@/lib/settings/keys";
-import { messageOf } from "@/lib/write/errors";
+import { messageOf } from "@/lib/text";
 import {
   saveSettings,
   testGitConnection,

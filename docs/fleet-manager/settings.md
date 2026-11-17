@@ -97,7 +97,7 @@ The fleet manager reads the ConfigMap each time that it needs a setting, so a ch
 
 ## Fields that another tool set
 
-A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or clears. It shows the tool next to the field. One choice, **Take over these fields**, covers the changed fields and the cleared fields together. Each row says what the save does to its field:
+A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or removes. It shows the tool next to the field. One choice, **Take over these fields**, covers the changed fields and the removed fields together. Each row says what the save does to its field:
 
 ```text
 Fields that another tool set
@@ -106,11 +106,11 @@ spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
 [ ] Take over these fields
 ```
 
-Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only clears fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it.
+Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it.
 
-With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each cleared field. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example `It gets its default value 7 again.` If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
+With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each field that the change leaves out. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example `It gets its default value 7 again.` If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
 
-Another write can change the object after the save gave the new values and before it removed the cleared fields. Then the new values stay, and the cleared fields stay too. The save shows `The fleet manager saved the <kind> <name>, but did not remove <fields>.` To remove them, open the page again and take them over in a new save. When a save writes more than one object, the objects that it wrote before a failure stay.
+Another write can change the object after the save gave the new values and before it removed the fields. Then the new values stay, and the fields that the save did not remove stay too. The save shows `The fleet manager saved the <kind> <name>, but did not remove <fields>.` To remove them, open the page again and take them over in a new save. When a save writes more than one object, the objects that it wrote before a failure stay.
 
 The review asks on every save. The fleet manager does not keep the choice for a later save, and no setting turns it on for good.
 

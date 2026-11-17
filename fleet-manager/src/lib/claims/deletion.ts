@@ -181,11 +181,11 @@ export function requestPolicy(
 }
 
 /**
- * backupWarning returns the warning that the delete of the cluster name
+ * bucketGoneWarning returns the warning that the delete of the cluster name
  * takes its backup bucket: a group of the backupStorage slot holds a row
  * with the fate Deleted. It is undefined otherwise.
  */
-export function backupWarning(
+export function bucketGoneWarning(
   name: string,
   groups: readonly DeletionGroup[],
 ): string | undefined {

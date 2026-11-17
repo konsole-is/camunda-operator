@@ -3,6 +3,7 @@ import type { DeleteClusterData } from "@/components/cluster/delete-cluster-mode
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
 import type { ReadError } from "@/lib/k8s/unread";
+import { messageOf } from "@/lib/text";
 
 /**
  * loadDeleteClusterPage reads the first snapshot of the delete page of a
@@ -69,8 +70,4 @@ export async function loadDeleteClusterPage(
     releases,
     errors,
   };
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

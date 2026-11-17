@@ -11,9 +11,10 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset";
 import type { Environment } from "@/generated/crds/environment";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import type { ReadError } from "@/lib/k8s/unread";
+import { useAnswered } from "@/lib/k8s/answered";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { PLATFORM_SOURCE_KINDS } from "./source-kinds";
 
 /** PlatformSources holds every list that the Platform pages read, in all namespaces. */
@@ -32,13 +33,20 @@ export type PlatformSources = {
 };
 
 /**
- * usePlatformSources follows each list of initial live. errors holds the
- * error of each failed watch. The lists then keep their last items, which
- * can be out of date. stale holds the kind of each list whose watch is not
- * fresh (freshKey).
+ * PlatformSnapshot is the first snapshot of the Platform pages. readErrors
+ * holds the error of each kind that the server could not read.
+ */
+export type PlatformSnapshot = PlatformSources & { readErrors?: ReadError[] };
+
+/**
+ * usePlatformSources follows each list of initial live. errors holds the error
+ * of each failed watch, and the error of initial.readErrors of each other kind
+ * until the watch of that kind answers. The lists then keep their last items,
+ * which can be out of date. stale holds the kind of each list whose watch is
+ * not fresh (freshKey).
  */
 export function usePlatformSources(
-  initial: PlatformSources,
+  initial: PlatformSnapshot,
 ): PlatformSources & { errors: ReadError[]; stale: string[] } {
   const results = {
     platformConfigs: useLive("CamundaPlatformConfig", initial.platformConfigs),
@@ -56,10 +64,12 @@ export function usePlatformSources(
   const keys = Object.keys(results) as (keyof PlatformSources)[];
   const kinds = keys.map((key) => PLATFORM_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const errors = keys.flatMap((key) => {
+  const answered = useAnswered(kinds);
+  const live = keys.flatMap((key) => {
     const error = results[key].error;
     return error ? [{ kind: PLATFORM_SOURCE_KINDS[key], message: error }] : [];
   });
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     platformConfigs: results.platformConfigs.items,
     environments: results.environments.items,
@@ -75,18 +85,4 @@ export function usePlatformSources(
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };
-}
-
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the Platform pages do not read.
-function useLive<K extends KindName, T>(
-  kind: K,
-  initial: T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

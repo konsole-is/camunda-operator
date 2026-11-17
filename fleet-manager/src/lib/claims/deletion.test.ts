@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
-  backupWarning,
+  bucketGoneWarning,
   controlledBy,
   deleteClaimSteps,
   deletionGroups,
@@ -301,7 +301,7 @@ describe("deletionGroups", () => {
     } as unknown as Resource<"PluginRequest">;
     const groups = groupsOf("Delete", [backup], c);
     expect(groups[0].rows).toEqual([{ ...bucket(), fate: "Deleted" }]);
-    expect(backupWarning("orders", groups)).toBeDefined();
+    expect(bucketGoneWarning("orders", groups)).toBeDefined();
   });
 
   it("gives the rows of a request that is being deleted the fate of its own policy, whatever the pick", () => {
@@ -328,7 +328,7 @@ describe("deletionGroups", () => {
       ["Deleted"],
       ["Deleted"],
     ]);
-    expect(backupWarning("orders", groups)).toBeDefined();
+    expect(bucketGoneWarning("orders", groups)).toBeDefined();
   });
 
   it("takes no request that the claim does not control, also of the same section and registration", () => {
@@ -352,7 +352,7 @@ describe("deletionGroups", () => {
       unnamed,
     );
     expect(groups[0].rows).toEqual([]);
-    expect(backupWarning("orders", groups)).toBeUndefined();
+    expect(bucketGoneWarning("orders", groups)).toBeUndefined();
   });
 });
 
@@ -411,20 +411,20 @@ describe("requestPolicy", () => {
   });
 });
 
-describe("backupWarning", () => {
+describe("bucketGoneWarning", () => {
   it("warns under Delete when the backup request made a bucket", () => {
-    expect(backupWarning("orders", groupsOf("Delete"))).toBe(
+    expect(bucketGoneWarning("orders", groupsOf("Delete"))).toBe(
       "You cannot restore orders after this: the backup bucket goes too.",
     );
   });
 
   it("does not warn under Orphan when the bucket is kept", () => {
-    expect(backupWarning("orders", groupsOf("Orphan"))).toBeUndefined();
+    expect(bucketGoneWarning("orders", groupsOf("Orphan"))).toBeUndefined();
   });
 
   it("warns under Orphan when the plugin deletes the bucket also then", () => {
     expect(
-      backupWarning(
+      bucketGoneWarning(
         "orders",
         groupsOf("Orphan", awsRequests([bucket("Deleted")])),
       ),
@@ -437,7 +437,7 @@ describe("backupWarning", () => {
       { "backup-storage": "orders-backup-storage" },
     );
     expect(
-      backupWarning(
+      bucketGoneWarning(
         "orders",
         groupsOf("Delete", [request("orders-backup-storage")], c),
       ),

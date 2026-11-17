@@ -9,6 +9,7 @@ import {
 } from "@/lib/labels";
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
+import { deleteChangeOf } from "@/lib/write/delete";
 import { refKey } from "@/lib/write/refs";
 import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
@@ -218,15 +219,10 @@ export function updateChange(
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: Environment): Change {
-  const name = live.metadata.name ?? "";
-  const uid = live.metadata.uid;
-  return {
-    intent: `Delete the environment ${name}`,
-    apply: [],
-    delete: [{ apiVersion: API_VERSION, kind: KIND, name }],
-    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
-    ...(uid ? { uids: { [refKey({ kind: KIND, name })]: uid } } : {}),
-  };
+  return deleteChangeOf(
+    [{ apiVersion: API_VERSION, kind: KIND, metadata: live.metadata }],
+    `Delete the environment ${live.metadata.name ?? ""}`,
+  );
 }
 
 /**

@@ -5,11 +5,11 @@ import {
   releaseFixtures,
   rolloutListsFixture,
 } from "./fixtures";
-import { ReleaseDetailView } from "./release-detail";
+import { ReleaseDetail } from "./release-detail";
 
 const meta = {
-  title: "setup/releases/ReleaseDetailView",
-  component: ReleaseDetailView,
+  title: "setup/releases/ReleaseDetail",
+  component: ReleaseDetail,
   args: {
     sources: { ...releaseFixtures(), errors: [] },
     rollout: rolloutListsFixture(),
@@ -31,7 +31,7 @@ const meta = {
       })),
     },
   },
-} satisfies Meta<typeof ReleaseDetailView>;
+} satisfies Meta<typeof ReleaseDetail>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

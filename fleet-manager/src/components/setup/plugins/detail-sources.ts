@@ -7,14 +7,14 @@ import type { Resource } from "@/lib/k8s/kinds";
 import type { ReadError } from "@/lib/k8s/unread";
 import { REGISTRATION_LABEL } from "@/lib/labels";
 import { regards } from "@/lib/observe/events";
-import { type RegistrationSources, useRegistrationSources } from "./sources";
+import { type RegistrationSnapshot, useRegistrationSources } from "./sources";
 
 /** RegistrationDetailData is what the page of one registration reads. */
 export type RegistrationDetailData = {
   name: string;
   /** registration is the registration as the server read it for the page. */
   registration: PluginRegistration;
-  sources: RegistrationSources;
+  sources: RegistrationSnapshot;
   /** grants are the Grants with REGISTRATION_LABEL=name, in every namespace. */
   grants: Grant[];
   /** events are the events that regard the registration. */

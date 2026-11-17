@@ -37,7 +37,7 @@ import type { WriteMode } from "@/lib/write/types";
 import type { PlaneClaimTabData } from "./claim/data";
 import { PlaneClaimEditProvider } from "./claim/plane-claim-edit";
 import { PlaneClaimEditor } from "./claim/plane-claim-editor";
-import { ContractTab } from "./contract-tab";
+import { PlaneContractTab } from "./contract-tab";
 import { OptimizeTab } from "./optimize-tab";
 import { planesOf } from "./plane";
 import { PlaneActions } from "./plane-actions";
@@ -380,7 +380,7 @@ export function PlaneView({
         <Tabs value={tab} onValueChange={selectTab}>
           <TabsList>
             {PLANE_TABS.map((t) => (
-              <TabsTrigger key={t.id} value={t.id}>
+              <TabsTrigger key={t.value} value={t.value}>
                 {t.label}
               </TabsTrigger>
             ))}
@@ -485,7 +485,7 @@ export function PlaneView({
             />
           </TabsContent>
           <TabsContent value="contract">
-            <ContractTab
+            <PlaneContractTab
               name={contractName}
               contract={managementAuthConfigs.items.find(
                 (c) => c.metadata?.name === contractName,

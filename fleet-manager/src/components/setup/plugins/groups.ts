@@ -5,7 +5,8 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SLOT_FIELDS, type SlotField } from "@/lib/fields/slots";
 import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { environmentOf } from "@/lib/policy/environment";
-import { conditionTrue } from "@/lib/policy/options";
+import { byCodeUnit } from "@/lib/policy/json";
+import { conditionOf, conditionTrue } from "@/lib/policy/options";
 import type { RegistrationSources } from "./sources";
 
 /** SectionHeader is what the group of one section says about it. */
@@ -136,13 +137,15 @@ export function registrationGroups(
   const sections = [...sources.sections].sort(
     (a, b) =>
       (a.spec.order ?? 0) - (b.spec.order ?? 0) ||
-      compare(a.metadata.name ?? "", b.metadata.name ?? ""),
+      byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""),
   );
   const names = new Set(sections.map((s) => s.metadata.name));
   const rowsOf = (registrations: PluginRegistration[]) =>
     registrations
       .map((r) => registrationRow(r, sources))
-      .sort((a, b) => compare(a.label, b.label) || compare(a.name, b.name));
+      .sort(
+        (a, b) => byCodeUnit(a.label, b.label) || byCodeUnit(a.name, b.name),
+      );
   const groups: RegistrationGroup[] = sections.map((section) => ({
     section: {
       name: section.metadata.name ?? "",
@@ -218,15 +221,8 @@ function requestCounts(
         environment: key && shared(label) ? `${label} (${key})` : label,
         count,
       }))
-      .sort((a, b) => compare(a.environment, b.environment)),
+      .sort((a, b) => byCodeUnit(a.environment, b.environment)),
   };
-}
-
-function conditionOf(
-  registration: PluginRegistration,
-  type: string,
-): ConditionRow | undefined {
-  return registration.status?.conditions?.find((c) => c.type === type);
 }
 
 function environmentOfNamespace(
@@ -236,10 +232,4 @@ function environmentOfNamespace(
   const object = sources.namespaces.find((n) => n.metadata?.name === namespace);
   if (!object) return undefined;
   return environmentOf(object, sources.environments).environment;
-}
-
-// Sorting by code unit gives the same order in every locale.
-function compare(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 }

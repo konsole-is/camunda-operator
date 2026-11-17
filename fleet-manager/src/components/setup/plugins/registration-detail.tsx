@@ -134,7 +134,7 @@ export function RegistrationDetail({
               now={now}
             />
           </TabsContent>
-          <TabsContent value="usedBy">
+          <TabsContent value="used-by">
             <UsedByTab
               rows={usedByRows(
                 data.name,

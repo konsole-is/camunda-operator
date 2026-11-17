@@ -15,15 +15,15 @@ import type { Resource } from "@/lib/k8s/kinds";
 const NOT_SET = <span className="text-muted">Not set</span>;
 
 /**
- * ContractTab is the Contract tab of a plane. name is the contract that the
- * plane writes, undefined before it wrote one. contract is the
+ * PlaneContractTab is the Contract tab of a plane. name is the contract
+ * that the plane writes, undefined before it wrote one. contract is the
  * ManagementAuthConfig of that name, undefined when it is not in the list.
  * The client secret shows as a reference only. readers are the
  * CamundaOptimize objects that read the contract. unread names the kinds
  * that the page could not read. While unread is not empty, the tab never
  * says that the contract or its readers are missing.
  */
-export function ContractTab({
+export function PlaneContractTab({
   name,
   contract,
   readers,

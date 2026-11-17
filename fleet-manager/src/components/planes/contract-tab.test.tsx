@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
-import { ContractTab } from "./contract-tab";
+import { PlaneContractTab } from "./contract-tab";
 
 afterEach(cleanup);
 
@@ -58,10 +58,14 @@ function termValue(label: string): string | null | undefined {
 
 const noReaders = "No Optimize reads this contract.";
 
-describe("ContractTab", () => {
+describe("PlaneContractTab", () => {
   it("shows every field of the contract", () => {
     render(
-      <ContractTab name="production" contract={contractOf()} readers={[]} />,
+      <PlaneContractTab
+        name="production"
+        contract={contractOf()}
+        readers={[]}
+      />,
     );
     expect(termValue("Name")).toBe("production");
     for (const [label, value] of [
@@ -80,7 +84,11 @@ describe("ContractTab", () => {
 
   it("shows the client secret as namespace, name, and key", () => {
     render(
-      <ContractTab name="production" contract={contractOf()} readers={[]} />,
+      <PlaneContractTab
+        name="production"
+        contract={contractOf()}
+        readers={[]}
+      />,
     );
     expect(termValue("Client secret namespace")).toBe("platform");
     expect(termValue("Client secret name")).toBe("production-optimize-client");
@@ -91,7 +99,7 @@ describe("ContractTab", () => {
     const rest: Record<string, unknown> = { ...spec };
     delete rest.issuerBackendUrl;
     render(
-      <ContractTab
+      <PlaneContractTab
         name="production"
         contract={contractOf(rest)}
         readers={[]}
@@ -104,7 +112,7 @@ describe("ContractTab", () => {
 
   it("says Not valid for a field of the wrong type, and does not throw", () => {
     render(
-      <ContractTab
+      <PlaneContractTab
         name="production"
         contract={contractOf({ ...spec, clientId: 7, clientSecretRef: null })}
         readers={[]}
@@ -116,7 +124,7 @@ describe("ContractTab", () => {
 
   it("lists the readers with their cluster", () => {
     render(
-      <ContractTab
+      <PlaneContractTab
         name="production"
         contract={contractOf()}
         readers={[
@@ -149,14 +157,18 @@ describe("ContractTab", () => {
 
   it("says when no Optimize reads the contract", () => {
     render(
-      <ContractTab name="production" contract={contractOf()} readers={[]} />,
+      <PlaneContractTab
+        name="production"
+        contract={contractOf()}
+        readers={[]}
+      />,
     );
     expect(screen.getByText(noReaders)).toBeTruthy();
   });
 
   it("does not say that no Optimize reads the contract while the Optimize list is not read", () => {
     render(
-      <ContractTab
+      <PlaneContractTab
         name="production"
         contract={contractOf()}
         readers={[]}
@@ -172,14 +184,18 @@ describe("ContractTab", () => {
   });
 
   it("says when the plane has no contract name yet", () => {
-    render(<ContractTab name={undefined} contract={undefined} readers={[]} />);
+    render(
+      <PlaneContractTab name={undefined} contract={undefined} readers={[]} />,
+    );
     expect(
       screen.getByText("This plane has not written its contract yet."),
     ).toBeTruthy();
   });
 
   it("says when the named contract does not exist", () => {
-    render(<ContractTab name="production" contract={undefined} readers={[]} />);
+    render(
+      <PlaneContractTab name="production" contract={undefined} readers={[]} />,
+    );
     expect(
       screen.getByText("The contract production does not exist."),
     ).toBeTruthy();
@@ -191,7 +207,7 @@ describe("ContractTab", () => {
       ["CamundaManagementCluster"],
     ]) {
       render(
-        <ContractTab
+        <PlaneContractTab
           name={unread[0] === "ManagementAuthConfig" ? "production" : undefined}
           contract={undefined}
           readers={[]}

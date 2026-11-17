@@ -12,6 +12,8 @@ The form follows the cluster while you fill it in. An Environment, a namespace, 
 
 Pick the environment of the plane, a name, and a namespace. The name is the name of the claim. The namespace can be a namespace of the environment, or a new one when the environment allows **Create a namespace**.
 
+The step checks the name against the planes and the claims that exist. It also reads the namespaces and the environments. When the fleet manager cannot read one of these lists, the form shows `Could not read <kind>:` and the error. When its copy of a list is not current, the form shows `Not known: the fleet manager has no current list of <kind>.` An example is the copy of an earlier visit. In both cases, **Next** stays off until the list is read again.
+
 **Platform config** shows the platform config of the environment. You can pick another one.
 
 **Where users sign in** has three options:
@@ -386,7 +388,7 @@ In direct mode, the review names each field that another tool set and that the s
 
 [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
-A move of the identity mode cannot save when another tool set the identity provider. The save gives the new values first and removes the cleared fields after that. Between the two writes, the claim has two identity providers, and Kubernetes refuses such a claim. The review shows `exactly one identity provider: keycloak, externalKeycloak, or oidc`, and **Save** stays off. Make this move in the claim file, and apply the file again.
+A move of the identity mode cannot save when another tool set the identity provider. The save gives the new values first and removes the other fields after that. Between the two writes, the claim has two identity providers, and Kubernetes refuses such a claim. The review shows `exactly one identity provider: keycloak, externalKeycloak, or oidc`, and **Save** stays off. Make this move in the claim file, and apply the file again.
 
 In Git mode, your GitOps tool applies the claim file:
 
@@ -450,7 +452,7 @@ Select **Delete** in the header of the plane. The delete page opens at `/fleet/p
 
 The page first writes your choice to the claim when the claim has another deletion policy, or none of its own and none recorded. The page then shows "Waiting for the operator to read the deletion policy." In direct mode, the fleet manager then deletes the claim. The operator gives your choice to each option before it removes anything. The page shows each object that goes until it is gone. The [Deletion](../crds/camundamanagementclusterclaim.md#deletion) section of the claim explains the order.
 
-If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. The operator records the deletion policy in the claim status. If the claim then lost the finalizer `fleet.camunda.io/cleanup`, it cannot give that policy to its options. Its delete fails until you add the finalizer back.
+If the spec of the claim changed after the page read it, the delete fails. The page then shows the claim again for a new review. A change of the claim status does not stop the delete. If the status changes at each of five tries, the delete fails. The page then says "The CamundaManagementClusterClaim my-plane kept changing during the delete. Delete it again." The operator records the deletion policy in the claim status. If the claim then lost the finalizer `fleet.camunda.io/cleanup`, it cannot give that policy to its options. Its delete fails until you add the finalizer back.
 
 In Git mode, the confirm is **Push the delete to Git**. A changed policy and the delete are two commits. The page pushes the delete only after GitOps applied the policy and each option has it. While the claim reports an error, the operator does not update the options. The page then names the options and gives the reason, and the fleet manager refuses the push. The fleet manager removes the claim file, so your GitOps tool must prune to delete the claim. [Delete in Git mode](cluster-page.md#delete-in-git-mode) on the cluster page shows the same steps with examples.
 

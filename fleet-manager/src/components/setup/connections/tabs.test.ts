@@ -24,7 +24,11 @@ describe("connectionTabOf", () => {
     expect(connectionTabOf("databases")).toBe("databases");
   });
 
-  it.each([undefined, "", "buckets", ["databases"]])(
+  it("reads the first item of a repeated value", () => {
+    expect(connectionTabOf(["databases", "object-storage"])).toBe("databases");
+  });
+
+  it.each([undefined, "", "buckets", ["buckets", "databases"]])(
     "falls back to Object storage for %j",
     (value) => {
       expect(connectionTabOf(value)).toBe("object-storage");

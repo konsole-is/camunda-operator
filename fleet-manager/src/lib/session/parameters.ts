@@ -5,6 +5,7 @@ import { pathFrom, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   equalJSON,
+  objectOrEmpty,
   resolve,
   type PluginSelection,
   type PolicyResult,
@@ -48,8 +49,9 @@ export function changedParameterErrors(input: {
       { item: keys },
       { field: "parameters" },
     ];
-    const before = asObject(valueAt(claim, steps));
-    const now = asObject(selection.parameters);
+    // The CRD does not give the parameters of a registration a shape.
+    const before = objectOrEmpty(valueAt(claim, steps));
+    const now = objectOrEmpty(selection.parameters);
     const touched = [
       ...new Set([...Object.keys(before), ...Object.keys(now)]),
     ].filter((name) => !equalJSON(ownValue(now, name), ownValue(before, name)));
@@ -65,7 +67,7 @@ export function changedParameterErrors(input: {
       (name) => !equalJSON(nowAdded[name], beforeAdded[name]),
     );
     if (touched.length === 0 && moved.length === 0) return [];
-    const root = asObject(registration.spec.parameters) as OpenAPISchema;
+    const root = objectOrEmpty(registration.spec.parameters) as OpenAPISchema;
     if (Object.keys(root).length === 0) return [];
     const at = (name: string) => pathFrom("", [...steps, { field: name }]);
     const broken = schemaError(root);
@@ -117,7 +119,7 @@ export function requestsOf(
   return selections.map((s, i) =>
     resolution && "value" in resolution
       ? (resolution.value.requests?.[i]?.parameters ?? {})
-      : asObject(s.parameters),
+      : objectOrEmpty(s.parameters),
   );
 }
 
@@ -153,11 +155,4 @@ export function generated<T>(value: unknown): T {
 
 function ownValue(object: Record<string, unknown>, name: string): unknown {
   return Object.hasOwn(object, name) ? object[name] : undefined;
-}
-
-// The CRD does not give the parameters of a registration a shape.
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

@@ -69,7 +69,7 @@ test("a registration opens with its tabs and the claims that use it", async ({
       .getByText("secondaryStorageConfig", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Used by" }).click();
-  await expect(page).toHaveURL(/\?tab=usedBy$/);
+  await expect(page).toHaveURL(/\?tab=used-by$/);
   const used = page.getByRole("region", {
     name: "team-orders/orders-secondary-storage",
   });

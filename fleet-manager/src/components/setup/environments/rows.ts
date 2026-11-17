@@ -1,6 +1,7 @@
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { ConditionLike } from "@/components/fleet/status";
 import type { FleetEnvironmentConditionType } from "@/generated/conditions";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { byCodeUnit, environmentOf } from "@/lib/policy";
 import type { EnvironmentSources } from "./sources";
@@ -12,9 +13,9 @@ export type EnvironmentRow = {
   name: string;
   displayName?: string;
   color?: string;
-  namespaces: number;
-  clusters: number;
-  planes: number;
+  namespaces?: number;
+  clusters?: number;
+  planes?: number;
   ready?: ConditionLike;
 };
 
@@ -22,9 +23,15 @@ export type EnvironmentRow = {
  * environmentRows returns one row for each environment by name. namespaces
  * is status.namespaces, or the count of labelled namespaces while the status
  * has none. clusters and planes count the claims of each kind in the
- * labelled namespaces.
+ * labelled namespaces. A count can be undefined while a list in s is
+ * failed or stale.
  */
-export function environmentRows(s: EnvironmentSources): EnvironmentRow[] {
+export function environmentRows(
+  s: EnvironmentSources & SourceReads,
+): EnvironmentRow[] {
+  const unread = unreadKinds(s);
+  const known = (...kinds: string[]) =>
+    !kinds.some((kind) => unread.includes(kind));
   return s.environments
     .map((environment): EnvironmentRow => {
       const name = environment.metadata.name ?? "";
@@ -40,9 +47,16 @@ export function environmentRows(s: EnvironmentSources): EnvironmentRow[] {
           displayName: environment.spec.displayName,
         }),
         ...(environment.spec.color && { color: environment.spec.color }),
-        namespaces: environment.status?.namespaces ?? labelled.size,
-        clusters: s.clusterClaims.filter(inLabelled).length,
-        planes: s.planeClaims.filter(inLabelled).length,
+        ...((environment.status?.namespaces !== undefined ||
+          known("Namespace")) && {
+          namespaces: environment.status?.namespaces ?? labelled.size,
+        }),
+        ...(known("Namespace", "CamundaClusterClaim") && {
+          clusters: s.clusterClaims.filter(inLabelled).length,
+        }),
+        ...(known("Namespace", "CamundaManagementClusterClaim") && {
+          planes: s.planeClaims.filter(inLabelled).length,
+        }),
         ...(ready && { ready }),
       };
     })
@@ -58,10 +72,26 @@ export type UnassignedNamespace = {
   reason: "NoEnvironment" | "UnknownEnvironment";
 };
 
-/** unassignedNamespaces returns them by name. It returns none while no Environment exists. */
+/** LIST_KINDS are the kinds of the lists that environmentRows and unassignedNamespaces read. */
+export const LIST_KINDS: readonly string[] = [
+  "Environment",
+  "Namespace",
+  "CamundaClusterClaim",
+  "CamundaManagementClusterClaim",
+  "CamundaCluster",
+  "CamundaManagementCluster",
+];
+
+/**
+ * unassignedNamespaces returns them by name. It returns undefined while a
+ * list of LIST_KINDS is failed or stale in s. Otherwise it returns none
+ * while no Environment exists.
+ */
 export function unassignedNamespaces(
-  s: EnvironmentSources,
-): UnassignedNamespace[] {
+  s: EnvironmentSources & SourceReads,
+): UnassignedNamespace[] | undefined {
+  const unread = unreadKinds(s);
+  if (LIST_KINDS.some((kind) => unread.includes(kind))) return undefined;
   if (s.environments.length === 0) return [];
   const holding = new Set(
     [...s.clusterClaims, ...s.planeClaims, ...s.clusters, ...s.planes].map(

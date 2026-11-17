@@ -18,9 +18,17 @@ import { ReleaseEnvironments } from "./release-environments";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
 import type { RolloutData } from "./rollout";
-import { type RolloutLists, useRolloutSources } from "./rollout-sources";
+import {
+  type RolloutLists,
+  type RolloutSnapshot,
+  useRolloutSources,
+} from "./rollout-sources";
 import { type FailedMove, RolloutTab } from "./rollout-tab";
-import { type ReleasesData, useReleaseSources } from "./sources";
+import {
+  type ReleasesData,
+  type ReleasesSnapshot,
+  useReleaseSources,
+} from "./sources";
 
 /**
  * ReleaseActions are the writes of the release pages: the server actions on
@@ -43,14 +51,14 @@ export type ReleaseActions = {
  */
 export type ReleaseDetailData = {
   name: string;
-  sources: ReleasesData;
-  rollout: RolloutLists;
+  sources: ReleasesSnapshot;
+  rollout: RolloutSnapshot;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
 };
 
-/** ReleaseDetail is the release page on the live sources, opened on tab. */
-export function ReleaseDetail({
+/** ReleaseDetailLive is the release page on the live sources, opened on tab. */
+export function ReleaseDetailLive({
   data,
   tab,
   mode,
@@ -64,7 +72,7 @@ export function ReleaseDetail({
   const sources = useReleaseSources(data.sources);
   const rollout = useRolloutSources(data.rollout);
   return (
-    <ReleaseDetailView
+    <ReleaseDetail
       sources={sources}
       rollout={rollout}
       name={data.name}
@@ -78,12 +86,12 @@ export function ReleaseDetail({
 }
 
 /**
- * ReleaseDetailView is the page of the release name, with a tab for each
+ * ReleaseDetail is the page of the release name, with a tab for each
  * entry of RELEASE_TABS: the Settings tab, and the Rollout tab, which moves
  * clusters to the release and is the only tab that reads rollout. A tab
  * change sets the tab query parameter without a navigation.
  */
-export function ReleaseDetailView({
+export function ReleaseDetail({
   sources,
   rollout,
   name,

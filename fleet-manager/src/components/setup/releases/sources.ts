@@ -7,9 +7,10 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster";
 import type { Environment } from "@/generated/crds/environment";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import type { ReadError } from "@/lib/k8s/unread";
+import { useAnswered } from "@/lib/k8s/answered";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { RELEASE_SOURCE_KINDS } from "./source-kinds";
 
 /** ReleasesData holds every list that the release pages read, in all namespaces. */
@@ -24,13 +25,20 @@ export type ReleasesData = {
 };
 
 /**
- * useReleaseSources follows each list of initial live. errors holds the
- * error of each failed watch. The lists then keep their last items, which
- * can be out of date. stale holds the kind of each list whose watch is not
- * fresh (freshKey).
+ * ReleasesSnapshot is the first snapshot of the release pages. readErrors holds
+ * the error of each kind that the server could not read.
+ */
+export type ReleasesSnapshot = ReleasesData & { readErrors?: ReadError[] };
+
+/**
+ * useReleaseSources follows each list of initial live. errors holds the error
+ * of each failed watch, and the error of initial.readErrors of each other kind
+ * until the watch of that kind answers. The lists then keep their last items,
+ * which can be out of date. stale holds the kind of each list whose watch is
+ * not fresh (freshKey).
  */
 export function useReleaseSources(
-  initial: ReleasesData,
+  initial: ReleasesSnapshot,
 ): ReleasesData & { errors: ReadError[]; stale: string[] } {
   const results = {
     releases: useLive("CamundaRelease", initial.releases),
@@ -47,10 +55,12 @@ export function useReleaseSources(
   const keys = Object.keys(results) as (keyof ReleasesData)[];
   const kinds = keys.map((key) => RELEASE_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const errors = keys.flatMap((key) => {
+  const answered = useAnswered(kinds);
+  const live = keys.flatMap((key) => {
     const error = results[key].error;
     return error ? [{ kind: RELEASE_SOURCE_KINDS[key], message: error }] : [];
   });
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     releases: results.releases.items,
     environments: results.environments.items,
@@ -62,21 +72,4 @@ export function useReleaseSources(
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };
-}
-
-/**
- * useLive follows the list of kind from initial, as useResources does. A
- * Resource is plain JSON, so it differs from its model type only in its
- * timestamps, which the release pages do not read.
- */
-export function useLive<K extends KindName, T>(
-  kind: K,
-  initial: T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

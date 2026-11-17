@@ -25,7 +25,7 @@ import {
   releaseRows,
   usedByText,
 } from "./rows";
-import { type ReleasesData, useReleaseSources } from "./sources";
+import { type ReleasesSnapshot, useReleaseSources } from "./sources";
 
 const EMPTY = <span className="text-muted">-</span>;
 
@@ -241,7 +241,7 @@ export function ReleaseListLive({
   mode,
   actions,
 }: {
-  initial: ReleasesData;
+  initial: ReleasesSnapshot;
   mode?: WriteMode;
   actions: ReleaseActions;
 }) {

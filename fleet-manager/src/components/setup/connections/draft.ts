@@ -8,6 +8,7 @@ import { child } from "@/lib/merge";
 import { equalJSON, isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ContractKind } from "@/lib/usage";
+import { deleteChangeOf } from "@/lib/write/delete";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import type { ContractObject } from "./facts";
@@ -246,22 +247,10 @@ export function updateChange(
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: ContractObject): Change {
-  const { name = "", namespace, uid } = live.metadata;
-  const ref = { kind: live.kind, namespace, name };
-  return {
-    intent: `Delete the ${kindWords(live.kind)} contract ${name}`,
-    apply: [],
-    delete: [
-      {
-        apiVersion: API_VERSION,
-        kind: live.kind,
-        ...(namespace !== undefined && { namespace }),
-        name,
-      },
-    ],
-    ...preconditionOf(live),
-    ...(uid ? { uids: { [refKey(ref)]: uid } } : {}),
-  };
+  return deleteChangeOf(
+    [{ apiVersion: API_VERSION, kind: live.kind, metadata: live.metadata }],
+    `Delete the ${kindWords(live.kind)} contract ${live.metadata.name ?? ""}`,
+  );
 }
 
 function specOf(

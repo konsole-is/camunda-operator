@@ -20,15 +20,21 @@ import {
 import { NamespaceSecrets } from "@/components/create/namespace-secrets";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
 import { usePlanes } from "@/components/planes/planes-table";
 import { namesIn } from "@/lib/claims/names";
-import type { ReadError } from "@/lib/k8s/unread";
+import type { ReadError, SourceReads } from "@/lib/k8s/unread";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 import { type BuiltinObjects, environmentOf } from "@/lib/policy";
-import { useResources } from "@/lib/k8s/hooks";
-import type { Resource } from "@/lib/k8s/kinds";
+import { useAnswered } from "@/lib/k8s/answered";
+import {
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import {
   EMPTY_PLANE_DRAFT,
   type PlaneContext,
@@ -76,6 +82,15 @@ export type PlaneCreateData = {
   planes: PlaneSources;
   images: ImagesTable;
 };
+
+// usePlanes follows these lists. Before its first answer, a list can be the
+// cache of an earlier visit, so an overdue one is not current.
+const PLANE_LISTS: readonly KindName[] = [
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+  "Namespace",
+  "Environment",
+];
 
 const ACCESS_REQUESTS = {
   labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
@@ -171,25 +186,35 @@ export function planeContextOf(
 /**
  * planeSteps returns PLANE_STEPS with the check of each step.
  * selectorErrors are the errors of the cluster labels, and sectionErrors
- * those of the sections of the storage step, by section name. failures are
- * the lists that cannot be read. secrets are the Secrets of the existing
- * namespace of the draft.
+ * those of the sections of the storage step, by section name. reads names
+ * the lists that cannot be read and the lists that are not current. Each
+ * blocks the basics step or the storage step. secrets are the Secrets of
+ * the existing namespace of the draft.
  */
 export function planeSteps(
   models: PlaneModels,
   selectorErrors: readonly ValidationError[],
-  failures: readonly ReadError[] = [],
+  reads: SourceReads = {},
   sectionErrors: Readonly<Record<string, readonly ValidationError[]>> = {},
   secrets?: SecretRefs,
 ): CreateStep<PlaneDraft>[] {
   const message = (f: ReadError) =>
     `The fleet manager could not read the ${f.kind} objects: ${f.message}`;
+  const failures = reads.errors ?? [];
   const storageFailures = failures.filter((f) =>
     STORAGE_KINDS.includes(f.kind),
   );
   const basicsFailures = failures.filter(
     (f) => !STORAGE_KINDS.includes(f.kind),
   );
+  const notCurrent = (storage: boolean) => {
+    const kinds = (reads.stale ?? []).filter(
+      (kind) =>
+        STORAGE_KINDS.includes(kind) === storage &&
+        !failures.some((f) => f.kind === kind),
+    );
+    return kinds.length > 0 ? [notReadText(kinds)] : [];
+  };
   const secretsOf = (draft: PlaneDraft) =>
     secrets && (draft.namespace?.kind === "existing" ? secrets : []);
   return PLANE_STEPS.map((step) => ({
@@ -202,6 +227,7 @@ export function planeSteps(
           // an Environment, pass unseen.
           return [
             ...basicsFailures.map(message),
+            ...notCurrent(false),
             ...basicsErrors(draft, ctx, secretsOf(draft)),
           ];
         case "served":
@@ -212,6 +238,7 @@ export function planeSteps(
           const views = planeSectionViews(draft, ctx, models.objects);
           return [
             ...storageFailures.map(message),
+            ...notCurrent(true),
             ...storageErrors(draft, ctx, sectionErrors, views, models.objects),
           ];
         }
@@ -377,6 +404,15 @@ export function PlaneCreateFlow({
     ),
     ...planes.errors,
   ];
+  const planeLists = PLANE_LISTS.map((kind) => ({ kind, opts: {} }));
+  const answered = useAnswered(PLANE_LISTS);
+  const fresh = useWatchesFresh(planeLists);
+  const overdue = useWatchesOverdue(planeLists);
+  const stale = PLANE_LISTS.filter(
+    (kind, i) =>
+      (answered.has(kind) ? !fresh[i] : overdue[i]) &&
+      !readErrors.some((e) => e.kind === kind),
+  );
   const models: PlaneModels = {
     environments: modelsOf<Environment>(environments.items),
     namespaces: modelsOf<V1Namespace>(namespaces.items),
@@ -420,7 +456,7 @@ export function PlaneCreateFlow({
   const steps = planeSteps(
     models,
     selectorErrors,
-    readErrors,
+    { errors: readErrors, stale },
     sectionErrors,
     // While the Secrets cannot be read, no picked reference can be verified.
     secretsError === undefined ? secrets : [],
@@ -499,6 +535,7 @@ export function PlaneCreateFlow({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      <NotRead kinds={stale} />
       {existing !== undefined && secretsError !== undefined && (
         <p role="alert" className="text-sm text-bad">
           Could not read Secret: {secretsError}

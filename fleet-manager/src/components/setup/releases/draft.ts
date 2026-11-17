@@ -6,6 +6,7 @@ import { isDNSSubdomain, LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ReleaseUsage } from "@/lib/usage";
+import { deleteChangeOf } from "@/lib/write/delete";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { usedByText } from "./rows";
@@ -189,32 +190,16 @@ export function updateChange(
 /** deleteChange deletes each of releases while it still has its resourceVersion and its UID. */
 export function deleteChange(releases: readonly CamundaRelease[]): Change {
   const names = releases.map((r) => r.metadata.name ?? "");
-  const uids = Object.fromEntries(
-    releases.flatMap((r) =>
-      r.metadata.uid
-        ? [
-            [
-              refKey({ kind: KIND, name: r.metadata.name ?? "" }),
-              r.metadata.uid,
-            ],
-          ]
-        : [],
-    ),
-  );
-  return {
-    intent:
-      names.length === 1
-        ? `Delete the release ${names[0]}`
-        : `Delete the releases ${names.join(", ")}`,
-    apply: [],
-    delete: names.map((name) => ({
+  return deleteChangeOf(
+    releases.map((r) => ({
       apiVersion: API_VERSION,
       kind: KIND,
-      name,
+      metadata: r.metadata,
     })),
-    ...preconditionsOf(releases),
-    ...(Object.keys(uids).length > 0 && { uids }),
-  };
+    names.length === 1
+      ? `Delete the release ${names[0]}`
+      : `Delete the releases ${names.join(", ")}`,
+  );
 }
 
 /**

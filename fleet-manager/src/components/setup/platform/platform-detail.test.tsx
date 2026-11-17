@@ -547,7 +547,7 @@ describe("PlatformDetail", () => {
     });
     expect(
       await within(review).findByText(
-        "spec.images stays, because another field manager set it.",
+        "spec.images stays, because another tool set it.",
       ),
     ).toBeDefined();
   });

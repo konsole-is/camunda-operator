@@ -329,7 +329,7 @@ export function PlaneClaimEditProvider({
  * while another field manager owns them.
  */
 export const KEPT_FIELDS_NOTE =
-  "The save keeps these fields, because another field manager also set them, and a save does not take a field over:";
+  "The save keeps these fields, because another tool also set them. In Git mode a save does not take a field over:";
 /** OTHER_TOOL_FIELDS is the note on a kept field of another tool. */
 export const OTHER_TOOL_FIELDS =
   "Remove such a field with the tool that set it.";

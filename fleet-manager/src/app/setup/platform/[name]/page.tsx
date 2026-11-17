@@ -1,12 +1,13 @@
 import { notFound } from "next/navigation";
 import { PlatformDetailLive } from "@/components/setup/platform/platform-detail";
+import { loadImagesTable } from "@/lib/bundled/images";
 import { get } from "@/lib/k8s/read";
 import { writeMode } from "@/lib/write/writer";
 import {
   applyPlatformConfigChange,
   previewPlatformConfigChange,
 } from "../actions";
-import { loadImagesTable, loadPlatformSources } from "../load";
+import { loadPlatformSources } from "../load";
 
 // The page reads the cache of the server. A static prerender would call the
 // API server at build time.

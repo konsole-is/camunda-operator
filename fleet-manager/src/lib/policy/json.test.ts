@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equalJSON } from "./json";
+import { equalJSON, objectOrEmpty } from "./json";
 
 describe("equalJSON", () => {
   it("finds two objects with other key order equal", () => {
@@ -18,4 +18,18 @@ describe("equalJSON", () => {
       equalJSON(JSON.parse('{"__proto__": 1}'), JSON.parse('{"__proto__": 1}')),
     ).toBe(true);
   });
+});
+
+describe("objectOrEmpty", () => {
+  it("returns a plain object as it is", () => {
+    const value = { a: 1 };
+    expect(objectOrEmpty(value)).toBe(value);
+  });
+
+  it.each([undefined, null, "text", 3, ["a"]])(
+    "returns an empty object for %j",
+    (value) => {
+      expect(objectOrEmpty(value)).toEqual({});
+    },
+  );
 });

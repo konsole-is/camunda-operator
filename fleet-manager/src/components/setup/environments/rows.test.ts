@@ -7,6 +7,7 @@ import type { Environment } from "@/generated/crds/environment";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   environmentRows,
+  LIST_KINDS,
   labelledNamespaces,
   namespacesToAdd,
   unassignedNamespaces,
@@ -127,6 +128,45 @@ describe("environmentRows", () => {
     expect(row).toMatchObject({ clusters: 1, planes: 1 });
   });
 
+  it("gives no count whose lists could not be read or are stale", () => {
+    const s = sources({
+      environments: [environment("staging")],
+      namespaces: [namespace("team-a", "staging")],
+      clusterClaims: [clusterClaim("team-a", "orders")],
+      planeClaims: [planeClaim("team-a", "plane")],
+    });
+    const [failed] = environmentRows({
+      ...s,
+      errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
+    });
+    expect(failed).toMatchObject({ namespaces: 1, planes: 1 });
+    expect(failed.clusters).toBeUndefined();
+    const [stale] = environmentRows({
+      ...s,
+      stale: ["CamundaManagementClusterClaim"],
+    });
+    expect(stale).toMatchObject({ namespaces: 1, clusters: 1 });
+    expect(stale.planes).toBeUndefined();
+  });
+
+  it("gives no count of the namespaces while their list is stale, unless the status has one", () => {
+    const [counted, reported] = environmentRows({
+      ...sources({
+        environments: [
+          environment("production"),
+          environment("staging", { namespaces: 3 }),
+        ],
+        namespaces: [namespace("team-a", "production")],
+      }),
+      stale: ["Namespace"],
+    });
+    expect(counted).toMatchObject({ name: "production" });
+    expect(counted.namespaces).toBeUndefined();
+    expect(counted.clusters).toBeUndefined();
+    expect(counted.planes).toBeUndefined();
+    expect(reported).toMatchObject({ name: "staging", namespaces: 3 });
+  });
+
   it("gives one row for each environment by name, with its Ready condition and its looks", () => {
     const ready = {
       type: "Ready",
@@ -149,6 +189,26 @@ describe("environmentRows", () => {
 });
 
 describe("unassignedNamespaces", () => {
+  it("is not known while a list that it reads could not be read or is stale", () => {
+    const s = sources({
+      environments: [environment("staging")],
+      namespaces: [namespace("legacy")],
+      clusters: [cluster("legacy", "orders")],
+    });
+    for (const kind of LIST_KINDS) {
+      expect(unassignedNamespaces({ ...s, stale: [kind] })).toBeUndefined();
+      expect(
+        unassignedNamespaces({
+          ...s,
+          errors: [{ kind, message: "forbidden" }],
+        }),
+      ).toBeUndefined();
+    }
+    expect(unassignedNamespaces({ ...s, stale: ["PluginSection"] })).toEqual([
+      { name: "legacy", reason: "NoEnvironment" },
+    ]);
+  });
+
   it("lists a namespace with a claim or a cluster and no label once an Environment exists", () => {
     expect(
       unassignedNamespaces(
@@ -189,7 +249,7 @@ describe("unassignedNamespaces", () => {
             clusterClaim("team-a", "b"),
           ],
         }),
-      ).map((n) => n.name),
+      )?.map((n) => n.name),
     ).toEqual(["legacy", "team-x"]);
   });
 
