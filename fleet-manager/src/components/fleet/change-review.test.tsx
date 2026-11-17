@@ -431,6 +431,39 @@ describe("ChangeReview with fields of another tool", () => {
     await waitFor(() => expect(apply).toHaveBeenCalledWith(updated));
   });
 
+  it("after the choice, names the default of a cleared field that the preview with the take-over still holds", async () => {
+    const ownership = [{ ref, changed: [], cleared: [color, displayName] }];
+    setup({
+      change: updated,
+      preview: (c) =>
+        c.remove
+          ? {
+              ...taken,
+              objects: [
+                {
+                  ref,
+                  after: { ...applied, spec: { color: "blue" } },
+                  diff: [],
+                },
+              ],
+              ownership,
+            }
+          : { ...clean, ownership },
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    const group = () =>
+      screen.getByRole("group", { name: "Fields that another tool set" });
+    await waitFor(() =>
+      expect(group().textContent).toContain(
+        "spec.color: kubectl-client-side-apply set it. It gets its default value blue again.",
+      ),
+    );
+    expect(group().textContent).toContain(
+      "spec.displayName: kubectl-client-side-apply set it. The save removes it.",
+    );
+  });
+
   it("shows the diff of the change with the take-over before the save", async () => {
     setup({ change: updated, preview: byChange });
     await waitFor(() => expect(choice()).toBeTruthy());
