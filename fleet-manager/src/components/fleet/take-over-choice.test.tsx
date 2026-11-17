@@ -174,6 +174,32 @@ describe("TakeOverChoice", () => {
     expect(within(group).getByRole("checkbox")).toBeTruthy();
   });
 
+  it("says that a tool whose name is no GitOps tool changed an object that a GitOps tool manages", () => {
+    const { group } = show([
+      owned(environment, [
+        field("spec.displayName", { ...edit, kind: "gitops" }),
+      ]),
+    ]);
+    expect(group.textContent).toContain(
+      "kubectl-edit changed an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
+    );
+    expect(group.textContent).not.toContain("kubectl-edit is a GitOps tool");
+  });
+
+  it("warns only about a tool that a row names", () => {
+    const { group } = show([
+      owned(claim("orders"), [
+        field("spec.releaseRef", controller, script, {
+          ...edit,
+          kind: "gitops",
+        }),
+        field("spec.displayName", kubectl),
+      ]),
+    ]);
+    expect(group.textContent).not.toContain("my-script");
+    expect(group.textContent).not.toContain("kubectl-edit");
+  });
+
   it("says once that the fleet manager does not know a tool", () => {
     const { group } = show([
       owned(
@@ -239,14 +265,20 @@ describe("TakeOverChoice", () => {
     expect(within(group).getAllByRole("checkbox")).toHaveLength(1);
   });
 
-  it("heads each object of a batch with its kind and name by default", () => {
+  it("heads each object of a batch with its kind, name, and namespace by default", () => {
     const { group } = show([
       owned(claim("orders"), [field("spec.releaseRef", kubectl)]),
-      owned(claim("billing"), [field("spec.releaseRef", kubectl)]),
+      owned({ ...claim("orders"), namespace: "team-b" }, [
+        field("spec.releaseRef", kubectl),
+      ]),
+      owned(environment, [field("spec.displayName", kubectl)]),
     ]);
-    expect(
-      within(group).getByRole("list", { name: "CamundaClusterClaim orders" }),
-    ).toBeTruthy();
+    for (const name of [
+      "CamundaClusterClaim orders in team-a",
+      "CamundaClusterClaim orders in team-b",
+      "Environment staging",
+    ])
+      expect(within(group).getByRole("list", { name })).toBeTruthy();
   });
 
   it("offers no checkbox when a path names two fields, and says why", () => {
@@ -269,6 +301,10 @@ describe("TakeOverChoice", () => {
     expect(group.textContent).toContain(
       "spec.a.b: kubectl-client-side-apply set it. It stays.",
     );
+    expect(group.textContent).toContain(
+      "To save, go back and leave the changed fields as they are, or change them with the tool that set them and open the page again.",
+    );
+    expect(group.textContent).not.toContain(BLOCKED);
   });
 });
 

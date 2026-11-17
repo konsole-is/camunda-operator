@@ -3,6 +3,7 @@
 import { TriangleAlert } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { managerKind } from "@/lib/merge";
 import { offered } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
@@ -18,10 +19,10 @@ const TITLE = "Fields that another tool set";
 /**
  * TakeOverChoice shows the fields of other field managers that a save
  * changes or clears, from Preview.ownership, with one checkbox that takes
- * them over. It heads the fields of each object with labelOf, "<kind>
- * <name>" by default, when ownership holds more than one object. It
- * offers no checkbox when no field is offered, or when a path names more
- * than one field of an object, because the server refuses that take-over.
+ * them over. It heads the fields of each object with labelOf when
+ * ownership holds more than one object. It offers no checkbox when no
+ * field is offered, or when a path names more than one field of an
+ * object, because the server refuses that take-over.
  * onChoose gets the new state of the checkbox. The caller holds chosen,
  * and must reset it for each new change.
  */
@@ -29,7 +30,7 @@ export function TakeOverChoice({
   ownership,
   chosen,
   onChoose,
-  labelOf = (ref) => `${ref.kind} ${ref.name}`,
+  labelOf = defaultLabel,
 }: {
   ownership: readonly ObjectOwnership[];
   chosen: boolean;
@@ -39,9 +40,11 @@ export function TakeOverChoice({
   const checkboxId = useId();
   const headingId = useId();
   const choosable = canChoose(ownership);
-  const fields = ownership.flatMap((o) => [...o.changed, ...o.cleared]);
-  const gitops = managerNames(fields, (m) => m.kind === "gitops");
-  const unknown = managerNames(fields, (m) => !m.known);
+  const named = ownership
+    .flatMap((o) => [...o.changed, ...o.cleared])
+    .flatMap(rowManagers);
+  const gitops = namesOf(named, (m) => m.kind === "gitops");
+  const unknown = namesOf(named, (m) => !m.known);
   const several = ownership.length > 1;
 
   return (
@@ -95,10 +98,18 @@ export function TakeOverChoice({
                 aria-hidden
                 className="mt-0.5 size-4 shrink-0 text-warn"
               />
-              <span>
-                <Path>{name}</Path> is a GitOps tool. On its next sync it sets
-                its own value again, unless the source in Git changes too.
-              </span>
+              {managerKind(name) === "gitops" ? (
+                <span>
+                  <Path>{name}</Path> is a GitOps tool. On its next sync it sets
+                  its own value again, unless the source in Git changes too.
+                </span>
+              ) : (
+                <span>
+                  <Path>{name}</Path> changed an object that a GitOps tool
+                  manages. On its next sync the GitOps tool can set its own
+                  value again, unless the source in Git changes too.
+                </span>
+              )}
             </li>
           ))}
           {unknown.map((name) => (
@@ -127,11 +138,12 @@ export function TakeOverChoice({
           </p>
         </div>
       )}
-      {choosable &&
-        !chosen &&
+      {!(choosable && chosen) &&
         ownership.some((o) => o.changed.some(offered)) && (
           <p className="font-medium text-text">
-            Take over the fields to save, or go back and leave them as they are.
+            {choosable
+              ? "Take over the fields to save, or go back and leave them as they are."
+              : "To save, go back and leave the changed fields as they are, or change them with the tool that set them and open the page again."}
           </p>
         )}
     </section>
@@ -173,17 +185,23 @@ export function withoutTakeOverConflicts(
   );
 }
 
+function defaultLabel(ref: ObjectRef): string {
+  return ref.namespace
+    ? `${ref.kind} ${ref.name} in ${ref.namespace}`
+    : `${ref.kind} ${ref.name}`;
+}
+
 function rowOf(
   field: ForeignField,
   kind: "changed" | "cleared",
   chosen: boolean,
   choosable: boolean,
 ): ReactNode {
-  const operator = field.managers.filter((m) => m.kind === "operator");
-  if (operator.length > 0)
+  const managers = rowManagers(field);
+  if (managers.some((m) => m.kind === "operator"))
     return (
       <>
-        <Path>{field.path}</Path>: {joined(operator)} of the operator sets it.
+        <Path>{field.path}</Path>: {joined(managers)} of the operator sets it.
         The fleet manager does not take it over, because the operator sets it
         again.{kind === "changed" && " Leave it as it is to save."}
       </>
@@ -198,7 +216,7 @@ function rowOf(
           : "It stays unless you take it over.";
   return (
     <>
-      <Path>{field.path}</Path>: {joined(field.managers)} set it. {outcome}
+      <Path>{field.path}</Path>: {joined(managers)} set it. {outcome}
     </>
   );
 }
@@ -232,13 +250,14 @@ function joined(managers: readonly ForeignManager[]): string {
   return [...new Set(managers.map((m) => m.name))].join(" and ");
 }
 
-function managerNames(
-  fields: readonly ForeignField[],
+function rowManagers(field: ForeignField): ForeignManager[] {
+  const operator = field.managers.filter((m) => m.kind === "operator");
+  return operator.length > 0 ? operator : field.managers;
+}
+
+function namesOf(
+  managers: readonly ForeignManager[],
   which: (m: ForeignManager) => boolean,
 ): string[] {
-  return [
-    ...new Set(
-      fields.flatMap((f) => f.managers.filter(which)).map((m) => m.name),
-    ),
-  ];
+  return [...new Set(managers.filter(which).map((m) => m.name))];
 }

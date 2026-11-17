@@ -147,3 +147,41 @@ export const Batch: Story = {
     ],
   },
 };
+
+export const SeveralManagers: Story = {
+  name: "Several managers on one field",
+  args: {
+    ownership: [
+      {
+        ref: environment,
+        changed: [
+          field("spec.displayName", kubectl, {
+            name: "kubectl-edit",
+            operation: "Update",
+            kind: "other",
+            known: true,
+          }),
+        ],
+        cleared: [],
+      },
+    ],
+  },
+};
+
+export const AmbiguousPath: Story = {
+  name: "A path that names two fields",
+  args: {
+    ownership: [
+      {
+        ref: environment,
+        changed: [field("spec.a.b", kubectl)],
+        cleared: [
+          {
+            ...field("spec.a.b", kubectl),
+            steps: [{ field: "spec" }, { field: "a.b" }],
+          },
+        ],
+      },
+    ],
+  },
+};
