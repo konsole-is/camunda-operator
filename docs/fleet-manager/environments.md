@@ -4,6 +4,8 @@ An environment holds the policy for the claims in its namespaces. A claim asks f
 
 The list shows each environment with its color, the number of its namespaces, its clusters, its management planes, and its status. Select an environment to open its editor. Select **New environment** to create one.
 
+A count shows `Not known` while the fleet manager has no current list of the objects that it counts. A failed read shows `Could not read <kind>: <message>` at the top of the page. A list that is out of date shows `Not known: the fleet manager has no current list of <kind>.`
+
 If the fleet manager cannot read its settings, the editor shows `Changes are off: the fleet manager could not read its settings.` and accepts no change. Reload the page when the settings can be read again.
 
 ## Membership
@@ -23,7 +25,7 @@ In the editor, the section **Namespaces** lists the namespaces of the environmen
 
 The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.
 
-When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist.
+When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist. The banner does not show while the fleet manager has no current list of the environments, the namespaces, the claims, or the clusters.
 
 | Reason in the banner | Meaning | What to do |
 | --- | --- | --- |
@@ -201,8 +203,8 @@ The note also names each claim that the change touches:
 | `orders in team-a names no release and moves to 8.9.23.` | The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time. |
 | `orders in team-a names no release, and its cluster refuses the move to 8.9.0 (VersionDowngradeRefused).` | The new default release is older than the version that the cluster reports, or skips a minor after that version (`VersionSkipRefused`). A downgrade that the claim or the cluster approves gets no such note, see [Downgrade](../crds/camundaclusterclaim.md#downgrade). If the cluster reports no version, the note compares the new default with the old default. The cluster keeps running and takes no further change. |
 | `orders in team-a names no platform config and moves to shared.` | The claim follows the default platform config. |
-| `The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.` | The fleet manager cannot read a list that the note counts, so the count and the other notes can be incomplete. This note takes the place of `Changes apply to new claims only.` An alert at the top of the page shows the error. |
-| `This is the first environment. The claims in legacy have no environment label, …` | Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. |
+| `The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.` | A read of a list that the note counts failed, or the list is out of date. The count and the other notes can be incomplete. This note takes the place of `Changes apply to new claims only.` An alert at the top of the page shows the error of a failed read. |
+| `This is the first environment. The claims in legacy have no environment label, …` | Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. This note does not show while the note `The fleet manager has no current list of …` shows. |
 | `orders in team-a names no release, and this change removes the default release.` | The cluster keeps running, but the claim is not ready and its cluster takes no further change. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` and takes no further change. |
 
 **Review** shows the change to the environment before the save. Another tool, such as `kubectl apply` or a GitOps tool, can set a field that the change changes or removes. The review names such a field and the tool. It asks before the save takes the field over, as [Fields that another tool set](settings.md#fields-that-another-tool-set) says. In Git mode, a field of another tool that the change removes stays, and the review names it: `spec.sections.backup-storage stays, because another tool set it.`

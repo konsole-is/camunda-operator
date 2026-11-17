@@ -80,7 +80,7 @@ export function EnvironmentEditor({
 }: {
   sources: EnvironmentSources & {
     errors: ReadError[];
-    namespacesStale?: boolean;
+    stale?: readonly string[];
   };
   name?: string;
   mode?: WriteMode;
@@ -128,7 +128,7 @@ export function EnvironmentEditor({
   );
   const members = labelledNamespaces(name ?? "", sources.namespaces);
   const namespacesUnread =
-    sources.namespacesStale ||
+    (sources.stale ?? []).includes("Namespace") ||
     sources.errors.some((e) => e.kind === "Namespace");
   const blocked =
     errors[0]?.message ??

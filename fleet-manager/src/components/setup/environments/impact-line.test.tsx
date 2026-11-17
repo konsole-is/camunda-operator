@@ -39,7 +39,7 @@ describe("impactLines", () => {
       unread: ["Namespace", "PluginRequest"],
     });
     expect(line).toBe(
-      "The fleet manager cannot read Namespace, PluginRequest, so the claims that this change touches can be more than this note names. 1 cluster keeps the policy it recorded at creation.",
+      "The fleet manager has no current list of Namespace, PluginRequest, so the claims that this change touches can be more than this note names. 1 cluster keeps the policy it recorded at creation.",
     );
     expect(line).not.toContain("new claims only");
   });

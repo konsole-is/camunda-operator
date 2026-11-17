@@ -128,7 +128,7 @@ describe("environmentImpact", () => {
     ).toEqual({ clusters: 0, planes: 0, warnings: [] });
   });
 
-  it("names each list that it reads and that could not be read, and the namespaces while their list is stale", () => {
+  it("names each list that it reads and that could not be read or is stale", () => {
     const impact = environmentImpact(
       environment({}),
       edit({ deletionPolicy: "Orphan" }),
@@ -138,10 +138,14 @@ describe("environmentImpact", () => {
           { kind: "CamundaClusterClaim", message: "forbidden" },
           { kind: "CamundaPlatformConfig", message: "forbidden" },
         ],
-        namespacesStale: true,
+        stale: ["Namespace", "CamundaRelease", "PluginSection"],
       },
     );
-    expect(impact.unread).toEqual(["Namespace", "CamundaClusterClaim"]);
+    expect(impact.unread).toEqual([
+      "Namespace",
+      "CamundaClusterClaim",
+      "CamundaRelease",
+    ]);
   });
 
   it("lists a claim whose release the edit removes, with removed true", () => {
@@ -384,6 +388,23 @@ describe("environmentImpact", () => {
         }),
       ).unassigned,
     ).toEqual(["legacy"]);
+  });
+
+  it("names no namespace for a first environment while a list that it reads is not current", () => {
+    for (const reads of [
+      { stale: ["Environment"] },
+      { errors: [{ kind: "CamundaManagementClusterClaim", message: "forbidden" }] },
+    ])
+      expect(
+        environmentImpact(undefined, edit({}), {
+          ...sources({
+            environments: [],
+            namespaces: [namespace("legacy")],
+            clusterClaims: [clusterClaim("old", {}, undefined, "legacy")],
+          }),
+          ...reads,
+        }).unassigned,
+      ).toBeUndefined();
   });
 
   it("names no namespace when environments exist already", () => {

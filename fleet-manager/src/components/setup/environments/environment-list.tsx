@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
+import { NotRead } from "@/components/fleet/not-read";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { EnvironmentName } from "./environment-name";
 import {
   type EnvironmentRow,
   environmentRows,
+  LIST_KINDS,
   type UnassignedNamespace,
   unassignedNamespaces,
 } from "./rows";
@@ -19,16 +21,20 @@ import { UnassignedBanner } from "./unassigned-banner";
 
 /**
  * EnvironmentList is the list page of the environments. Each of errors
- * shows above the table, and the rows stay.
+ * shows above the table, and the rows stay. stale holds the kinds whose
+ * watch is not fresh (freshKey), as useEnvironmentSources gives them.
+ * unassigned is undefined while it is not known.
  */
 export function EnvironmentList({
   rows,
   unassigned,
   errors,
+  stale = [],
 }: {
   rows: EnvironmentRow[];
-  unassigned: UnassignedNamespace[];
+  unassigned?: UnassignedNamespace[];
   errors: ReadError[];
+  stale?: readonly string[];
 }): ReactNode {
   return (
     <div className="flex flex-col gap-6">
@@ -45,7 +51,13 @@ export function EnvironmentList({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
-      <UnassignedBanner namespaces={unassigned} />
+      <NotRead
+        kinds={stale.filter(
+          (kind) =>
+            LIST_KINDS.includes(kind) && !errors.some((e) => e.kind === kind),
+        )}
+      />
+      {unassigned && <UnassignedBanner namespaces={unassigned} />}
       <DataTable
         label="Environments"
         emptyText={
@@ -67,16 +79,16 @@ export function EnvironmentList({
           search: `${row.name} ${row.displayName ?? ""}`,
           sort: {
             environment: row.displayName ?? row.name,
-            namespaces: row.namespaces,
-            clusters: row.clusters,
-            planes: row.planes,
+            namespaces: row.namespaces ?? -1,
+            clusters: row.clusters ?? -1,
+            planes: row.planes ?? -1,
             status: describeReady(row.ready).label,
           },
           cells: {
             environment: <EnvironmentName {...row} />,
-            namespaces: row.namespaces,
-            clusters: row.clusters,
-            planes: row.planes,
+            namespaces: row.namespaces ?? "Not known",
+            clusters: row.clusters ?? "Not known",
+            planes: row.planes ?? "Not known",
             status: <StatusChip condition={row.ready} />,
           },
         }))}
@@ -97,6 +109,7 @@ export function EnvironmentListLive({
       rows={environmentRows(sources)}
       unassigned={unassignedNamespaces(sources)}
       errors={sources.errors}
+      stale={sources.stale}
     />
   );
 }

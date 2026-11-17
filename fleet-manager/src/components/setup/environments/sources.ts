@@ -50,15 +50,14 @@ export type EnvironmentSnapshot = EnvironmentSources & {
  * useEnvironmentSources follows each list of initial live. errors holds
  * the error of each failed watch, and the error of initial.readErrors of
  * each other kind until the watch of that kind answers. The lists then
- * keep their last items, which can be out of date. namespacesStale is true while the watch of the
- * namespaces is not fresh (freshKey).
+ * keep their last items, which can be out of date. stale holds the kind of
+ * each list whose watch is not fresh (freshKey).
  */
 export function useEnvironmentSources(
   initial: EnvironmentSnapshot,
-): EnvironmentSources & { errors: ReadError[]; namespacesStale: boolean } {
+): EnvironmentSources & { errors: ReadError[]; stale: string[] } {
   const environments = useLive("Environment", initial.environments);
   const namespaces = useLive("Namespace", initial.namespaces);
-  const [namespacesFresh] = useWatchesFresh([{ kind: "Namespace", opts: {} }]);
   const clusterClaims = useLive("CamundaClusterClaim", initial.clusterClaims);
   const planeClaims = useLive(
     "CamundaManagementClusterClaim",
@@ -102,7 +101,9 @@ export function useEnvironmentSources(
     releases,
     platformConfigs,
   };
-  const answered = useAnswered(Object.values(SOURCE_KINDS));
+  const kinds = Object.values(SOURCE_KINDS);
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
+  const answered = useAnswered(kinds);
   const live = (Object.keys(results) as (keyof EnvironmentSources)[]).flatMap(
     (key) => {
       const error = results[key].error;
@@ -126,6 +127,6 @@ export function useEnvironmentSources(
     releases: releases.items,
     platformConfigs: platformConfigs.items,
     errors,
-    namespacesStale: !namespacesFresh,
+    stale: kinds.filter((_, i) => !fresh[i]),
   };
 }
