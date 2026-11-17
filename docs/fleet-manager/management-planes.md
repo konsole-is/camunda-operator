@@ -274,6 +274,126 @@ The public URL comes from the URL of the app on the plane. It is the scheme and 
 
 A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
 
+## Change a management plane
+
+The **Claim** tab of the plane page shows the claim of the plane, one section at a time. Select **Edit** on a section to change it. The fleet manager changes only the claim. The operator then changes the plane. When the fleet manager cannot read its settings, the sections show no **Edit**. A plane that no claim made shows no claim on this tab. While the page cannot read the plane or its claim, the tab offers no **Edit** and names the kind that it did not read.
+
+### What stays fixed
+
+These values do not change after the plane is created:
+
+| Value | The tab shows |
+| --- | --- |
+| Name and namespace | `Set at creation` |
+| The option of **Databases** and of **Access** | `Chosen at creation`. A parameter of the option stays open when the policy of the environment lets the claim set it. |
+| The claim name and the claim value of the first administrator, in OIDC mode, after Management Identity started | `Fixed after Identity started`. Management Identity keeps the first administrator in its database. |
+
+The **Access** section also shows the host of the plane and the URL of each app. A plane with **No access from outside** shows the URL of each app as a field that you can change.
+
+### Change the platform config
+
+**Basics** has a list of the platform configs. The first entry, **From the environment**, removes the platform config from the claim, so that the plane takes the platform config of its environment. Management Identity, Console, and Web Modeler restart on a move. OIDC sign-in needs a platform config with OIDC authentication. While the plane signs in with OIDC, the tab refuses a platform config with basic authentication. A move of the platform config in OIDC mode can change the identity provider. Then add the callback of each Optimize to its application. The **Optimize** tab lists the callbacks.
+
+### Change where users sign in
+
+**Identity** has the three options of [Basics](#basics). When you select an option, the claim moves to it in one change. A move between OIDC and a Keycloak option asks for the first administrator of the new option:
+
+- After a move to OIDC, enter the **Claim name** and the **Claim value**. The move removes the username and the **Password Secret** from the claim.
+- After a move to a Keycloak option, enter the **Username**, and the **Email** when Web Modeler runs. The move removes the claim name and the claim value.
+
+The first administrator stays. Management Identity keeps the one in its database. A new username in a Keycloak option creates a second user. The first user keeps its access.
+
+A move of the sign-in shows where the login callbacks of Optimize go. [Change the identity provider](../crds/camundamanagementcluster.md#change-the-identity-provider) explains the move of the callbacks. After a move to OIDC, add the callback of each Optimize to the application at your identity provider. The **Optimize** tab lists the callbacks.
+
+This claim moves a plane from OIDC to an External Keycloak:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaManagementClusterClaim
+metadata:
+  name: my-plane
+  namespace: my-plane-ns
+spec:
+  management:
+    identityProvider:
+      externalKeycloak:
+        url: https://keycloak.example.com/auth
+        adminCredentialsSecretRef:
+          name: my-keycloak-admin
+    identity:
+      admin:
+        username: admin
+        email: admin@example.com
+  # ... the rest of your claim
+```
+
+### Change the clusters served
+
+**Environments served** has one checkbox for each environment, and the **Cluster labels** of the cluster selector. Match expressions of the selector show as text. Change them in the claim YAML. A change of the labels keeps the match expressions. A selector without labels serves every cluster in the environments. A claim without a cluster selector serves no cluster.
+
+Under the fields, the section lists each cluster that the change attaches and each that it detaches. A cluster that attaches while the plane runs Console gets the Console settings and restarts once. A cluster that detaches while the plane runs Console loses its Console settings and restarts once. A cluster with basic authentication that detaches while the plane runs Web Modeler loses the Web Modeler user of the plane. **Expected clusters** shows the result that the page expects for each cluster. The operator decides the real result when the plane runs.
+
+In OIDC mode, the list needs the issuer URL of the platform config. Without it, the section says that the preview needs the issuer and lists no cluster.
+
+### Turn Console and Web Modeler on or off
+
+**Components** has **Run Console** and **Run Web Modeler**. When Console stops, the served clusters lose their Console settings and restart once. When Web Modeler stops, its database stays, and each served cluster with basic authentication loses the Web Modeler user of the plane. An app that you turn off loses its version in the claim. An app that you turn on needs a version in **Versions**.
+
+### Change the versions
+
+**Versions** has one version for each app that runs. The section refuses the versions that [Components and versions](#components-and-versions) refuses, and the error blocks **Review**.
+
+A warning does not block **Review**. The section warns in these cases:
+
+- A version of Management Identity, Console, or Web Modeler goes down. Camunda documents no downgrade.
+- A version skips a minor, for example from 8.9 to 8.11. Move one minor at a time.
+- Management Identity, Console, and Web Modeler run on different minors. The [component version matrix](https://docs.camunda.io/docs/reference/supported-environments/#component-version-matrix) of Camunda lists the versions that work together. The tab compares the minor only, because each app has its own patch line.
+- The Keycloak version changes. Sign-in stops while Keycloak restarts.
+
+### Review and save the change
+
+The bar at the bottom of the page shows the number of unsaved changes, with **Discard** and **Review**. **Review** shows the change of the claim and what it does:
+
+- The move of the platform config and of the sign-in, and where the callbacks go.
+- Each cluster that attaches or detaches.
+- What Console off and Web Modeler off do, and each version move with its warnings.
+- The apps that restart, and the Optimize of each served cluster when its sign-in settings change.
+- The apps that restart only in some cases, as `may restart` with the case. For example, a change of a database parameter can restart the apps. The database option decides.
+
+A change that moves where users and the served clusters sign in needs the name of the plane typed before **Save** turns on. These changes are:
+
+- A move of the sign-in.
+- Another URL or realm of the External Keycloak.
+- Another platform config in OIDC mode.
+- A change of the access settings while the plane runs its own Keycloak (**Keycloak, run by this plane**).
+
+In Git mode, the button is **Push to Git**. [Fleet manager settings](settings.md) says how to turn on Git mode.
+
+The save carries the version of the claim that the page read. When the claim changed since then, the save writes nothing and says so. Review the change and save it again.
+
+While the page cannot read a list that the review needs, or the list is not current, **Review** is off. The bar names the list and says that what the change does is not known. An open review closes.
+
+### A claim that another tool applied
+
+Each tool that writes the claim owns the fields that it set. A save never takes over a field of another tool. The review names each field that the save keeps for another tool, with that tool. When the change removes nothing else, the review says that the save changes nothing.
+
+In direct mode, the fleet manager applies the save:
+
+- A new value of a field that another tool also set fails in the review. The message names the other tool, and nothing is written.
+- A removed field or list item that another tool also set stays in the claim.
+
+In Git mode, your GitOps tool applies the claim file:
+
+- The review checks the change as your GitOps tool, which takes over each field of the file. So a new value does not fail.
+- A removed field or list item that another tool also set stays in the claim. A field that the fleet manager saved in direct mode stays too, until a save in direct mode removes it.
+- Before your GitOps tool applied the claim with server-side apply, the review lists each removed field that a tool set. The first sync keeps these fields if it applies server side. If it applies client side, it removes a field of the last applied file.
+
+To change or remove a field that another tool set, make the change with that tool.
+
+A tool that writes without server-side apply, such as `kubectl apply` without `--server-side` or `kubectl edit`, does not see a save of the fleet manager. Its next write can set a field back, and nothing warns about it.
+
+The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane in direct mode, the Claim tab can only add fields. Make each other change in the claim file, and apply the file again.
+
 ## Suspend a management plane
 
 Suspend stops the plane and keeps its data. The header of a plane that a claim made has the button **Suspend**.

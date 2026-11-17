@@ -9,6 +9,7 @@ export const PLANE_TABS: readonly { id: PlaneTab; label: string }[] = [
   { id: "optimize", label: "Optimize" },
   { id: "contract", label: "Contract" },
   { id: "endpoints", label: "Endpoints" },
+  { id: "claim", label: "Claim" },
 ];
 
 /**

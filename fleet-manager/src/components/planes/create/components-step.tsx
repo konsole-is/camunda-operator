@@ -164,7 +164,12 @@ export function ComponentsStep({
   );
 }
 
-function MailFields({
+/**
+ * MailFields edits the mail of Web Modeler. secrets are the Secrets of the
+ * namespace of the plane. A credentials Secret that secrets no longer offer
+ * stays picked until the user picks another.
+ */
+export function MailFields({
   mail,
   secrets,
   onChange,

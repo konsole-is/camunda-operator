@@ -26,7 +26,11 @@ import {
   versionError,
   type PlaneVersionField,
 } from "@/lib/planes/versions";
-import { pathFrom, type Step } from "@/lib/fields";
+import {
+  IDENTITY_INITIAL_CLAIM_ANNOTATION,
+  pathFrom,
+  type Step,
+} from "@/lib/fields";
 import {
   checkAllowed,
   checkDeletionPolicy,
@@ -56,9 +60,11 @@ export type PlaneClaim = Resource<"CamundaManagementClusterClaim">;
  * PlaneClaimContext is what validatePlaneClaim reads beside the session.
  * environment is the Environment of the namespace of the claim, and
  * environments are all Environments. requests are the live PluginRequests
- * of the claim.
+ * of the claim. plane is the live CamundaManagementCluster of the claim,
+ * unset while the claim has made none.
  */
 export type PlaneClaimContext = {
+  plane?: Resource<"CamundaManagementCluster">;
   environment?: Resource<"Environment">;
   environments: readonly Resource<"Environment">[];
   platformConfigs: readonly Resource<"CamundaPlatformConfig">[];
@@ -104,6 +110,9 @@ export function validatePlaneClaim(
     ...environmentErrors(live, spec, ctx),
     ...modeErrors(live, spec, ctx),
     ...adminErrors(mode, spec.management),
+    ...(mode === "oidc" && pairMoves(live, spec)
+      ? recordedClaimErrors(spec.management, ctx.plane)
+      : []),
     ...(mode === "externalKeycloak" ? externalErrors(spec.management) : []),
     ...urlErrorsOf(s.claim, after, ctx),
     ...versionErrorsOf(live, spec),
@@ -193,17 +202,23 @@ function modeErrors(
   const mode = identityModeOf(spec.management?.identityProvider);
   if (mode === undefined)
     return [{ path: PROVIDER, message: "Pick where users sign in." }];
-  if (
-    mode !== "oidc" ||
-    identityModeOf(live.management?.identityProvider) === "oidc"
-  )
-    return [];
-  const ref = spec.platformConfigRef || ctx.environment?.spec.platformConfigRef;
+  const refOf = (s: Spec) =>
+    s.platformConfigRef || ctx.environment?.spec.platformConfigRef;
+  const ref = refOf(spec);
+  const modeMoved =
+    identityModeOf(live.management?.identityProvider) !== "oidc";
+  if (mode !== "oidc" || (!modeMoved && refOf(live) === ref)) return [];
   const config = ctx.platformConfigs.find((c) => c.metadata?.name === ref);
   const reason = oidcDisabledReason(
     generated<CamundaPlatformConfig | undefined>(config),
   );
-  return reason === undefined ? [] : [{ path: PROVIDER, message: reason }];
+  if (reason === undefined) return [];
+  return [
+    {
+      path: modeMoved ? PROVIDER : "spec.platformConfigRef",
+      message: reason,
+    },
+  ];
 }
 
 // The CEL rules of ManagementOverrides and IdentityAdminSpec, which the API
@@ -213,7 +228,7 @@ function adminErrors(
   management: PlaneManagement | undefined,
 ): FieldError[] {
   if (mode === undefined) return [];
-  const admin: PlaneManagement["identity"]["admin"] =
+  const admin: Partial<PlaneManagement["identity"]["admin"]> =
     management?.identity?.admin ?? {};
   const error = (field: string, message: string) => ({
     path: `${ADMIN}.${field}`,
@@ -228,7 +243,7 @@ function adminErrors(
       ...(admin.claimValue
         ? []
         : [error("claimValue", "Enter the claim value.")]),
-      ...(admin.username !== undefined
+      ...(admin.username != null
         ? [
             error(
               "username",
@@ -236,7 +251,7 @@ function adminErrors(
             ),
           ]
         : []),
-      ...(admin.passwordSecretRef !== undefined
+      ...(admin.passwordSecretRef != null
         ? [
             error(
               "passwordSecretRef",
@@ -248,7 +263,7 @@ function adminErrors(
   }
   return [
     ...(admin.username ? [] : [error("username", "Enter the username.")]),
-    ...(admin.claimName !== undefined || admin.claimValue !== undefined
+    ...(admin.claimName != null || admin.claimValue != null
       ? [
           error(
             "claimName",
@@ -256,7 +271,7 @@ function adminErrors(
           ),
         ]
       : []),
-    ...(management?.webModeler !== undefined && !admin.email
+    ...(management?.webModeler != null && !admin.email
       ? [
           error(
             "email",
@@ -265,6 +280,42 @@ function adminErrors(
         ]
       : []),
   ];
+}
+
+// Management Identity keeps the administrator that it started with, so the
+// operator refuses another claim pair while the plane stays in OIDC mode
+// (recordInitialClaim of camundamanagementcluster).
+function recordedClaimErrors(
+  management: PlaneManagement | undefined,
+  plane: PlaneClaimContext["plane"],
+): FieldError[] {
+  const recorded =
+    plane?.metadata?.annotations?.[IDENTITY_INITIAL_CLAIM_ANNOTATION];
+  if (!recorded) return [];
+  const admin = management?.identity?.admin;
+  if (`${admin?.claimName ?? ""}=${admin?.claimValue ?? ""}` === recorded)
+    return [];
+  return [
+    {
+      path: `${ADMIN}.claimName`,
+      message: `Management Identity started with the administrator claim ${recorded}. Fixed after Identity started.`,
+    },
+  ];
+}
+
+// pairMoves reports whether the change moves the identity mode or the
+// claim pair, so that a pair that was already off the record does not block
+// another change.
+function pairMoves(live: Spec, spec: Spec): boolean {
+  const pair = (s: Spec) => {
+    const admin = s.management?.identity?.admin;
+    return [admin?.claimName ?? "", admin?.claimValue ?? ""];
+  };
+  return (
+    identityModeOf(live.management?.identityProvider) !==
+      identityModeOf(spec.management?.identityProvider) ||
+    !equalJSON(pair(live), pair(spec))
+  );
 }
 
 function externalErrors(management: PlaneManagement | undefined): FieldError[] {
@@ -375,7 +426,7 @@ function versionErrorsOf(live: Spec, spec: Spec): FieldError[] {
 function mailErrorsOf(live: Spec, spec: Spec): FieldError[] {
   const webModeler = spec.management?.webModeler;
   if (
-    webModeler === undefined ||
+    webModeler == null ||
     equalJSON(webModeler.mail, live.management?.webModeler?.mail)
   )
     return [];

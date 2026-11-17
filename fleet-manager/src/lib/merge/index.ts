@@ -8,6 +8,12 @@ export {
 } from "./storage";
 export { authRules, clusterRules, mergeCluster } from "./cluster";
 export {
+  appliedClientSide,
+  gitOpsManager,
+  lastAppliedOf,
+  type LiveObject,
+} from "./gitops";
+export {
   byMinor,
   defaultImages,
   defaultRepositories,
@@ -26,7 +32,9 @@ export {
   fieldManagers,
   wholeFieldManagers,
   isClaimManager,
+  keptRemovals,
   lastChanged,
+  type KeptField,
   type ManagedFieldsEntry,
   type ManagedObject,
 } from "./managers";

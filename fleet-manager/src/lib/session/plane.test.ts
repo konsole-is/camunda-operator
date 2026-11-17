@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pathFrom, type Step } from "@/lib/fields";
+import {
+  IDENTITY_INITIAL_CLAIM_ANNOTATION,
+  pathFrom,
+  type Step,
+} from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { EMPTY_MAIL } from "@/lib/planes/components";
 import { mailOf } from "@/lib/planes/draft";
@@ -814,5 +818,255 @@ describe("validatePlaneClaim", () => {
           'Parameter databases.2 that the claim controller sets on section "databases" must be one of "keycloak", "identity".',
       },
     ]);
+  });
+});
+
+describe("validatePlaneClaim with a null value in the claim", () => {
+  // Another tool can write null where the CRD expects a string or an
+  // object. Each case changes the deletion policy only.
+  const policy = (claim: PlaneClaim) =>
+    changed(claim, [at("spec", "deletionPolicy"), "Orphan"]);
+  const withNull = (patch: (spec: Record<string, unknown>) => void) => {
+    const claim = structuredClone(planeClaim());
+    patch(claim.spec as unknown as Record<string, unknown>);
+    return claim;
+  };
+  const management = (spec: Record<string, unknown>) =>
+    spec.management as Record<string, unknown>;
+
+  it("asks for an environment when the environments are null", () => {
+    const claim = withNull((spec) => {
+      spec.environments = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      { path: "spec.environments", message: "Pick at least one environment." },
+    ]);
+  });
+
+  it("asks where users sign in when the management block is null", () => {
+    const claim = withNull((spec) => {
+      spec.management = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      {
+        path: "spec.management.identityProvider",
+        message: "Pick where users sign in.",
+      },
+    ]);
+  });
+
+  it("asks where users sign in when the identity provider is null", () => {
+    const claim = withNull((spec) => {
+      management(spec).identityProvider = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      {
+        path: "spec.management.identityProvider",
+        message: "Pick where users sign in.",
+      },
+    ]);
+  });
+
+  it("reads a null mode block as no mode", () => {
+    const claim = withNull((spec) => {
+      management(spec).identityProvider = { keycloak: {}, oidc: null };
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([]);
+  });
+
+  it("asks for the username when the admin block is null", () => {
+    const claim = withNull((spec) => {
+      (management(spec).identity as Record<string, unknown>).admin = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      {
+        path: "spec.management.identity.admin.username",
+        message: "Enter the username.",
+      },
+    ]);
+  });
+
+  it("reads a null admin field as unset in both modes", () => {
+    const keycloak = withNull((spec) => {
+      (management(spec).identity as Record<string, unknown>).admin = {
+        username: "admin",
+        claimName: null,
+        claimValue: null,
+      };
+    });
+    expect(validatePlaneClaim(policy(keycloak), ctx())).toEqual([]);
+    const oidc = structuredClone(oidcClaim());
+    Object.assign(oidc.spec.management.identity.admin, {
+      username: null,
+      passwordSecretRef: null,
+    });
+    expect(validatePlaneClaim(policy(oidc), ctx())).toEqual([]);
+  });
+
+  it("reads null versions, Console, and Web Modeler as unset", () => {
+    const claim = withNull((spec) => {
+      spec.versions = null;
+      management(spec).console = null;
+      management(spec).webModeler = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      {
+        path: "spec.versions.identity",
+        message: "Enter the Management Identity version.",
+      },
+      {
+        path: "spec.versions.keycloak",
+        message: "Enter the Keycloak version.",
+      },
+    ]);
+  });
+
+  it("reads a null External Keycloak field as empty", () => {
+    const claim = withNull((spec) => {
+      management(spec).identityProvider = {
+        externalKeycloak: {
+          url: "https://kc.example.com",
+          realm: null,
+          adminCredentialsSecretRef: null,
+          caBundleSecretRef: null,
+        },
+      };
+      spec.versions = { identity: "8.9.14" };
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([
+      {
+        path: "spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.name",
+        message: "Name the Secret with the Keycloak administrator credentials.",
+      },
+    ]);
+  });
+
+  it("reads a null mail, plugin list, and selector without an error", () => {
+    const claim = withNull((spec) => {
+      management(spec).webModeler = { mail: null };
+      (spec.versions as Record<string, unknown>).webModeler = "8.9.15";
+      (management(spec).identity as Record<string, unknown>).admin = {
+        username: "admin",
+        email: "a@example.com",
+      };
+      spec.plugins = null;
+      spec.clusterSelector = null;
+    });
+    expect(validatePlaneClaim(policy(claim), ctx())).toEqual([]);
+  });
+});
+
+describe("validatePlaneClaim and the claim that Management Identity recorded", () => {
+  const recorded = {
+    metadata: {
+      annotations: { [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "sub=42" },
+    },
+  } as unknown as PlaneClaimContext["plane"];
+
+  it("refuses another claim pair while the mode stays OIDC and the plane records a claim", () => {
+    const s = changed(oidcClaim(), [at(...ADMIN, "claimValue"), "43"]);
+    expect(validatePlaneClaim(s, ctx({ plane: recorded }))).toEqual([
+      {
+        path: "spec.management.identity.admin.claimName",
+        message:
+          "Management Identity started with the administrator claim sub=42. Fixed after Identity started.",
+      },
+    ]);
+  });
+
+  it("lets a deletion policy change pass while the live pair already differs from the recorded one", () => {
+    const live = structuredClone(oidcClaim());
+    live.spec.management.identity.admin.claimValue = "43";
+    const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(validatePlaneClaim(s, ctx({ plane: recorded }))).toEqual([]);
+  });
+
+  it("accepts a recorded claim whose value holds an equals sign", () => {
+    const plane = {
+      metadata: {
+        annotations: { [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "sub=a=b" },
+      },
+    } as unknown as PlaneClaimContext["plane"];
+    const live = structuredClone(oidcClaim());
+    live.spec.management.identity.admin.claimValue = "a=b";
+    expect(
+      validatePlaneClaim(
+        changed(live, [at("spec", "deletionPolicy"), "Orphan"]),
+        ctx({ plane }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("lets a move from OIDC to a Keycloak mode remove the recorded claim pair", () => {
+    const live = oidcClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+      [
+        at("spec", "management", "identityProvider", "keycloak", "externalUrl"),
+        "https://keycloak.example.com/auth",
+      ],
+      [at(...ADMIN, "username"), "admin"],
+      [at("spec", "versions", "keycloak"), "26.6.4"],
+    );
+    expect(validatePlaneClaim(s, ctx({ plane: recorded }))).toEqual([]);
+  });
+
+  it("refuses a move back to OIDC with another claim pair", () => {
+    const keycloak = planeClaim({ platformConfigRef: "sso" });
+    const s = changed(
+      keycloak,
+      ...identityMoveEdits(keycloak.spec, "oidc").map(asEdit),
+      [at(...ADMIN, "claimName"), "email"],
+      [at(...ADMIN, "claimValue"), "a@example.com"],
+      [at("spec", "versions", "keycloak"), undefined],
+    );
+    expect(validatePlaneClaim(s, ctx({ plane: recorded }))).toEqual([
+      {
+        path: "spec.management.identity.admin.claimName",
+        message:
+          "Management Identity started with the administrator claim sub=42. Fixed after Identity started.",
+      },
+    ]);
+  });
+
+  it("gives nothing without the annotation", () => {
+    const s = changed(oidcClaim(), [at(...ADMIN, "claimValue"), "43"]);
+    expect(
+      validatePlaneClaim(s, ctx({ plane: { metadata: {} } as never })),
+    ).toEqual([]);
+  });
+});
+
+describe("validatePlaneClaim and a move of the platform config", () => {
+  it("refuses a platform config with basic authentication while the plane stays in OIDC mode", () => {
+    const s = changed(oidcClaim(), [at("spec", "platformConfigRef"), "basic"]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([
+      {
+        path: "spec.platformConfigRef",
+        message:
+          "OIDC needs a platform config with OIDC authentication. basic uses basic authentication.",
+      },
+    ]);
+  });
+
+  it("lets a Keycloak plane move to a platform config with basic authentication", () => {
+    const s = changed(planeClaim({ platformConfigRef: "sso" }), [
+      at("spec", "platformConfigRef"),
+      "basic",
+    ]);
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
+  });
+
+  it("lets a plane move to OIDC together with a move to an OIDC platform config", () => {
+    const live = planeClaim();
+    const s = changed(
+      live,
+      [at("spec", "platformConfigRef"), "sso"],
+      ...identityMoveEdits(live.spec, "oidc").map(asEdit),
+      [at(...ADMIN, "claimName"), "sub"],
+      [at(...ADMIN, "claimValue"), "42"],
+    );
+    expect(validatePlaneClaim(s, ctx())).toEqual([]);
   });
 });

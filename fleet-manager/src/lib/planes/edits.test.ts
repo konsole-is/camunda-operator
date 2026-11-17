@@ -135,6 +135,16 @@ describe("identityMoveEdits", () => {
 });
 
 describe("componentEdits", () => {
+  it("turns on an app whose block is null, as the panel shows it off", () => {
+    const spec = {
+      ...keycloakSpec,
+      management: { ...keycloakSpec.management, console: null },
+    } as unknown as PlaneClaimSpec;
+    expect(componentEdits(spec, "console", true)).toEqual([
+      { steps: at("spec", "management", "console"), value: {} },
+    ]);
+  });
+
   it("removes Console and its version when Console goes off", () => {
     const spec = {
       ...keycloakSpec,

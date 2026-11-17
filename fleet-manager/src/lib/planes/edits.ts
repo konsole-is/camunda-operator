@@ -72,14 +72,14 @@ export function identityMoveEdits(
  * spec. On sets the object of app, with the default mail for Web Modeler,
  * and leaves the version for the admin to enter. Off removes the object
  * and the version of app. An app that is already in that state gives no
- * edit.
+ * edit. A null object counts as off.
  */
 export function componentEdits(
   spec: EditedSpec,
   app: "console" | "webModeler",
   on: boolean,
 ): PlaneEdit[] {
-  if ((spec.management?.[app] !== undefined) === on) return [];
+  if ((spec.management?.[app] != null) === on) return [];
   if (on) {
     return [
       {
