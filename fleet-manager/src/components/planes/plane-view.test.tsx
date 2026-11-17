@@ -258,6 +258,46 @@ describe("PlaneView", () => {
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   });
 
+  const objectsNotRead =
+    "Not known: the fleet manager has no current list of CamundaManagementCluster, CamundaManagementClusterClaim.";
+
+  it("does not say the plane is gone while an old cached answer is overdue", () => {
+    live.objects.set("CamundaManagementCluster", undefined);
+    live.objects.set("CamundaManagementClusterClaim", undefined);
+    live.overdue.add("CamundaManagementCluster");
+    live.overdue.add("CamundaManagementClusterClaim");
+    const page = data();
+    const { rerender } = render(<PlaneView data={page} />);
+    expect(
+      screen.queryByText("This management plane no longer exists."),
+    ).toBeNull();
+    expect(screen.getByText(objectsNotRead)).toBeTruthy();
+    live.overdue.clear();
+    live.fresh.add("CamundaManagementCluster");
+    live.fresh.add("CamundaManagementClusterClaim");
+    rerender(<PlaneView data={page} />);
+    expect(
+      screen.getByText("This management plane no longer exists."),
+    ).toBeTruthy();
+    expect(screen.queryByText(objectsNotRead)).toBeNull();
+  });
+
+  it("does not say the plane is not created while an old cached answer is overdue", () => {
+    live.objects.set("CamundaManagementCluster", undefined);
+    live.overdue.add("CamundaManagementCluster");
+    render(<PlaneView data={data()} />);
+    expect(
+      screen.queryByText(
+        "The claim controller has not created the management plane yet.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaManagementCluster.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("selects the tab of the tab query parameter", () => {
     window.history.replaceState(null, "", "?tab=clusters");
     render(<PlaneView data={data()} />);

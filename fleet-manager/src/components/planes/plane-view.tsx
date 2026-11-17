@@ -204,10 +204,7 @@ export function PlaneView({
   const fresh = useWatchesFresh(followed);
   const overdue = useWatchesOverdue(followed);
   const errors = currentReadErrors(liveErrors, data.readErrors, answered);
-  // A list is not current when its watch answered and is not fresh, or
-  // never answered and is overdue, as on the cluster page. Before its
-  // first answer, a list can also be the cache of an earlier visit, which
-  // has no time limit.
+  // Before its first answer, a list can also be the cache of an earlier visit.
   const stale = followed
     .filter(({ kind }, i) => (answered.has(kind) ? !fresh[i] : overdue[i]))
     .map(({ kind }) => kind);
@@ -223,16 +220,21 @@ export function PlaneView({
 
   const plane = planeResult.item;
   const live = claimResult.item;
+  const objectUnread = unreadOf([
+    "CamundaManagementCluster",
+    "CamundaManagementClusterClaim",
+  ]);
   if (!plane && !live) {
     return (
       <div className="flex flex-col gap-2">
         {alerts}
-        {!unread("CamundaManagementCluster") &&
-          !unread("CamundaManagementClusterClaim") && (
-            <p className="text-sm text-muted">
-              This management plane no longer exists.
-            </p>
-          )}
+        {objectUnread.length === 0 ? (
+          <p className="text-sm text-muted">
+            This management plane no longer exists.
+          </p>
+        ) : (
+          <NotRead kinds={objectUnread} />
+        )}
         <Link
           href="/fleet/planes"
           className="relative w-fit text-sm font-medium text-text underline underline-offset-4 hit-area hover:text-accent"
@@ -408,14 +410,15 @@ export function PlaneView({
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {!plane &&
-                  !unread("CamundaManagementCluster") &&
-                  !unread("CamundaManagementClusterClaim") && (
-                    <p className="text-sm text-muted">
-                      The claim controller has not created the management plane
-                      yet.
-                    </p>
-                  )}
+                {!plane && objectUnread.length === 0 && (
+                  <p className="text-sm text-muted">
+                    The claim controller has not created the management plane
+                    yet.
+                  </p>
+                )}
+                {!plane && objectUnread.length > 0 && !planeUnknown && (
+                  <NotRead kinds={objectUnread} />
+                )}
                 {planeUnknown && (
                   <p className="text-sm text-muted">
                     The page could not read the management plane, so it cannot
