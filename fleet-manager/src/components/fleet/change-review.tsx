@@ -25,7 +25,7 @@ import {
  * ChangeReview previews change once for each change object and shows the
  * diff of each previewed object, the first under diffLabel, with the
  * effects and the caution. The confirm stays disabled until the preview is
- * clean, and while hold is set.
+ * clean and writes something, and while hold is set.
  *
  * In direct mode, unless offerTakeOver is false, it asks in TakeOverChoice
  * before the save takes over a field of another tool. The choice starts off
