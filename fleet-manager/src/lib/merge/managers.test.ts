@@ -1,13 +1,17 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import {
   APP_FIELD_MANAGER,
   CLUSTER_CLAIM_MANAGER_PREFIX,
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
   isClaimManager,
+  isKnownManager,
   keptRemovals,
   lastChanged,
+  managerKind,
+  revisionManager,
   wholeFieldManagers,
 } from "./managers";
 
@@ -534,5 +538,139 @@ describe("keptRemovals", () => {
       kept: [],
       result: { spec: gone },
     });
+  });
+});
+
+describe("isKnownManager", () => {
+  it.each([
+    ["kubectl", true],
+    ["kubectl-client-side-apply", true],
+    ["kubectl-edit", true],
+    ["kubectl-patch", true],
+    ["kubectl-create", true],
+    ["kubectl-replace", true],
+    ["helm", true],
+    ["fleet-manager", true],
+    ["camunda-operator/camundacluster", true],
+    ["argocd-controller", true],
+    ["my-script", false],
+    ["kubectl-something", false],
+  ])("%s is known: %s", (name, known) => {
+    expect(isKnownManager(name)).toBe(known);
+  });
+});
+
+describe("managerKind", () => {
+  const uid = "0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11";
+
+  it.each([
+    ["camunda-operator/camundamanagementcluster", "operator"],
+    ["camunda-operator-builtins", "operator"],
+    [`CamundaClusterClaim/cluster/${uid}`, "operator"],
+    [`ElasticsearchCluster/statefulset/${uid}`, "operator"],
+    ["argocd-controller", "gitops"],
+    ["kustomize-controller", "gitops"],
+    ["helm-controller", "gitops"],
+    ["flux-client-side-apply", "gitops"],
+    ["kubectl", "other"],
+    ["kubectl-client-side-apply", "other"],
+    ["kubectl-edit", "other"],
+    ["fleet-manager", "other"],
+    ["my-script", "other"],
+    ["ElasticsearchCluster/statefulset/not-a-uid", "other"],
+  ])("%s is %s", (name, kind) => {
+    expect(managerKind(name)).toBe(kind);
+  });
+
+  it("a manager of an object with an Argo CD or Flux marker is a GitOps tool", () => {
+    const argo = {
+      metadata: { annotations: { "argocd.argoproj.io/tracking-id": "a:b/c" } },
+    };
+    const kustomize = {
+      metadata: { labels: { "kustomize.toolkit.fluxcd.io/name": "apps" } },
+    };
+    const helm = {
+      metadata: { labels: { "helm.toolkit.fluxcd.io/name": "apps" } },
+    };
+    expect(managerKind("kubectl-client-side-apply", argo)).toBe("gitops");
+    expect(managerKind("kubectl-client-side-apply", kustomize)).toBe("gitops");
+    expect(managerKind("my-script", helm)).toBe("gitops");
+    expect(managerKind("camunda-operator/x", argo)).toBe("operator");
+    expect(managerKind("kubectl-client-side-apply", {})).toBe("other");
+  });
+
+  it("the manager of the revision annotation is a GitOps tool", () => {
+    const object = {
+      metadata: {
+        managedFields: [
+          {
+            manager: "fleet-harness-gitops",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+          {
+            manager: "kubectl",
+            operation: "Apply",
+            fieldsV1: { "f:spec": { "f:displayName": {} } },
+          },
+        ],
+      },
+    };
+    expect(revisionManager(object)).toBe("fleet-harness-gitops");
+    expect(managerKind("fleet-harness-gitops", object)).toBe("gitops");
+    expect(managerKind("kubectl", object)).toBe("other");
+  });
+
+  it("an Update entry of the revision annotation names no GitOps tool", () => {
+    const object = {
+      metadata: {
+        managedFields: [
+          {
+            manager: "argo-sync",
+            operation: "Update",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+        ],
+      },
+    };
+    expect(revisionManager(object)).toBeUndefined();
+    expect(managerKind("argo-sync", object)).toBe("other");
+  });
+
+  it("every field manager in the Go source counts as the operator", () => {
+    const root = new URL("../../../../", import.meta.url);
+    const names = new Set<string>();
+    for (const dir of ["internal", "pkg", "api"]) {
+      const base = new URL(`${dir}/`, root);
+      const files = readdirSync(base, { recursive: true, encoding: "utf8" });
+      for (const file of files) {
+        if (!file.endsWith(".go") || file.endsWith("_test.go")) continue;
+        for (const line of readFileSync(new URL(file, base), "utf8").split(
+          "\n",
+        )) {
+          if (/FieldOwner|FieldManager|fieldManager/.test(line)) {
+            for (const [, name] of line.matchAll(/"(camunda-operator[^"]*)"/g))
+              names.add(name);
+          }
+          const prefix = /FieldManagerPrefix\w*\s*=\s*"([^"]+)"/.exec(line);
+          if (prefix) names.add(prefix[1]);
+        }
+      }
+    }
+    const managers = [...names].map((name) =>
+      name.endsWith("/") || name.endsWith("-") ? `${name}x/${uid}` : name,
+    );
+    expect(managers.length).toBeGreaterThanOrEqual(10);
+    expect(managers).not.toContain(APP_FIELD_MANAGER);
+    for (const name of managers)
+      expect([name, managerKind(name)]).toEqual([name, "operator"]);
   });
 });

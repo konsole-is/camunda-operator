@@ -115,7 +115,10 @@ type Remote = {
  * object without a file, and a file behind a symbolic link of the
  * repository, are Invalid, in the preview too for an object to delete. The
  * UID is checked only before the push: GitOps later deletes the object of
- * that name, whatever its UID.
+ * that name, whatever its UID. A change with takeOver or remove and
+ * without directOnly is Invalid in the preview and in apply: GitOps applies
+ * the file under its own field manager, so a take-over by the fleet
+ * manager has no meaning there. A preview has no ownership.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -135,8 +138,14 @@ export function gitWriter(options: GitWriterOptions): Writer {
   const http = options.http ?? defaultHttp;
 
   const preview = async (change: Change): Promise<Preview> => {
-    if (change.directOnly) return direct.preview(change);
-    const refusals = refsOf(change).flatMap(gitRefusalOf);
+    if (change.directOnly) {
+      const { objects, errors } = await direct.preview(change);
+      return { objects, errors };
+    }
+    const refusals = [
+      ...takeOverRefusalsOf(change),
+      ...refsOf(change).flatMap(gitRefusalOf),
+    ];
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
@@ -267,7 +276,10 @@ export function gitWriter(options: GitWriterOptions): Writer {
   const apply = async (change: Change): Promise<WriteResult> => {
     if (change.directOnly) return direct.apply(change);
     return inOrder(`git ${target.url} ${target.branch}`, async () => {
-      const refusals = refsOf(change).flatMap(gitRefusalOf);
+      const refusals = [
+        ...takeOverRefusalsOf(change),
+        ...refsOf(change).flatMap(gitRefusalOf),
+      ];
       if (refusals.length > 0) return { ok: false, errors: refusals };
       const stale = await staleErrors(change);
       if (stale.length > 0) return { ok: false, errors: stale };
@@ -678,6 +690,23 @@ async function exists(file: string): Promise<boolean> {
 function isRejected(error: unknown): boolean {
   const code = (error as { code?: string }).code;
   return code === "PushRejectedError" || code === "GitPushError";
+}
+
+// takeOverRefusalsOf refuses each object of a take-over list of change.
+function takeOverRefusalsOf(change: Change): ApiError[] {
+  const keys = new Set([
+    ...Object.keys(change.takeOver ?? {}),
+    ...Object.keys(change.remove ?? {}),
+  ]);
+  if (keys.size === 0) return [];
+  const listed = change.apply.map(refOf).filter((r) => keys.has(refKey(r)));
+  const refs: (ObjectRef | undefined)[] =
+    listed.length > 0 ? listed : [undefined];
+  return refs.map((ref) => ({
+    code: "Invalid",
+    message: "A take-over is for direct mode.",
+    ...(ref === undefined ? {} : { ref }),
+  }));
 }
 
 function gitRefusalOf(ref: ObjectRef): ApiError[] {

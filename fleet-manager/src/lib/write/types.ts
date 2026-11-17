@@ -1,4 +1,7 @@
 import type { DiffLine } from "@/lib/diff";
+import type { FieldPath, ManagerKind, OwnedStep } from "@/lib/merge";
+
+export type { OwnedStep } from "@/lib/merge";
 
 /** WriteMode is how the app saves: to the API, or as a commit in Git. */
 export type WriteMode = "direct" | "git";
@@ -42,6 +45,15 @@ export type RefKey = `${string}/${string}/${string}`;
  * server-side apply. A change with directOnly goes to the API in Git mode
  * too.
  *
+ * takeOver and remove are the choice of a review in direct mode: for an
+ * applied object with a precondition, the fields of other field managers
+ * that the save changes and takes over, and those that it clears and
+ * removes. Each list must equal the fields that Preview.ownership offers
+ * for the object at that resourceVersion. A listed field that a controller
+ * of the operator owns fails with Conflict, any other difference with
+ * Invalid. A change with a list has no force. The Git writer refuses a
+ * change with a list and without directOnly.
+ *
  * The preview of the direct writer applies an object of previewManagers as
  * the field manager that it maps to, unless it sends the object as a merge
  * patch. It sends an object of previewMergePatches as the JSON merge patch
@@ -59,6 +71,8 @@ export type Change = {
   generations?: Record<RefKey, number>;
   create?: RefKey[];
   force?: boolean;
+  takeOver?: Record<RefKey, FieldPath[]>;
+  remove?: Record<RefKey, FieldPath[]>;
   directOnly?: boolean;
   previewManagers?: Record<RefKey, string>;
   previewMergePatches?: RefKey[];
@@ -94,8 +108,49 @@ export type PreviewObject = {
   diff: DiffLine[];
 };
 
-/** Preview is the result of a dry run. An object with an error is not in objects. */
-export type Preview = { objects: PreviewObject[]; errors: ApiError[] };
+/**
+ * ForeignManager is a field manager other than the server-side apply of
+ * the fleet manager. known is false for a manager of the kind other that
+ * isKnownManager does not know.
+ */
+export type ForeignManager = {
+  name: string;
+  operation: string;
+  kind: ManagerKind;
+  known: boolean;
+};
+
+/**
+ * ForeignField is a field that other field managers own. steps lead from
+ * the root of the object to the field, as path names it.
+ */
+export type ForeignField = {
+  path: FieldPath;
+  steps: OwnedStep[];
+  managers: ForeignManager[];
+};
+
+/**
+ * ObjectOwnership holds the fields of other field managers that a save of
+ * ref changes, and those that it leaves out while they own them.
+ */
+export type ObjectOwnership = {
+  ref: ObjectRef;
+  changed: ForeignField[];
+  cleared: ForeignField[];
+};
+
+/**
+ * Preview is the result of a dry run. An object with an error is not in
+ * objects. ownership holds each updated object with a precondition that
+ * has a changed or cleared field of another field manager, also when the
+ * object has an error. The Git writer never sets it.
+ */
+export type Preview = {
+  objects: PreviewObject[];
+  errors: ApiError[];
+  ownership?: ObjectOwnership[];
+};
 
 /**
  * WriteResult is the result of a write. In Git mode, revisions maps each

@@ -1,3 +1,4 @@
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { child, indexItem, keyedItem, valueItem, type FieldPath } from "./path";
 
 /** APP_FIELD_MANAGER is the field manager of every write of the app. */
@@ -15,6 +16,121 @@ export function isClaimManager(manager: string): boolean {
     manager.startsWith(CLUSTER_CLAIM_MANAGER_PREFIX) ||
     manager.startsWith(PLANE_CLAIM_MANAGER_PREFIX)
   );
+}
+
+/**
+ * OPERATOR_MANAGER_PREFIXES start the field managers of the operator
+ * controllers. A controller writes its field back on its next pass, so the
+ * fleet manager never takes such a field over.
+ */
+export const OPERATOR_MANAGER_PREFIXES: readonly string[] = [
+  "camunda-operator/",
+  CLUSTER_CLAIM_MANAGER_PREFIX,
+  PLANE_CLAIM_MANAGER_PREFIX,
+];
+
+/** OPERATOR_MANAGERS are the field managers of the operator without a prefix of OPERATOR_MANAGER_PREFIXES. */
+export const OPERATOR_MANAGERS: readonly string[] = [
+  "camunda-operator-builtins",
+];
+
+// An ocf component applies as <Kind>/<component>/<owner uid>.
+const OCF_MANAGER = /^[A-Z][A-Za-z0-9]*\/[^/]+\/[0-9a-f-]{36}$/;
+
+/**
+ * GITOPS_MANAGER_PATTERNS match the field managers of Argo CD and Flux,
+ * which set their own value again on the next sync.
+ */
+export const GITOPS_MANAGER_PATTERNS: readonly RegExp[] = [
+  /^argocd-/,
+  /^kustomize-controller$/,
+  /^helm-controller$/,
+  /^flux/,
+];
+
+/**
+ * GITOPS_MARKERS are the annotations and labels that Argo CD and Flux put
+ * on an object that they sync. Argo CD with client-side apply leaves no
+ * argocd name in managedFields, so only the marker shows it.
+ */
+export const GITOPS_MARKERS: {
+  readonly annotations: readonly string[];
+  readonly labels: readonly string[];
+} = {
+  annotations: ["argocd.argoproj.io/tracking-id"],
+  labels: ["kustomize.toolkit.fluxcd.io/name", "helm.toolkit.fluxcd.io/name"],
+};
+
+/** ManagerKind is who a field manager is: a controller of the operator, a GitOps tool, or any other tool. */
+export type ManagerKind = "operator" | "gitops" | "other";
+
+/**
+ * managerKind returns the kind of the field manager name on object. Every
+ * manager of an object with a GITOPS_MARKERS marker is a GitOps tool,
+ * unless it is the operator. Without object, only the name decides. An
+ * unknown name is "other".
+ */
+export function managerKind(
+  name: string,
+  object?: ManagedObject & {
+    metadata?: {
+      labels?: Record<string, string>;
+      annotations?: Record<string, string>;
+    };
+  },
+): ManagerKind {
+  if (
+    OPERATOR_MANAGERS.includes(name) ||
+    OPERATOR_MANAGER_PREFIXES.some((prefix) => name.startsWith(prefix)) ||
+    OCF_MANAGER.test(name)
+  )
+    return "operator";
+  const annotations = object?.metadata?.annotations ?? {};
+  const labels = object?.metadata?.labels ?? {};
+  if (
+    GITOPS_MARKERS.annotations.some((key) => Object.hasOwn(annotations, key)) ||
+    GITOPS_MARKERS.labels.some((key) => Object.hasOwn(labels, key)) ||
+    GITOPS_MANAGER_PATTERNS.some((pattern) => pattern.test(name)) ||
+    (object !== undefined && revisionManager(object) === name)
+  )
+    return "gitops";
+  return "other";
+}
+
+const KNOWN_TOOLS: readonly string[] = [
+  "kubectl",
+  "kubectl-client-side-apply",
+  "kubectl-edit",
+  "kubectl-patch",
+  "kubectl-create",
+  "kubectl-replace",
+  "helm",
+  APP_FIELD_MANAGER,
+];
+
+/**
+ * isKnownManager reports whether the field manager name is a tool that
+ * the fleet manager knows: kubectl, helm, the fleet manager itself, or a
+ * name that managerKind gives the kind operator or gitops.
+ */
+export function isKnownManager(name: string): boolean {
+  return KNOWN_TOOLS.includes(name) || managerKind(name) !== "other";
+}
+
+/**
+ * revisionManager returns the field manager that applied the annotation
+ * REVISION_ANNOTATION of object with server-side apply: the GitOps tool of
+ * the repository of the fleet manager. It is never APP_FIELD_MANAGER. It is
+ * undefined when no such manager exists, for example when the GitOps tool
+ * applies with client-side apply.
+ */
+export function revisionManager(object: ManagedObject): string | undefined {
+  const applied = (object.metadata?.managedFields ?? []).filter(
+    (e) => e.operation === "Apply" && e.manager !== APP_FIELD_MANAGER,
+  );
+  return fieldManagers({ metadata: { managedFields: applied } })[
+    child(child("metadata", "annotations"), REVISION_ANNOTATION)
+  ];
 }
 
 /** ManagedFieldsEntry holds the fields of a managedFields entry that fieldManagers reads. */
@@ -86,40 +202,156 @@ export function keptRemovals(
   after: object,
   applier: string = APP_FIELD_MANAGER,
 ): { kept: KeptField[]; result: object } {
-  const tree = newOwners();
-  for (const entry of live.metadata?.managedFields ?? []) {
-    // An Update entry of the same name is another manager to the API
-    // server, and an entry of a subresource owns no field of the object.
-    const own = entry.manager === applier && entry.operation === "Apply";
-    if (!entry.manager || own || entry.subresource || !entry.fieldsV1) continue;
-    addOwner(tree, entry.fieldsV1 as Record<string, unknown>, entry.manager);
-  }
+  const tree = ownerTree(
+    live,
+    (entry) => !entry.subresource && !isApplyOf(entry, applier),
+  );
   const kept: KeptField[] = [];
   const result = restore(tree, before, after, "", kept) as object;
   return { kept, result };
 }
 
-// Owners is the merged FieldsV1 tree of several managers: the managers
-// that own each node, by the FieldsV1 key of each child. whole says that a
-// manager owns the node with no child keys, not only by ".".
-type Owners = {
-  managers: string[];
-  whole: boolean;
-  children: Map<string, Owners>;
+/** FieldOwner is one managedFields entry as an owner of a field. */
+export type FieldOwner = { manager: string; operation: string };
+
+/**
+ * OwnerTree is the FieldsV1 trees of several managedFields entries merged
+ * into one. owners own the node itself, with no child keys or by the key
+ * ".". whole are the owners with no child keys: they own a leaf, an atomic
+ * list, or an atomic map as one value. children holds the node of each
+ * FieldsV1 key below.
+ */
+export type OwnerTree = {
+  owners: FieldOwner[];
+  whole: FieldOwner[];
+  children: Map<string, OwnerTree>;
 };
 
-function newOwners(): Owners {
-  return { managers: [], whole: false, children: new Map() };
+/**
+ * ownerTree merges the FieldsV1 tree of each entry of
+ * object.metadata.managedFields that include accepts. An entry without a
+ * manager or without fieldsV1 is never in the tree.
+ */
+export function ownerTree(
+  object: ManagedObject,
+  include: (entry: ManagedFieldsEntry) => boolean,
+): OwnerTree {
+  const tree = newOwners();
+  for (const entry of object.metadata?.managedFields ?? []) {
+    if (!entry.manager || !entry.fieldsV1) continue;
+    if (!include(entry)) continue;
+    addOwner(tree, entry.fieldsV1 as Record<string, unknown>, {
+      manager: entry.manager,
+      operation: entry.operation ?? "",
+    });
+  }
+  return tree;
+}
+
+/**
+ * isApplyOf reports whether entry is the server-side apply entry of
+ * manager. An Update entry of the same name is another manager to the API
+ * server.
+ */
+export function isApplyOf(entry: ManagedFieldsEntry, manager: string): boolean {
+  return entry.manager === manager && entry.operation === "Apply";
+}
+
+/**
+ * OwnedStep is one step of a field path from the root of an object: a
+ * field or map key, the item of a list with these key values, the item of
+ * a set list with this value, or the item at an index.
+ */
+export type OwnedStep =
+  | { field: string }
+  | { item: Record<string, unknown> }
+  | { value: unknown }
+  | { index: number };
+
+/**
+ * stepOf returns the step of one FieldsV1 key: f: for a field or a map key,
+ * k: for a list item by key, v: for a set item, i: for a list index. It
+ * returns undefined for "." and for a key that it cannot read.
+ */
+export function stepOf(key: string): OwnedStep | undefined {
+  const rest = key.slice(2);
+  try {
+    switch (key.slice(0, 2)) {
+      case "f:":
+        return { field: rest };
+      case "k:": {
+        const item: unknown = JSON.parse(rest);
+        return isRecord(item) ? { item } : undefined;
+      }
+      case "v:":
+        return { value: JSON.parse(rest) };
+      case "i:": {
+        const index = Number(rest);
+        return Number.isInteger(index) ? { index } : undefined;
+      }
+      default:
+        return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+/** stepPath returns the path of step under path, built with the functions of path.ts. */
+export function stepPath(path: FieldPath, step: OwnedStep): FieldPath {
+  if ("field" in step) return child(path, step.field);
+  if ("item" in step) return keyedItem(path, step.item);
+  if ("value" in step) return valueItem(path, step.value);
+  return indexItem(path, step.index);
+}
+
+/**
+ * itemOwners finds the node of item of a list in owners: a k: node whose
+ * key values item holds, or the v: node of its value. matches reports
+ * whether another item is the same item, and step is the step to it. It
+ * returns undefined when no manager owns item or anything in it.
+ */
+export function itemOwners(
+  owners: OwnerTree,
+  item: unknown,
+):
+  | {
+      owners: OwnerTree;
+      step: OwnedStep;
+      matches: (candidate: unknown) => boolean;
+    }
+  | undefined {
+  for (const [key, node] of owners.children) {
+    if (!key.startsWith("k:")) continue;
+    const step = stepOf(key);
+    if (step === undefined || !("item" in step)) continue;
+    const keys = step.item;
+    const matches = (candidate: unknown) =>
+      isRecord(candidate) &&
+      Object.entries(keys).every(([k, v]) => sameJSON(candidate[k], v));
+    if (matches(item)) return { owners: node, step, matches };
+  }
+  const node = owners.children.get(`v:${JSON.stringify(item)}`);
+  if (node === undefined) return undefined;
+  return {
+    owners: node,
+    step: { value: item },
+    matches: (candidate) => sameJSON(candidate, item),
+  };
+}
+
+function newOwners(): OwnerTree {
+  return { owners: [], whole: [], children: new Map() };
 }
 
 function addOwner(
-  at: Owners,
+  at: OwnerTree,
   fields: Record<string, unknown>,
-  manager: string,
+  owner: FieldOwner,
 ): void {
   for (const [key, sub] of Object.entries(fields)) {
     if (key === ".") {
-      own(at, manager);
+      own(at.owners, owner);
       continue;
     }
     let next = at.children.get(key);
@@ -129,9 +361,9 @@ function addOwner(
     }
     const children = isRecord(sub) ? sub : {};
     if (Object.keys(children).length === 0) {
-      own(next, manager);
-      next.whole = true;
-    } else addOwner(next, children, manager);
+      own(next.owners, owner);
+      own(next.whole, owner);
+    } else addOwner(next, children, owner);
   }
 }
 
@@ -140,7 +372,7 @@ function addOwner(
 function inOrderOf(
   before: unknown[],
   items: unknown[],
-  owners: Owners,
+  owners: OwnerTree,
 ): unknown[] {
   const keys = [...owners.children.keys()].find((k) => k.startsWith("k:"));
   let names: string[] | undefined;
@@ -163,14 +395,23 @@ function inOrderOf(
     .map(({ item }) => item);
 }
 
-function own(at: { managers: string[] }, manager: string): void {
-  if (!at.managers.includes(manager)) at.managers.push(manager);
+function own(owners: FieldOwner[], owner: FieldOwner): void {
+  if (
+    !owners.some(
+      (o) => o.manager === owner.manager && o.operation === owner.operation,
+    )
+  )
+    owners.push(owner);
+}
+
+function addName(names: string[], manager: string): void {
+  if (!names.includes(manager)) names.push(manager);
 }
 
 // restore returns after with each value of before that owners own and
 // after leaves out put back, and adds it to kept, or its managers to into.
 function restore(
-  owners: Owners,
+  owners: OwnerTree,
   before: unknown,
   after: unknown,
   path: FieldPath,
@@ -178,13 +419,18 @@ function restore(
   into?: KeptField,
   seed?: unknown,
 ): unknown {
-  if (after === undefined && owners.managers.length > 0) {
+  if (after === undefined && owners.owners.length > 0) {
     let entry = into;
-    if (entry) owners.managers.forEach((m) => own(entry!, m));
-    else kept.push((entry = { path, managers: [...owners.managers] }));
+    if (entry)
+      owners.owners.forEach((o) => addName(entry!.managers, o.manager));
+    else {
+      entry = { path, managers: [] };
+      owners.owners.forEach((o) => addName(entry!.managers, o.manager));
+      kept.push(entry);
+    }
     // A node owned only by "." is owned for its presence: of its
     // children, only those that other managers own stay.
-    if (owners.whole) return before;
+    if (owners.whole.length > 0) return before;
     const empty = Array.isArray(before) ? [] : (seed ?? {});
     return restore(owners, before, empty, path, kept, entry);
   }
@@ -201,10 +447,10 @@ function restore(
         found.owners,
         item,
         current,
-        found.path(path),
+        stepPath(path, found.step),
         kept,
         into,
-        found.seed,
+        "item" in found.step ? { ...found.step.item } : undefined,
       );
       if (next === current) continue;
       changed = true;
@@ -230,47 +476,6 @@ function restore(
     return changed ? fields : after;
   }
   return after;
-}
-
-// itemOwners finds the node of item of a list: a k: node whose keys item
-// holds, or the v: node of its value.
-function itemOwners(
-  owners: Owners,
-  item: unknown,
-):
-  | {
-      owners: Owners;
-      matches: (candidate: unknown) => boolean;
-      path: (list: FieldPath) => FieldPath;
-      seed?: unknown;
-    }
-  | undefined {
-  for (const [key, node] of owners.children) {
-    if (!key.startsWith("k:")) continue;
-    let keys: Record<string, unknown>;
-    try {
-      keys = JSON.parse(key.slice(2)) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const matches = (candidate: unknown) =>
-      isRecord(candidate) &&
-      Object.entries(keys).every(([k, v]) => sameJSON(candidate[k], v));
-    if (matches(item))
-      return {
-        owners: node,
-        matches,
-        path: (list) => keyedItem(list, keys),
-        seed: { ...keys },
-      };
-  }
-  const node = owners.children.get(`v:${JSON.stringify(item)}`);
-  if (node === undefined) return undefined;
-  return {
-    owners: node,
-    matches: (candidate) => sameJSON(candidate, item),
-    path: (list) => valueItem(list, item),
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -336,25 +541,9 @@ function walk(
   }
 }
 
-// segment turns one FieldsV1 key into the path of its node: f: for a field
-// or a map key, k: for a list item by key, v: for a set item, i: for a list
-// index. It returns undefined for a key it cannot read.
+// segment turns one FieldsV1 key into the path of its node, or undefined
+// for a key that stepOf cannot read.
 function segment(path: FieldPath, key: string): FieldPath | undefined {
-  const rest = key.slice(2);
-  try {
-    switch (key.slice(0, 2)) {
-      case "f:":
-        return child(path, rest);
-      case "k:":
-        return keyedItem(path, JSON.parse(rest) as Record<string, unknown>);
-      case "v:":
-        return valueItem(path, JSON.parse(rest));
-      case "i:":
-        return indexItem(path, Number(rest));
-      default:
-        return undefined;
-    }
-  } catch {
-    return undefined;
-  }
+  const step = stepOf(key);
+  return step === undefined ? undefined : stepPath(path, step);
 }

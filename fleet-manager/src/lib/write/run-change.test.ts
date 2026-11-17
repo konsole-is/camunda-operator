@@ -1697,3 +1697,208 @@ describe("claimBatchChangeSchema", () => {
     expect(claimBatchChangeSchema.safeParse(batch(over)).success).toBe(false);
   });
 });
+
+describe("take-over lists", () => {
+  const envKey = "Environment//prod";
+  const update = {
+    ...validChange,
+    preconditions: { [envKey]: "7" },
+  };
+  const issues = (
+    schema: { safeParse(input: unknown): unknown },
+    input: object,
+  ) => {
+    const result = schema.safeParse(input) as {
+      success: boolean;
+      error?: { issues: { message: string; path: PropertyKey[] }[] };
+    };
+    return result.success
+      ? []
+      : result.error!.issues.map((i) => ({
+          message: i.message,
+          path: i.path.join("."),
+        }));
+  };
+
+  it("changeSchema keeps takeOver and remove", () => {
+    const input = {
+      ...update,
+      takeOver: { [envKey]: ["spec.displayName"] },
+      remove: { [envKey]: ['spec.presets.camundaCluster[="b"]'] },
+    };
+    expect(changeSchema.parse(input)).toEqual(input);
+  });
+
+  it("refuses a list without a precondition, also on a created object", () => {
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        takeOver: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "takeOver",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        create: [envKey],
+        remove: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "remove",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...update,
+        takeOver: { "Environment//other": ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "takeOver",
+      },
+    ]);
+  });
+
+  it("refuses force beside a list", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        force: true,
+        remove: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      { message: "force and a take-over do not go together.", path: "force" },
+    ]);
+  });
+
+  it("refuses a field listed twice", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        takeOver: { [envKey]: ["spec.displayName", "spec.displayName"] },
+      }),
+    ).toEqual([
+      { message: "A take-over lists each field once.", path: "takeOver" },
+    ]);
+  });
+
+  it("refuses an empty list and an empty path", () => {
+    expect(
+      changeSchema.safeParse({ ...update, takeOver: { [envKey]: [] } }).success,
+    ).toBe(false);
+    expect(
+      changeSchema.safeParse({ ...update, remove: { [envKey]: [""] } }).success,
+    ).toBe(false);
+  });
+
+  it("claimChangeSchema accepts a take-over of its claim", () => {
+    expect(
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
+        intent: "Move the plane",
+        apply: [planeClaim],
+        preconditions: { [planeKey]: "3" },
+        takeOver: { [planeKey]: ["spec.versions.identity"] },
+        remove: { [planeKey]: ["spec.deletionPolicy"] },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("claimBatchChangeSchema accepts takeOver and refuses remove", () => {
+    const claim = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-a" },
+      spec: { releaseRef: "camunda-8-9-1" },
+    };
+    const key = "CamundaClusterClaim/team-a/orders";
+    const move = {
+      intent: "Move 1 cluster",
+      apply: [claim],
+      preconditions: { [key]: "4" },
+    };
+    expect(
+      claimBatchChangeSchema.safeParse({
+        ...move,
+        takeOver: { [key]: ["spec.releaseRef"] },
+      }).success,
+    ).toBe(true);
+    expect(
+      claimBatchChangeSchema.safeParse({
+        ...move,
+        remove: { [key]: ["spec.allowVersionDowngrade"] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("createChangeSchema, claimDeleteSchema, backupChangeSchema, and namespaceLabelChangeSchema refuse a list", () => {
+    const claimRef = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    };
+    const claimKey = "CamundaClusterClaim/team-a/orders";
+    const remove = {
+      intent: "Delete the cluster orders",
+      apply: [],
+      delete: [claimRef],
+      uids: { [claimKey]: "uid-1" },
+      generations: { [claimKey]: 3 },
+    };
+    const backupKey = "LogicalBackupElasticsearch/team-a/orders-manual-1";
+    const backup = {
+      intent: "Back up orders",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalBackupElasticsearch",
+          metadata: { name: "orders-manual-1", namespace: "team-a" },
+          spec: { clusterRef: { name: "orders" } },
+        },
+      ],
+      create: [backupKey],
+      directOnly: true,
+    };
+    const create = {
+      intent: "Create the plane",
+      apply: [planeClaim],
+      create: [planeKey],
+    };
+    const backups = backupChangeSchema({ namespace: "team-a", name: "orders" });
+    const cases: [
+      { safeParse(input: unknown): { success: boolean } },
+      object,
+      string,
+    ][] = [
+      [createChangeSchema, create, planeKey],
+      [claimDeleteSchema("CamundaClusterClaim"), remove, claimKey],
+      [backups, backup, backupKey],
+      [namespaceLabelChangeSchema, label(STAGING), "Namespace//team-a"],
+    ];
+    for (const [schema, change, key] of cases) {
+      expect(schema.safeParse(change).success).toBe(true);
+      for (const list of ["takeOver", "remove"])
+        expect(
+          schema.safeParse({ ...change, [list]: { [key]: ["spec.x"] } })
+            .success,
+        ).toBe(false);
+    }
+  });
+
+  it("adminChangeSchema accepts both lists on an update", () => {
+    expect(
+      adminChangeSchema(["Environment"]).safeParse({
+        ...update,
+        takeOver: { [envKey]: ["spec.displayName"] },
+        remove: { [envKey]: ["spec.color"] },
+      }).success,
+    ).toBe(true);
+  });
+});
