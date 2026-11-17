@@ -681,6 +681,115 @@ describe("ClaimReview with fields of another tool", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("the diff shows a reset field of another tool as removed only after the choice", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:cluster": {
+                  "f:zeebe": { "f:partitions": {}, "f:replicas": {} },
+                },
+              },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [] },
+    ];
+    review({ session: reset.session });
+    const diff = () => screen.getByRole("region", { name: "Review" });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    // Without the choice, the field stays, so the save changes nothing.
+    expect(diff().querySelector("del")).toBeNull();
+    expect(diff().textContent).toContain("No changes");
+
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(diff().querySelector("del")?.textContent?.trim()).toBe(
+        "partitions: 3",
+      ),
+    );
+    expect(diff().querySelectorAll("del")).toHaveLength(1);
+  });
+
+  it("with the choice, a reset field that the API server defaults shows its default value in the row and the diff", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:cluster": {
+                  "f:zeebe": { "f:partitions": {}, "f:replicas": {} },
+                },
+              },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    const defaulted = {
+      ...claim,
+      spec: { cluster: { zeebe: { replicas: 3, partitions: 1 } } },
+    } as KubeObject;
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [{ ref, after: defaulted, diff: [] }], errors: [] },
+    ];
+    review({ session: reset.session });
+    await waitFor(() => expect(choice()).toBeTruthy());
+
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.cluster.zeebe.partitions: kubectl-client-side-apply set it. It gets its default value 1 again.",
+      ),
+    );
+    const diff = screen.getByRole("region", { name: "Review" });
+    expect(diff.querySelector("del")?.textContent?.trim()).toBe(
+      "partitions: 3",
+    );
+    expect(diff.querySelector("ins")?.textContent?.trim()).toBe(
+      "partitions: 1",
+    );
+  });
+
   it("the choice resets after a rebase", async () => {
     fakeWriter.previews = [conflicted, clean, conflicted];
     const first = session();

@@ -11,6 +11,10 @@ import {
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { createCluster } from "@/app/fleet/clusters/new/actions";
 import {
+  applyPlaneClaimChange,
+  previewPlaneClaimChange,
+} from "@/app/fleet/planes/[namespace]/[name]/actions";
+import {
   applyContractChange,
   previewContractChange,
 } from "@/app/setup/connections/actions";
@@ -44,6 +48,8 @@ import {
   type ManagedFieldsEntry,
   type ManagedObject,
 } from "@/lib/merge";
+import { suspendChange } from "@/lib/planes/suspend";
+import type { ClaimObject } from "@/lib/session";
 import { createChangeOf } from "@/lib/write/create";
 import { offered, withTakeOver } from "@/lib/write/ownership";
 import type { Change, KubeObject, Preview } from "@/lib/write/types";
@@ -699,6 +705,187 @@ describe("a take-over against the API server", () => {
         (e) => `${e.manager}/${e.operation}`,
       ),
     ).toEqual([`${APP_FIELD_MANAGER}/Apply`]);
+  });
+
+  it("a reset of a cluster claim field that kubectl apply set stays without the choice and goes with it", async () => {
+    const made = clusterClaim(unique("orders"), {
+      presetRef: "medium",
+      releaseRef: "camunda-8-9-1",
+      platformConfigRef: "strict",
+    });
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    const change = updateOf(
+      "Reset the platform config",
+      live,
+      clusterClaim(made.metadata.name, {
+        presetRef: "medium",
+        releaseRef: "camunda-8-9-1",
+      }),
+    );
+
+    const preview = await previewClaimChange(change);
+    expect(clearedPaths(preview)).toEqual(["spec.platformConfigRef"]);
+    expect(await applyClaimChange(change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect((await read(made)).spec.platformConfigRef).toBe("strict");
+
+    const again = updateOf(
+      "Reset the platform config",
+      await read(made),
+      change.apply[0],
+    );
+    const chosen = withTakeOver(
+      again,
+      (await previewClaimChange(again)).ownership ?? [],
+    );
+    expect(chosen.remove).toEqual({
+      [keyOf(made)]: ["spec.platformConfigRef"],
+    });
+    expect(await applyClaimChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect((await read(made)).spec).not.toHaveProperty("platformConfigRef");
+  });
+
+  it("a reset of a cluster claim field with a default that kubectl apply set gets the default again with the choice, as the preview shows", async () => {
+    const spec = (retained: object) => ({
+      presetRef: "medium",
+      releaseRef: "camunda-8-9-1",
+      attachments: { backupSchedule: { schedule: "0 2 * * *", retained } },
+    });
+    const made = clusterClaim(unique("orders"), spec({ completed: 10 }));
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    const change = updateOf(
+      "Reset the completed backups",
+      live,
+      clusterClaim(made.metadata.name, spec({ failed: 3 })),
+    );
+    const path = "spec.attachments.backupSchedule.retained.completed";
+
+    const preview = await previewClaimChange(change);
+    expect(clearedPaths(preview)).toEqual([path]);
+    const chosen = withTakeOver(change, preview.ownership ?? []);
+    expect(chosen.remove).toEqual({ [keyOf(made)]: [path] });
+    const checked = await previewClaimChange(chosen);
+    expect(checked.errors).toEqual([]);
+    const retained = (object: KubeObject | undefined) =>
+      (object?.spec as ReturnType<typeof spec>).attachments.backupSchedule
+        .retained;
+    expect(retained(checked.objects[0].after)).toEqual({
+      completed: 7,
+      failed: 3,
+    });
+
+    expect(await applyClaimChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(retained(await read(made))).toEqual({ completed: 7, failed: 3 });
+  });
+
+  it("Suspend of a plane claim whose spec.suspend kubectl set writes only with the choice", async () => {
+    const made: KubeObject = {
+      apiVersion: fleet,
+      kind: "CamundaManagementClusterClaim",
+      metadata: { name: unique("plane"), namespace },
+      spec: {
+        environments: [namespace],
+        suspend: false,
+        management: {
+          identityProvider: { oidc: {} },
+          identity: {
+            externalUrl: "https://management.example.com/identity",
+            admin: { claimName: "sub", claimValue: "42" },
+          },
+        },
+        versions: { identity: "8.9.14" },
+      },
+    };
+    await createClientSideApplied(api, made);
+    const change = suspendChange(
+      (await read(made)) as unknown as ClaimObject,
+      true,
+    );
+
+    expect(await applyPlaneClaimChange(change)).toMatchObject({
+      ok: false,
+      errors: [{ code: "Conflict", path: "spec.suspend" }],
+    });
+    const preview = await previewPlaneClaimChange(change);
+    expect(changedPaths(preview)).toEqual(["spec.suspend"]);
+    expect(
+      await applyPlaneClaimChange(
+        withTakeOver(change, preview.ownership ?? []),
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+    const after = await read(made);
+    expect(after.spec.suspend).toBe(true);
+    expect(owns(after, APP_FIELD_MANAGER, ["f:spec", "f:suspend"])).toBe(true);
+    expect(
+      owns(after, "kubectl-client-side-apply", ["f:spec", "f:suspend"]),
+    ).toBe(false);
+  });
+
+  it("a move of the plane identity mode that kubectl set fails in the preview with the take-over, and writes nothing", async () => {
+    // The removal of oidc and of the claim pair comes after the apply, and
+    // the CRD refuses the claim between the two writes.
+    const spec = {
+      environments: [namespace],
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          externalUrl: "https://management.example.com/identity",
+          admin: { claimName: "sub", claimValue: "42" },
+        },
+      },
+      versions: { identity: "8.9.14" },
+    };
+    const made: KubeObject = {
+      apiVersion: fleet,
+      kind: "CamundaManagementClusterClaim",
+      metadata: { name: unique("plane"), namespace },
+      spec,
+    };
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    const change = updateOf("Move the sign-in", live, {
+      ...made,
+      spec: {
+        ...spec,
+        management: {
+          identityProvider: {
+            externalKeycloak: {
+              url: "https://keycloak.example.com/auth",
+              adminCredentialsSecretRef: { name: "keycloak-admin" },
+            },
+          },
+          identity: {
+            externalUrl: "https://management.example.com/identity",
+            admin: { username: "admin" },
+          },
+        },
+      },
+    });
+
+    const preview = await previewPlaneClaimChange(change);
+    const chosen = withTakeOver(change, preview.ownership ?? []);
+    const checked = await previewPlaneClaimChange(chosen);
+    expect(checked.errors).toContainEqual(
+      expect.objectContaining({
+        code: "Invalid",
+        path: "spec.management.identityProvider",
+        message: expect.stringContaining("exactly one identity provider"),
+      }),
+    );
+    expect(await applyPlaneClaimChange(chosen)).toMatchObject({ ok: false });
+    expect((await read(made)).metadata.resourceVersion).toBe(
+      live.metadata.resourceVersion,
+    );
   });
 
   it("the choice is not stored", async () => {

@@ -32,10 +32,11 @@ type Claim = {
   };
 };
 
-// The scenario applied the claim with kubectl, which owns its fields. The
-// fleet manager does not take a field over, so a field that kubectl owns
-// stays, and the review names it.
-test("a move of the identity mode names the fields that kubectl keeps, and writes nothing", async ({
+// The scenario applied the claim with kubectl, which owns its fields. A
+// field that kubectl owns stays until the review takes it over. The save
+// removes the fields of kubectl after it applies the new provider, and the
+// CRD refuses a claim with two providers, so this move cannot save.
+test("a move of the identity mode shows what it does, and the take-over of the kubectl provider meets the one-provider rule", async ({
   page,
   scenario,
 }) => {
@@ -56,20 +57,35 @@ test("a move of the identity mode names the fields that kubectl keeps, and write
     .click();
 
   const dialog = page.getByRole("dialog", { name: "Review the change" });
-  const caution = dialog.getByRole("note", { name: "Caution" });
-  await expect(caution).toContainText("another field manager also set them");
-  await expect(caution).toContainText(
-    "spec.management.identityProvider.oidc (kubectl)",
+  const fields = dialog.getByRole("group", {
+    name: "Fields that another tool set",
+  });
+  await expect(fields).toContainText(
+    "spec.management.identityProvider.oidc: kubectl set it. It stays unless you take it over.",
   );
-  await expect(caution).toContainText(
-    "spec.management.identity.admin.claimName (kubectl)",
+  await expect(fields).toContainText(
+    "spec.management.identity.admin.claimName: kubectl set it.",
   );
   await expect(dialog.getByText(/Sign-in moves/)).toHaveCount(0);
   await checkPage(page, "plane-claim-review");
 
-  await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  const save = dialog.getByRole("button", { name: "Save" });
+  await expect(save).toBeDisabled();
   const claim = await kubeRequest<Claim>(scenario.admin, "GET", CLAIM);
   expect(claim.spec.management.identityProvider).toEqual({ oidc: {} });
+
+  await fields
+    .getByRole("checkbox", { name: "Take over these fields" })
+    .click();
+  await expect(fields).toContainText(
+    "spec.management.identityProvider.oidc: kubectl set it. The save removes it, or it gets its default value again.",
+  );
+  await expect(dialog.getByText(/Sign-in moves/).first()).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "exactly one identity provider",
+  );
+  await expect(save).toBeDisabled();
+  await checkPage(page, "plane-claim-review-take-over");
 });
 
 test("a change of the deletion policy saves only the claim", async ({

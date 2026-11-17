@@ -11,8 +11,10 @@ import type {
   ApiError,
   ForeignField,
   ForeignManager,
+  KubeObject,
   ObjectOwnership,
   ObjectRef,
+  Preview,
 } from "@/lib/write/types";
 import {
   TakeOverChoice,
@@ -79,6 +81,7 @@ function show(
   ownership: ObjectOwnership[],
   chosen = false,
   labelOf?: (ref: ObjectRef) => string,
+  taken?: Preview,
 ) {
   const onChoose = vi.fn();
   render(
@@ -87,10 +90,27 @@ function show(
       chosen={chosen}
       onChoose={onChoose}
       labelOf={labelOf}
+      taken={taken}
     />,
   );
   return { onChoose, group: screen.getByRole("group", { name: TITLE }) };
 }
+
+const takenPreview = (ref: ObjectRef, spec: object): Preview => ({
+  objects: [
+    {
+      ref,
+      after: {
+        apiVersion: ref.apiVersion,
+        kind: ref.kind,
+        metadata: { name: ref.name, namespace: ref.namespace },
+        spec,
+      } as KubeObject,
+      diff: [],
+    },
+  ],
+  errors: [],
+});
 
 const TITLE = "Fields that another tool set";
 const KUBECTL_LINE =
@@ -140,6 +160,7 @@ describe("TakeOverChoice", () => {
 
   it("says that a cleared field stays until the choice, and is removed after it", () => {
     const ownership = [owned(environment, [], [field("spec.color", kubectl)])];
+    const removed = takenPreview(environment, { displayName: "Stage" });
     const first = show(ownership);
     expect(first.group.textContent).toContain(
       "spec.color: kubectl-client-side-apply set it. It stays unless you take it over.",
@@ -148,7 +169,7 @@ describe("TakeOverChoice", () => {
     expect(first.group.textContent).not.toContain(BLOCKED);
     cleanup();
 
-    const { group } = show(ownership, true);
+    const { group } = show(ownership, true, undefined, removed);
     expect(group.textContent).toContain(
       "spec.color: kubectl-client-side-apply set it. The save removes it.",
     );
@@ -157,6 +178,47 @@ describe("TakeOverChoice", () => {
         .getByRole("checkbox", { name: "Take over these fields" })
         .getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("says that a chosen cleared field gets its default value again when the preview with the take-over still holds it", () => {
+    const ownership = [
+      owned(
+        claim("orders"),
+        [],
+        [
+          field("spec.attachments.backupSchedule.retained.completed", kubectl),
+          field("spec.attachments.backupSchedule.retained", edit),
+        ],
+      ),
+    ];
+    const { group } = show(
+      ownership,
+      true,
+      undefined,
+      takenPreview(claim("orders"), {
+        attachments: { backupSchedule: { retained: { completed: 7 } } },
+      }),
+    );
+    expect(group.textContent).toContain(
+      "spec.attachments.backupSchedule.retained.completed: kubectl-client-side-apply set it. It gets its default value 7 again.",
+    );
+    expect(group.textContent).toContain(
+      "spec.attachments.backupSchedule.retained: kubectl-edit set it. It gets its default value again.",
+    );
+    expect(group.textContent).not.toContain("The save removes it");
+  });
+
+  it("names both outcomes of a chosen cleared field until the preview with the take-over has its object", () => {
+    const ownership = [
+      owned(claim("orders"), [], [field("spec.color", kubectl)]),
+    ];
+    const { group } = show(ownership, true, undefined, {
+      objects: [],
+      errors: [],
+    });
+    expect(group.textContent).toContain(
+      "spec.color: kubectl-client-side-apply set it. The save removes it, or it gets its default value again.",
+    );
   });
 
   it("warns once for each GitOps manager", () => {
@@ -174,16 +236,35 @@ describe("TakeOverChoice", () => {
     expect(within(group).getByRole("checkbox")).toBeTruthy();
   });
 
-  it("says that a tool whose name is no GitOps tool changed an object that a GitOps tool manages", () => {
+  it("says that a tool whose name is no GitOps tool set a field of an object that a GitOps tool manages", () => {
     const { group } = show([
       owned(environment, [
         field("spec.displayName", { ...edit, kind: "gitops" }),
       ]),
     ]);
     expect(group.textContent).toContain(
-      "kubectl-edit changed an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
+      "kubectl-edit set a field of an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
     );
     expect(group.textContent).not.toContain("kubectl-edit is a GitOps tool");
+  });
+
+  it("does not say that the GitOps tool of the fleet manager changed the object when its name is no GitOps tool", () => {
+    // kubectl in a CI job that applies the Git repository of the fleet
+    // manager is the GitOps tool, found by the revision annotation.
+    const { group } = show([
+      owned(environment, [
+        field("spec.displayName", {
+          name: "kubectl",
+          operation: "Apply",
+          kind: "gitops",
+          known: true,
+        }),
+      ]),
+    ]);
+    expect(group.textContent).toContain(
+      "kubectl set a field of an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
+    );
+    expect(group.textContent).not.toContain("changed an object");
   });
 
   it("warns only about a tool that a row names", () => {
@@ -228,13 +309,62 @@ describe("TakeOverChoice", () => {
       `spec.releaseRef: ${controller.name} of the operator sets it. The fleet manager does not take it over, because the operator sets it again. Leave it as it is to save.`,
     );
     expect(group.textContent).toContain(
-      `spec.deletionPolicy: ${controller.name} of the operator sets it. The fleet manager does not take it over, because the operator sets it again.`,
-    );
-    expect(group.textContent).not.toContain(
-      "spec.deletionPolicy: Leave it as it is",
+      "The operator sets this field. It stays: spec.deletionPolicy.",
     );
     expect(group.textContent).not.toContain(KUBECTL_LINE);
     expect(group.textContent).not.toContain(BLOCKED);
+  });
+
+  it("names the cleared fields of the operator in one quiet line that says they stay", () => {
+    const database: ObjectRef = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "DatabaseServerConfig",
+      name: "main",
+    };
+    const { group } = show([
+      owned(
+        database,
+        [],
+        [
+          field("spec.pitr.lastRecovery", controller),
+          field("spec.recovery", controller),
+        ],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "The operator sets these fields. They stay: spec.pitr.lastRecovery, spec.recovery.",
+    );
+    expect(group.textContent).not.toContain("of the operator sets it");
+    expect(within(group).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(group).queryByRole("checkbox")).toBeNull();
+    // No warning icon and no blocked line: the save keeps these fields.
+    expect(group.querySelector("svg")).toBeNull();
+    expect(group.textContent).not.toContain("To save");
+    expect(
+      takeOverOpen(
+        [owned(database, [], [field("spec.recovery", controller)])],
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a row for each cleared field of another tool beside the line of the operator", () => {
+    const { group } = show([
+      owned(
+        environment,
+        [],
+        [field("spec.color", kubectl), field("spec.recovery", controller)],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "spec.color: kubectl-client-side-apply set it. It stays unless you take it over.",
+    );
+    expect(group.textContent).toContain(
+      "The operator sets this field. It stays: spec.recovery.",
+    );
+    expect(
+      within(group).getByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeTruthy();
   });
 
   it("offers the checkbox for the other fields beside an operator field", () => {
@@ -305,6 +435,24 @@ describe("TakeOverChoice", () => {
       "To save, go back and leave the changed fields as they are, or change them with the tool that set them and open the page again.",
     );
     expect(group.textContent).not.toContain(BLOCKED);
+  });
+
+  it("names a namespaced object with its namespace when a path names two fields", () => {
+    const { group } = show([
+      owned(
+        claim("orders"),
+        [field("spec.a.b", kubectl)],
+        [
+          {
+            ...field("spec.a.b", kubectl),
+            steps: [{ field: "spec" }, { field: "a.b" }],
+          },
+        ],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "spec.a.b names more than one field of the CamundaClusterClaim orders in team-a.",
+    );
   });
 });
 

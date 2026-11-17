@@ -119,12 +119,13 @@ describe("draftOf and specOf", () => {
 
   it("leaves out the license and the images when the form clears them", () => {
     const draft = draftOf(configOf("oidc-prod"));
-    delete draft.licenseSecretRef;
+    expect(draft).toHaveProperty("licenseSecretRef");
+    draft.licenseSecretRef = undefined;
     draft.images = { camunda: "" };
 
     const spec = specOf(draft);
 
-    expect(spec).not.toHaveProperty("licenseSecretRef");
+    expect(Object.keys(spec)).not.toContain("licenseSecretRef");
     expect(spec).not.toHaveProperty("images");
   });
 });

@@ -4,7 +4,7 @@ import { TriangleAlert } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { managerKind } from "@/lib/merge";
-import { offered } from "@/lib/write/ownership";
+import { fieldValue, offered } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
   ApiError,
@@ -12,6 +12,7 @@ import type {
   ForeignManager,
   ObjectOwnership,
   ObjectRef,
+  Preview,
 } from "@/lib/write/types";
 
 const TITLE = "Fields that another tool set";
@@ -19,23 +20,29 @@ const TITLE = "Fields that another tool set";
 /**
  * TakeOverChoice shows the fields of other field managers that a save
  * changes or clears, from Preview.ownership, with one checkbox that takes
- * them over. It heads the fields of each object with labelOf when
- * ownership holds more than one object. It offers no checkbox when no
- * field is offered, or when a path names more than one field of an
+ * them over. The cleared fields of an operator controller stay, and one
+ * line of each object names them. It heads the fields of each object with
+ * labelOf when ownership holds more than one object. It offers no checkbox
+ * when no field is offered, or when a path names more than one field of an
  * object, because the server refuses that take-over.
  * onChoose gets the new state of the checkbox. The caller holds chosen,
- * and must reset it for each new change.
+ * and must reset it for each new change. taken is the preview of the
+ * change with the take-over. Without the object in taken, a chosen cleared
+ * row says that the save removes the field or that the field gets its
+ * default value again.
  */
 export function TakeOverChoice({
   ownership,
   chosen,
   onChoose,
   labelOf = defaultLabel,
+  taken,
 }: {
   ownership: readonly ObjectOwnership[];
   chosen: boolean;
   onChoose(chosen: boolean): void;
   labelOf?(ref: ObjectRef): string;
+  taken?: Preview;
 }): ReactNode {
   const checkboxId = useId();
   const headingId = useId();
@@ -56,6 +63,9 @@ export function TakeOverChoice({
       <h3 className="font-heading text-sm font-semibold">{TITLE}</h3>
       {ownership.map((object, i) => {
         const label = labelOf(object.ref);
+        const final = taken?.objects.find(
+          (o) => refKey(o.ref) === refKey(object.ref),
+        )?.after;
         return (
           <div key={refKey(object.ref)} className="flex flex-col gap-1">
             {several && (
@@ -71,19 +81,33 @@ export function TakeOverChoice({
             >
               {object.changed.map((field, j) => (
                 <li key={`changed-${j}`}>
-                  {rowOf(field, "changed", chosen, choosable)}
+                  {rowOf(field, "changed", chosen, choosable, final)}
                 </li>
               ))}
-              {object.cleared.map((field, j) => (
+              {object.cleared.filter(offered).map((field, j) => (
                 <li key={`cleared-${j}`}>
-                  {rowOf(field, "cleared", chosen, choosable)}
+                  {rowOf(field, "cleared", chosen, choosable, final)}
                 </li>
               ))}
+              {kept(object).length > 0 && (
+                <li key="operator" className="text-muted">
+                  {kept(object).length === 1
+                    ? "The operator sets this field. It stays: "
+                    : "The operator sets these fields. They stay: "}
+                  {kept(object).map((path, j) => (
+                    <span key={path}>
+                      {j > 0 && ", "}
+                      <Path>{path}</Path>
+                    </span>
+                  ))}
+                  .
+                </li>
+              )}
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
-                  <Path>{path}</Path> names more than one field of the{" "}
-                  {object.ref.kind} {object.ref.name}. The fleet manager does
-                  not take over a field that it cannot name exactly.
+                  <Path>{path}</Path> names more than one field of the {label}.
+                  The fleet manager does not take over a field that it cannot
+                  name exactly.
                 </li>
               ))}
             </ul>
@@ -105,8 +129,8 @@ export function TakeOverChoice({
                 </span>
               ) : (
                 <span>
-                  <Path>{name}</Path> changed an object that a GitOps tool
-                  manages. On its next sync the GitOps tool can set its own
+                  <Path>{name}</Path> set a field of an object that a GitOps
+                  tool manages. On its next sync the GitOps tool can set its own
                   value again, unless the source in Git changes too.
                 </span>
               )}
@@ -196,6 +220,7 @@ function rowOf(
   kind: "changed" | "cleared",
   chosen: boolean,
   choosable: boolean,
+  final: unknown,
 ): ReactNode {
   const managers = rowManagers(field);
   if (managers.some((m) => m.kind === "operator"))
@@ -212,7 +237,7 @@ function rowOf(
       : !choosable
         ? "It stays."
         : chosen
-          ? "The save removes it."
+          ? removal(field, final)
           : "It stays unless you take it over.";
   return (
     <>
@@ -221,8 +246,30 @@ function rowOf(
   );
 }
 
+// The API server sets the default of a removed field again, and only the
+// preview with the take-over shows it.
+function removal(field: ForeignField, final: unknown): ReactNode {
+  if (final === undefined)
+    return "The save removes it, or it gets its default value again.";
+  const value = fieldValue(final, field);
+  if (value === undefined) return "The save removes it.";
+  if (typeof value === "object" && value !== null)
+    return "It gets its default value again.";
+  return (
+    <>
+      It gets its default value{" "}
+      <Path>
+        {typeof value === "string" && value !== ""
+          ? value
+          : JSON.stringify(value)}
+      </Path>{" "}
+      again.
+    </>
+  );
+}
+
 function Path({ children }: { children: string }) {
-  return <span className="font-mono text-text">{children}</span>;
+  return <span className="font-mono break-all text-text">{children}</span>;
 }
 
 // A list names each path once, so the server cannot tell two fields of one
@@ -236,6 +283,14 @@ function ambiguousPaths(object: ObjectOwnership): string[] {
         .map((f) => f.path)
         .filter((path) => fields.filter((f) => f.path === path).length > 1),
     ),
+  ];
+}
+
+// A cleared field of the operator stays, and the operator sets it again,
+// so one line names all of them instead of one row each.
+function kept(object: ObjectOwnership): string[] {
+  return [
+    ...new Set(object.cleared.filter((f) => !offered(f)).map((f) => f.path)),
   ];
 }
 

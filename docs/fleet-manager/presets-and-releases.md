@@ -364,7 +364,7 @@ A move of many clusters is one change. In Git mode, it is one commit. The fleet 
 
 When a move fails, the review names the claim that failed. After the review closes, the tab shows **The move did not finish**. It names each cluster of the move: moved, not moved, a downgrade that is not confirmed, or the error of its claim. The note stays until you dismiss it or start a new move. Start a new move for the clusters that did not move.
 
-The review names a claim whose `spec.releaseRef` belongs to another tool, for example `kubectl apply` or a GitOps tool. The review shows the field manager of that tool, and **Move** stays off. The fleet manager does not take a field from another tool. Change `spec.releaseRef` of that claim with the tool that owns it, or leave that cluster out of the selection.
+Another tool can own `spec.releaseRef` of a claim, for example `kubectl apply` or a GitOps tool. In direct mode, the review then lists each such claim under its name, with the tool. It asks one time for all of them, and **Move** stays off until you take the fields over. After the choice, the move writes every selected claim. A claim that no other tool owns moves as usual. To keep the field of the other tool, leave that cluster out of the selection. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does.
 
 If a backup starts, a list cannot be read, or the version of the release changes while the review is open, the review closes. Start the move again. **Back** closes the review and keeps the selection.
 

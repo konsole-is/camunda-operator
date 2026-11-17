@@ -4,13 +4,16 @@ import { checkPage } from "./themes";
 
 test.use({ scenarioName: "release-rollout" });
 
+const claimPath =
+  "/apis/fleet.camunda.io/v1alpha1/namespaces/team-orders/camundaclusterclaims/orders";
+
+// The tests share the app and run in order: the first one allows
+// camunda-8-9-1 in Production, and the second one moves the claim again.
+
 test("an Environment that allows a release lets the Rollout tab move a claim to it", async ({
   page,
   scenario,
 }) => {
-  const claimPath =
-    "/apis/fleet.camunda.io/v1alpha1/namespaces/team-orders/camundaclusterclaims/orders";
-
   await page.goto("/setup/environments/production");
   await page
     .getByRole("group", { name: "Allowed releases" })
@@ -70,4 +73,60 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
     "/apis/core.camunda.io/v1/namespaces/team-orders/camundaclusters/orders",
   );
   expect(cluster.spec.releaseRef).toBe("camunda-8-9-0");
+});
+
+test("a move of a claim whose release kubectl set asks to take the field over", async ({
+  page,
+  scenario,
+}) => {
+  // kubectl apply --server-side sets the release back, so kubectl owns
+  // spec.releaseRef.
+  await kubeRequest(
+    scenario.admin,
+    "PATCH",
+    `${claimPath}?fieldManager=kubectl&force=true`,
+    {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-orders" },
+      spec: { releaseRef: "camunda-8-9-0" },
+    },
+    "application/apply-patch+yaml",
+  );
+
+  await page.goto("/setup/releases/camunda-8-9-1?tab=rollout");
+  const row = page.getByRole("row", { name: /orders/ });
+  await expect(row.getByText("Can move.")).toBeVisible();
+  await row.getByRole("button", { name: "Move" }).click();
+  const review = page.getByRole("region", { name: "Review the move" });
+  const fields = review.getByRole("group", {
+    name: "Fields that another tool set",
+  });
+  await expect(fields).toContainText(
+    "spec.releaseRef: kubectl set it. The save changes it.",
+  );
+  const move = review.getByRole("button", { name: "Move" });
+  await expect(move).toBeDisabled();
+  await checkPage(page, "release-rollout-take-over");
+
+  await fields
+    .getByRole("checkbox", { name: "Take over these fields" })
+    .click();
+  await expect(move).toBeEnabled();
+  await move.click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Moved team-orders/orders to camunda-8-9-1.",
+    }),
+  ).toBeVisible();
+
+  const claim = await kubeRequest<{
+    metadata: { managedFields: { manager: string; fieldsV1: object }[] };
+    spec: { releaseRef?: string };
+  }>(scenario.admin, "GET", claimPath);
+  expect(claim.spec.releaseRef).toBe("camunda-8-9-1");
+  const kubectl = claim.metadata.managedFields.find(
+    (e) => e.manager === "kubectl",
+  );
+  expect(JSON.stringify(kubectl?.fieldsV1 ?? {})).not.toContain("f:releaseRef");
 });

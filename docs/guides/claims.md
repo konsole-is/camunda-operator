@@ -231,6 +231,8 @@ This part changes the claim `my-cluster` of [Create a cluster from a claim](#cre
 
     The cluster of this claim is already ready, so the claim creates the Optimize at once.
 
+You can make these changes in the [fleet manager](../fleet-manager/change-a-cluster.md) too. `kubectl` set the fields of this claim. The review of a save in the fleet manager names each such field that the save changes or removes. It asks to take these fields over. [Fields that another tool set](../fleet-manager/settings.md#fields-that-another-tool-set) says what a take-over does. After a take-over, `kubectl patch` still works, because a patch never conflicts. It sets its value again.
+
 This claim selects no option of `backup-storage`, so it cannot get a backup schedule. A claim that selects one at creation can set `spec.attachments.backupSchedule` in the same way.
 
 The [CamundaClusterClaim](../crds/camundaclusterclaim.md) page describes [Suspend](../crds/camundaclusterclaim.md#suspend), a move to an older release in [Downgrade](../crds/camundaclusterclaim.md#downgrade), and the fields of each attachment in [Attachments](../crds/camundaclusterclaim.md#attachments).

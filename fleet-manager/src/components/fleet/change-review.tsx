@@ -207,6 +207,7 @@ export function ChangeReview({
               ownership={ownership}
               chosen={chosen}
               onChoose={(next) => setChoice({ change, chosen: next })}
+              taken={effective === change ? undefined : checked}
             />
           )}
           {kept.length > 0 && (

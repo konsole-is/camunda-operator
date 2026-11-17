@@ -92,6 +92,84 @@ export const BulkReviewWithImpacts: Story = {
   },
 };
 
+// kubectl apply made the claims orders and fresh, so it owns their
+// spec.releaseRef until the move takes it over.
+const byKubectl = [
+  ["team-orders", "orders"],
+  ["team-pay", "fresh"],
+].map(([namespace, name]) => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  namespace,
+  name,
+}));
+
+export const MoveThatTakesOverAField: Story = {
+  name: "A move that takes over a field",
+  args: {
+    data: { ...twoCanMove(), elasticsearchBackups: [] },
+    actions: {
+      previewMove: fn(async (c: Change) => ({
+        objects: c.apply.map(changed),
+        errors: c.takeOver
+          ? []
+          : byKubectl.map((ref) => ({
+              code: "Conflict" as const,
+              message: 'conflict with "kubectl-client-side-apply"',
+              path: "spec.releaseRef",
+              manager: "kubectl-client-side-apply",
+              ref,
+            })),
+        ...(!c.takeOver && {
+          ownership: byKubectl.map((ref) => ({
+            ref,
+            changed: [
+              {
+                path: "spec.releaseRef",
+                steps: [{ field: "spec" }, { field: "releaseRef" }],
+                managers: [
+                  {
+                    name: "kubectl-client-side-apply",
+                    operation: "Update",
+                    kind: "other" as const,
+                    known: true,
+                  },
+                ],
+              },
+            ],
+            cleared: [],
+          })),
+        }),
+      })),
+      applyMove: fn(async () => ({
+        ok: true as const,
+        mode: "direct" as const,
+      })),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Select all that can move" }),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Move selected" }),
+    );
+    const group = await canvas.findByRole("group", {
+      name: "Fields that another tool set",
+    });
+    await expect(
+      within(group).getByRole("list", {
+        name: "CamundaClusterClaim fresh in team-pay",
+      }),
+    ).toBeVisible();
+    const review = canvas.getByRole("region", { name: "Review the move" });
+    await expect(
+      within(review).getByRole("button", { name: "Move" }),
+    ).toBeDisabled();
+  },
+};
+
 export const DowngradeConfirm: Story = {
   name: "Downgrade confirm",
   play: async ({ canvasElement }) => {

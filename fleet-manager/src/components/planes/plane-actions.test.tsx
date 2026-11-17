@@ -8,7 +8,7 @@ import { CHANGES_OFF } from "@/components/fleet/claim-edit";
 import { GitPushesProvider, useGitPushes } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { STALE_CLAIM_MESSAGE } from "@/lib/session";
-import type { Change, WriteResult } from "@/lib/write/types";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { PlaneActions } from "./plane-actions";
 
 vi.mock("@/lib/k8s/hooks", () => ({
@@ -47,6 +47,10 @@ function actions(
     ok: true,
     mode: "direct",
   }));
+  const preview = vi.fn<(change: Change) => Promise<Preview>>(async () => ({
+    objects: [],
+    errors: [],
+  }));
   const tree = (over: Partial<Parameters<typeof PlaneActions>[0]>) => (
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
@@ -55,6 +59,7 @@ function actions(
           claim={claimOf()}
           served={2}
           apply={apply}
+          preview={preview}
           deleteHref="/fleet/planes/platform/plane-a/delete"
           writeMode="direct"
           now={now}
@@ -67,6 +72,7 @@ function actions(
   const view = render(tree({}));
   return {
     apply,
+    preview,
     rerender: (over: Partial<Parameters<typeof PlaneActions>[0]>) =>
       view.rerender(tree(over)),
   };
@@ -281,5 +287,242 @@ describe("PlaneActions", () => {
       "1 change waiting for GitOps",
     );
     expect(button("Suspend")).toHaveProperty("disabled", true);
+  });
+});
+
+describe("PlaneActions with a field of another tool", () => {
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    namespace: "platform",
+    name: "plane-a",
+  };
+  const key = "CamundaManagementClusterClaim/platform/plane-a";
+  const conflict = {
+    code: "Conflict" as const,
+    message: 'conflict with "kubectl"',
+    path: "spec.suspend",
+    manager: "kubectl",
+    ref,
+  };
+  const suspendOf = (kind: "other" | "operator", name = "kubectl") => ({
+    objects: [],
+    errors: [conflict],
+    ownership: [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.suspend",
+            steps: [{ field: "spec" }, { field: "suspend" }],
+            managers: [{ name, operation: "Apply", kind, known: true }],
+          },
+        ],
+        cleared: [],
+      },
+    ],
+  });
+  const group = () =>
+    screen.getByRole("group", { name: "Fields that another tool set" });
+
+  // conflicted makes the first write of apply fail on spec.suspend, as the
+  // direct writer does when kubectl set the field.
+  function conflicted(props: Partial<Parameters<typeof PlaneActions>[0]> = {}) {
+    const view = actions(props);
+    view.apply.mockResolvedValueOnce({ ok: false, errors: [conflict] });
+    view.preview.mockResolvedValue(suspendOf("other"));
+    return view;
+  }
+
+  it("Suspend of a plane whose spec.suspend kubectl set asks to take it over, then suspends", async () => {
+    const { apply, preview } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    expect(
+      (
+        await screen.findByRole("group", {
+          name: "Fields that another tool set",
+        })
+      ).textContent,
+    ).toContain("spec.suspend: kubectl set it. The save changes it.");
+    expect(preview).toHaveBeenCalledWith(apply.mock.calls[0][0]);
+    // The panel names the conflict, so no alert repeats it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    const confirm = button("Suspend the management plane");
+    expect(confirm).toHaveProperty("disabled", true);
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    expect(confirm).toHaveProperty("disabled", false);
+    await userEvent.click(confirm);
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply.mock.calls[1][0]).toEqual({
+      ...apply.mock.calls[0][0],
+      takeOver: { [key]: ["spec.suspend"] },
+    });
+    expect(
+      await screen.findByText("Suspended the management plane plane-a."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("Resume does the same", async () => {
+    const { apply } = conflicted({ claim: claimOf({ suspend: true }) });
+    await userEvent.click(button("Resume"));
+    expect(group().textContent).toContain("spec.suspend: kubectl set it.");
+    const confirm = button("Resume the management plane");
+    expect(confirm).toHaveProperty("disabled", true);
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await userEvent.click(confirm);
+    expect(apply.mock.calls[1][0].takeOver).toEqual({
+      [key]: ["spec.suspend"],
+    });
+    expect(apply.mock.calls[1][0].apply[0]).toMatchObject({
+      spec: { suspend: false },
+    });
+  });
+
+  it("the next Suspend asks again", async () => {
+    const { apply, rerender } = conflicted({
+      claim: claimOf({ suspend: true }),
+    });
+    await userEvent.click(button("Resume"));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await userEvent.click(button("Resume the management plane"));
+    expect(apply).toHaveBeenCalledTimes(2);
+    rerender({ claim: claimOf({ suspend: false }, "8") });
+
+    apply.mockResolvedValueOnce({ ok: false, errors: [conflict] });
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    const checkbox = await screen.findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    expect(button("Suspend the management plane")).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("a change of the plane drops the take-over and says to select Suspend again", async () => {
+    const { apply, rerender } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: "Take over these fields" }),
+    );
+    rerender({ claim: claimOf({ suspend: false }, "8") });
+
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    apply.mockResolvedValueOnce({ ok: false, errors: [conflict] });
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    const checkbox = await screen.findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+  });
+
+  it("a change of the plane to the asked state says only that the plane changed", async () => {
+    const { rerender } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    rerender({ claim: claimOf({ suspend: true }, "8") });
+    expect(screen.getByText("The plane changed.")).toBeTruthy();
+  });
+
+  it("Cancel closes the take-over and writes nothing more", async () => {
+    const { apply } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    await userEvent.click(button("Cancel"));
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(button("Suspend")).toBeTruthy();
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel of the take-over puts the focus on the Suspend or Resume that replaces it", async () => {
+    conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    await userEvent.click(button("Cancel"));
+    expect(document.activeElement).toBe(button("Suspend"));
+    cleanup();
+
+    conflicted({ claim: claimOf({ suspend: true }) });
+    await userEvent.click(button("Resume"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    await userEvent.click(button("Cancel"));
+    expect(document.activeElement).toBe(button("Resume"));
+  });
+
+  it("names the controller of an operator field and offers no confirm", async () => {
+    const { preview } = conflicted();
+    preview.mockResolvedValue(
+      suspendOf(
+        "operator",
+        "CamundaManagementClusterClaim/plane/0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11",
+      ),
+    );
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    expect(
+      (
+        await screen.findByRole("group", {
+          name: "Fields that another tool set",
+        })
+      ).textContent,
+    ).toContain("of the operator sets it.");
+    expect(
+      screen.queryByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeNull();
+    expect(button("Suspend the management plane")).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
+  it("shows the conflict as before when the preview names no field", async () => {
+    const { preview } = conflicted();
+    preview.mockResolvedValue({ objects: [], errors: [conflict] });
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      'conflict with "kubectl"',
+    );
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("in Git mode shows no choice", async () => {
+    const { preview } = conflicted({ writeMode: "git" });
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      'conflict with "kubectl"',
+    );
+    expect(preview).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import {
   changeOf,
   claimAfter,
   outcomeOf,
+  savedSession,
   valueAt,
   type ClaimObject,
   type FieldError,
@@ -16,8 +17,10 @@ import {
   type WriteOutcome,
 } from "@/lib/session";
 import { withTakeOver } from "@/lib/write/ownership";
+import { refKey } from "@/lib/write/refs";
 import type {
   Change,
+  KubeObject,
   ObjectOwnership,
   Preview,
   WriteMode,
@@ -43,6 +46,14 @@ export type ReviewConfirm = {
   typed?: string;
 };
 
+/** ClaimReviewInput is what a page adds to the review of a claim change. */
+export type ClaimReviewInput = {
+  impacts: string[];
+  caution?: ReactNode;
+  confirm?: ReviewConfirm;
+  mergedLines?: DiffLine[];
+};
+
 /**
  * ClaimReview is the review of the pending changes of a session: the diff
  * of the claim, the merged diff of the cluster when mergedLines is given,
@@ -58,7 +69,13 @@ export type ReviewConfirm = {
  * disabled while takeOverOpen is true. The choice starts off for each
  * session and intent, so a rebase resets it. When it is on, the review
  * previews the change of withTakeOver, and the confirm writes that change.
+ * The diff of the claim then shows the claim that the save leaves: a
+ * cleared field of another tool stays in it until the take-over.
  * In Git mode it notes each reset field that the preview keeps.
+ *
+ * input, when given, gives the impacts, the caution, the confirm, and
+ * mergedLines in place of those props, from saved: a session whose change
+ * gives the claim that the save leaves, as the diff of the claim shows it.
  */
 export function ClaimReview<C extends ClaimObject>({
   session,
@@ -68,6 +85,7 @@ export function ClaimReview<C extends ClaimObject>({
   caution,
   confirm: confirmProps,
   mergedLines,
+  input,
   preview,
   apply,
   show,
@@ -79,11 +97,12 @@ export function ClaimReview<C extends ClaimObject>({
   mode: WriteMode;
   /** intent is the commit subject in Git mode. */
   intent: string;
-  impacts: string[];
+  impacts?: string[];
   /** caution is a warning about the change, such as a backup that it makes fail. */
   caution?: ReactNode;
   confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
+  input?: (saved: Session<C>) => ClaimReviewInput;
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
   show: (result: WriteResult, message: string) => void;
@@ -134,6 +153,25 @@ export function ClaimReview<C extends ClaimObject>({
     () => (chosen ? withTakeOver(base, ownership) : base),
     [chosen, base, ownership],
   );
+  const taken =
+    effective !== base && takenPreview?.change === effective
+      ? takenPreview.result
+      : undefined;
+  // The diff shows the claim that the save leaves: a cleared field of
+  // another tool stays until the take-over.
+  const saved = useMemo(
+    () =>
+      savedSession(
+        session,
+        ownershipOf(ownership, session),
+        chosen,
+        taken && claimOf(taken, session),
+      ),
+    [session, ownership, chosen, taken],
+  );
+  const shown: ClaimReviewInput = input
+    ? input(saved)
+    : { impacts: impacts ?? [], caution, confirm: confirmProps, mergedLines };
 
   useEffect(() => {
     let current = true;
@@ -165,12 +203,7 @@ export function ClaimReview<C extends ClaimObject>({
     };
   }, [effective, base, session]);
 
-  const checked =
-    effective === base
-      ? given
-      : takenPreview?.change === effective
-        ? takenPreview.result
-        : undefined;
+  const checked = effective === base ? given : taken;
   const previewOutcome =
     checked &&
     outcomeOf(
@@ -217,14 +250,14 @@ export function ClaimReview<C extends ClaimObject>({
 
   return (
     <ReviewPanel
-      lines={objectDiff(session.claim, claimAfter(session))}
+      lines={objectDiff(session.claim, claimAfter(saved))}
       details={
-        mergedLines && (
-          <DiffView label="Changes to the cluster" lines={mergedLines} />
+        shown.mergedLines && (
+          <DiffView label="Changes to the cluster" lines={shown.mergedLines} />
         )
       }
-      effects={impacts}
-      caution={caution}
+      effects={shown.impacts}
+      caution={shown.caution}
       notices={
         <>
           {ownership.length > 0 && (
@@ -232,6 +265,7 @@ export function ClaimReview<C extends ClaimObject>({
               ownership={ownership}
               chosen={chosen}
               onChoose={(next) => setChoice({ session, intent, chosen: next })}
+              taken={taken}
             />
           )}
           {alerts.length > 0 && (
@@ -253,10 +287,10 @@ export function ClaimReview<C extends ClaimObject>({
         </>
       }
       mode={mode}
-      confirmLabel={confirmProps?.label ?? "Save"}
-      gitConfirmLabel={confirmProps?.gitLabel}
-      danger={confirmProps?.danger}
-      typed={confirmProps?.typed}
+      confirmLabel={shown.confirm?.label ?? "Save"}
+      gitConfirmLabel={shown.confirm?.gitLabel}
+      danger={shown.confirm?.danger}
+      typed={shown.confirm?.typed}
       pending={writing || blocked}
       onConfirm={confirm}
       onCancel={onCancel}
@@ -272,6 +306,29 @@ function previewOf(
     objects: [],
     errors: [{ code: "Unavailable", message: String(error) }],
   }));
+}
+
+function claimOf(preview: Preview, s: Session): KubeObject | undefined {
+  const { kind, metadata } = s.claim;
+  return preview.objects.find(
+    (o) =>
+      o.ref.kind === kind &&
+      o.ref.namespace === metadata.namespace &&
+      o.ref.name === metadata.name,
+  )?.after;
+}
+
+function ownershipOf(
+  ownership: readonly ObjectOwnership[],
+  s: Session,
+): ObjectOwnership | undefined {
+  const { kind, metadata } = s.claim;
+  const key = refKey({
+    kind,
+    namespace: metadata.namespace,
+    name: metadata.name ?? "",
+  });
+  return ownership.find((o) => refKey(o.ref) === key);
 }
 
 // TakeOverChoice names the fields of these Conflict errors, so neither an
@@ -300,13 +357,7 @@ function messagesOf(outcome: WriteOutcome | undefined): string[] {
 // preview still holds. Server-side apply keeps a field that another field
 // manager owns, so such a reset changes nothing.
 function keptResets(s: Session, preview: Preview): string[] {
-  const { kind, metadata } = s.claim;
-  const after = preview.objects.find(
-    (o) =>
-      o.ref.kind === kind &&
-      o.ref.namespace === metadata.namespace &&
-      o.ref.name === metadata.name,
-  )?.after;
+  const after = claimOf(preview, s);
   if (!after) return [];
   const intended = claimAfter(s);
   return [...s.pending.values()]

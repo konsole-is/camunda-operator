@@ -80,6 +80,7 @@ export function foreignFields(
   const changed: ForeignField[] = [];
   const cleared: ForeignField[] = [];
   const managersOf = (owners: FieldOwner[]) => foreignManagers(owners, live);
+  const keeps = new Set(keep);
 
   const visit = (
     node: OwnerTree,
@@ -89,7 +90,7 @@ export function foreignFields(
     steps: OwnedStep[],
     kept: boolean,
   ): void => {
-    if (keep.includes(path)) kept = true;
+    if (keeps.has(path)) kept = true;
     if (after === undefined) {
       if (kept) return;
       if (holdsKept(before, path)) {
@@ -110,7 +111,7 @@ export function foreignFields(
   };
 
   const holdsKept = (value: unknown, path: FieldPath): boolean =>
-    keep.includes(path) ||
+    keeps.has(path) ||
     (isRecord(value) &&
       Object.entries(value).some(([key, inner]) =>
         holdsKept(inner, stepPath(path, { field: key })),
@@ -168,7 +169,7 @@ export function foreignFields(
       applied.spec ?? {},
       "spec",
       [{ field: "spec" }],
-      keep.includes("spec"),
+      keeps.has("spec"),
     );
   const metadata = tree.children.get("f:metadata");
   for (const name of ["labels", "annotations"]) {
@@ -181,7 +182,7 @@ export function foreignFields(
       applied.metadata[name] ?? {},
       path,
       [{ field: "metadata" }, { field: name }],
-      keep.includes(path),
+      keeps.has(path),
       name === "annotations" ? LAST_APPLIED_ANNOTATION : undefined,
     );
   }
@@ -306,6 +307,39 @@ export function withoutFields<T extends object>(
   for (const [list, indexes] of items)
     for (const index of [...indexes].sort((a, b) => b - a))
       list.splice(index, 1);
+  return copy;
+}
+
+/** fieldValue returns the value of field in object, or undefined when object does not hold it. */
+export function fieldValue(object: unknown, field: ForeignField): unknown {
+  return valueAt(object, field.steps);
+}
+
+/**
+ * withValuesOf returns a copy of object in which each field of fields that
+ * from holds has the value of from. It sets only a field whose last step
+ * names a key, under a JSON object that object holds.
+ */
+export function withValuesOf<T extends object>(
+  object: T,
+  fields: readonly ForeignField[],
+  from: unknown,
+): T {
+  const copy = copyJSON(object) as T;
+  for (const field of fields) {
+    const last = field.steps.at(-1);
+    const value = valueAt(from, field.steps);
+    if (last === undefined || !("field" in last) || value === undefined)
+      continue;
+    const parent = valueAt(copy, field.steps.slice(0, -1));
+    if (isRecord(parent))
+      Object.defineProperty(parent, last.field, {
+        value: copyJSON(value),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+  }
   return copy;
 }
 

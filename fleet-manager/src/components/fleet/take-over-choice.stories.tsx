@@ -123,6 +123,26 @@ export const Operator: Story = {
   },
 };
 
+export const OperatorCleared: Story = {
+  name: "Cleared fields of the operator",
+  args: {
+    ownership: [
+      {
+        ref: {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "DatabaseServerConfig",
+          name: "main",
+        },
+        changed: [],
+        cleared: [
+          field("spec.pitr.lastRecovery", controller),
+          field("spec.recovery", controller),
+        ],
+      },
+    ],
+  },
+};
+
 export const Batch: Story = {
   name: "A batch of two claims",
   args: {
@@ -183,5 +203,39 @@ export const AmbiguousPath: Story = {
         ],
       },
     ],
+  },
+};
+
+export const ClearedTaken: Story = {
+  name: "Cleared fields after the choice",
+  args: {
+    ownership: [
+      {
+        ref: claim("orders"),
+        changed: [],
+        cleared: [
+          field("spec.attachments.backupSchedule.retained.completed", kubectl),
+          field("spec.platformConfigRef", kubectl),
+        ],
+      },
+    ],
+    chosen: true,
+    taken: {
+      objects: [
+        {
+          ref: claim("orders"),
+          after: {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            metadata: { name: "orders", namespace: "team-a" },
+            spec: {
+              attachments: { backupSchedule: { retained: { completed: 7 } } },
+            },
+          },
+          diff: [],
+        },
+      ],
+      errors: [],
+    },
   },
 };
