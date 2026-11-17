@@ -17,7 +17,7 @@ import { type ReleaseUsageSources, releaseUsage } from "./releases";
  * DeleteBlock says why a delete is not possible. reason is the sentence
  * that the page shows. users names each object that uses the deleted
  * object, as "<kind> <namespace>/<name>" or "Environment <name>", and is
- * empty when a list is not read.
+ * empty when a list is not read or not current.
  */
 export type DeleteBlock = { reason: string; users: string[] };
 
@@ -85,14 +85,10 @@ export function presetDeleteChecks(
     const users = usersOf(kind, name);
     const allowed = allowedIn(sources.environments, kind, name);
     const missing = PRESET_DELETE_KINDS[kind].filter((k) => unread.includes(k));
-    const reason = presetBlockReason(
-      missing,
-      PRESET_DELETE_KINDS[kind].some((k) => pending.includes(k)),
-      users,
-      allowed,
-    );
+    const stale = PRESET_DELETE_KINDS[kind].some((k) => pending.includes(k));
+    const reason = presetBlockReason(missing, stale, users, allowed);
     const named =
-      missing.length > 0
+      missing.length > 0 || stale
         ? []
         : [
             ...users.map((u) => `${u.kind} ${u.namespace}/${u.name}`),
