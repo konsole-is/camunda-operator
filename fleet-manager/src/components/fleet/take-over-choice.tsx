@@ -21,7 +21,7 @@ const TITLE = "Fields that another tool set";
  * TakeOverChoice shows the fields of other field managers that a save
  * changes or clears, from Preview.ownership, with one checkbox that takes
  * them over. The cleared fields of an operator controller stay, and one
- * line of each object names them. It heads the fields of each object with
+ * quiet line names each controller of an object with its fields. It heads the fields of each object with
  * labelOf when ownership holds more than one object. It offers no checkbox
  * when no field is offered, or when a path names more than one field of an
  * object, because the server refuses that take-over.
@@ -89,12 +89,13 @@ export function TakeOverChoice({
                   {rowOf(field, "cleared", chosen, choosable, final)}
                 </li>
               ))}
-              {kept(object).length > 0 && (
-                <li key="operator" className="text-muted">
-                  {kept(object).length === 1
-                    ? "The operator sets this field. It stays: "
-                    : "The operator sets these fields. They stay: "}
-                  {kept(object).map((path, j) => (
+              {kept(object).map(({ names, paths }) => (
+                <li key={`operator-${names}`} className="text-muted">
+                  <Path>{names}</Path> of the operator{" "}
+                  {paths.length === 1
+                    ? "sets this field. It stays: "
+                    : "sets these fields. They stay: "}
+                  {paths.map((path, j) => (
                     <span key={path}>
                       {j > 0 && ", "}
                       <Path>{path}</Path>
@@ -102,7 +103,7 @@ export function TakeOverChoice({
                   ))}
                   .
                 </li>
-              )}
+              ))}
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
                   <Path>{path}</Path> names more than one field of the {label}.
@@ -295,11 +296,14 @@ function ambiguousPaths(object: ObjectOwnership): string[] {
 }
 
 // A cleared field of the operator stays, and the operator sets it again,
-// so one line names all of them instead of one row each.
-function kept(object: ObjectOwnership): string[] {
-  return [
-    ...new Set(object.cleared.filter((f) => !offered(f)).map((f) => f.path)),
-  ];
+// so one line for each controller names its fields instead of one row each.
+function kept(object: ObjectOwnership): { names: string; paths: string[] }[] {
+  const lines = new Map<string, Set<string>>();
+  for (const field of object.cleared.filter((f) => !offered(f))) {
+    const names = joined(rowManagers(field));
+    lines.set(names, (lines.get(names) ?? new Set()).add(field.path));
+  }
+  return [...lines].map(([names, paths]) => ({ names, paths: [...paths] }));
 }
 
 function canChoose(ownership: readonly ObjectOwnership[]): boolean {

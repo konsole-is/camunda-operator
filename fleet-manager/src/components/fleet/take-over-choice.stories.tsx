@@ -37,6 +37,14 @@ const controller: ForeignManager = {
   kind: "operator",
   known: true,
 };
+const server: ForeignManager = {
+  ...controller,
+  name: "camunda-operator/databaseserver-recovery",
+};
+const restore: ForeignManager = {
+  ...controller,
+  name: "camunda-operator/pointintimerestore-recovery",
+};
 const field = (path: string, ...managers: ForeignManager[]): ForeignField => ({
   path,
   steps: path.split(".").map((name) => ({ field: name })),
@@ -135,8 +143,8 @@ export const OperatorCleared: Story = {
         },
         changed: [],
         cleared: [
-          field("spec.pitr.lastRecovery", controller),
-          field("spec.recovery", controller),
+          field("spec.pitr.lastRecovery", server),
+          field("spec.recovery", restore),
         ],
       },
     ],
