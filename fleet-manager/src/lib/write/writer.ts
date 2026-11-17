@@ -113,7 +113,7 @@ export function diffView(
 /**
  * directWriter writes to the API server of kc, kubeConfig() by default, by
  * server-side apply with the field manager fleet-manager and force=false
- * unless the change sets force. It refuses a kind outside KindMap and
+ * unless the change sets force or takes over a field. It refuses a kind outside KindMap and
  * WriteOnlyKindMap with Invalid, before any request.
  *
  * apply writes nothing when the preview of any object fails. Then it
@@ -137,8 +137,8 @@ export function diffView(
  * for a value that the change sets to a new one. It holds no annotation.
  *
  * The preview names in ownership each updated object with a precondition
- * that has a field of another field manager that the change changes or
- * clears. For an object that change.takeOver or change.remove lists, both
+ * that has a field of spec, metadata.labels, or metadata.annotations of
+ * another field manager that the change changes or clears. For an object that change.takeOver or change.remove lists, both
  * writes refuse it after the read, with no other request for it: with
  * Conflict for each listed field that a controller of the operator owns,
  * and with Invalid when the lists are not the offered fields of ownership

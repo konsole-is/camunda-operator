@@ -48,10 +48,11 @@ export type RefKey = `${string}/${string}/${string}`;
  * takeOver and remove are the choice of a review in direct mode: for an
  * applied object with a precondition, the fields of other field managers
  * that the save changes and takes over, and those that it clears and
- * removes. Each list must equal what Preview.ownership offers for the
- * object at that resourceVersion, or the write fails with Invalid. A
- * change with a list has no force. The Git writer refuses a change with a
- * list.
+ * removes. Each list must equal the fields that Preview.ownership offers
+ * for the object at that resourceVersion. A listed field that a controller
+ * of the operator owns fails with Conflict, any other difference with
+ * Invalid. A change with a list has no force. The Git writer refuses a
+ * change with a list and without directOnly.
  *
  * The preview of the direct writer applies an object of previewManagers as
  * the field manager that it maps to, unless it sends the object as a merge
