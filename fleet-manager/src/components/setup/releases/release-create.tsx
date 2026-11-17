@@ -6,7 +6,11 @@ import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import type { ReleaseActions } from "./release-detail";
 import { ReleaseSettings } from "./release-settings";
-import { type ReleasesData, useReleaseSources } from "./sources";
+import {
+  type ReleasesData,
+  type ReleasesSnapshot,
+  useReleaseSources,
+} from "./sources";
 
 /**
  * ReleaseCreateLive is the create page of a release on the live sources. It
@@ -19,7 +23,7 @@ export function ReleaseCreateLive({
   mode,
   actions,
 }: {
-  data: { sources: ReleasesData; imagesTable: ImagesTable; from?: string };
+  data: { sources: ReleasesSnapshot; imagesTable: ImagesTable; from?: string };
   mode?: WriteMode;
   actions: ReleaseActions;
 }): ReactNode {

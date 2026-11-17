@@ -7,9 +7,10 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster";
 import type { Environment } from "@/generated/crds/environment";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
 import { useLive } from "@/lib/k8s/live";
-import type { ReadError } from "@/lib/k8s/unread";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { RELEASE_SOURCE_KINDS } from "./source-kinds";
 
 /** ReleasesData holds every list that the release pages read, in all namespaces. */
@@ -24,13 +25,20 @@ export type ReleasesData = {
 };
 
 /**
+ * ReleasesSnapshot is the first snapshot of the release pages. readErrors holds the error of
+ * each kind that the server could not read.
+ */
+export type ReleasesSnapshot = ReleasesData & { readErrors?: ReadError[] };
+
+/**
  * useReleaseSources follows each list of initial live. errors holds the
- * error of each failed watch. The lists then keep their last items, which
- * can be out of date. stale holds the kind of each list whose watch is not
+ * error of each failed watch, and the error of initial.readErrors of each
+ * other kind until the watch of that kind answers. The lists then keep
+ * their last items, which can be out of date. stale holds the kind of each list whose watch is not
  * fresh (freshKey).
  */
 export function useReleaseSources(
-  initial: ReleasesData,
+  initial: ReleasesSnapshot,
 ): ReleasesData & { errors: ReadError[]; stale: string[] } {
   const results = {
     releases: useLive("CamundaRelease", initial.releases),
@@ -47,10 +55,12 @@ export function useReleaseSources(
   const keys = Object.keys(results) as (keyof ReleasesData)[];
   const kinds = keys.map((key) => RELEASE_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const errors = keys.flatMap((key) => {
+  const answered = useAnswered(kinds);
+  const live = keys.flatMap((key) => {
     const error = results[key].error;
     return error ? [{ kind: RELEASE_SOURCE_KINDS[key], message: error }] : [];
   });
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     releases: results.releases.items,
     environments: results.environments.items,

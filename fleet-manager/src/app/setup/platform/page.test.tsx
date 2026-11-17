@@ -67,6 +67,17 @@ describe("PlatformPage", () => {
     ).toBeTruthy();
   });
 
+  it("shows the error of a failed server read until the watch of its kind answers", async () => {
+    failing.kind = "Environment";
+    render(await PlatformPage());
+    expect(
+      screen
+        .getAllByRole("alert")
+        .map((alert) => alert.textContent)
+        .filter((text) => text?.startsWith("Could not read")),
+    ).toEqual(["Could not read Environment: Environment is forbidden"]);
+  });
+
   it("shows no user count and names the kind whose server read failed until its watch answers", async () => {
     failing.kind = "CamundaCluster";
     render(await PlatformPage());

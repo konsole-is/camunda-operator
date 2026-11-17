@@ -14,7 +14,11 @@ import {
   type UnassignedNamespace,
   unassignedNamespaces,
 } from "./rows";
-import { type EnvironmentSources, useEnvironmentSources } from "./sources";
+import {
+  type EnvironmentSnapshot,
+  type EnvironmentSources,
+  useEnvironmentSources,
+} from "./sources";
 import { UnassignedBanner } from "./unassigned-banner";
 
 /**
@@ -89,7 +93,7 @@ export function EnvironmentList({
 export function EnvironmentListLive({
   initial,
 }: {
-  initial: EnvironmentSources;
+  initial: EnvironmentSnapshot;
 }) {
   const sources = useEnvironmentSources(initial);
   return (

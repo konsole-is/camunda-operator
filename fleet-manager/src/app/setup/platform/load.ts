@@ -1,24 +1,20 @@
 import "server-only";
 import { PLATFORM_SOURCE_KINDS } from "@/components/setup/platform/source-kinds";
-import type { PlatformSources } from "@/components/setup/platform/sources";
+import type { PlatformSnapshot } from "@/components/setup/platform/sources";
 import { getBundledData } from "@/lib/bundled";
-import { listOrEmpty } from "@/lib/k8s/list-or-empty";
+import { loadSnapshot } from "@/lib/k8s/snapshot";
 import type { ImagesTable } from "@/startup/bundled-data";
 
 /**
- * loadPlatformSources reads the first snapshot of the Platform pages from
- * the cache of the server, in every namespace. A failed read of a kind
- * gives no objects of that kind.
+ * loadPlatformSources reads the first snapshot of the Platform pages, as
+ * loadSnapshot does.
  */
-export async function loadPlatformSources(): Promise<PlatformSources> {
-  const lists = await Promise.all(
-    Object.entries(PLATFORM_SOURCE_KINDS).map(
-      async ([key, kind]) => [key, await listOrEmpty(kind)] as const,
-    ),
-  );
+export async function loadPlatformSources(): Promise<PlatformSnapshot> {
   // A Resource is plain JSON, so it differs from its model type only in its
   // timestamps, which the Platform pages do not read.
-  return Object.fromEntries(lists) as unknown as PlatformSources;
+  return (await loadSnapshot(
+    PLATFORM_SOURCE_KINDS,
+  )) as unknown as PlatformSnapshot;
 }
 
 /** loadImagesTable is the images table of getBundledData, or an empty table when it cannot be read. */

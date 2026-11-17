@@ -20,7 +20,7 @@ export async function loadSnapshot<
   const reads = await Promise.all(
     Object.entries(kinds).map(async ([key, kind]) => {
       try {
-        return { key, items: await list(kind) };
+        return { key, items: await list(kind, {}) };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { key, items: [], error: { kind, message } };

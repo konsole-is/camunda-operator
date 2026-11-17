@@ -14,9 +14,10 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
 import { useLive } from "@/lib/k8s/live";
-import type { ReadError } from "@/lib/k8s/unread";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { SOURCE_KINDS } from "./source-kinds";
 
 /** EnvironmentSources holds every list that the Environments page reads, in all namespaces. */
@@ -38,13 +39,22 @@ export type EnvironmentSources = {
 };
 
 /**
- * useEnvironmentSources follows each list of initial live. errors holds the
- * error of each failed watch. The lists then keep their last items, which
- * can be out of date. namespacesStale is true while the watch of the
+ * EnvironmentSnapshot is the first snapshot of the Environments pages. readErrors holds the error of
+ * each kind that the server could not read.
+ */
+export type EnvironmentSnapshot = EnvironmentSources & {
+  readErrors?: ReadError[];
+};
+
+/**
+ * useEnvironmentSources follows each list of initial live. errors holds
+ * the error of each failed watch, and the error of initial.readErrors of
+ * each other kind until the watch of that kind answers. The lists then
+ * keep their last items, which can be out of date. namespacesStale is true while the watch of the
  * namespaces is not fresh (freshKey).
  */
 export function useEnvironmentSources(
-  initial: EnvironmentSources,
+  initial: EnvironmentSnapshot,
 ): EnvironmentSources & { errors: ReadError[]; namespacesStale: boolean } {
   const environments = useLive("Environment", initial.environments);
   const namespaces = useLive("Namespace", initial.namespaces);
@@ -92,12 +102,14 @@ export function useEnvironmentSources(
     releases,
     platformConfigs,
   };
-  const errors = (Object.keys(results) as (keyof EnvironmentSources)[]).flatMap(
+  const answered = useAnswered(Object.values(SOURCE_KINDS));
+  const live = (Object.keys(results) as (keyof EnvironmentSources)[]).flatMap(
     (key) => {
       const error = results[key].error;
       return error ? [{ kind: SOURCE_KINDS[key], message: error }] : [];
     },
   );
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     environments: environments.items,
     namespaces: namespaces.items,

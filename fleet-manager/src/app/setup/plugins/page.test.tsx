@@ -99,6 +99,20 @@ describe("PluginsPage", () => {
     expect(within(catalogPanel()).queryByText("rustfs")).toBeNull();
   });
 
+  it("shows the error of a failed server read until the watch of its kind answers", async () => {
+    failing.kind = "PluginRequest";
+    bundled.mockResolvedValueOnce({
+      catalog: { schemaVersion: 1, charts: [] },
+    });
+    render(await PluginsPage());
+    expect(
+      screen
+        .getAllByRole("alert")
+        .map((alert) => alert.textContent)
+        .filter((text) => text?.startsWith("Could not read")),
+    ).toEqual(["Could not read PluginRequest: PluginRequest is forbidden"]);
+  });
+
   it("calls no registration lost after a failed read of PluginSection", async () => {
     failing.kind = "PluginSection";
     served.lists = {

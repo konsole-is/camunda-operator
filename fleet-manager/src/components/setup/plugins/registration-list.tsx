@@ -19,7 +19,11 @@ import {
   registrationGroups,
   registrationSummary,
 } from "./groups";
-import { type RegistrationSources, useRegistrationSources } from "./sources";
+import {
+  type RegistrationSnapshot,
+  type RegistrationSources,
+  useRegistrationSources,
+} from "./sources";
 
 const MUTED = "block text-xs text-muted";
 const NOW_INTERVAL_MS = 30_000;
@@ -103,7 +107,7 @@ export function RegistrationListLive({
   catalog,
   now,
 }: {
-  initial: RegistrationSources;
+  initial: RegistrationSnapshot;
   catalog: CatalogRead;
   now: string;
 }): ReactNode {

@@ -11,11 +11,13 @@ vi.mock("@/lib/k8s/read", () => ({
     return [];
   }),
 }));
+// The watch of a kind whose server read failed has not answered yet.
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
   }),
-  useWatchesFresh: (lists: unknown[]) => lists.map(() => true),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => kind !== failing.kind),
 }));
 
 afterEach(() => {
@@ -57,5 +59,16 @@ describe("EnvironmentsPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Environments" }),
     ).toBeTruthy();
+  });
+
+  it("shows the error of a failed server read until the watch of its kind answers", async () => {
+    failing.kind = "CamundaRelease";
+    render(await EnvironmentsPage());
+    expect(
+      screen
+        .getAllByRole("alert")
+        .map((alert) => alert.textContent)
+        .filter((text) => text?.startsWith("Could not read")),
+    ).toEqual(["Could not read CamundaRelease: CamundaRelease is forbidden"]);
   });
 });

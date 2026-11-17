@@ -6,9 +6,10 @@ import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
 import { useLive } from "@/lib/k8s/live";
-import type { ReadError } from "@/lib/k8s/unread";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { ROLLOUT_SOURCE_KINDS } from "./source-kinds";
 
 /**
@@ -25,11 +26,17 @@ export type RolloutLists = {
 };
 
 /**
+ * RolloutSnapshot is the first snapshot of the lists of the Rollout tab. readErrors holds the error of
+ * each kind that the server could not read.
+ */
+export type RolloutSnapshot = RolloutLists & { readErrors?: ReadError[] };
+
+/**
  * useRolloutSources follows each list of initial live, with errors and
  * stale as useReleaseSources gives them.
  */
 export function useRolloutSources(
-  initial: RolloutLists,
+  initial: RolloutSnapshot,
 ): RolloutLists & { errors: ReadError[]; stale: string[] } {
   const results = {
     clusterPresets: useLive("CamundaClusterPreset", initial.clusterPresets),
@@ -45,10 +52,12 @@ export function useRolloutSources(
   const keys = Object.keys(results) as (keyof RolloutLists)[];
   const kinds = keys.map((key) => ROLLOUT_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const errors = keys.flatMap((key) => {
+  const answered = useAnswered(kinds);
+  const live = keys.flatMap((key) => {
     const error = results[key].error;
     return error ? [{ kind: ROLLOUT_SOURCE_KINDS[key], message: error }] : [];
   });
+  const errors = currentReadErrors(live, initial.readErrors, answered);
   return {
     clusterPresets: results.clusterPresets.items,
     sections: results.sections.items,

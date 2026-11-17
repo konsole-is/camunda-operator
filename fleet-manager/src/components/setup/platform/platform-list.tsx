@@ -6,7 +6,7 @@ import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { type ReadError, unknownUsersText } from "@/lib/k8s/unread";
 import { type PlatformRow, platformRows, unreadUserKinds } from "./model";
-import { type PlatformSources, usePlatformSources } from "./sources";
+import { type PlatformSnapshot, usePlatformSources } from "./sources";
 
 const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
 
@@ -76,7 +76,7 @@ export function PlatformList({
 }
 
 /** PlatformListLive is PlatformList on the live sources, starting from initial. */
-export function PlatformListLive({ initial }: { initial: PlatformSources }) {
+export function PlatformListLive({ initial }: { initial: PlatformSnapshot }) {
   const sources = usePlatformSources(initial);
   return (
     <PlatformList

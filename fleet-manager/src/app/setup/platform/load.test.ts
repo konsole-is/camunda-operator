@@ -51,11 +51,14 @@ describe("loadPlatformSources", () => {
     ]);
   });
 
-  it("gives no objects for a kind whose read fails", async () => {
+  it("gives no objects and a read error for a kind whose read fails", async () => {
     failing.kind = "DatabaseServer";
     const sources = await loadPlatformSources();
     expect(sources.databaseServers).toEqual([]);
     expect(sources.clusters).toHaveLength(1);
+    expect(sources.readErrors).toEqual([
+      { kind: "DatabaseServer", message: "DatabaseServer is forbidden" },
+    ]);
   });
 });
 

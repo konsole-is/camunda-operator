@@ -18,9 +18,17 @@ import { ReleaseEnvironments } from "./release-environments";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_TABS, type ReleaseTab, releaseTabOf } from "./release-tabs";
 import type { RolloutData } from "./rollout";
-import { type RolloutLists, useRolloutSources } from "./rollout-sources";
+import {
+  type RolloutLists,
+  type RolloutSnapshot,
+  useRolloutSources,
+} from "./rollout-sources";
 import { type FailedMove, RolloutTab } from "./rollout-tab";
-import { type ReleasesData, useReleaseSources } from "./sources";
+import {
+  type ReleasesData,
+  type ReleasesSnapshot,
+  useReleaseSources,
+} from "./sources";
 
 /**
  * ReleaseActions are the writes of the release pages: the server actions on
@@ -43,8 +51,8 @@ export type ReleaseActions = {
  */
 export type ReleaseDetailData = {
   name: string;
-  sources: ReleasesData;
-  rollout: RolloutLists;
+  sources: ReleasesSnapshot;
+  rollout: RolloutSnapshot;
   imagesTable: ImagesTable;
   secrets: Readonly<Record<string, SecretRefs>>;
 };
