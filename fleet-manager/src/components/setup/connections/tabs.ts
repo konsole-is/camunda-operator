@@ -1,3 +1,4 @@
+import { tabOf } from "@/lib/tabs";
 import type { ContractKind, ContractRef } from "@/lib/usage";
 import type { ContractObject } from "./facts";
 import type { ConnectionSources } from "./sources";
@@ -39,14 +40,14 @@ export const CONNECTION_TABS: readonly {
   },
 ];
 
-/** connectionTabOf reads the tab of a ?tab= value. An unknown, missing, or repeated value gives "object-storage". */
+/**
+ * connectionTabOf returns the tab that the tab query parameter names, as
+ * tabOf does. The fallback is object-storage.
+ */
 export function connectionTabOf(
   value: string | string[] | undefined,
 ): ConnectionTab {
-  return (
-    CONNECTION_TABS.find((tab) => tab.value === value)?.value ??
-    "object-storage"
-  );
+  return tabOf(CONNECTION_TABS, value, "object-storage");
 }
 
 /** contractHref returns the path of the page of a contract, which contractRefOf reads back. */
