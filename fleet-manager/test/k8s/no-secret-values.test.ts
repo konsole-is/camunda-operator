@@ -77,7 +77,13 @@ import { get } from "@/lib/k8s/read";
 import * as secrets from "@/lib/secrets";
 import * as settings from "@/lib/settings";
 import { createChangeOf } from "@/lib/write/create";
-import type { ApiErrorCode, Preview, WriteResult } from "@/lib/write/types";
+import { withTakeOver } from "@/lib/write/ownership";
+import type {
+  ApiErrorCode,
+  Change,
+  Preview,
+  WriteResult,
+} from "@/lib/write/types";
 import { kubeRequest } from "../scenarios/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
@@ -620,15 +626,16 @@ function presetDelete() {
 
 // contractChange changes the region of the contract leak, with the
 // resourceVersion of its copy in the cache of the server, which the action
-// reads.
-async function contractChange() {
+// reads. The test created the contract under another field manager, so the
+// change takes the region over, as the review does after the choice.
+async function contractChange(): Promise<Change> {
   const live = await vi.waitFor(async () => {
     const found = await get("ObjectStorageConfig", namespace, "leak");
     expect(found).toBeDefined();
     expect(await get("Namespace", undefined, namespace)).toBeDefined();
     return found!;
   });
-  return {
+  const change: Change = {
     intent: "Change the object storage contract leak",
     apply: [
       {
@@ -644,8 +651,9 @@ async function contractChange() {
     preconditions: {
       [`ObjectStorageConfig/${namespace}/leak`]: live.metadata.resourceVersion!,
     },
-    force: true,
   };
+  const preview = await previewContractChange(change);
+  return withTakeOver(change, preview.ownership ?? []);
 }
 
 function environmentChange() {

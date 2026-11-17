@@ -846,15 +846,15 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
 
 /**
  * adminChangeSchema accepts a Change of a Setup page. It allows deletes,
- * preconditions, create, and force, under these rules. Each object that it
- * applies or deletes has a kind of kinds, with the apiVersion of that
- * kind. An object of a cluster-scoped kind has no namespace, and an object
- * of a namespaced kind has a namespace of namespaces. Each delete, and each
- * apply that create does not list, has a precondition. force is allowed
- * only on a change whose applies are all updates and that deletes nothing.
- * takeOver and remove are allowed on the updates.
- * An applied object holds no status, and its metadata holds only name,
- * namespace, labels, and annotations. directOnly is refused.
+ * preconditions, create, takeOver, and remove, under these rules. Each
+ * object that it applies or deletes has a kind of kinds, with the
+ * apiVersion of that kind. An object of a cluster-scoped kind has no
+ * namespace, and an object of a namespaced kind has a namespace of
+ * namespaces. Each delete, and each apply that create does not list, has a
+ * precondition. takeOver and remove name only updates. An applied object
+ * holds no status, and its metadata holds only name, namespace, labels,
+ * and annotations. force and directOnly are refused: a page takes over a
+ * field of another tool only through the lists.
  */
 export function adminChangeSchema(
   kinds: readonly KindName[],
@@ -890,8 +890,7 @@ export function adminChangeSchema(
             (created.includes(refKey(refOf(o))) || guarded(refKey(refOf(o)))),
         ) &&
         (c.delete ?? []).every((r) => placed(r) && guarded(refKey(r))) &&
-        (c.force === undefined ||
-          (created.length === 0 && (c.delete ?? []).length === 0)) &&
+        c.force === undefined &&
         c.directOnly === undefined
       );
     },

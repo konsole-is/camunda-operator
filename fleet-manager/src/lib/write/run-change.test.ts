@@ -1382,7 +1382,6 @@ describe("adminChangeSchema", () => {
     intent: "Save staging",
     apply: [environmentObject],
     preconditions: { "Environment//staging": "3" },
-    force: true,
   };
   const remove = {
     intent: "Delete staging",
@@ -1404,7 +1403,7 @@ describe("adminChangeSchema", () => {
   const clusters = adminChangeSchema(["CamundaCluster"], ["team-a"]);
 
   it.each([
-    ["an update with its precondition and force", schema, update],
+    ["an update with its precondition", schema, update],
     ["a delete with its precondition", schema, remove],
     [
       "a delete with its precondition and its UID",
@@ -1487,6 +1486,7 @@ describe("adminChangeSchema", () => {
       schema,
       { ...remove, preconditions: undefined },
     ],
+    ["force on an update", schema, { ...update, force: true }],
     ["force on a create", schema, { ...create, force: true }],
     ["force on a delete", schema, { ...remove, force: true }],
     [
