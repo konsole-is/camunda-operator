@@ -33,7 +33,7 @@ type JsonMap = Record<string, unknown>;
  * fleet manager changes or clears while another field manager owns them.
  * Every managedFields entry other than the Apply entry of the fleet
  * manager is another manager, also an Update entry of the fleet manager.
- * The fields of an entry of a subresource are in neither list.
+ * An entry of a subresource is not another manager.
  *
  * changed holds each field that applied sets to another value than live.
  * The apply fails on such a field unless it forces. cleared holds the

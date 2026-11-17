@@ -579,14 +579,14 @@ function takeOverRefusals(
 
 // unlistedTakes gives a Conflict for each field that the forced dry run
 // took from a manager while listed does not hold it, as the walk of
-// foreignFields can miss a field that the API server counts. Fields are
-// compared by their steps, because two fields can have one path string.
+// foreignFields can miss a field that the API server counts.
 function unlistedTakes(
   ref: ObjectRef,
   before: KubeObject,
   after: KubeObject,
   listed: ForeignField[],
 ): ApiError[] {
+  // Two fields can have one path string, so compare their steps.
   const keys = new Set(listed.map((f) => JSON.stringify(f.steps)));
   return takenFields(before, after)
     .filter((f) => !keys.has(JSON.stringify(f.steps)))

@@ -109,8 +109,8 @@ export type PreviewObject = {
 
 /**
  * ForeignManager is a field manager other than the server-side apply of
- * the fleet manager. known is false for a tool that the fleet manager does
- * not know (isKnownManager).
+ * the fleet manager. known is false for a manager of the kind other that
+ * isKnownManager does not know.
  */
 export type ForeignManager = {
   name: string;

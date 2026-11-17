@@ -97,8 +97,7 @@ export function managerKind(
   return "other";
 }
 
-// HAND_TOOLS are field managers of tools that a person runs by hand.
-const HAND_TOOLS: readonly string[] = [
+const KNOWN_TOOLS: readonly string[] = [
   "kubectl",
   "kubectl-client-side-apply",
   "kubectl-edit",
@@ -115,7 +114,7 @@ const HAND_TOOLS: readonly string[] = [
  * name that managerKind gives the kind operator or gitops.
  */
 export function isKnownManager(name: string): boolean {
-  return HAND_TOOLS.includes(name) || managerKind(name) !== "other";
+  return KNOWN_TOOLS.includes(name) || managerKind(name) !== "other";
 }
 
 /**
