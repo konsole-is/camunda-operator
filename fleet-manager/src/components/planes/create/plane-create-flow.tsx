@@ -188,8 +188,8 @@ export function planeContextOf(
  * selectorErrors are the errors of the cluster labels, and sectionErrors
  * those of the sections of the storage step, by section name. reads names
  * the lists that cannot be read and the lists that are not current. Each
- * blocks the step that reads it. secrets are the Secrets of the existing
- * namespace of the draft.
+ * blocks the basics step or the storage step. secrets are the Secrets of
+ * the existing namespace of the draft.
  */
 export function planeSteps(
   models: PlaneModels,
