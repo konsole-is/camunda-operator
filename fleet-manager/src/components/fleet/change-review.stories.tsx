@@ -90,31 +90,29 @@ const ref = {
 export const KeptField: Story = {
   name: "Kept field",
   args: {
-    preview: fn(
-      async (): Promise<Preview> => ({
-        ...keptPreview,
-        ownership: [
-          {
-            ref,
-            changed: [],
-            cleared: [
-              {
-                path: "spec.sections",
-                steps: [{ field: "spec" }, { field: "sections" }],
-                managers: [
-                  {
-                    name: "kubectl-client-side-apply",
-                    operation: "Update",
-                    kind: "other",
-                    known: true,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      }),
-    ),
+    preview: fn(async (): Promise<Preview> => ({
+      ...keptPreview,
+      ownership: [
+        {
+          ref,
+          changed: [],
+          cleared: [
+            {
+              path: "spec.sections",
+              steps: [{ field: "spec" }, { field: "sections" }],
+              managers: [
+                {
+                  name: "kubectl-client-side-apply",
+                  operation: "Update",
+                  kind: "other",
+                  known: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })),
   },
 };
 

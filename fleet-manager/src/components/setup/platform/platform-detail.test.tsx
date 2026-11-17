@@ -245,7 +245,9 @@ describe("PlatformDetail", () => {
       within(review).getByRole("group", {
         name: "Fields that another tool set",
       }).textContent,
-    ).toContain(`${path}: kubectl-client-side-apply set it. The save changes it.`);
+    ).toContain(
+      `${path}: kubectl-client-side-apply set it. The save changes it.`,
+    );
     const save = within(review).getByRole("button", { name: "Save" });
     expect(save).toHaveProperty("disabled", true);
 

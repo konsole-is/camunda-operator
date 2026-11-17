@@ -153,7 +153,9 @@ describe("RotateAction", () => {
       within(review).getByRole("group", {
         name: "Fields that another tool set",
       }).textContent,
-    ).toContain(`${path}: kubectl-client-side-apply set it. The save changes it.`);
+    ).toContain(
+      `${path}: kubectl-client-side-apply set it. The save changes it.`,
+    );
     const confirm = within(review).getByRole("button", { name: "Rotate" });
     expect(confirm).toHaveProperty("disabled", true);
 

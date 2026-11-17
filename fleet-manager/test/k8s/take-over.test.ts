@@ -808,9 +808,7 @@ describe("a save of the platform config editor against the API server", () => {
     });
     const refusal = expect.objectContaining({
       code: "Invalid",
-      message: expect.stringContaining(
-        "must not be set when method is basic",
-      ),
+      message: expect.stringContaining("must not be set when method is basic"),
     });
     expect(taken.preview.errors).toEqual([refusal]);
     expect(await applyPlatformConfigChange(taken.change)).toEqual({
