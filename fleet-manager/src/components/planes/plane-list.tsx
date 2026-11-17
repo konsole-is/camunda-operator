@@ -70,10 +70,10 @@ export function PlaneList({
       <DataTable
         label="Management planes"
         emptyText={
-          planes.length > 0
-            ? undefined
-            : planesUnread.length > 0
-              ? notReadText(planesUnread)
+          planesUnread.length > 0
+            ? notReadText(planesUnread)
+            : planes.length > 0
+              ? undefined
               : "No management plane yet."
         }
         columns={[

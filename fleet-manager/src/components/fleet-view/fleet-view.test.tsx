@@ -457,6 +457,35 @@ describe("FleetView", () => {
     expect(clusterNames()).toEqual([]);
   });
 
+  const clustersNotRead =
+    "Not known: the fleet manager has no current list of CamundaCluster.";
+
+  it("does not say that an environment has no cluster while the cluster list is not current", async () => {
+    const onlyProd = { ...fleet, clusters: [cluster("prod", "orders")] };
+    const { rerender } = render(view({ sources: onlyProd }));
+    await userEvent.click(screen.getByRole("tab", { name: /Staging/ }));
+    expect(
+      screen.getByText("No cluster in this environment yet."),
+    ).toBeTruthy();
+    rerender(view({ sources: onlyProd, stale: ["CamundaCluster"] }));
+    expect(
+      screen.queryByText("No cluster in this environment yet."),
+    ).toBeNull();
+    expect(screen.getAllByText(clustersNotRead)).toHaveLength(2);
+  });
+
+  it("does not say that no cluster matches the filters while the cluster list is not current", async () => {
+    render(view({ stale: ["CamundaCluster"] }));
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search clusters" }),
+      "nothing",
+    );
+    expect(
+      screen.queryByText("No cluster matches the search and the filters."),
+    ).toBeNull();
+    expect(screen.getAllByText(clustersNotRead)).toHaveLength(2);
+  });
+
   it("shows one list without tabs when no Environment exists", () => {
     render(
       view({
@@ -730,10 +759,10 @@ describe("FleetViewLive", () => {
     const { rerender } = render(<FleetViewLive initial={empty} now={NOW} />);
     expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
     expect(
-      screen.getByText(
+      screen.getAllByText(
         "Not known: the fleet manager has no current list of CamundaCluster.",
       ),
-    ).toBeTruthy();
+    ).toHaveLength(2);
     expect(screen.getByText(/this list can miss entries/)).toBeTruthy();
     live.overdue = [];
     live.fresh = ["CamundaCluster"];

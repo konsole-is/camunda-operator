@@ -149,7 +149,7 @@ export function FleetView({
       filter={filter}
       onFilter={setFilter}
       now={now}
-      unread={unread.some((kind) => UNREAD_EMPTY.includes(kind))}
+      clustersUnread={unread.filter((kind) => UNREAD_EMPTY.includes(kind))}
       planesUnread={unread.filter((kind) => PLANE_KINDS.includes(kind))}
       onStopWaiting={onStopWaiting}
     />
@@ -229,7 +229,7 @@ function TabContent({
   filter,
   onFilter,
   now,
-  unread,
+  clustersUnread,
   planesUnread,
   onStopWaiting,
 }: {
@@ -243,7 +243,7 @@ function TabContent({
   filter: RowFilter;
   onFilter: (filter: RowFilter) => void;
   now: string;
-  unread: boolean;
+  clustersUnread: readonly string[];
   planesUnread: readonly string[];
   onStopWaiting?: (key: RefKey) => void;
 }) {
@@ -275,7 +275,10 @@ function TabContent({
     tab ?? ALL_TAB,
   );
   const shownWaiting = filterRows(waiting, active, () => false);
-  const empty = rows.length === 0 && waiting.length === 0 && !unread;
+  const empty =
+    rows.length === 0 && waiting.length === 0 && clustersUnread.length === 0;
+  const unreadText =
+    clustersUnread.length > 0 ? notReadText(clustersUnread) : undefined;
 
   return (
     <div className="flex flex-col gap-8">
@@ -320,7 +323,7 @@ function TabContent({
               />
             )}
             {groups.length === 0 ? (
-              <p className="text-sm text-muted">{NO_MATCH}</p>
+              <p className="text-sm text-muted">{unreadText ?? NO_MATCH}</p>
             ) : (
               groups.map((group) => (
                 <Group
@@ -331,6 +334,7 @@ function TabContent({
                   warnings={warnings}
                   now={now}
                   filtered={rows.some((r) => inGroup(r, group))}
+                  unreadText={unreadText}
                 />
               ))
             )}
@@ -351,11 +355,13 @@ function Group({
   warnings,
   now,
   filtered,
+  unreadText,
 }: {
   group: RowGroup;
   warnings: ReadonlyMap<string, Warning[]>;
   now: string;
   filtered: boolean;
+  unreadText?: string;
 }) {
   const table = (
     <ClusterTable
@@ -363,7 +369,10 @@ function Group({
       rows={group.rows}
       warnings={warnings}
       now={now}
-      emptyText={filtered ? NO_MATCH : "No cluster in this environment yet."}
+      emptyText={
+        unreadText ??
+        (filtered ? NO_MATCH : "No cluster in this environment yet.")
+      }
     />
   );
   if (group.label === undefined) return table;

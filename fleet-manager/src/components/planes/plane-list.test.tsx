@@ -344,6 +344,26 @@ describe("PlaneList", () => {
   });
 });
 
+describe("PlaneList search", () => {
+  it("does not say that no plane matches while a plane list is not current", async () => {
+    render(
+      <PlaneList
+        planes={keycloakPlane}
+        stale={["CamundaManagementClusterClaim"]}
+      />,
+    );
+    await userEvent.type(screen.getByRole("searchbox"), "nothing");
+    expect(
+      screen.queryByText("No rows match the search and the filters."),
+    ).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Not known: the fleet manager has no current list of CamundaManagementClusterClaim.",
+      ),
+    ).toHaveLength(2);
+  });
+});
+
 describe("PlaneListLive", () => {
   const sources = () => ({
     clusters: [],
