@@ -15,12 +15,12 @@ import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type { Resource } from "@/lib/k8s/kinds";
 import { REVISION_ANNOTATION } from "@/lib/labels";
+import { type ManagedObject, managerKind, ownerTree } from "@/lib/merge";
 import { suspendChange } from "@/lib/planes/suspend";
 import { withTakeOver } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
   ApiError,
-  Change,
   ObjectOwnership,
   Preview,
   WriteMode,
@@ -43,9 +43,13 @@ import type {
  *
  * In direct mode, a write that fails with a Conflict previews the same
  * change. When the preview names fields of other tools, a confirm shows
- * them in TakeOverChoice, and its confirm writes the change with
- * withTakeOver once takeOverOpen is false. The choice starts off for each
- * write. Otherwise the refusal shows as before.
+ * them in TakeOverChoice, and its confirm writes the change of the claim
+ * that the page shows then, with withTakeOver of the fields that it showed,
+ * once takeOverOpen is false. The choice starts off for each write. A
+ * change of metadata.generation of the claim, or of the managers of
+ * spec.suspend, closes that confirm and drops the choice. A line then says
+ * that the plane changed, until a write starts. Otherwise the refusal shows
+ * as before.
  */
 export function PlaneActions({
   claim,
@@ -95,9 +99,18 @@ export function PlaneActions({
   const deleting = claim.metadata?.deletionTimestamp != null;
   const suspendOff = off || deleting || writeMode === undefined;
 
-  // A take-over belongs to the version of the claim that its write read.
-  const [taking, setTaking] = useState<TakeOver>();
-  const takeOver = taking?.version === resourceVersion ? taking : undefined;
+  const generation = claim.metadata?.generation;
+  const owners = suspendOwners(claim);
+  const [takeOver, setTakeOver] = useState<TakeOver>();
+  // The choice that a take-over dropped, until a write starts.
+  const [dropped, setDropped] = useState<boolean>();
+  if (
+    takeOver !== undefined &&
+    (takeOver.generation !== generation || takeOver.owners !== owners)
+  ) {
+    setTakeOver(undefined);
+    setDropped(takeOver.suspend);
+  }
   const toggle = useRef<HTMLDivElement>(null);
   const refocus = useRef(false);
   // Cancel unmounts the confirm of the take-over, which held the focus.
@@ -113,7 +126,8 @@ export function PlaneActions({
   ) => {
     if (suspendOff) return;
     setRunning(true);
-    setTaking(undefined);
+    setTakeOver(undefined);
+    setDropped(undefined);
     const result = await apply(change).catch((error: unknown): WriteResult => ({
       ok: false,
       errors: [unavailable(error)],
@@ -135,16 +149,16 @@ export function PlaneActions({
       if (ownership.length > 0)
         asked = {
           suspend,
-          change,
           ownership,
           errors: withoutTakeOverConflicts(checked.errors, ownership),
           chosen: false,
-          version: resourceVersion,
+          generation,
+          owners,
         };
     }
     setRunning(false);
     if (asked) {
-      setTaking(asked);
+      setTakeOver(asked);
       return;
     }
     if (result.ok) setWrittenAt(resourceVersion);
@@ -155,10 +169,6 @@ export function PlaneActions({
   };
 
   const suspended = claim.spec.suspend === true;
-  const dropped =
-    taking !== undefined && taking.version !== resourceVersion
-      ? taking.suspend
-      : undefined;
   const goes = [
     `Every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize stops for every cluster that this plane serves (${served}).`,
     ...(ownKeycloak ? [KEYCLOAK_SUSPENDED] : []),
@@ -187,19 +197,22 @@ export function PlaneActions({
             }
             onCancel={() => {
               refocus.current = true;
-              setTaking(undefined);
+              setTakeOver(undefined);
             }}
             onConfirm={() =>
               void write(
                 takeOver.suspend,
-                withTakeOver(takeOver.change, takeOver.ownership),
+                withTakeOver(
+                  suspendChange(claim, takeOver.suspend),
+                  takeOver.ownership,
+                ),
               )
             }
           >
             <TakeOverChoice
               ownership={takeOver.ownership}
               chosen={takeOver.chosen}
-              onChoose={(chosen) => setTaking({ ...takeOver, chosen })}
+              onChoose={(chosen) => setTakeOver({ ...takeOver, chosen })}
             />
             {takeOver.errors.length > 0 && (
               <ul role="alert" className="flex flex-col gap-1 text-bad">
@@ -268,15 +281,32 @@ export function PlaneActions({
 
 // TakeOver is a write of spec.suspend that waits for the take-over of
 // the fields of other tools in ownership. errors are the other errors of
-// its preview, and version is the resourceVersion that it read.
+// its preview. generation and owners are those of the claim that it read.
 type TakeOver = {
   suspend: boolean;
-  change: Change;
   ownership: ObjectOwnership[];
   errors: ApiError[];
   chosen: boolean;
-  version: string | undefined;
+  generation: number | undefined;
+  owners: string;
 };
+
+// suspendOwners names each managedFields entry of claim that owns
+// spec.suspend, with the kind of its manager. A status write leaves it as
+// it is. The server checks a take-over list by its paths only, so a new
+// owner of the same path must close the confirm that named the old one.
+function suspendOwners(claim: Resource<"CamundaManagementClusterClaim">) {
+  const object = claim as unknown as ManagedObject;
+  const tree = ownerTree(object, (entry) => !entry.subresource);
+  const owners =
+    tree.children.get("f:spec")?.children.get("f:suspend")?.owners ?? [];
+  return owners
+    .map((o) =>
+      JSON.stringify([o.manager, o.operation, managerKind(o.manager, object)]),
+    )
+    .sort()
+    .join("\n");
+}
 
 function unavailable(error: unknown): ApiError {
   return { code: "Unavailable", message: String(error) };
