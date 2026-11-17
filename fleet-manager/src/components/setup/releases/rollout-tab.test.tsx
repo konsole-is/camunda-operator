@@ -466,7 +466,7 @@ describe("RolloutTab", () => {
     );
     expect(
       await screen.findByText(
-        'team-orders/orders: spec.releaseRef belongs to the field manager "kubectl-client-side-apply". Change it with that tool, or leave this cluster out of the move.',
+        "team-orders/orders: spec.releaseRef belongs to another tool (kubectl-client-side-apply), and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.",
       ),
     ).toBeTruthy();
     expect(

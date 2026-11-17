@@ -377,10 +377,11 @@ export function namedApiErrors(errors: readonly ApiError[]): ApiError[] {
     if (ref?.kind !== "CamundaClusterClaim") return error;
     const { path, ...rest } = error;
     // The review shows a path in front of the message, so the path moves
-    // behind the claim name.
+    // behind the claim name. The review names a Conflict that it can take
+    // over in its take-over choice, so this message is for the others.
     const message =
       error.code === "Conflict" && path
-        ? `${path} belongs to ${error.manager ? `the field manager "${error.manager}"` : "another field manager"}. Change it with that tool, or leave this cluster out of the move.`
+        ? `${path} belongs to another tool${error.manager ? ` (${error.manager})` : ""}, and this review cannot take it over. Change it with that tool, or leave this cluster out of the move.`
         : path
           ? `${path}: ${error.message}`
           : error.message;
