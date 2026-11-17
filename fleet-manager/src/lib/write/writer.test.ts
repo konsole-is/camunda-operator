@@ -753,4 +753,106 @@ describe("directWriter with a take-over", () => {
     expect(result.errors).toEqual([expect.objectContaining({ code: "Stale" })]);
     expect(seen.filter((r) => r.method !== "GET")).toEqual([]);
   });
+
+  it("refuses a listed path that also names a field of an operator controller", async () => {
+    // spec.a.b names both the field b of a and the field "a.b".
+    const manager = `CamundaClusterClaim/cluster/${uid}`;
+    const live = environment({ a: { b: 1 }, "a.b": 1 }, [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: { "f:spec": { "f:a": { "f:b": {} } } },
+      },
+      {
+        manager,
+        operation: "Apply",
+        fieldsV1: { "f:spec": { "f:a.b": {} } },
+      },
+    ]);
+    answer = () => ({ status: 200, body: live });
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Change both",
+      apply: [environment({ a: { b: 2 }, "a.b": 2 })],
+      preconditions: { [key]: "7" },
+      takeOver: { [key]: ["spec.a.b"] },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          path: "spec.a.b",
+          manager,
+        }),
+      ],
+    });
+    expect(seen.filter((r) => r.method !== "GET")).toEqual([]);
+  });
+
+  describe("when another write lands after the read", () => {
+    const fieldConflict = {
+      ...conflict,
+      message: "Apply failed with 1 conflict",
+      details: {
+        causes: [
+          {
+            reason: "FieldManagerConflict",
+            message: 'conflict with "kubectl-client-side-apply"',
+            field: ".spec.displayName",
+          },
+        ],
+      },
+    };
+    const live = environment({ displayName: "Stage" }, [
+      kubectlOwns("displayName"),
+    ]);
+    const newer = environment(
+      { displayName: "Stage" },
+      [kubectlOwns("displayName")],
+      "8",
+    );
+
+    it("a preview fails with Stale instead of Conflict", async () => {
+      let reads = 0;
+      answer = (r) => {
+        if (r.method !== "GET") return { status: 409, body: fieldConflict };
+        reads += 1;
+        return { status: 200, body: reads === 1 ? live : newer };
+      };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Stale" }),
+      ]);
+    });
+
+    it("a save fails with Stale instead of Conflict", async () => {
+      let written = false;
+      answer = (r) => {
+        if (r.method === "GET")
+          return { status: 200, body: written ? newer : live };
+        if (r.url.includes("dryRun=All")) return { status: 200, body: live };
+        written = true;
+        return { status: 409, body: fieldConflict };
+      };
+
+      const result = await directWriter(apiConfig).apply({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [expect.objectContaining({ code: "Stale" })],
+      });
+    });
+  });
 });

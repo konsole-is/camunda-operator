@@ -167,6 +167,24 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 
   const read = (ref: ObjectRef) => readObject(kc, ref);
 
+  // The API server reports a field manager conflict before a stale
+  // resourceVersion, also for a write that lands after the read.
+  const staleFirst = async (
+    errors: ApiError[],
+    ref: ObjectRef,
+    resourceVersion: string | undefined,
+  ): Promise<ApiError[]> => {
+    if (
+      resourceVersion === undefined ||
+      !errors.some((e) => e.code === "Conflict")
+    )
+      return errors;
+    const now = await read(ref).catch(() => null);
+    if (now === null || now?.metadata.resourceVersion === resourceVersion)
+      return errors;
+    return [staleError(ref)];
+  };
+
   const applyObject = (
     object: KubeObject,
     resourceVersion: string | undefined,
@@ -350,7 +368,13 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
               );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
-        errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
+        errors.push(
+          ...(await staleFirst(
+            apiErrorsOf(error, ref, resourceVersion !== undefined),
+            ref,
+            resourceVersion,
+          )),
+        );
       }
     }
     for (const ref of change.delete ?? []) {
@@ -417,7 +441,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           created.add(ref.name);
         }
       } catch (error) {
-        const failed = apiErrorsOf(error, ref, resourceVersion !== undefined);
+        const failed = await staleFirst(
+          apiErrorsOf(error, ref, resourceVersion !== undefined),
+          ref,
+          resourceVersion,
+        );
         if (ref.namespace !== undefined && created.has(ref.namespace)) {
           return {
             ok: false,
@@ -503,8 +531,9 @@ function takeOverRefusals(
   const operator: ApiError[] = [];
   for (const path of [...lists.takeOver, ...lists.remove]) {
     const manager = fields
-      .find((f) => f.path === path)
-      ?.managers.find((m) => m.kind === "operator")?.name;
+      .filter((f) => f.path === path)
+      .flatMap((f) => f.managers)
+      .find((m) => m.kind === "operator")?.name;
     if (manager !== undefined)
       operator.push({
         code: "Conflict",
