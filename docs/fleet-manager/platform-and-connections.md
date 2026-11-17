@@ -57,7 +57,13 @@ Each Secret reference names a namespace, a Secret, and a key. The page shows the
 
 When you change a field, a bar at the bottom of the page offers **Review**. The review shows the change and a dry run of it. Select **Save** to write it. In Git mode, the button reads **Push to Git**, and the page shows `Waiting for GitOps to apply` until your GitOps tool applies the commit. [Fleet manager settings](settings.md#git-mode) says how to turn on Git mode.
 
-To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool, such as `kubectl apply` or your GitOps tool, set the OIDC block, the Kubernetes API keeps that block. A platform config with the basic method and an OIDC block is not valid, so the dry run fails, and the review shows the error. Then use that tool to set the method to basic and to remove the OIDC block.
+Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
+
+To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool set the OIDC block, the review names `spec.auth.oidc` and offers the take-over. The take-over cannot remove the block, because a platform config with the basic method and an OIDC block is not valid. With or without the take-over, the review shows this error, and **Save** stays off:
+
+`spec.auth: Invalid value: oidc is required when method is oidc and must not be set when method is basic`
+
+Use that tool to set the method to basic and to remove the OIDC block.
 
 When a referenced Secret or key is missing, the platform config is not ready, and the page shows the message of its `Ready` condition. The message starts with the spec path of the reference:
 
@@ -74,7 +80,7 @@ The Secret stays picked and shows as `camunda-license (not found)`. A key that t
 
 ### Default images
 
-The section **Image repositories** shows the default repository under each field. A field that you leave empty uses its default. If another tool set the value of that field, the save keeps it, and the review names the field that stays. The page shows repositories only, never a tag. The tag always comes from the version of the cluster, management plane, or database server that runs the image.
+The section **Image repositories** shows the default repository under each field. A field that you leave empty uses its default. If another tool set the value of that field, the review names the field. The value stays, unless you take it over in the review. The page shows repositories only, never a tag. The tag always comes from the version of the cluster, management plane, or database server that runs the image.
 
 The defaults come from the images table of the operator, for each Camunda minor that the clusters and management planes of the platform config run. When they run more than one minor, each default shows the minors that it covers. For example, from Camunda 8.10 the Web Modeler images move to `camunda/hub` and `camunda/hub-websockets`:
 
@@ -225,7 +231,7 @@ While the fleet manager cannot read a kind that can use the contract, the form s
 
 The page shows this line for a short time after it opens or connects again. If the line stays, the error above the page gives the cause, as for a delete below.
 
-Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The operator writes these two fields, and the save keeps them.
+Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The operator writes these two fields. The review names them as fields of the operator, and the save keeps them.
 
 The save applies only if the contract did not change after the page read it. When a person or a tool changed it in the meantime, the save writes nothing, and the review shows this error:
 
@@ -233,7 +239,7 @@ The save applies only if the contract did not change after the page read it. Whe
 
 Go back, and make the change again on the new copy.
 
-When you clear a field that another tool set, such as `kubectl apply` or your GitOps tool, the Kubernetes API keeps the old value. The review names each such field, for example `spec.s3.region stays, because another field manager set it.` Remove the field with that tool.
+Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a cleared field stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ### Delete a contract
 

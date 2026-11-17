@@ -124,7 +124,7 @@ To change a field of a cluster preset, for example the brokers of `medium`:
 
 The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows `Missing in <namespaces>` on its row. Every other key shows `<name>/<key> is missing in <namespaces>.` under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret. If the fleet manager cannot read a list that it needs to find these namespaces, the page names the list. It then shows no Secret list and no missing key. Reload the page when it can read the list.
 
-If you clear a field that a tool other than the fleet manager set, for example `kubectl apply`, the field stays. The review names it: `<field> stays, because another field manager set it.` Remove the field with the tool that set it.
+Another tool, for example `kubectl apply`, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a cleared field stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ### The impact of a change
 
@@ -138,7 +138,7 @@ The review lists each resource that inherits the preset, as `<namespace>/<name>`
 | `Unchanged` | The change does not reach the resource. For a cluster, this occurs only when the change touches no field of `spec.cluster` other than the exceptions of `Pods roll`. A change of the description only is an example. A cluster that sets its own `auth.basic` does not take a new `passwordRotation` of the preset. |
 | `Pods may roll` | The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark. |
 
-The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field that stays, because another field manager set it, does not count as a change.
+The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field of another tool that stays, because you did not take it over, does not count as a change.
 
 Under the marks, the review shows a note for each rule that the change touches:
 
@@ -208,7 +208,7 @@ spec:
     # ... the rest of your preset
 ```
 
-The review names each cluster whose password changes and says that a cluster that runs Connectors restarts its Connectors pods. Select **Rotate**, or **Push to Git** in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so **Rotate** stays disabled. Each cluster shows the value in `status.adminPassword.rotation` when its rotation is complete. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
+The review names each cluster whose password changes and says that a cluster that runs Connectors restarts its Connectors pods. Select **Rotate**, or **Push to Git** in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so **Rotate** stays disabled. When another tool set `passwordRotation`, the review names it and asks to take it over, as for a change of the preset. Each cluster shows the value in `status.adminPassword.rotation` when its rotation is complete. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
 
 The button is disabled while the form has unsaved changes or shows an error. Save or discard the changes first, or correct the error. While the fleet manager cannot read the clusters or the platform configs, the section offers no rotation and names those lists.
 
@@ -320,6 +320,8 @@ Above the save, the page shows this notice:
 > A change reaches every resource that uses this release. Their pods roll. A version change moves each user that does not set its own version. The Rollout tab moves clusters one by one.
 
 Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A resource that sets its own version keeps it. The review of a save names the users and each version that changes. A version line names the kind of resource that runs the version. Clusters run the Camunda and Connectors versions. Elasticsearch clusters run the Elasticsearch version, and database servers run the PostgreSQL version. The rules about a version that a resource refuses are in the [CamundaRelease](../crds/camundarelease.md#versions) reference.
+
+Another tool, for example `kubectl apply`, can set a field that the save changes or clears. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ## Move clusters to a release
 
