@@ -259,9 +259,11 @@ describe("PlatformDetail", () => {
     expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
   });
 
-  it("a switch to Basic offers to remove the OIDC block of another tool", async () => {
+  it("a switch to Basic names the OIDC block of another tool and keeps Save off with the error of the CRD rule", async () => {
     const { actions } = setup();
     const path = "spec.auth.oidc";
+    const rule =
+      "oidc is required when method is oidc and must not be set when method is basic";
     const ownership = [
       {
         ref: CONFIG_REF,
@@ -269,26 +271,20 @@ describe("PlatformDetail", () => {
         cleared: [foreignField(path)],
       },
     ];
-    // Without the take-over, the OIDC block stays beside the basic method,
-    // and a rule of the CRD refuses that object.
+    // The save applies the method before it removes the block, so the API
+    // server refuses the take-over too.
     actions.previewChange.mockImplementation(async (change) => ({
       objects: [],
-      errors: change.takeOver
-        ? []
-        : [
-            {
+      errors: [
+        change.takeOver
+          ? { code: "Invalid", message: rule, path: "spec.auth", ref: CONFIG_REF }
+          : {
               code: "Conflict",
               message: 'conflict with "kubectl-client-side-apply"',
               path: "spec.auth.method",
               ref: CONFIG_REF,
             },
-            {
-              code: "Invalid",
-              message: "oidc must not be set when method is basic",
-              path: "spec.auth",
-              ref: CONFIG_REF,
-            },
-          ],
+      ],
       ownership,
     }));
 
@@ -308,17 +304,16 @@ describe("PlatformDetail", () => {
     ).toContain(
       `${path}: kubectl-client-side-apply set it. It stays unless you take it over.`,
     );
-    const save = within(review).getByRole("button", { name: "Save" });
-    expect(save).toHaveProperty("disabled", true);
 
     fireEvent.click(choice);
-    await waitFor(() => expect(save).toHaveProperty("disabled", false));
-    fireEvent.click(save);
-    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
-    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
-      takeOver: { "CamundaPlatformConfig//oidc-prod": ["spec.auth.method"] },
-      remove: { "CamundaPlatformConfig//oidc-prod": [path] },
-    });
+    await waitFor(() =>
+      expect(within(review).getByRole("alert").textContent).toContain(rule),
+    );
+    expect(within(review).getByRole("button", { name: "Save" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(actions.applyChange).not.toHaveBeenCalled();
   });
 
   it("blocks the review while a field is invalid", () => {

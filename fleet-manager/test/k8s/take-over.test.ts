@@ -15,9 +15,18 @@ import {
   previewEnvironmentChange,
 } from "@/app/setup/environments/actions";
 import {
+  applyPlatformConfigChange,
+  previewPlatformConfigChange,
+} from "@/app/setup/platform/actions";
+import {
   applyReleaseMove,
   previewReleaseMove,
 } from "@/app/setup/releases/actions";
+import {
+  draftOf as platformDraftOf,
+  updateChange as platformUpdateChange,
+} from "@/components/setup/platform/draft";
+import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import {
   APP_FIELD_MANAGER,
   fieldManagers,
@@ -712,5 +721,104 @@ describe("a take-over against the API server", () => {
     expect(preview.errors).toEqual([
       expect.objectContaining({ code: "Conflict", path: "spec.displayName" }),
     ]);
+  });
+});
+
+describe("a save of the platform config editor against the API server", () => {
+  const platformConfig = (name: string, spec: object): KubeObject => ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaPlatformConfig",
+    metadata: { name },
+    spec,
+  });
+  const oidc = {
+    issuerUrl: "https://login.example.com/realms/camunda",
+    clientId: "orchestration",
+    clientSecretRef: {
+      name: "oidc-credentials",
+      namespace: "camunda-system",
+      key: "client-secret",
+    },
+  };
+  // edit previews the edit of the page, and with takeOver previews it again
+  // with the take-over lists of that preview, as the review does after the
+  // choice.
+  const edit = async (
+    object: KubeObject,
+    change: (draft: CamundaPlatformConfig["spec"]) => void,
+    takeOver = false,
+  ) => {
+    const live = (await read(object)) as unknown as CamundaPlatformConfig;
+    const draft = platformDraftOf(live);
+    change(draft);
+    const update = platformUpdateChange(live, draft);
+    const preview = await previewPlatformConfigChange(update);
+    if (!takeOver) return { change: update, preview };
+    const taken = withTakeOver(update, preview.ownership ?? []);
+    return { change: taken, preview: await previewPlatformConfigChange(taken) };
+  };
+
+  it("clears an image repository that kubectl set only with the take-over", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "basic" },
+      images: { keycloak: "mirror.example.com/keycloak" },
+    });
+    await createClientSideApplied(api, object);
+    const clear = (draft: CamundaPlatformConfig["spec"]) => {
+      draft.images = {};
+    };
+
+    const kept = await edit(object, clear);
+    expect(kept.preview.errors).toEqual([]);
+    expect(clearedPaths(kept.preview)).toEqual(["spec.images"]);
+    expect(await applyPlatformConfigChange(kept.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect((await read(object)).spec.images).toEqual({
+      keycloak: "mirror.example.com/keycloak",
+    });
+
+    const taken = await edit(object, clear, true);
+    expect(taken.preview.errors).toEqual([]);
+    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect((await read(object)).spec.images).toBeUndefined();
+  });
+
+  it("a switch to basic of an OIDC block that kubectl set fails with the rule of the CRD, also with the take-over, and writes nothing", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "oidc", oidc },
+    });
+    await createClientSideApplied(api, object);
+    const live = await read(object);
+    const basic = (draft: CamundaPlatformConfig["spec"]) => {
+      draft.auth = { method: "basic" };
+    };
+
+    const given = await edit(object, basic);
+    expect(changedPaths(given.preview)).toEqual(["spec.auth.method"]);
+    expect(clearedPaths(given.preview)).toEqual(["spec.auth.oidc"]);
+
+    const taken = await edit(object, basic, true);
+    expect(taken.change.remove).toEqual({
+      [keyOf(object)]: ["spec.auth.oidc"],
+    });
+    const refusal = expect.objectContaining({
+      code: "Invalid",
+      message: expect.stringContaining(
+        "must not be set when method is basic",
+      ),
+    });
+    expect(taken.preview.errors).toEqual([refusal]);
+    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect((await read(object)).metadata.resourceVersion).toBe(
+      live.metadata.resourceVersion,
+    );
   });
 });
