@@ -412,6 +412,42 @@ describe("PlaneActions with a field of another tool", () => {
     );
   });
 
+  it("a change of the plane drops the take-over and says to select Suspend again", async () => {
+    const { apply, rerender } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: "Take over these fields" }),
+    );
+    rerender({ claim: claimOf({ suspend: false }, "8") });
+
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+    expect(apply).toHaveBeenCalledTimes(1);
+
+    apply.mockResolvedValueOnce({ ok: false, errors: [conflict] });
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    const checkbox = await screen.findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+  });
+
+  it("a change of the plane to the asked state says only that the plane changed", async () => {
+    const { rerender } = conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    rerender({ claim: claimOf({ suspend: true }, "8") });
+    expect(screen.getByText("The plane changed.")).toBeTruthy();
+  });
+
   it("Cancel closes the take-over and writes nothing more", async () => {
     const { apply } = conflicted();
     await userEvent.click(button("Suspend"));
@@ -423,6 +459,22 @@ describe("PlaneActions with a field of another tool", () => {
     ).toBeNull();
     expect(button("Suspend")).toBeTruthy();
     expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cancel of the take-over puts the focus on the Suspend or Resume that replaces it", async () => {
+    conflicted();
+    await userEvent.click(button("Suspend"));
+    await userEvent.click(button("Suspend the management plane"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    await userEvent.click(button("Cancel"));
+    expect(document.activeElement).toBe(button("Suspend"));
+    cleanup();
+
+    conflicted({ claim: claimOf({ suspend: true }) });
+    await userEvent.click(button("Resume"));
+    await screen.findByRole("group", { name: "Fields that another tool set" });
+    await userEvent.click(button("Cancel"));
+    expect(document.activeElement).toBe(button("Resume"));
   });
 
   it("names the controller of an operator field and offers no confirm", async () => {

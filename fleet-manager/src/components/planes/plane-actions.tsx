@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CHANGES_OFF, type ClaimActions } from "@/components/fleet/claim-edit";
 import { useGitPushes } from "@/components/fleet/git-pushes";
 import { GitWaitingLine } from "@/components/fleet/git-waiting-line";
@@ -98,6 +98,14 @@ export function PlaneActions({
   // A take-over belongs to the version of the claim that its write read.
   const [taking, setTaking] = useState<TakeOver>();
   const takeOver = taking?.version === resourceVersion ? taking : undefined;
+  const toggle = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  // Cancel unmounts the confirm of the take-over, which held the focus.
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    toggle.current?.querySelector("button")?.focus();
+  });
 
   const write = async (
     suspend: boolean,
@@ -147,6 +155,10 @@ export function PlaneActions({
   };
 
   const suspended = claim.spec.suspend === true;
+  const dropped =
+    taking !== undefined && taking.version !== resourceVersion
+      ? taking.suspend
+      : undefined;
   const goes = [
     `Every workload of the plane stops. Sign-in to Console, Web Modeler, and Optimize stops for every cluster that this plane serves (${served}).`,
     ...(ownKeycloak ? [KEYCLOAK_SUSPENDED] : []),
@@ -156,7 +168,10 @@ export function PlaneActions({
   ];
   return (
     <div className="flex max-w-xl flex-col items-end gap-2">
-      <div className="flex flex-wrap items-start justify-end gap-2">
+      <div
+        ref={toggle}
+        className="flex flex-wrap items-start justify-end gap-2"
+      >
         {takeOver && !suspendOff ? (
           <InlineConfirm
             key={`take-over-${takeOver.suspend}`}
@@ -170,7 +185,10 @@ export function PlaneActions({
               takeOver.errors.length > 0 ||
               takeOverOpen(takeOver.ownership, takeOver.chosen)
             }
-            onCancel={() => setTaking(undefined)}
+            onCancel={() => {
+              refocus.current = true;
+              setTaking(undefined);
+            }}
             onConfirm={() =>
               void write(
                 takeOver.suspend,
@@ -221,6 +239,13 @@ export function PlaneActions({
           </Link>
         )}
       </div>
+      {dropped !== undefined && (
+        <p className="text-right text-sm text-muted">
+          The plane changed.
+          {dropped !== suspended &&
+            ` Select ${dropped ? "Suspend" : "Resume"} again.`}
+        </p>
+      )}
       {writeMode === undefined && (
         <p className="text-right text-sm text-muted">{CHANGES_OFF}</p>
       )}
