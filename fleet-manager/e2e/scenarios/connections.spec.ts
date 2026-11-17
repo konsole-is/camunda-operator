@@ -69,8 +69,8 @@ test("saves a change of a contract created by hand after the take-over of its fi
     name: "Fields that another tool set",
   });
   await expect(
-    fields.getByText("kubectl set it. The save changes it."),
-  ).toBeVisible();
+    fields.getByRole("listitem").filter({ hasText: "spec.s3.region" }),
+  ).toHaveText("spec.s3.region: kubectl set it. The save changes it.");
   const save = review.getByRole("button", { name: "Save" });
   await expect(save).toBeDisabled();
   await checkPage(page, "connection-edit");
