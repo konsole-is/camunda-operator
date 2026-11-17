@@ -89,6 +89,10 @@ spec:
 
 The operator registers the snapshot repository `<namespace>.<name>` in Elasticsearch. The snapshots go under `<basePath>/<namespace>/<name>` in the bucket, where `<basePath>` comes from the `ObjectStorageConfig`. Because the name carries the namespace, two clusters of one name in two namespaces never share a repository. The operator gives the nodes the credentials or the workload identity of the bucket.
 
+On an `S3` bucket with workload identity, Elasticsearch authenticates through IRSA (IAM Roles for Service Accounts). The operator gives the nodes the token of their ServiceAccount where Elasticsearch can read it. You do not add the symlink that the [Elastic S3 repository docs](https://www.elastic.co/docs/deploy-manage/tools/snapshot-and-restore/s3-repository#iam-kubernetes-service-accounts) describe. EKS gives the pods the role only when their ServiceAccount has the annotation `eks.amazonaws.com/role-arn`. The `roleArn` of the bucket sets it, or `spec.serviceAccount.annotations` does. See [ServiceAccount](#serviceaccount).
+
+The Elastic S3 repository docs mark EKS Pod Identity as planned for self-managed Elasticsearch. So a snapshot repository cannot use EKS Pod Identity yet. For the bucket of an `ElasticsearchCluster`, use IRSA or static credentials.
+
 `SnapshotRepositoryReady` reports the registration. After it succeeds, `status.snapshotRepository` and the `snapshotRepository` field of the `SecondaryStorageConfig` carry the name. Until then, both are empty, and the `CamundaCluster` cannot take backups.
 
 For an `AzureBlob` bucket, the endpoint must have the form `https://<account>.blob.<suffix>`, without a port or a path. Otherwise `Ready` reports `InvalidReference`.
