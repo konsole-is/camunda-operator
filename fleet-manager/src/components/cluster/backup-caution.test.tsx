@@ -91,10 +91,12 @@ function renderReview(
 ) {
   render(
     <ClaimReview
-      {...backupReview(i, backups, mode, {
-        backupsHref: "?tab=backups",
-        onOpenBackups,
-      })}
+      input={() =>
+        backupReview(i, backups, mode, {
+          backupsHref: "?tab=backups",
+          onOpenBackups,
+        })
+      }
       session={i.session}
       mode={mode}
       intent="Change orders"

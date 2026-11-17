@@ -39,6 +39,21 @@ describe("InlineConfirm", () => {
     expect(document.activeElement).toBe(button("Delete backup"));
   });
 
+  it("calls onOpen when the trigger opens it", async () => {
+    const onOpen = vi.fn();
+    render(
+      <InlineConfirm
+        triggerLabel="Delete backup"
+        confirmLabel="Delete"
+        goes={[]}
+        onOpen={onOpen}
+      />,
+    );
+    expect(onOpen).not.toHaveBeenCalled();
+    await userEvent.click(button("Delete backup"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
   it("calls onConfirm on Delete", async () => {
     const onConfirm = vi.fn();
     render(confirm(onConfirm));

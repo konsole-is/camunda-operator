@@ -58,11 +58,10 @@ export function BackupCaution({
 }
 
 /**
- * backupReview gives the props of ClaimReview that the running backup of the
- * cluster decides: the impacts of the change, with the muted line of the
- * backup at the end, and for a caution the caution and the danger confirm.
- * A host spreads the result into ClaimReview. Only a client component can
- * call it.
+ * backupReview gives the part of the input of ClaimReview that the running
+ * backup of the cluster decides: the impacts of the change, with the muted line
+ * of the backup at the end, and for a caution the caution and the danger
+ * confirm. Only a client component can call it.
  */
 export function backupReview(
   input: ClusterChangeInput,

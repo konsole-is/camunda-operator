@@ -5,12 +5,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is
- * one button with triggerLabel. Open, it lists what goes and what stays,
- * then children, with the confirm and Cancel. An empty list does not show.
- * The confirm is off while confirmDisabled. Cancel closes it, calls
- * onCancel, and puts the focus back on the trigger. danger, true by
- * default, marks the confirm as destructive.
+ * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is one
+ * button with triggerLabel. Open, it lists what goes and what stays, then
+ * children, with the confirm and Cancel. An empty list does not show. The
+ * trigger opens it and calls onOpen. The confirm is off while confirmDisabled.
+ * Cancel closes it, calls onCancel, and puts the focus back on the trigger.
+ * danger, true by default, marks the confirm as destructive.
  */
 export function InlineConfirm({
   triggerLabel,
@@ -23,6 +23,7 @@ export function InlineConfirm({
   children,
   onConfirm,
   onCancel,
+  onOpen,
 }: {
   triggerLabel: string;
   confirmLabel: string;
@@ -34,6 +35,7 @@ export function InlineConfirm({
   children?: ReactNode;
   onConfirm?: () => void;
   onCancel?: () => void;
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -47,7 +49,14 @@ export function InlineConfirm({
 
   if (!open) {
     return (
-      <Button ref={trigger} variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        ref={trigger}
+        variant="outline"
+        onClick={() => {
+          setOpen(true);
+          onOpen?.();
+        }}
+      >
         {triggerLabel}
       </Button>
     );
