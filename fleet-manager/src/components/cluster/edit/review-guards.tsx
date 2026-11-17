@@ -18,11 +18,10 @@ const DOWNGRADE_CONFIRM: ReviewConfirm = {
 
 /**
  * reviewGuards returns the part of the input of ClaimReview that guards the
- * review of session: the impacts, the caution, and the confirm of
- * backupReview, with
- * the downgrade caution before the backup caution. The confirm of a backup
- * caution wins over the one of a downgrade. Only a client component can
- * call it.
+ * review of session: the impacts, the caution, and the confirm of backupReview,
+ * with the downgrade caution before the backup caution. The confirm of a backup
+ * caution wins over the one of a downgrade. Only a client component can call
+ * it.
  */
 export function reviewGuards(
   context: ClusterSlotContext,

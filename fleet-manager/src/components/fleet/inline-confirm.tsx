@@ -5,13 +5,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is
- * one button with triggerLabel. Open, it lists what goes and what stays,
- * then children, with the confirm and Cancel. An empty list does not show.
- * The trigger opens it and calls onOpen. The confirm is off while
- * confirmDisabled. Cancel closes it, calls
- * onCancel, and puts the focus back on the trigger. danger, true by
- * default, marks the confirm as destructive.
+ * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is one
+ * button with triggerLabel. Open, it lists what goes and what stays, then
+ * children, with the confirm and Cancel. An empty list does not show. The
+ * trigger opens it and calls onOpen. The confirm is off while confirmDisabled.
+ * Cancel closes it, calls onCancel, and puts the focus back on the trigger.
+ * danger, true by default, marks the confirm as destructive.
  */
 export function InlineConfirm({
   triggerLabel,
