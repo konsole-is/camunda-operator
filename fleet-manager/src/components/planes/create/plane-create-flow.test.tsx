@@ -17,6 +17,8 @@ vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 const watch = vi.hoisted(() => ({
   failing: "",
   added: {} as Record<string, unknown[]>,
+  // overdue holds each kind whose watch never answered and is overdue.
+  overdue: [] as string[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
@@ -24,6 +26,10 @@ vi.mock("@/lib/k8s/hooks", () => ({
     ...(kind === watch.failing && { error: `${kind} is forbidden` }),
   }),
   useResource: () => ({}),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => !watch.overdue.includes(kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => watch.overdue.includes(kind)),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
@@ -32,6 +38,7 @@ afterEach(() => {
   cleanup();
   watch.failing = "";
   watch.added = {};
+  watch.overdue = [];
   fakeWriter.reset();
   vi.restoreAllMocks();
 });
@@ -349,6 +356,28 @@ describe("PlaneCreateFlow", () => {
       ).toBeTruthy();
     },
   );
+  it("names an old list of plane claims that never answered and blocks step 1 while it is overdue", async () => {
+    watch.overdue = ["CamundaManagementClusterClaim"];
+    const { rerender } = show();
+    const text =
+      "Not known: the fleet manager has no current list of CamundaManagementClusterClaim.";
+    expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+    await fillBasics();
+    expect(next().disabled).toBe(true);
+
+    watch.overdue = [];
+    rerender(
+      <PlaneCreateFlow
+        initial={data}
+        mode={fakeWriter.mode}
+        preview={previewPlaneCreate}
+        create={createPlane}
+      />,
+    );
+    expect(screen.queryByText(text)).toBeNull();
+    expect(next().disabled).toBe(false);
+  });
+
   it("shows a failed read of the Secrets and refuses a picked SMTP Secret while it lasts", async () => {
     watch.added.Secret = [
       { metadata: { name: "smtp" }, keys: ["username", "password"] },

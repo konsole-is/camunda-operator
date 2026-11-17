@@ -12,6 +12,8 @@ The form follows the cluster while you fill it in. An Environment, a namespace, 
 
 Pick the environment of the plane, a name, and a namespace. The name is the name of the claim. The namespace can be a namespace of the environment, or a new one when the environment allows **Create a namespace**.
 
+The step checks the name against the planes and the claims that exist. When the fleet manager cannot read one of these lists, the form shows `Could not read <kind>:` and the error. When its copy of a list is not current, the form shows `Not known: the fleet manager has no current list of <kind>.` An example is the copy of an earlier visit. In both cases, **Next** stays off until the list is read again.
+
 **Platform config** shows the platform config of the environment. You can pick another one.
 
 **Where users sign in** has three options:

@@ -447,7 +447,7 @@ function PlaneCreateHarness({
   const [sectionErrors, setSectionErrors] = useState<
     Record<string, ValidationError[]>
   >({});
-  const steps = planeSteps(models, selectorErrors, [], sectionErrors);
+  const steps = planeSteps(models, selectorErrors, {}, sectionErrors);
   const flow = useCreateFlow({ steps, initial });
   const reached = steps.slice(0, steps.findIndex((s) => s.id === step) + 1);
   return (
