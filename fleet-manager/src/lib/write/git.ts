@@ -693,6 +693,7 @@ function takeOverRefusalsOf(change: Change): ApiError[] {
     ...(ref === undefined ? {} : { ref }),
   }));
 }
+
 function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
   if (refusals.length > 0) return refusals;

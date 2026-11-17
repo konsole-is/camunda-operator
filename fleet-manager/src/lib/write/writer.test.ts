@@ -472,7 +472,6 @@ describe("directWriter with a take-over", () => {
   };
   const uid = "0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11";
   const key = "Environment//staging";
-  const path = "/apis/fleet.camunda.io/v1alpha1/environments/staging";
   let api: http.Server;
   let apiConfig: KubeConfig;
   let seen: Seen[];

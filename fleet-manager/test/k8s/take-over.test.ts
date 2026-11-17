@@ -22,6 +22,7 @@ import {
   APP_FIELD_MANAGER,
   fieldManagers,
   type ManagedFieldsEntry,
+  type ManagedObject,
 } from "@/lib/merge";
 import { createChangeOf } from "@/lib/write/create";
 import { offered, withTakeOver } from "@/lib/write/ownership";
@@ -215,7 +216,9 @@ describe("a take-over against the API server", () => {
     });
     const after = await read(made);
     expect(after.spec.displayName).toBe("Prod");
-    expect(fieldManagers(after)["spec.displayName"]).toBe(APP_FIELD_MANAGER);
+    expect(fieldManagers(after as ManagedObject)["spec.displayName"]).toBe(
+      APP_FIELD_MANAGER,
+    );
     expect(
       owns(after, "kubectl-client-side-apply", ["f:spec", "f:displayName"]),
     ).toBe(false);
