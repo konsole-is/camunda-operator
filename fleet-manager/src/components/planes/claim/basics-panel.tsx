@@ -18,12 +18,12 @@ const PLATFORM_CONFIG: Step[] = [
 ];
 
 /**
- * BasicsPanel shows the name and the namespace, set at creation, and edits
- * the platform config of the claim. The first option leaves the claim
+ * PlaneBasicsPanel shows the name and the namespace, set at creation, and
+ * edits the platform config of the claim. The first option leaves the claim
  * without one, so that the plane takes the platform config of its
  * environment. It renders nothing without a session.
  */
-export function BasicsPanel() {
+export function PlaneBasicsPanel() {
   const plane = usePlaneClaimEdit();
   const id = useId();
   const edit = plane.edit;

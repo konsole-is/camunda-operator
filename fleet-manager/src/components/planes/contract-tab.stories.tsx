@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { Resource } from "@/lib/k8s/kinds";
-import { ContractTab } from "./contract-tab";
+import { PlaneContractTab } from "./contract-tab";
 
 const realm = "https://login.example.com/realms/camunda";
 
@@ -44,9 +44,9 @@ const reader = (
   }) as unknown as Resource<"CamundaOptimize">;
 
 const meta = {
-  title: "planes/ContractTab",
-  component: ContractTab,
-} satisfies Meta<typeof ContractTab>;
+  title: "planes/PlaneContractTab",
+  component: PlaneContractTab,
+} satisfies Meta<typeof PlaneContractTab>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
