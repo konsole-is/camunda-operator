@@ -1,9 +1,9 @@
 import type { ConditionRow } from "@/components/fleet/conditions-table";
-import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SLOT_FIELDS, type SlotField } from "@/lib/fields/slots";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { environmentOf } from "@/lib/policy/environment";
 import { conditionTrue } from "@/lib/policy/options";
 import type { RegistrationSources } from "./sources";
@@ -55,16 +55,6 @@ export type RegistrationGroup = {
   section?: SectionHeader;
   rows: RegistrationRow[];
   unread?: boolean;
-};
-
-/**
- * SourceReads says which lists of RegistrationSources are not read: errors
- * holds the error of each failed watch, and stale the kind of each list
- * whose watch is not fresh (freshKey).
- */
-export type SourceReads = {
-  errors?: readonly ReadError[];
-  stale?: readonly string[];
 };
 
 /** NO_ENVIRONMENT names the requests whose namespace belongs to no Environment. */
@@ -194,15 +184,6 @@ export function registrationSummary(
     (r) => conditionTrue(r, "Accepted") && conditionTrue(r, "Ready"),
   ).length;
   return { healthy, notHealthy: registrations.length - healthy };
-}
-
-/** unreadKinds returns each kind of reads that failed or is stale, once. */
-export function unreadKinds(reads: SourceReads): string[] {
-  const kinds = [
-    ...(reads.errors ?? []).map((e) => e.kind),
-    ...(reads.stale ?? []),
-  ];
-  return [...new Set(kinds)];
 }
 
 function requestCounts(

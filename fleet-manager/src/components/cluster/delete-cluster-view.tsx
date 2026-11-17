@@ -5,7 +5,7 @@ import {
   ClaimDeleteView,
   type DeleteStage,
 } from "@/components/fleet/claim-delete-page";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,

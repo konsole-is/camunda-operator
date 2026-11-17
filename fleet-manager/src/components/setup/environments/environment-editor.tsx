@@ -8,7 +8,7 @@ import { ChangeReview } from "@/components/fleet/change-review";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import type { FleetEnvironmentConditionType } from "@/generated/conditions";

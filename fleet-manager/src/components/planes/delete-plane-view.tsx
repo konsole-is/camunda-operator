@@ -15,7 +15,7 @@ import type {
   WriteResult,
 } from "@/lib/write/types";
 import type { DeletePlaneModel, ObjectRef } from "./delete-plane-model";
-import type { ReadError } from "./planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 
 /** DATABASE_DATA says what the delete of a Database and of a DatabaseServer does to the data. */
 export const DATABASE_DATA =

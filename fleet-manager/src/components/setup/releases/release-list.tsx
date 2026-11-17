@@ -6,7 +6,11 @@ import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { DataTable } from "@/components/fleet/data-table";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
-import type { ReadError } from "@/components/planes/planes-table";
+import {
+  type ReadError,
+  unreadDeleteText,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import { Button } from "@/components/ui/button";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
@@ -19,8 +23,6 @@ import {
   defaultInText,
   type ReleaseRow,
   releaseRows,
-  unreadDeleteText,
-  unreadKinds,
   usedByText,
 } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";

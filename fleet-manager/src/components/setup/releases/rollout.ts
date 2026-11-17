@@ -23,8 +23,8 @@ import {
   validateClusterClaim,
 } from "@/lib/session";
 import type { ApiError, Change, WriteResult } from "@/lib/write/types";
-import { type SourceReads, unreadKinds } from "./rows";
 import { RELEASE_SOURCE_KINDS, ROLLOUT_SOURCE_KINDS } from "./source-kinds";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 
 /** ClusterClaim is a CamundaClusterClaim as the watch gives it. */
 export type ClusterClaim = Resource<"CamundaClusterClaim">;

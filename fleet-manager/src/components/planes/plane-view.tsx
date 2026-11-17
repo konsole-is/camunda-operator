@@ -10,10 +10,6 @@ import type { ClaimActions } from "@/components/fleet/claim-edit";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
-import {
-  type SourceReads,
-  unreadKinds,
-} from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
 import {
@@ -50,7 +46,12 @@ import { planeEndpointRows } from "./plane-endpoints";
 import { contractReaders, isOidc, optimizeRows } from "./plane-optimize";
 import { PlaneHeader } from "./plane-header";
 import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
-import type { ReadError } from "./planes-table";
+import {
+  currentReadErrors,
+  type ReadError,
+  type SourceReads,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import { servedClusters } from "./served-clusters";
 import { ServedClustersTab } from "./served-clusters-tab";
 import { UnreadNote, unreadText } from "./unread-note";
@@ -202,10 +203,7 @@ export function PlaneView({
   const answered = useAnswered(followed);
   const fresh = useWatchesFresh(followed);
   const overdue = useWatchesOverdue(followed);
-  const firstErrors = (data.readErrors ?? []).filter(
-    (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
-  );
-  const errors = [...liveErrors, ...firstErrors];
+  const errors = currentReadErrors(liveErrors, data.readErrors, answered);
   // A watch that answered once and then lost its connection keeps its last
   // items, which can be out of date. Before its first answer, the page
   // shows the read of the server.

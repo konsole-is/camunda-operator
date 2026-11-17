@@ -1,4 +1,4 @@
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
 import {
   ALLOW_VERSION_DOWNGRADE_ANNOTATION,
@@ -13,6 +13,7 @@ import {
   equalJSON,
   nameOf,
   own,
+  parseVersion,
   type PluginSelection,
   PRESET_LISTS,
   releaseAllowed,
@@ -416,11 +417,6 @@ function clusterOf(claim: Claim, s: EnvironmentSources) {
       c.metadata?.namespace === claim.metadata.namespace &&
       c.metadata?.labels?.[CLAIM_LABEL] === claim.metadata.name,
   );
-}
-
-function parseVersion(version: string | undefined): number[] | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
-  return match ? match.slice(1).map(Number) : undefined;
 }
 
 /**

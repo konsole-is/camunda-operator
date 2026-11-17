@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { DataTable } from "@/components/fleet/data-table";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { Button } from "@/components/ui/button";
 import type { Resource } from "@/lib/k8s/kinds";
 import type {

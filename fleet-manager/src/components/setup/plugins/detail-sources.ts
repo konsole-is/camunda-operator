@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";

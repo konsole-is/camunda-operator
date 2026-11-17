@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { PlaneClusters, PlaneName, PlaneServes } from "./cells";
 import { NotAttachedChip } from "./not-attached-chip";
 import { optimizeLabel, type Plane, type PlaneSources } from "./plane";
-import { type ReadError, usePlanes } from "./planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
+import { usePlanes } from "./planes-table";
 
 const MODES = ["Keycloak", "External Keycloak", "OIDC"];
 const STATUSES = ["Ready", "Not ready", "Unknown", "No status"];

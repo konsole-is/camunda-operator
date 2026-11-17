@@ -7,7 +7,7 @@ import { ChangeReview } from "@/components/fleet/change-review";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import type { KindName, Resource } from "@/lib/k8s/kinds";

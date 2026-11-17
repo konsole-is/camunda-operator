@@ -12,7 +12,8 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
+import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
@@ -947,9 +948,7 @@ function useLive<K extends KindName>(
 ): { kind: K; items: Resource<K>[]; failure?: string } {
   const { items, error: watchError } = useResources(kind, opts, initial);
   // A failed read of the server counts until the watch answers once.
-  const [fresh] = useWatchesFresh([{ kind, opts }]);
-  const [answered, setAnswered] = useState(false);
-  if (fresh && !answered) setAnswered(true);
+  const answered = useAnswered([{ kind, opts }]).has(kind);
   const readError = answered
     ? undefined
     : readErrors.find((e) => e.kind === kind)?.message;

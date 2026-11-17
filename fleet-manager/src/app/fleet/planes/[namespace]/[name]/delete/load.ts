@@ -1,6 +1,6 @@
 import "server-only";
 import type { DeletePlaneData } from "@/components/planes/delete-plane-model";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
 

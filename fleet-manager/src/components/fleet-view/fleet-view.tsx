@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo, useState } from "react";
 import { type PendingPush, useGitPushes } from "@/components/fleet/git-pushes";
+import { useClock } from "@/components/fleet/use-clock";
 import { PlanesTable, usePlanes } from "@/components/planes/planes-table";
 import {
   type Plane,
@@ -19,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
 import type { PodWarnings, Warning } from "@/lib/warnings";
@@ -44,8 +46,6 @@ import {
   waitingRows,
 } from "./model";
 import { MissingSources } from "./warning-chips";
-
-import type { ReadError } from "@/components/planes/planes-table";
 
 export type { ReadError };
 
@@ -458,7 +458,7 @@ export function FleetViewLive({
   const planes = usePlanes(initial.planes);
   const { pushes, settle } = useGitPushes();
   const podWarnings = useWarnings();
-  const clock = useClock(now);
+  const clock = useClock(now, true, NOW_INTERVAL_MS);
 
   const sources: FleetSources = useMemo(
     () => ({
@@ -522,13 +522,11 @@ export function FleetViewLive({
     "CamundaManagementClusterClaim",
   ];
   const answered = useAnswered(followed);
-  const firstErrors = (initial.readErrors ?? []).filter(
-    (e) =>
-      followed.includes(e.kind as KindName) &&
-      !answered.has(e.kind) &&
-      !liveErrors.some((l) => l.kind === e.kind),
+  const errors = currentReadErrors(
+    liveErrors,
+    initial.readErrors?.filter((e) => followed.includes(e.kind as KindName)),
+    answered,
   );
-  const errors = [...liveErrors, ...firstErrors];
 
   return (
     <FleetView
@@ -541,18 +539,4 @@ export function FleetViewLive({
       onStopWaiting={settle}
     />
   );
-}
-
-// useClock starts at the time of the server, so that the first render in
-// the browser matches the render of the server.
-function useClock(initial: string): string {
-  const [clock, setClock] = useState(initial);
-  useEffect(() => {
-    const timer = setInterval(
-      () => setClock(new Date().toISOString()),
-      NOW_INTERVAL_MS,
-    );
-    return () => clearInterval(timer);
-  }, []);
-  return clock;
 }

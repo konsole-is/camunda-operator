@@ -16,8 +16,8 @@ import { claim, imagesFixture, releaseFixtures } from "./fixtures";
 import type { ReleaseActions } from "./release-detail";
 import { ReleaseSettings } from "./release-settings";
 import { RELEASE_CHANGE_NOTICE } from "./draft";
-import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
+import type { SourceReads } from "@/lib/k8s/unread";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));

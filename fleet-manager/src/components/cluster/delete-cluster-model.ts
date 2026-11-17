@@ -1,5 +1,5 @@
 // This module runs in the browser and on the server.
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";

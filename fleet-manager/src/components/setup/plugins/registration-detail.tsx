@@ -2,7 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import { useClock } from "@/components/fleet/use-clock";
-import type { ReadError } from "@/components/planes/planes-table";
+import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AboutTab } from "./about-tab";
 import { contractOf } from "./contract";
@@ -11,7 +11,6 @@ import {
   type RegistrationDetailData,
   useRegistrationDetail,
 } from "./detail-sources";
-import { unreadKinds } from "./groups";
 import { GrantsTab } from "./grants-tab";
 import { HealthTab } from "./health-tab";
 import { parameterRows } from "./parameters";

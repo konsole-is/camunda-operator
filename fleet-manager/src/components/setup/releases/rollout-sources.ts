@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";

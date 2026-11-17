@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";

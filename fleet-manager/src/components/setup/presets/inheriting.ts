@@ -1,5 +1,5 @@
 import type { ConditionLike } from "@/components/fleet/status";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { clusterFields } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";

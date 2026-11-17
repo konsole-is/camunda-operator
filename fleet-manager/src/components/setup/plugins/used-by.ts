@@ -5,7 +5,7 @@ import { REQUEST_LABEL } from "@/lib/labels";
 import { byCodeUnit } from "@/lib/policy/json";
 import { environmentOf } from "@/lib/policy/environment";
 import { type GrantView, grantView } from "./grants";
-import { NO_ENVIRONMENT, type SourceReads, unreadKinds } from "./groups";
+import { NO_ENVIRONMENT } from "./groups";
 import type { RegistrationSources } from "./sources";
 import {
   type Invalid,
@@ -14,6 +14,7 @@ import {
   isText,
   itemsOf,
 } from "./values";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 
 /** ResourceRef is one resource that a plugin reports for a request. */
 export type ResourceRef = NonNullable<

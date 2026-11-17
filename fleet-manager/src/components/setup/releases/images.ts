@@ -68,9 +68,3 @@ export function releaseImages(
     ];
   });
 }
-
-/** minorOf returns the major.minor of version, or undefined when version has none. */
-export function minorOf(version: string): string | undefined {
-  const match = /^(\d+)\.(\d+)(?:\.|$)/.exec(version);
-  return match ? `${match[1]}.${match[2]}` : undefined;
-}

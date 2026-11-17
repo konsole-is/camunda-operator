@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
 import type { Change, KubeObject, Preview, WriteMode } from "@/lib/write/types";

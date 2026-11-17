@@ -1,5 +1,5 @@
 import "server-only";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { CONNECTION_SOURCE_KINDS } from "@/components/setup/connections/source-kinds";
 import type { ConnectionPageData } from "@/components/setup/connections/sources";
 import { list } from "@/lib/k8s/read";

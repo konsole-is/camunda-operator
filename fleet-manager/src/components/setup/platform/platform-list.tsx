@@ -4,13 +4,8 @@ import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
-import type { ReadError } from "@/components/planes/planes-table";
-import {
-  type PlatformRow,
-  platformRows,
-  unknownUsersText,
-  unreadUserKinds,
-} from "./model";
+import { type ReadError, unknownUsersText } from "@/lib/k8s/unread";
+import { type PlatformRow, platformRows, unreadUserKinds } from "./model";
 import { type PlatformSources, usePlatformSources } from "./sources";
 
 const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;

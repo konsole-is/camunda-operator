@@ -13,7 +13,7 @@ import {
   type DeletionPolicy,
   type PluginSelection,
 } from "@/lib/policy";
-import type { ReadError } from "./planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import { contractReaders } from "./plane-optimize";
 import { servedClusters } from "./served-clusters";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReadError } from "@/components/planes/planes-table";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
@@ -25,8 +25,8 @@ export type PresetActions = {
 
 /**
  * usePresetSources follows each list of initial live. errors holds each
- * failed watch, and a failed server read until its watch sends a list.
- * pending holds each other kind whose watch is not fresh (freshKey).
+ * failed watch, and a failed server read until its watch sends a list, in
+ * the order of the lists. pending holds each other kind whose watch is not fresh (freshKey).
  */
 export function usePresetSources(
   initial: PresetSnapshot,
@@ -58,13 +58,16 @@ export function usePresetSources(
   const kinds = keys.map((key) => PRESET_SOURCE_KINDS[key]);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
   const answered = useAnswered(kinds);
-  const errors = keys.flatMap((key, i): ReadError[] => {
-    const kind = kinds[i];
+  const live = keys.flatMap((key, i): ReadError[] => {
     const { error } = lists[key];
-    if (error) return [{ kind, message: error }];
-    if (answered.has(kind)) return [];
-    return initial.readErrors.filter((e) => e.kind === kind);
+    return error ? [{ kind: kinds[i], message: error }] : [];
   });
+  const order = (e: ReadError) => (kinds as string[]).indexOf(e.kind);
+  const errors = currentReadErrors(
+    live,
+    initial.readErrors.filter((e) => order(e) >= 0),
+    answered,
+  ).sort((a, b) => order(a) - order(b));
   const pending = kinds.filter(
     (kind, i) => !fresh[i] && !errors.some((e) => e.kind === kind),
   );

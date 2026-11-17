@@ -11,7 +11,6 @@ import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
 import { useClock } from "@/components/fleet/use-clock";
-import { unreadKinds } from "@/components/setup/releases/rows";
 import { useAnswered } from "@/lib/k8s/answered";
 import {
   useResource,
@@ -73,6 +72,7 @@ import type { ClusterSlotContext, ClusterSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
+import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
 
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
@@ -400,15 +400,7 @@ export function ClusterView({
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
   );
-  // Until the watch of a kind answers, the page shows the read of the
-  // server, and a failed read stays an error.
-  const errors = [
-    ...liveErrors,
-    ...(initial.readErrors ?? []).filter(
-      (e) =>
-        !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
-    ),
-  ];
+  const errors = currentReadErrors(liveErrors, initial.readErrors, answered);
   const requestsError = errors.find((e) => e.kind === "PluginRequest")?.message;
   const stale = followedLists
     .filter(

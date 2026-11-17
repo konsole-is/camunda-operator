@@ -18,8 +18,8 @@ import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
 import type { ReleaseTab } from "./release-tabs";
 import { rolloutData } from "./rollout-fixtures";
 import type { RolloutLists } from "./rollout-sources";
-import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
+import type { SourceReads } from "@/lib/k8s/unread";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/k8s/hooks", () => ({

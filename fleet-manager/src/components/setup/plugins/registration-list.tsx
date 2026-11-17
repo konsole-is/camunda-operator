@@ -5,7 +5,7 @@ import { Panel } from "@/components/cluster/claim-tab";
 import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
 import { useClock } from "@/components/fleet/use-clock";
-import type { ReadError } from "@/components/planes/planes-table";
+import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { CatalogChart } from "@/startup/bundled-data";
 import { type CatalogRead, missingCharts } from "./catalog";
@@ -18,7 +18,6 @@ import {
   fillsText,
   registrationGroups,
   registrationSummary,
-  unreadKinds,
 } from "./groups";
 import { type RegistrationSources, useRegistrationSources } from "./sources";
 

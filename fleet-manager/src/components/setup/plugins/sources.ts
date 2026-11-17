@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
