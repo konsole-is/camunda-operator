@@ -419,13 +419,13 @@ describe("PlaneActions with a field of another tool", () => {
   });
 
   // ownedBy gives the managedFields of a claim whose spec.suspend manager
-  // set with apply, and a status write of the operator when status is set.
-  const ownedBy = (manager: string, status = false) => ({
+  // set with operation, and a status write of the operator when status is set.
+  const ownedBy = (manager: string, status = false, operation = "Apply") => ({
     generation: 3,
     managedFields: [
       {
         manager,
-        operation: "Apply",
+        operation,
         fieldsType: "FieldsV1",
         fieldsV1: { "f:spec": { "f:suspend": {} } },
       },
@@ -507,6 +507,60 @@ describe("PlaneActions with a field of another tool", () => {
       screen.getByText("The plane changed. Select Suspend again."),
     ).toBeTruthy();
     expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("a new operation of the manager of spec.suspend drops the take-over and says to select Suspend again", async () => {
+    const { rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("kubectl", false, "Update")) });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.getByText("The plane changed. Select Suspend again."),
+    ).toBeTruthy();
+  });
+
+  it("a new claim of the same name drops the take-over", async () => {
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", { ...ownedBy("kubectl"), uid: "other-uid" }),
+    });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("a take-over that turned off while a kind was unread does not come back with its choice", async () => {
+    const { rerender } = await asked();
+    rerender({ unread: ["CamundaManagementCluster"] });
+    rerender({ claim: claimOf({}, "8", ownedBy("kubectl", true)) });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeNull();
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+  });
+
+  it("a delete of the claim drops the take-over and says only why Suspend is off", async () => {
+    const { rerender } = await asked();
+    rerender({
+      claim: claimOf({}, "8", {
+        ...ownedBy("kubectl"),
+        generation: 4,
+        deletionTimestamp: now,
+      }),
+    });
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Suspend and Resume are off while the claim is being deleted.",
+      ),
+    ).toBeTruthy();
   });
 
   it("a GitOps marker on the claim drops the take-over, as the review names kubectl another way", async () => {

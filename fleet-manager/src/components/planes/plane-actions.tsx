@@ -43,13 +43,7 @@ import type {
  *
  * In direct mode, a write that fails with a Conflict previews the same
  * change. When the preview names fields of other tools, a confirm shows
- * them in TakeOverChoice, and its confirm writes the change of the claim
- * that the page shows then, with withTakeOver of the fields that it showed,
- * once takeOverOpen is false. The choice starts off for each write. A
- * change of metadata.generation of the claim, or of the managers of
- * spec.suspend, closes that confirm and drops the choice. A line then says
- * that the plane changed, until a write starts or the Suspend confirm
- * opens. Otherwise the refusal shows as before.
+ * them. A new uid of claim closes it.
  */
 export function PlaneActions({
   claim,
@@ -99,14 +93,17 @@ export function PlaneActions({
   const deleting = claim.metadata?.deletionTimestamp != null;
   const suspendOff = off || deleting || writeMode === undefined;
 
-  const generation = claim.metadata?.generation;
+  const { uid, generation } = claim.metadata ?? {};
   const owners = suspendOwners(claim);
   const [takeOver, setTakeOver] = useState<TakeOver>();
   // The choice that a take-over dropped, until a write or a confirm starts.
   const [dropped, setDropped] = useState<boolean>();
-  if (
+  if (takeOver !== undefined && suspendOff) setTakeOver(undefined);
+  else if (
     takeOver !== undefined &&
-    (takeOver.generation !== generation || takeOver.owners !== owners)
+    (takeOver.uid !== uid ||
+      takeOver.generation !== generation ||
+      takeOver.owners !== owners)
   ) {
     setTakeOver(undefined);
     setDropped(takeOver.suspend);
@@ -152,6 +149,7 @@ export function PlaneActions({
           ownership,
           errors: withoutTakeOverConflicts(checked.errors, ownership),
           chosen: false,
+          uid,
           generation,
           owners,
         };
@@ -182,7 +180,7 @@ export function PlaneActions({
         ref={toggle}
         className="flex flex-wrap items-start justify-end gap-2"
       >
-        {takeOver && !suspendOff ? (
+        {takeOver ? (
           <InlineConfirm
             key={`take-over-${takeOver.suspend}`}
             defaultOpen
@@ -282,12 +280,13 @@ export function PlaneActions({
 
 // TakeOver is a write of spec.suspend that waits for the take-over of
 // the fields of other tools in ownership. errors are the other errors of
-// its preview. generation and owners are those of the claim that it read.
+// its preview.
 type TakeOver = {
   suspend: boolean;
   ownership: ObjectOwnership[];
   errors: ApiError[];
   chosen: boolean;
+  uid: string | undefined;
   generation: number | undefined;
   owners: string;
 };
