@@ -47,8 +47,9 @@ export function appliedSession<C extends ClaimObject>(
  * the claim that a save of s in direct mode leaves, from ownership, the
  * fields of other tools that the review of the claim names: each cleared
  * field stays, unless takeOver is true and the review offers it. final is
- * the claim of the preview with the take-over. It returns s when
- * ownership names no cleared field.
+ * the claim of the preview with the take-over. A removed field that final
+ * holds gets its value from final, as the API server sets its default
+ * again. It returns s when ownership names no cleared field.
  */
 export function savedSession<C extends ClaimObject>(
   s: Session<C>,
