@@ -119,7 +119,8 @@ export function diffView(
  * applies and deletes in the order of the change, and a failure keeps the
  * objects written before it. A delete of an object that is gone succeeds.
  * An apply with a precondition fails with Stale when the object was
- * deleted since the page read it. A delete with a precondition or a UID
+ * deleted or changed since the page read it, also when the change would
+ * conflict. A delete with a precondition or a UID
  * fails with Stale when the object changed or was created again since.
  * After a delete between the preview and the write, a kind that the app
  * may not delete, such as a Namespace, can exist again, with the error of
@@ -137,11 +138,10 @@ export function diffView(
  * The preview names in ownership each updated object with a precondition
  * that has a field of another field manager that the change changes or
  * clears. For an object that change.takeOver or change.remove lists, both
- * writes first read the object and refuse it, with no other request for
- * it: with Stale when its resourceVersion is not the precondition, with
+ * writes refuse it after the read, with no other request for it: with
  * Conflict for each listed field that a controller of the operator owns,
  * and with Invalid when the lists are not the offered fields of ownership
- * at that resourceVersion. Then a dry run with force must take no field
+ * at the precondition. Then a dry run with force must take no field
  * that takeOver does not list, or the object fails with Conflict. apply
  * applies such an object with force only when takeOver lists a field, and
  * then removes the fields of remove with a JSON merge patch at the
@@ -266,6 +266,16 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         }
         if (before !== undefined && change.create?.includes(key)) {
           errors.push(existsError(ref));
+          continue;
+        }
+        // The API server reports a field manager conflict before a stale
+        // resourceVersion, and the page must read the object again first.
+        if (
+          resourceVersion !== undefined &&
+          before !== undefined &&
+          before.metadata.resourceVersion !== resourceVersion
+        ) {
+          errors.push(staleError(ref));
           continue;
         }
         if (typeof before?.metadata.uid === "string") {
@@ -489,8 +499,6 @@ function takeOverRefusals(
         ref,
       },
     ];
-  if (before.metadata.resourceVersion !== resourceVersion)
-    return [staleError(ref)];
   const fields = [...foreign.changed, ...foreign.cleared];
   const operator: ApiError[] = [];
   for (const path of [...lists.takeOver, ...lists.remove]) {

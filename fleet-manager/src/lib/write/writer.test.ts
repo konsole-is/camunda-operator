@@ -271,7 +271,7 @@ describe("directWriter when an object is deleted after the preview", () => {
           spec: {},
         },
       ],
-      preconditions: { "Environment//prod": "7" },
+      preconditions: { "Environment//prod": "9" },
     });
 
     expect(result).toEqual({
@@ -296,7 +296,7 @@ describe("directWriter when an object is deleted after the preview", () => {
           spec: {},
         },
       ],
-      preconditions: { "Environment//prod": "7" },
+      preconditions: { "Environment//prod": "9" },
     });
 
     expect(result).toEqual({
