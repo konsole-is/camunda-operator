@@ -396,7 +396,7 @@ In Git mode, to change or remove a field that another tool set, make the change 
 
 A tool that writes without server-side apply, such as `kubectl apply` without `--server-side` or `kubectl edit`, does not see a save of the fleet manager. Its next write can set a field back, and nothing warns about it.
 
-When you applied the claim of a plane with `kubectl apply` or another tool, the review in direct mode asks before a save changes or removes a field that the tool set.
+You can apply the claim of a plane with `kubectl apply` or another tool. In direct mode, the review then asks before a save changes or removes a field that the tool set.
 
 ## Suspend a management plane
 
