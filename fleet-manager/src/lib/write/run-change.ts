@@ -56,10 +56,45 @@ const refKeySchema = z.templateLiteral([
   z.string(),
 ]);
 
+const fieldListSchema = z
+  .record(refKeySchema, z.array(z.string().min(1)).min(1))
+  .optional();
+
+// takeOverIssues gives the issues of the take-over list name of c: each
+// key names an applied object with a precondition, no field twice.
+function takeOverIssues(
+  c: Change,
+  name: "takeOver" | "remove",
+): { message: string; path: string[] }[] {
+  const lists = c[name];
+  if (lists === undefined) return [];
+  const applied: string[] = c.apply.map((o) => refKey(refOf(o)));
+  const keys = Object.keys(lists) as RefKey[];
+  const issues = [];
+  if (
+    !keys.every(
+      (key) => applied.includes(key) && c.preconditions?.[key] !== undefined,
+    )
+  )
+    issues.push({
+      message: "A take-over names an object that the change updates.",
+      path: [name],
+    });
+  if (keys.some((key) => new Set(lists[key]).size !== lists[key].length))
+    issues.push({
+      message: "A take-over lists each field once.",
+      path: [name],
+    });
+  return issues;
+}
+
 /**
  * changeSchema accepts a Change with an intent and at least one object to
  * apply or delete. Each key of create names an applied object that has no
  * precondition. Each key of uids and of generations names a deleted object.
+ * Each key of takeOver and remove names an applied object with a
+ * precondition, and lists each field once. A change with a list has no
+ * force.
  */
 export const changeSchema: z.ZodType<Change> = z
   .object({
@@ -71,7 +106,20 @@ export const changeSchema: z.ZodType<Change> = z
     generations: z.record(refKeySchema, z.number().int().positive()).optional(),
     create: z.array(refKeySchema).optional(),
     force: z.boolean().optional(),
+    takeOver: fieldListSchema,
+    remove: fieldListSchema,
     directOnly: z.boolean().optional(),
+  })
+  .superRefine((c, ctx) => {
+    for (const name of ["takeOver", "remove"] as const)
+      for (const issue of takeOverIssues(c, name))
+        ctx.addIssue({ code: "custom", ...issue });
+    if (c.force !== undefined && (c.takeOver ?? c.remove) !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        message: "force and a take-over do not go together.",
+        path: ["force"],
+      });
   })
   .refine((c) => c.apply.length + (c.delete?.length ?? 0) > 0, {
     message: "The change has no object to apply or delete.",
@@ -125,7 +173,7 @@ const CLAIM_KINDS: readonly string[] = [
 /**
  * claimChangeSchema accepts a Change that applies exactly one claim of a
  * cluster or a management plane, with a namespace, and that has no delete,
- * no create, no force, and no directOnly.
+ * no create, no force, and no directOnly. It allows takeOver and remove.
  */
 export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
   (c) =>
@@ -145,7 +193,8 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
  * delete ref with the kind and apiVersion of a claim, a namespace, and a
  * name and namespace other than "." and "..", the UID and the generation
  * of that claim in uids and generations, and no preconditions, create,
- * force, or directOnly.
+ * force, takeOver, remove, or directOnly. A delete needs no take-over:
+ * field ownership does not gate a delete.
  */
 export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -170,6 +219,8 @@ export const claimDeleteSchema: z.ZodType<Change> = changeSchema.refine(
       c.preconditions === undefined &&
       c.create === undefined &&
       c.force === undefined &&
+      c.takeOver === undefined &&
+      c.remove === undefined &&
       c.directOnly === undefined
     );
   },
@@ -327,7 +378,8 @@ const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
  * claimBatchChangeSchema accepts a Change that applies one or more
  * CamundaClusterClaims, each with a namespace, the apiVersion of the kind,
  * and a precondition, no claim twice, and that has no delete, no create, no
- * force, and no directOnly.
+ * force, no remove, and no directOnly. It allows takeOver: a move clears no
+ * field.
  */
 export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -344,6 +396,7 @@ export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
       c.delete === undefined &&
       c.create === undefined &&
       c.force === undefined &&
+      c.remove === undefined &&
       c.directOnly === undefined
     );
   },
@@ -491,8 +544,9 @@ const BACKUP_METADATA: readonly string[] = [
 ];
 
 /**
- * backupChangeSchema accepts a Change with directOnly, no force, and no
- * preconditions that does one of two things for cluster. It creates one
+ * backupChangeSchema accepts a Change with directOnly and no force,
+ * preconditions, takeOver, or remove that does one of two things for
+ * cluster. It creates one
  * backup or restore in the namespace of cluster, listed in create, with
  * only name, namespace, labels, and annotations in its metadata. The spec
  * of a backup of either kind is exactly { clusterRef: { name } }, of a
@@ -513,7 +567,9 @@ export function backupChangeSchema(cluster: {
       const plain =
         c.directOnly === true &&
         c.force === undefined &&
-        c.preconditions === undefined;
+        c.preconditions === undefined &&
+        c.takeOver === undefined &&
+        c.remove === undefined;
       if (!plain) return false;
       if (c.apply.length === 1 && c.delete === undefined) {
         const object = c.apply[0];
@@ -733,7 +789,8 @@ function specFits(kind: string, spec: unknown, cluster: string): boolean {
  * createChangeSchema accepts a Change that applies one claim of either
  * kind with a namespace, optionally after the Namespace of that namespace,
  * whose create lists the key of each applied object, and that has no
- * delete, no preconditions, no force, and no directOnly.
+ * delete, no preconditions, no force, no takeOver, no remove, and no
+ * directOnly. A new object has no other field manager.
  */
 export const createChangeSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -759,6 +816,8 @@ export const createChangeSchema: z.ZodType<Change> = changeSchema.refine(
       c.delete === undefined &&
       c.preconditions === undefined &&
       c.force === undefined &&
+      c.takeOver === undefined &&
+      c.remove === undefined &&
       c.directOnly === undefined
     );
   },
@@ -781,6 +840,7 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
  * of a namespaced kind has a namespace of namespaces. Each delete, and each
  * apply that create does not list, has a precondition. force is allowed
  * only on a change whose applies are all updates and that deletes nothing.
+ * takeOver and remove are allowed on the updates.
  * An applied object holds no status, and its metadata holds only name,
  * namespace, labels, and annotations. directOnly is refused.
  */
@@ -830,7 +890,7 @@ export function adminChangeSchema(
 /**
  * namespaceLabelChangeSchema accepts a Change that applies exactly one
  * Namespace, with a precondition on that Namespace, with directOnly true,
- * and with no delete and no force. Besides metadata.name, the Namespace
+ * and with no delete, force, takeOver, or remove. Besides metadata.name, the Namespace
  * holds only string maps of labels and annotations. The Namespace may
  * carry the resourceVersion that the page read. The label
  * ENVIRONMENT_LABEL has a non-empty string value.
@@ -843,7 +903,9 @@ export const namespaceLabelChangeSchema: z.ZodType<Change> =
       c.preconditions?.[refKey(refOf(c.apply[0]))] !== undefined &&
       c.directOnly === true &&
       c.delete === undefined &&
-      c.force === undefined,
+      c.force === undefined &&
+      c.takeOver === undefined &&
+      c.remove === undefined,
     {
       message:
         "The change must write only the labels and annotations of one namespace.",
