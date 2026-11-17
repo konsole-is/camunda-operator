@@ -731,6 +731,43 @@ describe("a take-over against the API server", () => {
     expect((await read(made)).spec).not.toHaveProperty("platformConfigRef");
   });
 
+  it("a reset of a cluster claim field with a default that kubectl apply set gets the default again with the choice, as the preview shows", async () => {
+    const spec = (retained: object) => ({
+      presetRef: "medium",
+      releaseRef: "camunda-8-9-1",
+      attachments: { backupSchedule: { schedule: "0 2 * * *", retained } },
+    });
+    const made = clusterClaim(unique("orders"), spec({ completed: 10 }));
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    const change = updateOf(
+      "Reset the completed backups",
+      live,
+      clusterClaim(made.metadata.name, spec({ failed: 3 })),
+    );
+    const path = "spec.attachments.backupSchedule.retained.completed";
+
+    const preview = await previewClaimChange(change);
+    expect(clearedPaths(preview)).toEqual([path]);
+    const chosen = withTakeOver(change, preview.ownership ?? []);
+    expect(chosen.remove).toEqual({ [keyOf(made)]: [path] });
+    const checked = await previewClaimChange(chosen);
+    expect(checked.errors).toEqual([]);
+    const retained = (object: KubeObject | undefined) =>
+      (object?.spec as ReturnType<typeof spec>).attachments.backupSchedule
+        .retained;
+    expect(retained(checked.objects[0].after)).toEqual({
+      completed: 7,
+      failed: 3,
+    });
+
+    expect(await applyClaimChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(retained(await read(made))).toEqual({ completed: 7, failed: 3 });
+  });
+
   it("Suspend of a plane claim whose spec.suspend kubectl set writes only with the choice", async () => {
     const made: KubeObject = {
       apiVersion: fleet,

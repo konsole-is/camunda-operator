@@ -15,6 +15,7 @@ import {
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { KubeObject } from "@/lib/write/types";
 import { FakeEventSource } from "../../../../test/fakes/event-source";
 import {
   claim,
@@ -287,6 +288,8 @@ describe("the Release and preset panel", () => {
 });
 
 describe("the Release and preset panel with a field of another tool", () => {
+  const RESTART =
+    "The brokers restart one at a time. The other processes restart.";
   const ref = {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaClusterClaim",
@@ -367,7 +370,7 @@ describe("the Release and preset panel with a field of another tool", () => {
     expect(fakeWriter.applied[0].remove).toBeUndefined();
   });
 
-  it("a reset of a field of another tool says it stays, and removes it after the choice", async () => {
+  it("a reset of a field of another tool says it stays, and removes it after the choice, and the impacts and the cluster diff follow the choice", async () => {
     const context = slotContext({
       cluster: cluster({ platformConfigRef: "strict" }),
       claim: byKubectl({ platformConfigRef: "strict" }),
@@ -379,7 +382,11 @@ describe("the Release and preset panel with a field of another tool", () => {
     ];
     fakeWriter.previews = [
       { objects: [], errors: [], ownership },
-      { objects: [], errors: [], ownership },
+      {
+        objects: [{ ref, after: claim("42", {}) as KubeObject, diff: [] }],
+        errors: [],
+        ownership,
+      },
     ];
     panel(context);
     choose("Platform config", "");
@@ -391,14 +398,24 @@ describe("the Release and preset panel with a field of another tool", () => {
     );
     await waitFor(() => expect(save().disabled).toBe(false));
     expect(diff().querySelector("del")).toBeNull();
+    const clusterDiff = () =>
+      within(dialog()).getByRole("figure", { name: "Changes to the cluster" });
+    expect(dialog().textContent).not.toContain("platformConfigRef: base");
+    expect(dialog().textContent).not.toContain(RESTART);
 
     fireEvent.click(choice());
-    expect(group().textContent).toContain(
-      "spec.platformConfigRef: kubectl-client-side-apply set it. The save removes it.",
+    await waitFor(() =>
+      expect(group().textContent).toContain(
+        "spec.platformConfigRef: kubectl-client-side-apply set it. The save removes it.",
+      ),
     );
     expect(diff().querySelector("del")?.textContent?.trim()).toBe(
       "platformConfigRef: strict",
     );
+    expect(clusterDiff().querySelector("ins")?.textContent?.trim()).toBe(
+      "platformConfigRef: base",
+    );
+    expect(dialog().textContent).toContain(RESTART);
     const spec = await confirm("Save");
     expect(spec.platformConfigRef).toBeUndefined();
     expect(fakeWriter.applied[0].remove).toEqual({

@@ -281,6 +281,39 @@ export function withoutFields<T extends object>(
   return copy;
 }
 
+/** fieldValue returns the value of field in object, or undefined when object does not hold it. */
+export function fieldValue(object: unknown, field: ForeignField): unknown {
+  return valueAt(object, field.steps);
+}
+
+/**
+ * withValuesOf returns a copy of object in which each field of fields that
+ * from holds has the value of from. It sets only a field whose last step
+ * names a key, under a JSON object that object holds.
+ */
+export function withValuesOf<T extends object>(
+  object: T,
+  fields: readonly ForeignField[],
+  from: unknown,
+): T {
+  const copy = copyJSON(object) as T;
+  for (const field of fields) {
+    const last = field.steps.at(-1);
+    const value = valueAt(from, field.steps);
+    if (last === undefined || !("field" in last) || value === undefined)
+      continue;
+    const parent = valueAt(copy, field.steps.slice(0, -1));
+    if (isRecord(parent))
+      Object.defineProperty(parent, last.field, {
+        value: copyJSON(value),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+  }
+  return copy;
+}
+
 function valueAt(object: unknown, steps: readonly OwnedStep[]): unknown {
   let at: unknown = object;
   for (const step of steps) {

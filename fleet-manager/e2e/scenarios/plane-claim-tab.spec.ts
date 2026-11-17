@@ -78,7 +78,7 @@ test("a move of the identity mode shows what it does, and the take-over of the k
     .getByRole("checkbox", { name: "Take over these fields" })
     .click();
   await expect(fields).toContainText(
-    "spec.management.identityProvider.oidc: kubectl set it. The save removes it.",
+    "spec.management.identityProvider.oidc: kubectl set it. The save removes it, or it gets its default value again.",
   );
   await expect(dialog.getByText(/Sign-in moves/).first()).toBeVisible();
   await expect(dialog.getByRole("alert")).toContainText(

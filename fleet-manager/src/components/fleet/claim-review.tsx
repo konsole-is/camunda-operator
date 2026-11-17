@@ -20,6 +20,7 @@ import { withTakeOver } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
   Change,
+  KubeObject,
   ObjectOwnership,
   Preview,
   WriteMode,
@@ -152,11 +153,21 @@ export function ClaimReview<C extends ClaimObject>({
     () => (chosen ? withTakeOver(base, ownership) : base),
     [chosen, base, ownership],
   );
+  const taken =
+    effective !== base && takenPreview?.change === effective
+      ? takenPreview.result
+      : undefined;
   // The diff shows the claim that the save leaves: a cleared field of
   // another tool stays until the take-over.
   const saved = useMemo(
-    () => savedSession(session, ownershipOf(ownership, session), chosen),
-    [session, ownership, chosen],
+    () =>
+      savedSession(
+        session,
+        ownershipOf(ownership, session),
+        chosen,
+        taken && claimOf(taken, session),
+      ),
+    [session, ownership, chosen, taken],
   );
   const shown: ClaimReviewInput = input
     ? input(saved)
@@ -192,12 +203,7 @@ export function ClaimReview<C extends ClaimObject>({
     };
   }, [effective, base, session]);
 
-  const checked =
-    effective === base
-      ? given
-      : takenPreview?.change === effective
-        ? takenPreview.result
-        : undefined;
+  const checked = effective === base ? given : taken;
   const previewOutcome =
     checked &&
     outcomeOf(
@@ -259,6 +265,7 @@ export function ClaimReview<C extends ClaimObject>({
               ownership={ownership}
               chosen={chosen}
               onChoose={(next) => setChoice({ session, intent, chosen: next })}
+              taken={taken}
             />
           )}
           {alerts.length > 0 && (
@@ -301,6 +308,16 @@ function previewOf(
   }));
 }
 
+function claimOf(preview: Preview, s: Session): KubeObject | undefined {
+  const { kind, metadata } = s.claim;
+  return preview.objects.find(
+    (o) =>
+      o.ref.kind === kind &&
+      o.ref.namespace === metadata.namespace &&
+      o.ref.name === metadata.name,
+  )?.after;
+}
+
 function ownershipOf(
   ownership: readonly ObjectOwnership[],
   s: Session,
@@ -340,13 +357,7 @@ function messagesOf(outcome: WriteOutcome | undefined): string[] {
 // preview still holds. Server-side apply keeps a field that another field
 // manager owns, so such a reset changes nothing.
 function keptResets(s: Session, preview: Preview): string[] {
-  const { kind, metadata } = s.claim;
-  const after = preview.objects.find(
-    (o) =>
-      o.ref.kind === kind &&
-      o.ref.namespace === metadata.namespace &&
-      o.ref.name === metadata.name,
-  )?.after;
+  const after = claimOf(preview, s);
   if (!after) return [];
   const intended = claimAfter(s);
   return [...s.pending.values()]

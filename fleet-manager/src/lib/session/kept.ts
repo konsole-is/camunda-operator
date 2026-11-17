@@ -6,7 +6,7 @@ import {
   type LiveObject,
   type ManagedObject,
 } from "@/lib/merge";
-import { offered, withoutFields } from "@/lib/write/ownership";
+import { offered, withoutFields, withValuesOf } from "@/lib/write/ownership";
 import type { ObjectOwnership, WriteMode } from "@/lib/write/types";
 import {
   claimAfter,
@@ -46,19 +46,23 @@ export function appliedSession<C extends ClaimObject>(
  * savedSession returns a session over the claim of s whose change gives
  * the claim that a save of s in direct mode leaves, from ownership, the
  * fields of other tools that the review of the claim names: each cleared
- * field stays, unless takeOver is true and the review offers it. It
- * returns s when ownership names no cleared field.
+ * field stays, unless takeOver is true and the review offers it. final is
+ * the claim of the preview with the take-over. It returns s when
+ * ownership names no cleared field.
  */
 export function savedSession<C extends ClaimObject>(
   s: Session<C>,
   ownership: ObjectOwnership | undefined,
   takeOver: boolean,
+  final?: object,
 ): Session<C> {
   const cleared = ownership?.cleared ?? [];
   if (cleared.length === 0) return s;
   const applied = appliedSession(s);
   if (!takeOver) return applied;
-  const { spec } = withoutFields(claimAfter(applied), cleared.filter(offered));
+  const removed = cleared.filter(offered);
+  const saved = withoutFields(claimAfter(applied), removed);
+  const { spec } = final ? withValuesOf(saved, removed, final) : saved;
   return specSession(s, spec);
 }
 

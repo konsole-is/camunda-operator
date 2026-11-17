@@ -11,8 +11,10 @@ import type {
   ApiError,
   ForeignField,
   ForeignManager,
+  KubeObject,
   ObjectOwnership,
   ObjectRef,
+  Preview,
 } from "@/lib/write/types";
 import {
   TakeOverChoice,
@@ -79,6 +81,7 @@ function show(
   ownership: ObjectOwnership[],
   chosen = false,
   labelOf?: (ref: ObjectRef) => string,
+  taken?: Preview,
 ) {
   const onChoose = vi.fn();
   render(
@@ -87,10 +90,27 @@ function show(
       chosen={chosen}
       onChoose={onChoose}
       labelOf={labelOf}
+      taken={taken}
     />,
   );
   return { onChoose, group: screen.getByRole("group", { name: TITLE }) };
 }
+
+const takenPreview = (ref: ObjectRef, spec: object): Preview => ({
+  objects: [
+    {
+      ref,
+      after: {
+        apiVersion: ref.apiVersion,
+        kind: ref.kind,
+        metadata: { name: ref.name, namespace: ref.namespace },
+        spec,
+      } as KubeObject,
+      diff: [],
+    },
+  ],
+  errors: [],
+});
 
 const TITLE = "Fields that another tool set";
 const KUBECTL_LINE =
@@ -140,6 +160,7 @@ describe("TakeOverChoice", () => {
 
   it("says that a cleared field stays until the choice, and is removed after it", () => {
     const ownership = [owned(environment, [], [field("spec.color", kubectl)])];
+    const removed = takenPreview(environment, { displayName: "Stage" });
     const first = show(ownership);
     expect(first.group.textContent).toContain(
       "spec.color: kubectl-client-side-apply set it. It stays unless you take it over.",
@@ -148,7 +169,7 @@ describe("TakeOverChoice", () => {
     expect(first.group.textContent).not.toContain(BLOCKED);
     cleanup();
 
-    const { group } = show(ownership, true);
+    const { group } = show(ownership, true, undefined, removed);
     expect(group.textContent).toContain(
       "spec.color: kubectl-client-side-apply set it. The save removes it.",
     );
@@ -157,6 +178,47 @@ describe("TakeOverChoice", () => {
         .getByRole("checkbox", { name: "Take over these fields" })
         .getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("says that a chosen cleared field gets its default value again when the preview with the take-over still holds it", () => {
+    const ownership = [
+      owned(
+        claim("orders"),
+        [],
+        [
+          field("spec.attachments.backupSchedule.retained.completed", kubectl),
+          field("spec.attachments.backupSchedule.retained", edit),
+        ],
+      ),
+    ];
+    const { group } = show(
+      ownership,
+      true,
+      undefined,
+      takenPreview(claim("orders"), {
+        attachments: { backupSchedule: { retained: { completed: 7 } } },
+      }),
+    );
+    expect(group.textContent).toContain(
+      "spec.attachments.backupSchedule.retained.completed: kubectl-client-side-apply set it. It gets its default value 7 again.",
+    );
+    expect(group.textContent).toContain(
+      "spec.attachments.backupSchedule.retained: kubectl-edit set it. It gets its default value again.",
+    );
+    expect(group.textContent).not.toContain("The save removes it");
+  });
+
+  it("names both outcomes of a chosen cleared field until the preview with the take-over has its object", () => {
+    const ownership = [
+      owned(claim("orders"), [], [field("spec.color", kubectl)]),
+    ];
+    const { group } = show(ownership, true, undefined, {
+      objects: [],
+      errors: [],
+    });
+    expect(group.textContent).toContain(
+      "spec.color: kubectl-client-side-apply set it. The save removes it, or it gets its default value again.",
+    );
   });
 
   it("warns once for each GitOps manager", () => {

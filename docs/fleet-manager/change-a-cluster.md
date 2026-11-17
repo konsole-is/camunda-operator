@@ -182,7 +182,7 @@ A value with an error does not count as a change, and the editor shows the error
 
 ## A claim made outside the fleet manager
 
-You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
+You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. With the choice, a removed field that has a default gets its default value again, and the review names that value. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
 ## The state of a field
 
