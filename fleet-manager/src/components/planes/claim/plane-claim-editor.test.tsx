@@ -896,6 +896,32 @@ describe("PlaneClaimEditor writes", () => {
           } as never,
         ],
         errors: [],
+        // The direct writer names the field of the other tool.
+        ownership: [
+          {
+            ref: {
+              apiVersion: "fleet.camunda.io/v1alpha1",
+              kind: "CamundaManagementClusterClaim",
+              namespace: "mgmt-ns",
+              name: "mgmt",
+            },
+            changed: [],
+            cleared: [
+              {
+                path: "spec.platformConfigRef",
+                steps: [{ field: "spec" }, { field: "platformConfigRef" }],
+                managers: [
+                  {
+                    name: "kubectl",
+                    operation: "Apply",
+                    kind: "other",
+                    known: true,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     ];
     editor({ claim });
@@ -906,10 +932,12 @@ describe("PlaneClaimEditor writes", () => {
     fireEvent.click(reviewButton());
     await waitFor(() =>
       expect(
-        within(dialog()).getByText(
-          "Another field manager keeps spec.platformConfigRef, so the reset does not remove it.",
-        ),
-      ).toBeTruthy(),
+        within(dialog()).getByRole("group", {
+          name: "Fields that another tool set",
+        }).textContent,
+      ).toContain(
+        "spec.platformConfigRef: kubectl set it. It stays unless you take it over.",
+      ),
     );
   });
 
