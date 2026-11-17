@@ -375,12 +375,14 @@ While the page cannot read a list that the review needs, or the list is not curr
 
 ### A claim that another tool applied
 
-Each tool that writes the claim owns the fields that it set. A save never takes over a field of another tool. The review names each field that the save keeps for another tool, with that tool. When the change removes nothing else, the review says that the save changes nothing.
+Each tool that writes the claim owns the fields that it set, for example `kubectl` or a GitOps tool.
 
-In direct mode, the fleet manager applies the save:
+In direct mode, the review names each field that another tool set and that the save changes or removes, with the tool. It asks you to take these fields over:
 
-- A new value of a field that another tool also set fails in the review. The message names the other tool, and nothing is written.
-- A removed field or list item that another tool also set stays in the claim.
+- Without the choice, a new value of such a field stops the save, and **Save** stays off. A removed field or list item stays in the claim. When the change removes nothing else, the review says that the save changes nothing.
+- With the choice, the save gives each changed field its new value and removes each removed field. The impacts in the review show what the save does with the choice.
+
+[Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
 In Git mode, your GitOps tool applies the claim file:
 
@@ -388,11 +390,11 @@ In Git mode, your GitOps tool applies the claim file:
 - A removed field or list item that another tool also set stays in the claim. A field that the fleet manager saved in direct mode stays too, until a save in direct mode removes it.
 - Before your GitOps tool applied the claim with server-side apply, the review lists each removed field that a tool set. The first sync keeps these fields if it applies server side. If it applies client side, it removes a field of the last applied file.
 
-To change or remove a field that another tool set, make the change with that tool.
+In Git mode, to change or remove a field that another tool set, make the change with that tool.
 
 A tool that writes without server-side apply, such as `kubectl apply` without `--server-side` or `kubectl edit`, does not see a save of the fleet manager. Its next write can set a field back, and nothing warns about it.
 
-The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane in direct mode, the Claim tab can only add fields. Make each other change in the claim file, and apply the file again.
+The [getting started guide](../getting-started-management-plane.md) applies the claim with `kubectl apply`. For that plane in direct mode, the review asks before a save changes or removes a field of the claim file.
 
 ## Suspend a management plane
 

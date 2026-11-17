@@ -957,18 +957,50 @@ describe("PlaneClaimEditor writes", () => {
     expect(screen.getByRole("button", { name: "Edit Basics" })).toBeTruthy();
   });
 
-  it("the review names each field that another field manager keeps", () => {
+  it("the review offers to take over a field that kubectl set, and Save stays off until it is chosen", async () => {
     const claim = oidcClaim();
-    (claim.metadata as { managedFields?: unknown }).managedFields = [
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaManagementClusterClaim",
+      namespace: "mgmt-ns",
+      name: "mgmt",
+    };
+    const kubectl = {
+      name: "kubectl",
+      operation: "Apply",
+      kind: "other" as const,
+      known: true,
+    };
+    const fieldAt = (...names: string[]) => ({
+      path: names.join("."),
+      steps: names.map((field) => ({ field })),
+      managers: [kubectl],
+    });
+    fakeWriter.previews = [
       {
-        manager: "kubectl",
-        operation: "Apply",
-        fieldsV1: {
-          "f:spec": {
-            "f:management": { "f:identityProvider": { "f:oidc": {} } },
+        objects: [],
+        errors: [
+          {
+            code: "Conflict",
+            message: 'conflict with "kubectl"',
+            path: "spec.management.identity.admin.username",
+            manager: "kubectl",
+            ref,
           },
-        },
+        ],
+        ownership: [
+          {
+            ref,
+            changed: [
+              fieldAt("spec", "management", "identity", "admin", "username"),
+            ],
+            cleared: [
+              fieldAt("spec", "management", "identityProvider", "oidc"),
+            ],
+          },
+        ],
       },
+      { objects: [], errors: [] },
     ];
     editor({ claim });
     open("Identity");
@@ -984,14 +1016,42 @@ describe("PlaneClaimEditor writes", () => {
       target: { value: "admin" },
     });
     fireEvent.click(reviewButton());
-    const caution = within(dialog()).getByRole("note", { name: "Caution" });
-    expect(caution.textContent).toContain(KEPT_FIELDS_NOTE);
-    expect(caution.textContent).toContain(
-      "spec.management.identityProvider.oidc (kubectl)",
+    const group = await within(dialog()).findByRole("group", {
+      name: "Fields that another tool set",
+    });
+    expect(group.textContent).toContain(
+      "spec.management.identity.admin.username: kubectl set it. The save changes it.",
     );
+    expect(group.textContent).toContain(
+      "spec.management.identityProvider.oidc: kubectl set it. It stays unless you take it over.",
+    );
+    // The panel names the fields, so no other note lists them.
+    expect(within(dialog()).queryByText(KEPT_FIELDS_NOTE)).toBeNull();
+    const save = within(dialog()).getByRole<HTMLButtonElement>("button", {
+      name: "Save",
+    });
+    expect(save.disabled).toBe(true);
+
+    fireEvent.click(
+      within(group).getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    // A move of the sign-in asks for the name of the plane.
+    fireEvent.change(within(dialog()).getByLabelText(/to confirm/), {
+      target: { value: "mgmt" },
+    });
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    const key = "CamundaManagementClusterClaim/mgmt-ns/mgmt";
+    expect(fakeWriter.applied[0].takeOver).toEqual({
+      [key]: ["spec.management.identity.admin.username"],
+    });
+    expect(fakeWriter.applied[0].remove).toEqual({
+      [key]: ["spec.management.identityProvider.oidc"],
+    });
   });
 
-  it("names an item of a list that kubectl keeps, and says when the save changes nothing", () => {
+  it("says that a save changes nothing while kubectl keeps the list item, until the take-over", async () => {
     const claim = claimOf({ environments: ["production", "staging"] });
     (claim.metadata as { managedFields?: unknown }).managedFields = [
       {
@@ -1013,16 +1073,64 @@ describe("PlaneClaimEditor writes", () => {
         },
       },
     ];
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaManagementClusterClaim",
+      namespace: "mgmt-ns",
+      name: "mgmt",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [],
+        cleared: [
+          {
+            path: 'spec.environments[="staging"]',
+            steps: [
+              { field: "spec" },
+              { field: "environments" },
+              { value: "staging" },
+            ],
+            managers: [
+              {
+                name: "kubectl",
+                operation: "Apply",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [], ownership },
+    ];
     editor({ claim });
     open("Environments served");
     fireEvent.click(screen.getByRole("checkbox", { name: "staging" }));
     fireEvent.click(reviewButton());
+    const group = await within(dialog()).findByRole("group", {
+      name: "Fields that another tool set",
+    });
     const caution = within(dialog()).getByRole("note", { name: "Caution" });
-    expect(caution.textContent).toContain(NOTHING_CHANGES);
-    expect(caution.textContent).toContain(
-      'spec.environments[="staging"] (kubectl)',
-    );
+    expect(caution.textContent).toBe(NOTHING_CHANGES);
     expect(within(dialog()).queryByText(/detaches/)).toBeNull();
+
+    fireEvent.click(
+      within(group).getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(dialog()).queryByRole("note", { name: "Caution" }),
+      ).toBeNull(),
+    );
+    expect(
+      within(dialog()).getByText(
+        "team-qa/qa detaches. It loses its Console settings and restarts once.",
+      ),
+    ).toBeTruthy();
   });
 
   it("in Git mode lets the GitOps tool remove a list item that only it set", () => {

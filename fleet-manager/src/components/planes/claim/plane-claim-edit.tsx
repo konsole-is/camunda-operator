@@ -264,20 +264,29 @@ export function PlaneClaimEditProvider({
       : validatePlaneClaim(s, context);
 
   // The impacts read the claim that the save leaves: a field that another
-  // field manager keeps stays.
-  const review = (s: Session<PlaneClaim>): ClaimReviewInput => {
-    const { kept, applied, firstSync } = savedOf(s, writeMode);
+  // field manager keeps stays. In direct mode the review names such fields
+  // and offers the take-over, and saved follows that choice.
+  const review = (
+    s: Session<PlaneClaim>,
+    { mode, saved }: { mode: WriteMode; saved: Session<PlaneClaim> },
+  ): ClaimReviewInput => {
+    const { kept, applied, firstSync } =
+      mode === "git"
+        ? savedOf(s, mode)
+        : { kept: [], applied: saved, firstSync: false };
     const nothing =
-      kept.length > 0 && equalJSON(claimAfter(applied).spec, s.claim.spec);
+      applied !== s && equalJSON(claimAfter(applied).spec, s.claim.spec);
     const input = planeChangeInput(sources, applied);
     return {
       impacts: [...planeImpacts(input), ...planeRestarts(input)],
       ...(planeSignInMoves(input) && { confirm: { typed: name } }),
-      ...(kept.length > 0 && {
-        caution: (
-          <KeptFields kept={kept} nothing={nothing} firstSync={firstSync} />
-        ),
-      }),
+      ...(kept.length > 0
+        ? {
+            caution: (
+              <KeptFields kept={kept} nothing={nothing} firstSync={firstSync} />
+            ),
+          }
+        : nothing && { caution: <p>{NOTHING_CHANGES}</p> }),
     };
   };
   const host: ClaimEditHost<PlaneClaim> = {
