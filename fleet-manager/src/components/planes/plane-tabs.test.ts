@@ -14,6 +14,10 @@ describe("PLANE_TABS", () => {
       { id: "endpoints", label: "Endpoints" },
     ]);
   });
+
+  it("lists the Claim tab last", () => {
+    expect(PLANE_TABS.at(-1)).toEqual({ id: "claim", label: "Claim" });
+  });
 });
 
 describe("planeTabOf", () => {
@@ -25,6 +29,7 @@ describe("planeTabOf", () => {
     [["overview", "x"], "overview"],
     [["nope", "overview"], "overview"],
     ["endpoints", "endpoints"],
+    ["claim", "claim"],
   ])(
     "an unknown, missing, or array value gives overview, and the first item of an array counts: %j",
     (value, tab) => {

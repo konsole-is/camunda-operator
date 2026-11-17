@@ -1,6 +1,7 @@
 // This module runs in the browser and on the server.
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { Resource } from "@/lib/k8s/kinds";
 import { ACCESS_SECTION } from "@/lib/labels";
 import type { FieldPath } from "@/lib/merge";
@@ -90,16 +91,26 @@ export function planeFields(input: {
   plane?: Resource<"CamundaManagementCluster">;
   registrations: readonly PluginRegistration[];
   environment?: Environment;
+  sections?: readonly PluginSection[];
 }): PlaneField[] {
-  const { claim, plane, registrations, environment } = input;
+  const { claim, plane, registrations, environment, sections } = input;
+  // The access section is the one of the externalAccess slot. Without the
+  // sections, only its usual name is known.
+  const isAccess = (s: PluginSelection) => {
+    const section = sections?.find((x) => x.metadata?.name === s.section);
+    return section
+      ? section.spec.slot === "externalAccess"
+      : s.section === ACCESS_SECTION;
+  };
   const spec = claim.spec;
-  const management = spec.management;
-  const mode = modeOf(management.identityProvider);
+  // Another tool can write null where the CRD expects an object.
+  const management: Partial<typeof spec.management> = spec.management ?? {};
+  const mode = modeOf(management.identityProvider ?? {});
   const running = {
     identity: true,
     keycloak: mode === "keycloak",
-    console: management.console !== undefined,
-    webModeler: management.webModeler !== undefined,
+    console: management.console != null,
+    webModeler: management.webModeler != null,
   };
   const selections = (spec.plugins ?? []) as PluginSelection[];
   const recorded = claim.status?.resolvedPolicy as ResolvedPolicy | undefined;
@@ -155,7 +166,8 @@ export function planeFields(input: {
     mode,
     fieldSteps("spec", "management", "identityProvider"),
   );
-  const admin = management.identity.admin;
+  const admin: Partial<typeof spec.management.identity.admin> =
+    management.identity?.admin ?? {};
   const adminSteps = (name: string) =>
     fieldSteps("spec", "management", "identity", "admin", name);
   if (mode === "oidc") {
@@ -244,7 +256,7 @@ export function planeFields(input: {
     );
   }
 
-  const versions: Record<string, string | undefined> = spec.versions;
+  const versions: Record<string, string | undefined> = spec.versions ?? {};
   for (const [app, label] of VERSIONS) {
     if (!running[app]) continue;
     add(
@@ -257,10 +269,12 @@ export function planeFields(input: {
   }
 
   for (const s of selections) {
-    fields.push(...selectionFields(s, recorded, registrations, environment));
+    fields.push(
+      ...selectionFields(s, isAccess(s), recorded, registrations, environment),
+    );
   }
 
-  const accessLock = selections.some((s) => s.section === ACCESS_SECTION)
+  const accessLock = selections.some(isAccess)
     ? { lock: { reason: "section" } as const }
     : {};
   for (const row of SLOT_FIELDS) {
@@ -311,12 +325,12 @@ const GROUPS: readonly PlaneFieldGroup[] = [
 
 function selectionFields(
   s: PluginSelection,
+  access: boolean,
   recorded: ResolvedPolicy | undefined,
   registrations: readonly PluginRegistration[],
   environment: Environment | undefined,
 ): PlaneField[] {
-  const group: PlaneFieldGroup =
-    s.section === ACCESS_SECTION ? "access" : "databases";
+  const group: PlaneFieldGroup = access ? "access" : "databases";
   const item: Step[] = [
     { field: "spec" },
     { field: "plugins" },
@@ -387,8 +401,8 @@ function policiesOf(
 }
 
 function modeOf(provider: object): Mode {
-  if ("oidc" in provider && provider.oidc !== undefined) return "oidc";
-  if ("externalKeycloak" in provider && provider.externalKeycloak !== undefined)
+  if ("oidc" in provider && provider.oidc != null) return "oidc";
+  if ("externalKeycloak" in provider && provider.externalKeycloak != null)
     return "externalKeycloak";
   return "keycloak";
 }

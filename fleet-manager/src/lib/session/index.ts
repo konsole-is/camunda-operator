@@ -31,3 +31,10 @@ export {
   type SetResult,
 } from "./session";
 export { valueAt, without, withValue } from "./steps";
+export {
+  appliedSession,
+  keptFields,
+  savedOf,
+  saveManager,
+  type Saved,
+} from "./kept";

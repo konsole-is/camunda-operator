@@ -13,6 +13,7 @@ import { EMPTY_MAIL } from "./components";
 import { mailOf } from "./draft";
 import { componentEdits, identityMoveEdits, type PlaneEdit } from "./edits";
 import {
+  ACCESS_ISSUER_MOVES,
   CALLBACKS_MOVE,
   CONSOLE_OFF,
   CONSOLE_ON,
@@ -21,10 +22,15 @@ import {
   MOVE_AT_ONCE,
   MOVE_WAITS,
   OIDC_CALLBACKS,
+  OPTIMIZE_RESTARTS,
   PREVIEW_NEEDS_ISSUER,
+  SECOND_USER,
   WEB_MODELER_OFF,
+  WEB_MODELER_USER_REMOVED,
+  planeSignInMoves,
   planeImpacts,
   planeModeMove,
+  planeRestarts,
   servedChanges,
   type PlaneChangeInput,
 } from "./impacts";
@@ -223,6 +229,44 @@ describe("planeImpacts", () => {
     expect(planeImpacts(input(s))).toEqual([
       "team-orders/orders detaches. It loses its Console settings and restarts once.",
     ]);
+  });
+
+  it("says that a basic-auth cluster that detaches loses the Web Modeler user of the plane", () => {
+    const live = planeClaim({
+      environments: ["production", "staging"],
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+    });
+    const s = changed(live, [at("spec", "environments"), ["production"]]);
+    expect(planeImpacts(input(s))).toEqual([
+      `team-qa/qa detaches. ${WEB_MODELER_USER_REMOVED}`,
+    ]);
+  });
+
+  it("says that a cluster whose platform config sets no auth loses the Web Modeler user of the plane", () => {
+    const live = planeClaim({
+      environments: ["production", "staging"],
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+    });
+    const s = changed(live, [at("spec", "environments"), ["production"]]);
+    const noAuth = [
+      ...platformConfigs,
+      { metadata: { name: "plain" }, spec: {} },
+    ] as Resource<"CamundaPlatformConfig">[];
+    const clusters = [
+      cluster("team-orders", "orders"),
+      trusting("team-qa", "qa", "plain"),
+    ];
+    expect(
+      planeImpacts(input(s, { platformConfigs: noAuth, clusters })),
+    ).toEqual([`team-qa/qa detaches. ${WEB_MODELER_USER_REMOVED}`]);
   });
 
   it("names no restart for a cluster that attaches or detaches while the plane runs no Console", () => {
@@ -691,5 +735,547 @@ describe("servedChanges", () => {
       ...identityMoveEdits(live.spec, "oidc").map(asEdit),
     );
     expect(servedChanges(input(s))).toBeUndefined();
+  });
+});
+
+describe("planeImpacts with a null value in the claim", () => {
+  const withNull = (
+    claim: PlaneClaim,
+    patch: (spec: Record<string, unknown>) => void,
+  ) => {
+    const copy = structuredClone(claim);
+    patch(copy.spec as unknown as Record<string, unknown>);
+    return copy;
+  };
+  const management = (spec: Record<string, unknown>) =>
+    spec.management as Record<string, unknown>;
+
+  it("reads a null Console as off", () => {
+    const live = withNull(consoleClaim(), (spec) => {
+      management(spec).console = null;
+    });
+    const s = changed(live, [at("spec", "management", "console"), {}]);
+    expect(planeImpacts(input(s))).toContain(CONSOLE_ON);
+    expect(planeImpacts(input(s))).not.toContain(CONSOLE_OFF);
+  });
+
+  it("reads a null Web Modeler as off", () => {
+    const live = withNull(planeClaim(), (spec) => {
+      management(spec).webModeler = null;
+    });
+    const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("serves no cluster with a null selector, as the operator does", () => {
+    const live = withNull(consoleClaim(), (spec) => {
+      spec.clusterSelector = null;
+    });
+    const s = changed(live, [at("spec", "clusterSelector"), {}]);
+    expect(planeImpacts(input(s, { plane: keycloakPlane }))).toEqual([
+      "team-orders/orders attaches and restarts its pods once, because it gets the Console settings.",
+    ]);
+  });
+
+  it("lists no version move and no restart while a version is null", () => {
+    const live = withNull(planeClaim(), (spec) => {
+      (spec.versions as Record<string, unknown>).identity = null;
+    });
+    const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeImpacts(input(s))).toEqual([]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+
+  it("lists no move while the identity provider, the admin, or the environments are null", () => {
+    const live = withNull(planeClaim(), (spec) => {
+      management(spec).identityProvider = null;
+      (management(spec).identity as Record<string, unknown>).admin = null;
+      spec.environments = null;
+    });
+    const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeImpacts(input(s))).toEqual([]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+});
+
+describe("planeImpacts lines of the platform config, the admin, and the access host", () => {
+  it("names the move of the platform config, with the environment default", () => {
+    const s = changed(planeClaim(), [at("spec", "platformConfigRef"), "sso"]);
+    expect(planeImpacts(input(s))[0]).toBe(
+      "The platform config moves from basic to sso.",
+    );
+  });
+
+  it("names no move when the claim names the platform config of its environment", () => {
+    const s = changed(planeClaim(), [at("spec", "platformConfigRef"), "basic"]);
+    expect(planeImpacts(input(s))).toEqual([]);
+  });
+
+  it("says that a new username in a Keycloak mode creates a second administrator", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "management", "identity", "admin", "username"),
+      "root",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([SECOND_USER]);
+  });
+
+  it("says that a new access host of a plane that runs Keycloak can detach clusters", () => {
+    const live = planeClaim({
+      plugins: [
+        {
+          section: "access",
+          registration: "gateway",
+          parameters: { managementHostnamePattern: "{name}.a.example.com" },
+        },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "access", registration: "gateway" } },
+        { field: "parameters" },
+        { field: "managementHostnamePattern" },
+      ],
+      "{name}.b.example.com",
+    ]);
+    expect(planeImpacts(input(s))).toContain(ACCESS_ISSUER_MOVES);
+  });
+
+  it("gives no access line when the plane signs in elsewhere", () => {
+    const live = externalClaim({
+      plugins: [
+        { section: "access", registration: "gateway", parameters: { a: "1" } },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "access", registration: "gateway" } },
+        { field: "parameters" },
+        { field: "a" },
+      ],
+      "2",
+    ]);
+    expect(planeImpacts(input(s))).not.toContain(ACCESS_ISSUER_MOVES);
+  });
+});
+
+describe("planeRestarts", () => {
+  const servesOptimize = {
+    ...keycloakPlane,
+    status: { ...keycloakPlane.status, optimize: [{ name: "orders" }] },
+  };
+  const withWebModeler = () =>
+    planeClaim({
+      management: {
+        identityProvider: { keycloak: {} },
+        identity: { admin: { username: "admin", email: "a@example.com" } },
+        console: {},
+        webModeler: { mail: mailOf({ ...EMPTY_MAIL, smtpHost: "smtp" }) },
+      },
+      versions: {
+        identity: "8.9.14",
+        keycloak: "26.6.4",
+        console: "8.9.133",
+        webModeler: "8.9.15",
+      },
+    });
+
+  it("names no restart for a change that reaches no pod", () => {
+    const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+
+  it("restarts the app whose version moves", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "versions", "identity"),
+      "8.9.15",
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
+  it("restarts Keycloak when its version moves", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "versions", "keycloak"),
+      "26.6.5",
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Keycloak restarts."]);
+  });
+
+  it("restarts the plane apps on a move of the platform config, and Keycloak may restart", () => {
+    const s = changed(withWebModeler(), [
+      at("spec", "platformConfigRef"),
+      "sso",
+    ]);
+    expect(planeRestarts(input(s))).toEqual([
+      "Management Identity, Console, and Web Modeler restart.",
+      "Keycloak may restart when the platform config sets another image.",
+    ]);
+  });
+
+  it("restarts the Optimize of served clusters on a move of the platform config in OIDC mode", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [at("spec", "platformConfigRef"), "sso-2"]);
+    expect(planeRestarts(input(s, { plane: servesOptimize }))).toEqual([
+      "Management Identity restarts.",
+      OPTIMIZE_RESTARTS,
+    ]);
+  });
+
+  it("says where the Optimize callbacks go on a move of the platform config in OIDC mode", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [at("spec", "platformConfigRef"), "sso-2"]);
+    expect(planeImpacts(input(s))).toEqual([
+      "The platform config moves from sso to sso-2.",
+      OIDC_CALLBACKS,
+    ]);
+  });
+
+  it("restarts the apps on a new spelling of the External Keycloak URL that keeps the realm", () => {
+    const live = externalClaim();
+    (
+      live.spec.management.identityProvider.externalKeycloak as { url: string }
+    ).url = "https://kc.example.com:443";
+    const s = changed(live, [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc.example.com",
+    ]);
+    expect(planeImpacts(input(s))).toEqual([]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
+  it("restarts the Optimize that reads the contract of an OIDC plane, which lists no status.optimize", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [at("spec", "platformConfigRef"), "sso-2"]);
+    const plane = {
+      metadata: { name: "mgmt", namespace: "mgmt-ns" },
+      status: { managementAuthConfig: "mgmt" },
+    };
+    const reader = {
+      metadata: { name: "orders", namespace: "team-orders" },
+      spec: { managementAuthRef: "mgmt" },
+    } as Resource<"CamundaOptimize">;
+    expect(planeRestarts(input(s, { plane, optimizes: [reader] }))).toEqual([
+      "Management Identity restarts.",
+      OPTIMIZE_RESTARTS,
+    ]);
+    expect(planeRestarts(input(s, { plane, optimizes: [] }))).toEqual([
+      "Management Identity restarts.",
+    ]);
+  });
+
+  it("restarts the apps and the Optimize of served clusters on a move of the identity mode", () => {
+    const live = consoleClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "externalKeycloak", {
+        url: "https://kc.example.com",
+        realm: "",
+        adminSecret: "kc",
+      }).map(asEdit),
+    );
+    expect(planeRestarts(input(s, { plane: servesOptimize }))).toEqual([
+      "Management Identity and Console restart.",
+      OPTIMIZE_RESTARTS,
+    ]);
+  });
+
+  it("names no Optimize restart while the plane serves no Optimize", () => {
+    const live = consoleClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "externalKeycloak", {
+        url: "https://kc.example.com",
+        realm: "",
+        adminSecret: "kc",
+      }).map(asEdit),
+    );
+    expect(planeRestarts(input(s, { plane: keycloakPlane }))).toEqual([
+      "Management Identity and Console restart.",
+    ]);
+  });
+
+  it("restarts Identity on a change of the administrator in a Keycloak mode", () => {
+    const s = changed(planeClaim(), [
+      at("spec", "management", "identity", "admin", "email"),
+      "b@example.com",
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
+  it("restarts Identity on a new administrator Secret of the External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at(
+        "spec",
+        "management",
+        "identityProvider",
+        "externalKeycloak",
+        "adminCredentialsSecretRef",
+        "name",
+      ),
+      "kc-2",
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
+  it("names no restart for a new CA bundle of the External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at(
+        "spec",
+        "management",
+        "identityProvider",
+        "externalKeycloak",
+        "caBundleSecretRef",
+      ),
+      { name: "ca", key: "ca.crt" },
+    ]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+
+  it("names no restart for a new claim pair after Identity recorded one", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const s = changed(live, [
+      at("spec", "management", "identity", "admin", "claimValue"),
+      "43",
+    ]);
+    const recorded = {
+      metadata: {
+        name: "mgmt",
+        namespace: "mgmt-ns",
+        annotations: { "camunda.io/identity-initial-claim": "sub=42" },
+      },
+    };
+    expect(planeRestarts(input(s, { plane: recorded }))).toEqual([]);
+    expect(planeRestarts(input(s, { plane: keycloakPlane }))).toEqual([
+      "Management Identity restarts.",
+    ]);
+  });
+
+  it("restarts Web Modeler on a change of the served environments", () => {
+    const s = changed(withWebModeler(), [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Web Modeler restarts."]);
+  });
+
+  it("names no Web Modeler restart for a selector change that serves the same clusters", () => {
+    const s = changed(withWebModeler(), [
+      at("spec", "clusterSelector"),
+      { matchExpressions: [] },
+    ]);
+    expect(planeRestarts(input(s))).toEqual([]);
+  });
+
+  it("says that Web Modeler may restart on a change of the served environments while the preview is unknown", () => {
+    const oidc = planeClaim({
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+        webModeler: { mail: mailOf(EMPTY_MAIL) },
+      },
+      versions: { identity: "8.9.14", webModeler: "8.9.15" },
+    });
+    const s = changed(oidc, [
+      at("spec", "environments"),
+      ["production", "staging"],
+    ]);
+    expect(planeRestarts(input(s, { platformConfigs: [] }))).toEqual([
+      "Web Modeler may restart when the served clusters change.",
+    ]);
+  });
+
+  it("restarts Identity in a Keycloak mode when Console turns off, and names no restart of Console", () => {
+    const live = consoleClaim();
+    const s = changed(
+      live,
+      ...componentEdits(live.spec, "console", false).map(asEdit),
+    );
+    expect(planeRestarts(input(s))).toEqual(["Management Identity restarts."]);
+  });
+
+  it("restarts Web Modeler on a change of its mail", () => {
+    const s = changed(withWebModeler(), [
+      at("spec", "management", "webModeler", "mail", "smtpHost"),
+      "smtp-2",
+    ]);
+    expect(planeRestarts(input(s))).toEqual(["Web Modeler restarts."]);
+  });
+
+  it("says which apps may restart on a change of a database parameter", () => {
+    const live = planeClaim({
+      plugins: [
+        { section: "databases", registration: "pg", parameters: { size: 1 } },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "databases", registration: "pg" } },
+        { field: "parameters" },
+        { field: "size" },
+      ],
+      2,
+    ]);
+    const sections = [
+      {
+        metadata: { name: "databases" },
+        spec: { slot: "managementDatabases" },
+      },
+    ] as Resource<"PluginSection">[];
+    expect(planeRestarts(input(s, { sections }))).toEqual([
+      "Keycloak, Management Identity, and the database of the plane may restart when the database settings change, as the option decides.",
+    ]);
+  });
+
+  it("says which apps may restart on a change of the access host", () => {
+    const live = consoleClaim({
+      plugins: [
+        { section: "access", registration: "gateway", parameters: { a: "1" } },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "access", registration: "gateway" } },
+        { field: "parameters" },
+        { field: "a" },
+      ],
+      "2",
+    ]);
+    expect(planeRestarts(input(s, { plane: servesOptimize }))).toEqual([
+      "Keycloak, Management Identity, Console, and the Optimize of each served cluster may restart when the access host changes.",
+    ]);
+  });
+
+  it("restarts the apps that use a typed Keycloak URL", () => {
+    const s = changed(consoleClaim(), [
+      at("spec", "management", "identityProvider", "keycloak", "externalUrl"),
+      "https://other.example.com/auth",
+    ]);
+    expect(planeRestarts(input(s, { plane: servesOptimize }))).toEqual([
+      "Keycloak, Management Identity, and Console restart.",
+      OPTIMIZE_RESTARTS,
+    ]);
+  });
+
+  it("says that Console may restart when only its URL moves", () => {
+    const live = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+        console: { externalUrl: "https://a.example.com/console" },
+      },
+      versions: { identity: "8.9.14", console: "8.9.133" },
+    });
+    const s = changed(live, [
+      at("spec", "management", "console", "externalUrl"),
+      "https://b.example.com/console",
+    ]);
+    expect(planeRestarts(input(s))).toEqual([
+      "Console may restart when the path of the URL changes.",
+    ]);
+  });
+});
+
+describe("planeSignInMoves", () => {
+  it("is false for a change that moves no sign-in", () => {
+    const s = changed(planeClaim(), [at("spec", "deletionPolicy"), "Orphan"]);
+    expect(planeSignInMoves(input(s))).toBe(false);
+  });
+
+  it("is true for a move of the identity mode", () => {
+    const live = externalClaim();
+    const s = changed(
+      live,
+      ...identityMoveEdits(live.spec, "keycloak").map(asEdit),
+    );
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
+  it("is true for a new realm of the External Keycloak", () => {
+    const s = changed(externalClaim(), [
+      at("spec", "management", "identityProvider", "externalKeycloak", "url"),
+      "https://kc2.example.com",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
+  it("is true for a new platform config in OIDC mode, and false in a Keycloak mode", () => {
+    const oidc = planeClaim({
+      platformConfigRef: "sso",
+      management: {
+        identityProvider: { oidc: {} },
+        identity: { admin: { claimName: "sub", claimValue: "42" } },
+      },
+    });
+    const s = changed(oidc, [at("spec", "platformConfigRef"), "sso-2"]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+    const k = changed(planeClaim(), [at("spec", "platformConfigRef"), "sso"]);
+    expect(planeSignInMoves(input(k))).toBe(false);
+  });
+
+  it("is true for a new public URL of the Keycloak that the plane runs", () => {
+    const s = changed(consoleClaim(), [
+      at("spec", "management", "identityProvider", "keycloak", "externalUrl"),
+      "https://other.example.com/auth",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
+  });
+
+  it("is true for a change of the access settings in the keycloak mode", () => {
+    const live = planeClaim({
+      plugins: [
+        {
+          section: "access",
+          registration: "gateway",
+          parameters: { managementHostnamePattern: "{name}.a.example.com" },
+        },
+      ],
+    });
+    const s = changed(live, [
+      [
+        { field: "spec" },
+        { field: "plugins" },
+        { item: { section: "access", registration: "gateway" } },
+        { field: "parameters" },
+        { field: "managementHostnamePattern" },
+      ],
+      "{name}.b.example.com",
+    ]);
+    expect(planeSignInMoves(input(s))).toBe(true);
   });
 });
