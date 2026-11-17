@@ -93,7 +93,7 @@ To delete presets from the list:
 3. Read the review. The API server checks the delete first, without a change, and the review shows the result. It names each preset.
 4. Select **Delete**.
 
-If a preset of the review gets a user, or an environment allows it, the review closes before the delete starts. Nothing is deleted, and the check box of that preset is disabled. The fleet manager checks the users again before the delete, and it refuses the delete of a preset in use or allowed in an environment.
+If a preset of the review gets a user, or an environment allows it, the review closes before the delete starts. Nothing is deleted, and the check box of that preset is disabled. The fleet manager checks the users again before the delete, and it refuses the delete of a preset in use or allowed in an environment. A user that is created at the same moment as the delete can be missed.
 
 In Git mode the button of the review reads **Push the delete to Git**. The delete is a commit that removes the file of each preset. GitOps must prune the presets to delete them from the cluster.
 
@@ -241,7 +241,7 @@ Two filters narrow the list. **Environment** shows the releases that an environm
 
 You can delete a release only when it is unused and no environment allows it. The list shows a checkbox only on such a row. **Select all that can be deleted** selects every such row that the search and the filters show. Then select **Delete 1 release**, or **Delete 2 releases** for more. The review lists the releases, and **Delete** removes them in one change.
 
-If a claim or an environment names a selected release while the review is open, the review closes. Start the delete again. The fleet manager checks the users again before the delete, and it refuses the delete of a release in use or allowed in an environment.
+If a claim or an environment names a selected release while the review is open, the review closes. Start the delete again. The fleet manager checks the users again before the delete, and it refuses the delete of a release in use or allowed in an environment. A user that is created at the same moment as the delete can be missed.
 
 The fleet manager must read every list of the page to know that a release is unused. When it cannot read one, no release can be deleted and an open delete review closes. The page then names the kinds that it cannot read:
 

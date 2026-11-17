@@ -93,7 +93,7 @@ A database server runs a PostgreSQL version, not a Camunda minor, so it adds no 
 
 ### Delete a platform config
 
-The page offers the delete only when nothing uses the platform config. The fleet manager checks the users again before the delete, and it refuses the delete of a platform config in use. To delete, type the name of the platform config and select **Review the delete**. The review says:
+The page offers the delete only when nothing uses the platform config. The fleet manager checks the users again before the delete, and it refuses the delete of a platform config in use. A user that is created at the same moment as the delete can be missed. To delete, type the name of the platform config and select **Review the delete**. The review says:
 
 `Users of a deleted config report InvalidReference and keep running.`
 
