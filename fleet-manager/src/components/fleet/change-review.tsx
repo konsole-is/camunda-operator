@@ -22,29 +22,21 @@ import {
 } from "./take-over-choice";
 
 /**
- * ChangeReview is the review of one Change of a Setup page. It previews
- * change once for each change object, shows the diff of the first previewed
- * object under diffLabel and each other object as its own diff, the effects,
- * the caution, and the errors of the preview. The confirm stays disabled
- * until the preview is clean. The confirm also stays disabled when every
- * previewed object is unchanged.
+ * ChangeReview previews change once for each change object and shows the
+ * diff of each previewed object, the first under diffLabel, with the
+ * effects and the caution. The confirm stays disabled until the preview is
+ * clean, and while hold is set.
  *
- * In direct mode, for a change without force and unless offerTakeOver is
- * false, it shows the fields of other tools of the preview in
- * TakeOverChoice, without their Conflict errors, and keeps the confirm
- * disabled while takeOverOpen is true. The choice starts off for each
- * change. When it is on, the review previews and shows the change of
- * withTakeOver, and the confirm writes that change. Otherwise it notes each
- * field under spec that the preview keeps although the change leaves it
- * out. A page whose write refuses takeOver and remove sets offerTakeOver
- * to false.
+ * In direct mode, unless change sets force or offerTakeOver is false, it
+ * asks in TakeOverChoice before the save takes over a field of another
+ * tool. The choice starts off for each new change. While it is on, preview
+ * and apply get the change of withTakeOver. Set offerTakeOver to false
+ * when apply refuses takeOver and remove.
  *
- * A confirm sends one write, and Back is hidden while it runs. An ok write
- * goes to show with savedMessage, then onWritten. A refused write shows
- * its errors, and the confirm stays disabled unless the API server did not
- * answer. While hold is set, the
- * confirm stays disabled whatever the preview says; the effects say why.
- * onWriting gets true when the write starts and false when it settles.
+ * A confirm writes once, and Back is hidden while it runs. An ok write goes
+ * to show with savedMessage, then onWritten. A refused write shows its
+ * errors. onWriting gets true when the write starts and false when it
+ * settles.
  */
 export function ChangeReview({
   change,

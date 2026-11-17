@@ -144,3 +144,15 @@ export const KubectlField: Story = {
     ),
   },
 };
+
+export const KubectlFieldGit: Story = {
+  name: "A field that kubectl set, in Git mode",
+  args: {
+    mode: "git",
+    change: {
+      intent: "Change the environment staging",
+      apply: [after],
+      preconditions: { "Environment//staging": "12" },
+    },
+  },
+};
