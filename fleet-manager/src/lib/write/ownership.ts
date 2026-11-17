@@ -61,13 +61,17 @@ export function isPartialSave(error: ApiError): boolean {
  * The apply fails on such a field unless it forces. cleared holds the
  * topmost field that live holds and applied leaves out, under a field
  * that applied holds, with every other manager of it or of a field below
- * it. The apply keeps such a field. The annotation
+ * it. The apply keeps such a field. keep names paths through maps only.
+ * No field at or under one is in either list, and no field above one that
+ * live holds. In place of such a cleared field, cleared holds the topmost
+ * fields under it that hold no path of keep. The annotation
  * LAST_APPLIED_ANNOTATION is in neither list. The fields are in the
  * code-unit order of their paths, and the managers of a field by name.
  */
 export function foreignFields(
   live: KubeObject,
   applied: KubeObject,
+  keep: readonly FieldPath[] = [],
 ): { changed: ForeignField[]; cleared: ForeignField[] } {
   const tree = ownerTree(
     live as ManagedObject,
@@ -83,20 +87,34 @@ export function foreignFields(
     after: unknown,
     path: FieldPath,
     steps: OwnedStep[],
+    kept: boolean,
   ): void => {
+    if (keep.includes(path)) kept = true;
     if (after === undefined) {
+      if (kept) return;
+      if (holdsKept(before, path)) {
+        visitChildren(node, before, {}, path, steps, false);
+        return;
+      }
       const owners = ownersBelow(node);
       if (owners.length > 0)
         cleared.push({ path, steps, managers: managersOf(owners) });
       return;
     }
     if (node.whole.length > 0) {
-      if (!equalJSON(before, after))
+      if (!equalJSON(before, after) && !kept && !holdsKept(before, path))
         changed.push({ path, steps, managers: managersOf(node.whole) });
       return;
     }
-    visitChildren(node, before, after, path, steps);
+    visitChildren(node, before, after, path, steps, kept);
   };
+
+  const holdsKept = (value: unknown, path: FieldPath): boolean =>
+    keep.includes(path) ||
+    (isRecord(value) &&
+      Object.entries(value).some(([key, inner]) =>
+        holdsKept(inner, stepPath(path, { field: key })),
+      ));
 
   const visitChildren = (
     node: OwnerTree,
@@ -104,6 +122,7 @@ export function foreignFields(
     after: unknown,
     path: FieldPath,
     steps: OwnedStep[],
+    kept: boolean,
     skip?: string,
   ): void => {
     if (Array.isArray(before)) {
@@ -117,6 +136,7 @@ export function foreignFields(
           items.find(found.matches),
           stepPath(path, found.step),
           [...steps, found.step],
+          kept,
         );
       }
       return;
@@ -133,6 +153,7 @@ export function foreignFields(
         Object.hasOwn(fields, key) ? fields[key] : undefined,
         stepPath(path, step),
         [...steps, step],
+        kept,
       );
     }
   };
@@ -141,19 +162,26 @@ export function foreignFields(
   // field to take over.
   const spec = tree.children.get("f:spec");
   if (spec !== undefined)
-    visitChildren(spec, live.spec, applied.spec ?? {}, "spec", [
-      { field: "spec" },
-    ]);
+    visitChildren(
+      spec,
+      live.spec,
+      applied.spec ?? {},
+      "spec",
+      [{ field: "spec" }],
+      keep.includes("spec"),
+    );
   const metadata = tree.children.get("f:metadata");
   for (const name of ["labels", "annotations"]) {
     const node = metadata?.children.get(`f:${name}`);
     if (node === undefined) continue;
+    const path = stepPath("metadata", { field: name });
     visitChildren(
       node,
       live.metadata[name],
       applied.metadata[name] ?? {},
-      stepPath("metadata", { field: name }),
+      path,
       [{ field: "metadata" }, { field: name }],
+      keep.includes(path),
       name === "annotations" ? LAST_APPLIED_ANNOTATION : undefined,
     );
   }

@@ -318,7 +318,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         }
         const foreign =
           before !== undefined && resourceVersion !== undefined
-            ? foreignFields(before, object)
+            ? foreignFields(before, object, change.keep?.[key])
             : undefined;
         if (foreign && foreign.changed.length + foreign.cleared.length > 0)
           ownership.push({ ref, ...foreign });

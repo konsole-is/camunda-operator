@@ -97,7 +97,7 @@ The fleet manager reads the ConfigMap each time that it needs a setting, so a ch
 
 ## Fields that another tool set
 
-A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or clears. It shows the tool next to the field and offers one choice, **Take over these fields**:
+A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or clears. It shows the tool next to the field. One choice, **Take over these fields**, covers the changed fields and the cleared fields together. Each row says what the save does to its field:
 
 ```text
 Fields that another tool set
@@ -106,7 +106,7 @@ spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
 [ ] Take over these fields
 ```
 
-Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. A cleared field stays on the object, and the save writes the rest of the change.
+Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only clears fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it.
 
 With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each cleared field. If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
 
@@ -116,7 +116,7 @@ The review asks on every save. The fleet manager does not keep the choice for a 
 
 One review does not ask. When the Environments page adds a namespace to an environment, the labels and annotations that other tools set on the namespace stay.
 
-The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. The review names the controller. To save, leave the field as it is.
+The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and **Save** stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays.
 
 When a GitOps tool such as Argo CD or Flux set the field or manages the object, the review gives a warning. The tool sets its own value again on its next sync. Change the source in Git too. When the fleet manager does not know the tool, the review says `The fleet manager does not know this tool.` next to its name. You can still take the field over.
 

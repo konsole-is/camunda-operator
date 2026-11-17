@@ -26,7 +26,7 @@ describe("presetDraftOf", () => {
 });
 
 describe("presetUpdateChange", () => {
-  it("applies the edited body and description with the precondition and force", () => {
+  it("applies the edited body and description with the precondition and no force", () => {
     const draft = {
       body: { ...standardPg.spec.server, instances: 3 },
       description: "  Two replicas for the plane  ",
@@ -49,7 +49,6 @@ describe("presetUpdateChange", () => {
       preconditions: {
         [refKey({ kind: "DatabaseServerPreset", name: "standard" })]: "14",
       },
-      force: true,
     });
   });
 

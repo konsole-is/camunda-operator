@@ -60,11 +60,11 @@ const fieldListSchema = z
   .record(refKeySchema, z.array(z.string().min(1)).min(1))
   .optional();
 
-// takeOverIssues gives the issues of the take-over list name of c: each
-// key names an applied object with a precondition, no field twice.
+// takeOverIssues gives the issues of the field list name of c: each key
+// names an applied object with a precondition, no field twice.
 function takeOverIssues(
   c: Change,
-  name: "takeOver" | "remove",
+  name: "takeOver" | "remove" | "keep",
 ): { message: string; path: string[] }[] {
   const lists = c[name];
   if (lists === undefined) return [];
@@ -92,7 +92,7 @@ function takeOverIssues(
  * changeSchema accepts a Change with an intent and at least one object to
  * apply or delete. Each key of create names an applied object that has no
  * precondition. Each key of uids and of generations names a deleted object.
- * Each key of takeOver and remove names an applied object with a
+ * Each key of takeOver, remove, and keep names an applied object with a
  * precondition, and lists each field once. A change with a list has no
  * force.
  */
@@ -108,10 +108,11 @@ export const changeSchema: z.ZodType<Change> = z
     force: z.boolean().optional(),
     takeOver: fieldListSchema,
     remove: fieldListSchema,
+    keep: fieldListSchema,
     directOnly: z.boolean().optional(),
   })
   .superRefine((c, ctx) => {
-    for (const name of ["takeOver", "remove"] as const)
+    for (const name of ["takeOver", "remove", "keep"] as const)
       for (const issue of takeOverIssues(c, name))
         ctx.addIssue({ code: "custom", ...issue });
     if (c.force !== undefined && (c.takeOver ?? c.remove) !== undefined)
@@ -846,15 +847,15 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
 
 /**
  * adminChangeSchema accepts a Change of a Setup page. It allows deletes,
- * preconditions, create, and force, under these rules. Each object that it
- * applies or deletes has a kind of kinds, with the apiVersion of that
- * kind. An object of a cluster-scoped kind has no namespace, and an object
- * of a namespaced kind has a namespace of namespaces. Each delete, and each
- * apply that create does not list, has a precondition. force is allowed
- * only on a change whose applies are all updates and that deletes nothing.
- * takeOver and remove are allowed on the updates.
- * An applied object holds no status, and its metadata holds only name,
- * namespace, labels, and annotations. directOnly is refused.
+ * preconditions, create, takeOver, remove, and keep, under these rules. Each
+ * object that it applies or deletes has a kind of kinds, with the
+ * apiVersion of that kind. An object of a cluster-scoped kind has no
+ * namespace, and an object of a namespaced kind has a namespace of
+ * namespaces. Each delete, and each apply that create does not list, has a
+ * precondition. takeOver, remove, and keep name only updates. An applied object
+ * holds no status, and its metadata holds only name, namespace, labels,
+ * and annotations. force and directOnly are refused: a page takes over a
+ * field of another tool only through the lists.
  */
 export function adminChangeSchema(
   kinds: readonly KindName[],
@@ -890,8 +891,7 @@ export function adminChangeSchema(
             (created.includes(refKey(refOf(o))) || guarded(refKey(refOf(o)))),
         ) &&
         (c.delete ?? []).every((r) => placed(r) && guarded(refKey(r))) &&
-        (c.force === undefined ||
-          (created.length === 0 && (c.delete ?? []).length === 0)) &&
+        c.force === undefined &&
         c.directOnly === undefined
       );
     },

@@ -752,6 +752,40 @@ describe("directWriter with a take-over", () => {
     expect(seen.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
+  it.each([
+    ["a take-over of", "takeOver", "spec.displayName", "spec.displayName"],
+    ["a removal at", "remove", "spec.sections", "spec.sections"],
+    ["a removal above", "remove", "spec.sections", "spec.sections.gone"],
+  ])("refuses %s a kept path before any write", async (_, list, path, kept) => {
+    const live = environment(
+      { displayName: "Stage", sections: { gone: { required: true } } },
+      [kubectlOwns("displayName", "sections")],
+    );
+    answer = () => ({ status: 200, body: live });
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Rename",
+      apply: [
+        environment({ displayName: list === "takeOver" ? "Prod" : "Stage" }),
+      ],
+      preconditions: { [key]: "7" },
+      [list]: { [key]: [path] },
+      keep: { [key]: [kept] },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message:
+            "The fields of other tools are not the ones that the review showed. Review the change again.",
+        }),
+      ],
+    });
+    expect(seen.filter((r) => r.method !== "GET")).toEqual([]);
+  });
+
   it("refuses lists that differ from the fields of other managers", async () => {
     const live = environment({ displayName: "Stage" }, [
       kubectlOwns("displayName"),

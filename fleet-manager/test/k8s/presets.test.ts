@@ -6,6 +6,7 @@ import {
   presetUpdateChange,
 } from "@/components/setup/presets/draft";
 import type { PresetObject } from "@/components/setup/presets/kinds";
+import { withTakeOver } from "@/lib/write/ownership";
 import type { KubeObject } from "@/lib/write/types";
 import { directWriter, readObject } from "@/lib/write/writer";
 
@@ -63,6 +64,8 @@ describe.each([
     expect(after?.metadata.resourceVersion).toBe(live.metadata.resourceVersion);
   });
 
+  // The test created the preset under another field manager, so the save
+  // takes the storage size over, as the review does after the choice.
   it("writes a body that the CRD knows", async () => {
     const change = presetUpdateChange(live, {
       ...presetDraftOf(live),
@@ -71,8 +74,13 @@ describe.each([
         storageSize: "80Gi",
       },
     });
-    expect((await writer.preview(change)).errors).toEqual([]);
-    expect((await writer.apply(change)).ok).toBe(true);
+    const preview = await writer.preview(change);
+    expect(
+      (preview.ownership ?? []).flatMap((o) => o.changed.map((f) => f.path)),
+    ).toEqual([`spec.${body}.storageSize`]);
+    const taken = withTakeOver(change, preview.ownership ?? []);
+    expect((await writer.preview(taken)).errors).toEqual([]);
+    expect((await writer.apply(taken)).ok).toBe(true);
     const after = await readObject(kc, ref);
     expect(
       (after?.spec as Record<string, Record<string, unknown>>)[body]
