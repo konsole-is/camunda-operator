@@ -1,4 +1,5 @@
 import "server-only";
+import { messageOf } from "@/lib/text";
 import type { KindName, Resource } from "./kinds";
 import { list } from "./read";
 import type { ReadError } from "./unread";
@@ -22,8 +23,7 @@ export async function loadSnapshot<
       try {
         return { key, items: await list(kind, {}) };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { key, items: [], error: { kind, message } };
+        return { key, items: [], error: { kind, message: messageOf(err) } };
       }
     }),
   );

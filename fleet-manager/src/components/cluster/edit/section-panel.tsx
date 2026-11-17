@@ -4,6 +4,7 @@ import { LockedField } from "@/components/fleet/locked-field";
 import { secretRefsOf } from "@/components/fleet/secret-ref-picker";
 import { lockLabel } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
+import { objectOrEmpty } from "@/lib/policy/json";
 import type { OpenAPISchema } from "@/lib/schema";
 import { claimAfter } from "@/lib/session";
 import type { ClaimSection } from "../claim";
@@ -62,7 +63,7 @@ export function SectionPanel({
           fields={section.parameters}
           schema={registration?.spec.parameters as OpenAPISchema | undefined}
           allowed={allowed}
-          claimed={asObject(selection?.parameters)}
+          claimed={objectOrEmpty(selection?.parameters)}
           secrets={secrets}
           errors={errors}
           set={own(set)}
@@ -74,10 +75,4 @@ export function SectionPanel({
       )}
     </div>
   );
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
