@@ -331,6 +331,11 @@ describe("the Git writer against envtest", () => {
       kind: "Environment",
       name,
     };
+    await repo.commitFromOtherClone(
+      { [`fleet/_cluster/environments/${name}.yaml`]: "kind: Environment\n" },
+      "GitOps manages the environment",
+    );
+    const head = await repo.log();
     const live = () => api.read({ ...ref, metadata: { name } });
     const before = await live();
 
@@ -346,7 +351,7 @@ describe("the Git writer against envtest", () => {
     const after = await live();
     expect(after.metadata?.deletionTimestamp).toBeUndefined();
     expect(after.metadata?.uid).toBe(before.metadata!.uid);
-    expect(await repo.log()).toEqual(["Initial commit"]);
+    expect(await repo.log()).toEqual(head);
   });
 
   it("a create of a claim that exists in the cluster makes no commit and returns Stale", async () => {
