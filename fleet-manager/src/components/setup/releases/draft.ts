@@ -154,9 +154,10 @@ export function createChange(draft: ReleaseDraft): Change {
 
 /**
  * updateChange applies live with the spec of specOf, with the
- * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. It keeps the labels and annotations
- * of live, without the last applied file of kubectl.
+ * resourceVersion of live as its precondition, and without force: a field
+ * of another tool changes only through a take-over that the review adds.
+ * It keeps the labels and annotations of live, without the last applied
+ * file of kubectl.
  */
 export function updateChange(
   live: CamundaRelease,
@@ -183,7 +184,6 @@ export function updateChange(
     intent: `Change the release ${name}`,
     apply: [object],
     ...preconditionsOf([live]),
-    force: true,
   };
 }
 

@@ -190,13 +190,13 @@ function countChanged(a: unknown, b: unknown): number {
 
 /**
  * updateChange applies live with the spec of draft, with the
- * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. It keeps the labels and the
- * annotations of live, without the last applied file of kubectl, so a
- * contract kept from a registration keeps its plugin labels. A field that
- * draft leaves empty is left out. The recovery request of a database
- * server contract and its answer are left out too: their own writers keep
- * them.
+ * resourceVersion of live as its precondition, and without force: a field
+ * of another tool changes only through a take-over that the review adds.
+ * It keeps the labels and the annotations of live, without the last
+ * applied file of kubectl, so a contract kept from a registration keeps
+ * its plugin labels. A field that draft leaves empty is left out. The
+ * recovery request of a database server contract and its answer are left
+ * out too: their own writers keep them.
  */
 export function updateChange(
   live: ContractObject,
@@ -223,7 +223,6 @@ export function updateChange(
     intent: `Change the ${kindWords(live.kind)} contract ${name}`,
     apply: [object],
     ...preconditionOf(live),
-    force: true,
   };
 }
 

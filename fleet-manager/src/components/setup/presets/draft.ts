@@ -24,10 +24,11 @@ export function presetDraftOf(preset: PresetObject | undefined): PresetDraft {
 
 /**
  * presetUpdateChange applies live with the body and the description of
- * draft, with the resourceVersion of live as its precondition, and with
- * force, so a field that kubectl apply set changes too. A blank description
- * removes the annotation. It keeps the labels and the other annotations of
- * live, without the last applied file of kubectl.
+ * draft, with the resourceVersion of live as its precondition, and without
+ * force: a field of another tool changes only through a take-over that the
+ * review adds. A blank description removes the annotation. It keeps the
+ * labels and the other annotations of live, without the last applied file
+ * of kubectl.
  */
 export function presetUpdateChange(
   live: PresetObject,
@@ -63,7 +64,6 @@ export function presetUpdateChange(
         [refKey({ kind: live.kind, name })]: live.metadata.resourceVersion,
       },
     }),
-    force: true,
   };
 }
 

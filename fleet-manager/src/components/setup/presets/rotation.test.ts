@@ -119,15 +119,15 @@ describe("rotationChange", () => {
     expect(spec.cluster.auth.basic.adminEmail).toBe("admin@example.com");
   });
 
-  it("writes from the live preset with its precondition, force, and description", () => {
+  it("writes from the live preset with its precondition and description, and no force", () => {
     const change = rotationChange(medium, now);
     expect(change).toMatchObject({
       intent: "Rotate the admin password of the clusters of the preset medium",
       preconditions: {
         [refKey({ kind: "CamundaClusterPreset", name: "medium" })]: "10",
       },
-      force: true,
     });
+    expect(change.force).toBeUndefined();
     expect(change.apply[0].metadata.annotations).toEqual({
       [DESCRIPTION_ANNOTATION]:
         "For production workloads with three brokers and replication.",

@@ -212,7 +212,7 @@ describe("draftErrors", () => {
 });
 
 describe("updateChange", () => {
-  it("keeps the labels and annotations without the last applied file, with the precondition and force", () => {
+  it("keeps the labels and annotations without the last applied file, with the precondition and no force", () => {
     const live = configOf("oidc-prod");
     live.metadata.labels = { team: "platform" };
     live.metadata.annotations = {
@@ -237,7 +237,6 @@ describe("updateChange", () => {
         },
       ],
       preconditions: { "CamundaPlatformConfig//oidc-prod": "21" },
-      force: true,
     });
   });
 });

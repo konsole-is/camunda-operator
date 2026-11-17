@@ -241,34 +241,6 @@ describe("ChangeReview", () => {
     );
   });
 
-  it("notes each kept field of a forced change", async () => {
-    setup({
-      change: { ...change, force: true },
-      preview: {
-        ...clean,
-        objects: [
-          {
-            ...clean.objects[0],
-            after: {
-              ...applied,
-              spec: {
-                displayName: "Stage",
-                sections: { "backup-storage": { allowed: ["rustfs"] } },
-              },
-            },
-          },
-        ],
-      },
-    });
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          "spec.sections stays, because another field manager set it.",
-        ),
-      ).toBeTruthy(),
-    );
-  });
-
   it("shows each other object of the preview as its own diff", async () => {
     setup({
       preview: {
@@ -514,6 +486,11 @@ describe("ChangeReview with fields of another tool", () => {
     await waitFor(() =>
       expect(choice().getAttribute("aria-checked")).toBe("true"),
     );
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Checking the change with the API server."),
+      ).toBeNull(),
+    );
     expect(screen.getByRole("alert").textContent).toContain(message);
     expect(confirm()).toHaveProperty("disabled", true);
   });
@@ -571,17 +548,6 @@ describe("ChangeReview with fields of another tool", () => {
       screen.queryByRole("group", { name: "Fields that another tool set" }),
     ).toBeNull();
     expect(confirm()).toHaveProperty("disabled", true);
-  });
-
-  it("a forced change shows no choice", async () => {
-    setup({
-      change: { ...updated, force: true },
-      preview: { ...clean, ownership: conflicted.ownership },
-    });
-    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
-    expect(
-      screen.queryByRole("group", { name: "Fields that another tool set" }),
-    ).toBeNull();
   });
 
   it("an operator field keeps Save off and offers no choice", async () => {

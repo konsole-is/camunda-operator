@@ -102,6 +102,71 @@ describe("RotateAction", () => {
     );
   });
 
+  it("a rotation that changes a field of another tool shows the field and asks", async () => {
+    const { actions } = setup();
+    const ref = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaClusterPreset",
+      name: "medium",
+    };
+    const path = "spec.cluster.auth.basic.passwordRotation";
+    const ownership = [
+      {
+        ref,
+        changed: [
+          {
+            path,
+            steps: path.split(".").map((field) => ({ field })),
+            managers: [
+              {
+                name: "kubectl-client-side-apply",
+                operation: "Update",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    actions.previewChange.mockImplementation(async (change) => ({
+      objects: [{ ref, diff: [{ op: "added", text: "passwordRotation" }] }],
+      errors: change.takeOver
+        ? []
+        : [
+            {
+              code: "Conflict",
+              message: 'conflict with "kubectl-client-side-apply"',
+              path,
+              ref,
+            },
+          ],
+      ownership,
+    }));
+    rotate();
+    const review = screen.getByRole("region", { name: "Review the rotation" });
+    const choice = await within(review).findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      within(review).getByRole("group", {
+        name: "Fields that another tool set",
+      }).textContent,
+    ).toContain(`${path}: kubectl-client-side-apply set it. The save changes it.`);
+    const confirm = within(review).getByRole("button", { name: "Rotate" });
+    expect(confirm).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledOnce());
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: { "CamundaClusterPreset//medium": [path] },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
   it("reads Push to Git in Git mode", () => {
     setup({ mode: "git" });
     rotate();

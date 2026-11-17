@@ -51,7 +51,7 @@ function edited<T extends ContractObject>(
 describe("updateChange", () => {
   const live = withMeta(backups, { resourceVersion: "41", uid: "u-1" });
 
-  it("sends the edited spec with the precondition and force", () => {
+  it("sends the edited spec with the precondition and no force", () => {
     const draft = edited(live, (spec) => {
       spec.s3!.region = "eu-central-1";
     });
@@ -70,7 +70,6 @@ describe("updateChange", () => {
         },
       ],
       preconditions: { "ObjectStorageConfig/team-a/backups": "41" },
-      force: true,
     });
   });
 

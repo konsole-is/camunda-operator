@@ -59,7 +59,6 @@ const meta = {
       intent: "Change the environment staging",
       apply: [after],
       preconditions: { "Environment//staging": "12" },
-      force: true,
     },
     mode: "direct",
     diffLabel: "Changes to the environment",
@@ -80,15 +79,46 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const KeptField: Story = { name: "Kept field" };
-
-export const Git: Story = { name: "Git", args: { mode: "git" } };
-
 const ref = {
   apiVersion: "fleet.camunda.io/v1alpha1",
   kind: "Environment",
   name: "staging",
 };
+
+// In direct mode the preview names the cleared field that kubectl set, and
+// the review offers to take it over.
+export const KeptField: Story = {
+  name: "Kept field",
+  args: {
+    preview: fn(
+      async (): Promise<Preview> => ({
+        ...keptPreview,
+        ownership: [
+          {
+            ref,
+            changed: [],
+            cleared: [
+              {
+                path: "spec.sections",
+                steps: [{ field: "spec" }, { field: "sections" }],
+                managers: [
+                  {
+                    name: "kubectl-client-side-apply",
+                    operation: "Update",
+                    kind: "other",
+                    known: true,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  },
+};
+
+export const Git: Story = { name: "Git", args: { mode: "git" } };
 const kubectlField = {
   path: "spec.displayName",
   steps: [{ field: "spec" }, { field: "displayName" }],

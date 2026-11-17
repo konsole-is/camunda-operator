@@ -170,7 +170,7 @@ describe("changeCount", () => {
 });
 
 describe("change builders", () => {
-  it("updates with the resourceVersion, force, the labels, and the annotations without the last applied file", () => {
+  it("updates with the resourceVersion and no force, the labels, and the annotations without the last applied file", () => {
     const live = release("r", { version: "8.9.0" });
     live.metadata.annotations = {
       [LAST_APPLIED_ANNOTATION]: "{}",
@@ -196,7 +196,6 @@ describe("change builders", () => {
         },
       ],
       preconditions: { "CamundaRelease//r": "41" },
-      force: true,
     });
   });
 
