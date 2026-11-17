@@ -23,8 +23,8 @@ export type EnvironmentRow = {
  * environmentRows returns one row for each environment by name. namespaces
  * is status.namespaces, or the count of labelled namespaces while the status
  * has none. clusters and planes count the claims of each kind in the
- * labelled namespaces. A count is undefined while a list that it reads is
- * failed or stale in s.
+ * labelled namespaces. A count can be undefined while a list in s is
+ * failed or stale.
  */
 export function environmentRows(
   s: EnvironmentSources & SourceReads,
@@ -83,9 +83,9 @@ export const LIST_KINDS: readonly string[] = [
 ];
 
 /**
- * unassignedNamespaces returns them by name. It returns none while no
- * Environment exists, and undefined while a list of LIST_KINDS is failed
- * or stale in s.
+ * unassignedNamespaces returns them by name. It returns undefined while a
+ * list of LIST_KINDS is failed or stale in s. Otherwise it returns none
+ * while no Environment exists.
  */
 export function unassignedNamespaces(
   s: EnvironmentSources & SourceReads,

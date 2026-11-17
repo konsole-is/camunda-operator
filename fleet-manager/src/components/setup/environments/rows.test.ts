@@ -249,7 +249,7 @@ describe("unassignedNamespaces", () => {
             clusterClaim("team-a", "b"),
           ],
         }),
-      ).map((n) => n.name),
+      )?.map((n) => n.name),
     ).toEqual(["legacy", "team-x"]);
   });
 
