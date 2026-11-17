@@ -19,7 +19,8 @@ const TITLE = "Fields that another tool set";
 /**
  * TakeOverChoice shows the fields of other field managers that a save
  * changes or clears, from Preview.ownership, with one checkbox that takes
- * them over. It heads the fields of each object with labelOf when
+ * them over. The cleared fields of an operator controller stay, and one
+ * line of each object names them. It heads the fields of each object with labelOf when
  * ownership holds more than one object. It offers no checkbox when no
  * field is offered, or when a path names more than one field of an
  * object, because the server refuses that take-over.
@@ -74,11 +75,25 @@ export function TakeOverChoice({
                   {rowOf(field, "changed", chosen, choosable)}
                 </li>
               ))}
-              {object.cleared.map((field, j) => (
+              {object.cleared.filter(offered).map((field, j) => (
                 <li key={`cleared-${j}`}>
                   {rowOf(field, "cleared", chosen, choosable)}
                 </li>
               ))}
+              {kept(object).length > 0 && (
+                <li key="operator" className="text-muted">
+                  {kept(object).length === 1
+                    ? "The operator sets this field. It stays: "
+                    : "The operator sets these fields. They stay: "}
+                  {kept(object).map((path, j) => (
+                    <span key={path}>
+                      {j > 0 && ", "}
+                      <Path>{path}</Path>
+                    </span>
+                  ))}
+                  .
+                </li>
+              )}
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
                   <Path>{path}</Path> names more than one field of the {label}.
@@ -236,6 +251,14 @@ function ambiguousPaths(object: ObjectOwnership): string[] {
         .map((f) => f.path)
         .filter((path) => fields.filter((f) => f.path === path).length > 1),
     ),
+  ];
+}
+
+// A cleared field of the operator stays, and the operator sets it again,
+// so one line names all of them instead of one row each.
+function kept(object: ObjectOwnership): string[] {
+  return [
+    ...new Set(object.cleared.filter((f) => !offered(f)).map((f) => f.path)),
   ];
 }
 

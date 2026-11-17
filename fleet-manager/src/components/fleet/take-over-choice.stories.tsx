@@ -123,6 +123,26 @@ export const Operator: Story = {
   },
 };
 
+export const OperatorCleared: Story = {
+  name: "Cleared fields of the operator",
+  args: {
+    ownership: [
+      {
+        ref: {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "DatabaseServerConfig",
+          name: "main",
+        },
+        changed: [],
+        cleared: [
+          field("spec.pitr.lastRecovery", controller),
+          field("spec.recovery", controller),
+        ],
+      },
+    ],
+  },
+};
+
 export const Batch: Story = {
   name: "A batch of two claims",
   args: {

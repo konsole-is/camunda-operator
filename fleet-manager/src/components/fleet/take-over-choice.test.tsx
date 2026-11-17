@@ -247,13 +247,62 @@ describe("TakeOverChoice", () => {
       `spec.releaseRef: ${controller.name} of the operator sets it. The fleet manager does not take it over, because the operator sets it again. Leave it as it is to save.`,
     );
     expect(group.textContent).toContain(
-      `spec.deletionPolicy: ${controller.name} of the operator sets it. The fleet manager does not take it over, because the operator sets it again.`,
-    );
-    expect(group.textContent).not.toContain(
-      "spec.deletionPolicy: Leave it as it is",
+      "The operator sets this field. It stays: spec.deletionPolicy.",
     );
     expect(group.textContent).not.toContain(KUBECTL_LINE);
     expect(group.textContent).not.toContain(BLOCKED);
+  });
+
+  it("names the cleared fields of the operator in one quiet line that says they stay", () => {
+    const database: ObjectRef = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "DatabaseServerConfig",
+      name: "main",
+    };
+    const { group } = show([
+      owned(
+        database,
+        [],
+        [
+          field("spec.pitr.lastRecovery", controller),
+          field("spec.recovery", controller),
+        ],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "The operator sets these fields. They stay: spec.pitr.lastRecovery, spec.recovery.",
+    );
+    expect(group.textContent).not.toContain("of the operator sets it");
+    expect(within(group).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(group).queryByRole("checkbox")).toBeNull();
+    // No warning icon and no blocked line: the save keeps these fields.
+    expect(group.querySelector("svg")).toBeNull();
+    expect(group.textContent).not.toContain("To save");
+    expect(
+      takeOverOpen(
+        [owned(database, [], [field("spec.recovery", controller)])],
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a row for each cleared field of another tool beside the line of the operator", () => {
+    const { group } = show([
+      owned(
+        environment,
+        [],
+        [field("spec.color", kubectl), field("spec.recovery", controller)],
+      ),
+    ]);
+    expect(group.textContent).toContain(
+      "spec.color: kubectl-client-side-apply set it. It stays unless you take it over.",
+    );
+    expect(group.textContent).toContain(
+      "The operator sets this field. It stays: spec.recovery.",
+    );
+    expect(
+      within(group).getByRole("checkbox", { name: "Take over these fields" }),
+    ).toBeTruthy();
   });
 
   it("offers the checkbox for the other fields beside an operator field", () => {
