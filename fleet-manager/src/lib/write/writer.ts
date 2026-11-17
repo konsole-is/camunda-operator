@@ -25,7 +25,6 @@ import { clientSideApplyPatch } from "./merge-patch";
 import {
   foreignFields,
   offered,
-  overlaps,
   partialSaveMessage,
   takenFields,
   withoutFields,
@@ -331,7 +330,6 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             resourceVersion,
             foreign,
             lists,
-            change.keep?.[key] ?? [],
           );
           if (refused.length > 0) {
             errors.push(...refused);
@@ -542,7 +540,6 @@ function takeOverRefusals(
   resourceVersion: string | undefined,
   foreign: { changed: ForeignField[]; cleared: ForeignField[] } | undefined,
   lists: TakeOverLists,
-  keep: readonly string[],
 ): ApiError[] {
   if (before === undefined || resourceVersion === undefined || !foreign)
     return [
@@ -552,18 +549,6 @@ function takeOverRefusals(
         ref,
       },
     ];
-  for (const path of [...lists.takeOver, ...lists.remove]) {
-    const kept = keep.find((k) => overlaps(path, k));
-    if (kept !== undefined)
-      return [
-        {
-          code: "Invalid",
-          message: `The save keeps ${kept}, so it does not take over or remove ${path}.`,
-          path,
-          ref,
-        },
-      ];
-  }
   const fields = [...foreign.changed, ...foreign.cleared];
   const operator: ApiError[] = [];
   for (const path of [...lists.takeOver, ...lists.remove]) {

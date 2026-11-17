@@ -754,7 +754,7 @@ describe("directWriter with a take-over", () => {
 
   it.each([
     ["a take-over of", "takeOver", "spec.displayName", "spec.displayName"],
-    ["a removal under", "remove", "spec.sections.gone", "spec.sections"],
+    ["a removal at", "remove", "spec.sections", "spec.sections"],
     ["a removal above", "remove", "spec.sections", "spec.sections.gone"],
   ])("refuses %s a kept path before any write", async (_, list, path, kept) => {
     const live = environment(
@@ -765,7 +765,9 @@ describe("directWriter with a take-over", () => {
 
     const result = await directWriter(apiConfig).apply({
       intent: "Rename",
-      apply: [environment({ displayName: "Prod" })],
+      apply: [
+        environment({ displayName: list === "takeOver" ? "Prod" : "Stage" }),
+      ],
       preconditions: { [key]: "7" },
       [list]: { [key]: [path] },
       keep: { [key]: [kept] },
@@ -776,8 +778,8 @@ describe("directWriter with a take-over", () => {
       errors: [
         expect.objectContaining({
           code: "Invalid",
-          path,
-          message: `The save keeps ${kept}, so it does not take over or remove ${path}.`,
+          message:
+            "The fields of other tools are not the ones that the review showed. Review the change again.",
         }),
       ],
     });

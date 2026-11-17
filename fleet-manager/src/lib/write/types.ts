@@ -54,10 +54,10 @@ export type RefKey = `${string}/${string}/${string}`;
  * Invalid. A change with a list has no force. The Git writer refuses a
  * change with a list and without directOnly.
  *
- * keep names, for an applied object, the fields that the page does not
- * edit and that the save leaves as they are. The review never offers a
- * cleared field at or under such a path, and a list that names a path at,
- * under, or above one fails with Invalid. The Git writer accepts keep.
+ * keep names, for an applied object, paths through maps only that the
+ * page never sends. The review offers no field at or under such a path,
+ * and no field above one that the live object holds, so a list that names
+ * one does not equal the offered fields. The Git writer accepts keep.
  *
  * The preview of the direct writer applies an object of previewManagers as
  * the field manager that it maps to, unless it sends the object as a merge

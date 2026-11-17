@@ -225,16 +225,51 @@ describe("foreignFields", () => {
     expect(cleared.map((f) => f.path)).toEqual(["spec.pitr.enabled"]);
   });
 
-  it("a kept path leaves a changed field in changed", () => {
+  it("leaves out a changed field at a kept path and one that holds a kept path", () => {
+    const live = environment(
+      { displayName: "Stage", pitr: { enabled: true, lastRecovery: {} } },
+      [
+        entry("kubectl", "Apply", {
+          "f:spec": { "f:displayName": {}, "f:pitr": {} },
+        }),
+      ],
+    );
+    const { changed } = foreignFields(
+      live,
+      environment({ displayName: "Prod", pitr: { enabled: false } }),
+      ["spec.displayName", "spec.pitr.lastRecovery"],
+    );
+    expect(changed).toEqual([]);
+  });
+
+  it("leaves out every field of a kept root", () => {
     const live = environment({ displayName: "Stage" }, [
       entry("kubectl", "Apply", displayName),
     ]);
-    const { changed } = foreignFields(
-      live,
-      environment({ displayName: "Prod" }),
-      ["spec.displayName"],
+    expect(foreignFields(live, environment({}), ["spec"])).toEqual({
+      changed: [],
+      cleared: [],
+    });
+  });
+
+  it("a kept annotation does not hide a sibling whose key starts with its key", () => {
+    const live = environment(
+      {},
+      [
+        entry("kubectl", "Apply", {
+          "f:metadata": {
+            "f:annotations": { "f:example": {}, "f:example.com/team": {} },
+          },
+        }),
+      ],
+      { annotations: { example: "a", "example.com/team": "b" } },
     );
-    expect(changed.map((f) => f.path)).toEqual(["spec.displayName"]);
+    const { cleared } = foreignFields(live, environment({}), [
+      "metadata.annotations.example",
+    ]);
+    expect(cleared.map((f) => f.path)).toEqual([
+      "metadata.annotations.example.com/team",
+    ]);
   });
 
   it("a cleared field that only the fleet manager owns is not named", () => {
