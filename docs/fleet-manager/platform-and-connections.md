@@ -57,7 +57,7 @@ Each Secret reference names a namespace, a Secret, and a key. The page shows the
 
 When you change a field, a bar at the bottom of the page offers **Review**. The review shows the change and a dry run of it. Select **Save** to write it. In Git mode, the button reads **Push to Git**, and the page shows `Waiting for GitOps to apply` until your GitOps tool applies the commit. [Fleet manager settings](settings.md#git-mode) says how to turn on Git mode.
 
-Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
+Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or removes. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool set the OIDC block, the review names `spec.auth.oidc` and offers the take-over. The take-over cannot remove the block, because a platform config with the basic method and an OIDC block is not valid. **Save** stays off. After the take-over, the review shows this error:
 
@@ -239,7 +239,7 @@ The save applies only if the contract did not change after the page read it. Whe
 
 Go back, and make the change again on the new copy.
 
-Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a cleared field stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
+Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or removes. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a field that the save removes stays. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
 ### Delete a contract
 

@@ -386,7 +386,7 @@ In direct mode, the review names each field that another tool set and that the s
 
 [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
-A move of the identity mode cannot save when another tool set the identity provider. The save gives the new values first and removes the cleared fields after that. Between the two writes, the claim has two identity providers, and Kubernetes refuses such a claim. The review shows `exactly one identity provider: keycloak, externalKeycloak, or oidc`, and **Save** stays off. Make this move in the claim file, and apply the file again.
+A move of the identity mode cannot save when another tool set the identity provider. The save gives the new values first and removes the other fields after that. Between the two writes, the claim has two identity providers, and Kubernetes refuses such a claim. The review shows `exactly one identity provider: keycloak, externalKeycloak, or oidc`, and **Save** stays off. Make this move in the claim file, and apply the file again.
 
 In Git mode, your GitOps tool applies the claim file:
 
