@@ -3,7 +3,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
-  backupWarning,
+  bucketGoneWarning,
   type DeletionGroup,
   deletionGroups,
 } from "@/lib/claims/deletion";
@@ -62,10 +62,10 @@ export type DeleteTarget = {
  * targets are the objects that always go, in the order in which they go,
  * the requests included. kept are the CamundaCluster, CamundaOptimize, and
  * BackupSchedule objects of the cluster that stay, each with the reason in
- * note. backups counts the backups of the cluster of both kinds. warning is
- * the backupWarning of groups, unset while fatesKnown is false. unread are
- * the kinds that the page could not read; fatesKnown is false when the
- * fates of groups depend on one.
+ * note. backups counts the backups of the cluster of both kinds. warning
+ * is the bucketGoneWarning of groups, unset while fatesKnown is false.
+ * unread are the kinds that the page could not read; fatesKnown is false
+ * when the fates of groups depend on one.
  */
 export type DeleteClusterModel = {
   name: string;
@@ -232,7 +232,7 @@ export function deleteClusterModel(
     }),
     target("CamundaClusterClaim", name),
   ];
-  const warning = fatesKnown ? backupWarning(name, groups) : undefined;
+  const warning = fatesKnown ? bucketGoneWarning(name, groups) : undefined;
   return {
     name,
     namespace,
