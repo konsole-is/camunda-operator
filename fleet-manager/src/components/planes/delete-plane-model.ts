@@ -6,6 +6,7 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { type DeletionGroup, deletionGroups } from "@/lib/claims/deletion";
 import type { SectionClaim } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   claimDeletionChoice,
@@ -13,7 +14,6 @@ import {
   type DeletionPolicy,
   type PluginSelection,
 } from "@/lib/policy";
-import type { ReadError } from "./planes-table";
 import { contractReaders } from "./plane-optimize";
 import { servedClusters } from "./served-clusters";
 

@@ -492,7 +492,7 @@ describe("DeletePlane", () => {
     ).toBeNull();
     expect(
       screen.getByText(
-        "Not known: the page could not read CamundaManagementCluster.",
+        "Not known: the fleet manager has no current list of CamundaManagementCluster.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/These clusters stay/)).toBeNull();

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useId, useMemo, useState } from "react";
 import { type PendingPush, useGitPushes } from "@/components/fleet/git-pushes";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
+import { useClock } from "@/components/fleet/use-clock";
 import { PlanesTable, usePlanes } from "@/components/planes/planes-table";
 import {
   type Plane,
@@ -17,8 +19,17 @@ import {
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources } from "@/lib/k8s/hooks";
+import {
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
+import {
+  currentReadErrors,
+  type ReadError,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
 import type { PodWarnings, Warning } from "@/lib/warnings";
@@ -45,10 +56,6 @@ import {
 } from "./model";
 import { MissingSources } from "./warning-chips";
 
-import type { ReadError } from "@/components/planes/planes-table";
-
-export type { ReadError };
-
 /**
  * FleetPageData is the first snapshot of the fleet page. readErrors holds
  * the kinds whose first read failed.
@@ -69,20 +76,24 @@ const isReady = (row: ClusterRow) => row.ready?.status === "True";
 // page does not say that the fleet is empty.
 const UNREAD_EMPTY = ["CamundaCluster", "CamundaClusterClaim"];
 
+const PLANE_KINDS = [
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+];
+
 // A failed read of one of these kinds can hide an entry of Needs attention.
 const ATTENTION_KINDS = [
   ...UNREAD_EMPTY,
   "LogicalBackupElasticsearch",
   "LogicalBackupRDBMS",
   "PluginRegistration",
-  "CamundaManagementCluster",
-  "CamundaManagementClusterClaim",
+  ...PLANE_KINDS,
 ];
 
 /**
  * FleetView is the fleet page on the given lists. It fetches nothing.
  * Without podWarnings a row shows only the warnings of its backups and
- * requests.
+ * requests. stale holds the kinds whose list is not current.
  */
 export function FleetView({
   sources,
@@ -90,6 +101,7 @@ export function FleetView({
   pushes,
   podWarnings,
   errors = [],
+  stale = [],
   now,
   onStopWaiting,
 }: {
@@ -98,6 +110,7 @@ export function FleetView({
   pushes: PendingPush[];
   podWarnings?: PodWarnings | Unavailable;
   errors?: ReadError[];
+  stale?: readonly string[];
   now: string;
   onStopWaiting?: (key: RefKey) => void;
 }): ReactNode {
@@ -121,6 +134,7 @@ export function FleetView({
   });
   const waiting = waitingRows(pushes, sources.claims);
   const tabs = environmentTabs(sources.environments, rows);
+  const unread = unreadKinds({ errors, stale });
   const active = tabs.some((t) => t.value === tab) ? tab : ALL_TAB;
 
   const content = (
@@ -135,7 +149,8 @@ export function FleetView({
       filter={filter}
       onFilter={setFilter}
       now={now}
-      unread={errors.some((e) => UNREAD_EMPTY.includes(e.kind))}
+      clustersUnread={unread.filter((kind) => UNREAD_EMPTY.includes(kind))}
+      planesUnread={unread.filter((kind) => PLANE_KINDS.includes(kind))}
       onStopWaiting={onStopWaiting}
     />
   );
@@ -155,9 +170,12 @@ export function FleetView({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      <NotRead
+        kinds={stale.filter((kind) => !errors.some((e) => e.kind === kind))}
+      />
       <AttentionPanel
         items={attention}
-        incomplete={errors.some((e) => ATTENTION_KINDS.includes(e.kind))}
+        incomplete={unread.some((kind) => ATTENTION_KINDS.includes(kind))}
       />
       {tabs.length === 0 ? (
         content
@@ -211,7 +229,8 @@ function TabContent({
   filter,
   onFilter,
   now,
-  unread,
+  clustersUnread,
+  planesUnread,
   onStopWaiting,
 }: {
   tab?: string;
@@ -224,7 +243,8 @@ function TabContent({
   filter: RowFilter;
   onFilter: (filter: RowFilter) => void;
   now: string;
-  unread: boolean;
+  clustersUnread: readonly string[];
+  planesUnread: readonly string[];
   onStopWaiting?: (key: RefKey) => void;
 }) {
   const environment =
@@ -255,7 +275,10 @@ function TabContent({
     tab ?? ALL_TAB,
   );
   const shownWaiting = filterRows(waiting, active, () => false);
-  const empty = rows.length === 0 && waiting.length === 0 && !unread;
+  const empty =
+    rows.length === 0 && waiting.length === 0 && clustersUnread.length === 0;
+  const unreadText =
+    clustersUnread.length > 0 ? notReadText(clustersUnread) : undefined;
 
   return (
     <div className="flex flex-col gap-8">
@@ -271,9 +294,11 @@ function TabContent({
           />
         ) : (
           <p className="text-sm text-muted">
-            {environment === undefined
-              ? "No management plane yet."
-              : "No management plane serves this environment."}
+            {planesUnread.length > 0
+              ? notReadText(planesUnread)
+              : environment === undefined
+                ? "No management plane yet."
+                : "No management plane serves this environment."}
           </p>
         )}
       </section>
@@ -298,7 +323,7 @@ function TabContent({
               />
             )}
             {groups.length === 0 ? (
-              <p className="text-sm text-muted">{NO_MATCH}</p>
+              <p className="text-sm text-muted">{unreadText ?? NO_MATCH}</p>
             ) : (
               groups.map((group) => (
                 <Group
@@ -309,6 +334,7 @@ function TabContent({
                   warnings={warnings}
                   now={now}
                   filtered={rows.some((r) => inGroup(r, group))}
+                  unreadText={unreadText}
                 />
               ))
             )}
@@ -329,11 +355,13 @@ function Group({
   warnings,
   now,
   filtered,
+  unreadText,
 }: {
   group: RowGroup;
   warnings: ReadonlyMap<string, Warning[]>;
   now: string;
   filtered: boolean;
+  unreadText?: string;
 }) {
   const table = (
     <ClusterTable
@@ -341,7 +369,10 @@ function Group({
       rows={group.rows}
       warnings={warnings}
       now={now}
-      emptyText={filtered ? NO_MATCH : "No cluster in this environment yet."}
+      emptyText={
+        unreadText ??
+        (filtered ? NO_MATCH : "No cluster in this environment yet.")
+      }
     />
   );
   if (group.label === undefined) return table;
@@ -458,7 +489,7 @@ export function FleetViewLive({
   const planes = usePlanes(initial.planes);
   const { pushes, settle } = useGitPushes();
   const podWarnings = useWarnings();
-  const clock = useClock(now);
+  const clock = useClock(now, true, NOW_INTERVAL_MS);
 
   const sources: FleetSources = useMemo(
     () => ({
@@ -522,13 +553,18 @@ export function FleetViewLive({
     "CamundaManagementClusterClaim",
   ];
   const answered = useAnswered(followed);
-  const firstErrors = (initial.readErrors ?? []).filter(
-    (e) =>
-      followed.includes(e.kind as KindName) &&
-      !answered.has(e.kind) &&
-      !liveErrors.some((l) => l.kind === e.kind),
+  const lists = followed.map((kind) => ({ kind, opts: {} }));
+  const fresh = useWatchesFresh(lists);
+  const overdue = useWatchesOverdue(lists);
+  // Before its first answer, a list can be the cache of an earlier visit.
+  const stale = followed.filter((kind, i) =>
+    answered.has(kind) ? !fresh[i] : overdue[i],
   );
-  const errors = [...liveErrors, ...firstErrors];
+  const errors = currentReadErrors(
+    liveErrors,
+    initial.readErrors?.filter((e) => followed.includes(e.kind as KindName)),
+    answered,
+  );
 
   return (
     <FleetView
@@ -537,22 +573,9 @@ export function FleetViewLive({
       pushes={pushes}
       podWarnings={podWarnings}
       errors={errors}
+      stale={stale}
       now={clock}
       onStopWaiting={settle}
     />
   );
-}
-
-// useClock starts at the time of the server, so that the first render in
-// the browser matches the render of the server.
-function useClock(initial: string): string {
-  const [clock, setClock] = useState(initial);
-  useEffect(() => {
-    const timer = setInterval(
-      () => setClock(new Date().toISOString()),
-      NOW_INTERVAL_MS,
-    );
-    return () => clearInterval(timer);
-  }, []);
-  return clock;
 }

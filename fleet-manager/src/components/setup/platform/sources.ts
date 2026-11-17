@@ -1,7 +1,6 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/components/planes/planes-table";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
@@ -14,6 +13,7 @@ import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset
 import type { Environment } from "@/generated/crds/environment";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { PLATFORM_SOURCE_KINDS } from "./source-kinds";
 
 /** PlatformSources holds every list that the Platform pages read, in all namespaces. */

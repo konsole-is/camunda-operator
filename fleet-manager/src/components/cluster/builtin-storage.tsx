@@ -1,4 +1,5 @@
 import { ConditionList } from "@/components/fleet/condition-list";
+import { NotRead } from "@/components/fleet/not-read";
 import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import {
   TableBody,
@@ -9,7 +10,6 @@ import {
 } from "@/components/ui/table";
 import { Term, Terms } from "./claim-tab";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "./not-read";
 import { type BuiltinStorage as Storage, storageFacts } from "./requests";
 
 const NOT_REPORTED = "Not reported yet";

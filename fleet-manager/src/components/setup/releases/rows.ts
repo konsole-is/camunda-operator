@@ -1,4 +1,4 @@
-import type { ReadError } from "@/components/planes/planes-table";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { byCodeUnit } from "@/lib/policy";
 import {
   allowedIn,
@@ -12,16 +12,6 @@ import type { ReleasesData } from "./sources";
 
 /** EnvironmentName is the name of an environment and the label that the page shows. */
 export type EnvironmentName = { name: string; label: string };
-
-/**
- * SourceReads says which lists of ReleasesData are not read: errors holds
- * the error of each failed watch, and stale the kind of each list whose
- * watch is not fresh (freshKey).
- */
-export type SourceReads = {
-  errors?: readonly ReadError[];
-  stale?: readonly string[];
-};
 
 /**
  * ReleaseRow is one release of the Releases list. The optional versions are
@@ -88,20 +78,6 @@ export function releaseRows(sources: ReleasesData & SourceReads): ReleaseRow[] {
       };
     })
     .sort((a, b) => byCodeUnit(a.name, b.name));
-}
-
-/** unreadKinds returns each kind of reads that failed or is stale, once. */
-export function unreadKinds(reads: SourceReads): string[] {
-  const kinds = [
-    ...(reads.errors ?? []).map((e) => e.kind),
-    ...(reads.stale ?? []),
-  ];
-  return [...new Set(kinds)];
-}
-
-/** unreadDeleteText says why no release can be deleted while the lists of kinds are not read. */
-export function unreadDeleteText(kinds: readonly string[]): string {
-  return `Delete is possible when the fleet manager can read ${kinds.join(", ")}.`;
 }
 
 /**

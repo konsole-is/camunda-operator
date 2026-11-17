@@ -18,15 +18,15 @@ import type {
   ClaimDeleteStage,
   PolicyAfterWrite,
 } from "@/components/fleet/use-claim-delete";
-import type { ReadError } from "@/components/planes/planes-table";
-import {
-  unreadDeleteText,
-  unreadKinds,
-} from "@/components/setup/releases/rows";
 import { Badge } from "@/components/ui/badge";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
+import {
+  type ReadError,
+  unreadDeleteText,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import type { DeletionChoice, DeletionPolicy } from "@/lib/policy";
 import type {
   ApiError,

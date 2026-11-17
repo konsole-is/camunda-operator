@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReadError } from "@/components/planes/planes-table";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
@@ -10,6 +9,7 @@ import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { ContractUserSources } from "@/lib/usage";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
 
@@ -133,10 +133,7 @@ export function useConnectionSources(
   const kinds = Object.values(CONNECTION_SOURCE_KINDS);
   const answered = useAnswered(kinds);
   const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
-  const firstErrors = (initial.readErrors ?? []).filter(
-    (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
-  );
-  const errors = [...liveErrors, ...firstErrors];
+  const errors = currentReadErrors(liveErrors, initial.readErrors, answered);
   return {
     namespaces: namespaces.items,
     environments: environments.items,

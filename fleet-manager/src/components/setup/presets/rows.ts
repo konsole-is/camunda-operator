@@ -1,8 +1,8 @@
-import type { ReadError } from "@/components/planes/planes-table";
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { KindName } from "@/lib/k8s/kinds";
+import { type ReadError, unreadDeleteText } from "@/lib/k8s/unread";
 import { presetDescription } from "@/lib/labels";
 import { lastChanged } from "@/lib/merge";
 import { byCodeUnit } from "@/lib/policy";
@@ -186,8 +186,7 @@ function blockedByOf(
   users: readonly PresetUser[],
   allowed: readonly string[],
 ): string | undefined {
-  if (unread.length > 0)
-    return `Delete is possible when the fleet manager can read ${unread.join(", ")}.`;
+  if (unread.length > 0) return unreadDeleteText(unread);
   if (pending)
     return "Delete is possible when the fleet manager has the current lists.";
   if (users.length > 0)

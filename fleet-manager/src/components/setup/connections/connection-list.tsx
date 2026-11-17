@@ -5,12 +5,12 @@ import { type ReactNode, useState } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { type ConditionLike, describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
-import type { ReadError } from "@/components/planes/planes-table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  type ReadError,
   type SourceReads,
   unreadKinds,
-} from "@/components/setup/releases/rows";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@/lib/k8s/unread";
 import { byCodeUnit, readyOf } from "@/lib/policy";
 import {
   type ContractKind,

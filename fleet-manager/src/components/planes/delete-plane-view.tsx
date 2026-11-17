@@ -7,6 +7,8 @@ import {
   ClaimDeleteView,
   type DeleteStage,
 } from "@/components/fleet/claim-delete-page";
+import { notReadText } from "@/components/fleet/not-read";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { DeletionPolicy } from "@/lib/policy";
 import type {
   Change,
@@ -15,7 +17,6 @@ import type {
   WriteResult,
 } from "@/lib/write/types";
 import type { DeletePlaneModel, ObjectRef } from "./delete-plane-model";
-import type { ReadError } from "./planes-table";
 
 /** DATABASE_DATA says what the delete of a Database and of a DatabaseServer does to the data. */
 export const DATABASE_DATA =
@@ -160,9 +161,7 @@ function effectsOf(model: DeletePlaneModel, twoCommits: boolean): ReactNode[] {
     <div key="served" className="flex flex-col gap-1">
       <span className="font-medium text-text">Clusters served</span>
       {planeUnread || served === undefined ? (
-        <span>
-          Not known: the page could not read CamundaManagementCluster.
-        </span>
+        <span>{notReadText(["CamundaManagementCluster"])}</span>
       ) : model.kept.length > 0 ? (
         <span>
           This delete does not touch the plane or the clusters that it serves.

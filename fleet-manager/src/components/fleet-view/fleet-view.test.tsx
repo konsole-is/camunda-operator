@@ -17,6 +17,7 @@ const live = vi.hoisted(() => ({
   pushes: [] as unknown[],
   settled: [] as string[],
   fresh: [] as string[],
+  overdue: [] as string[],
   warnings: undefined as unknown,
 }));
 vi.mock("@/lib/observe/use-observe", () => ({
@@ -29,6 +30,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   },
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map(({ kind }) => live.fresh.includes(kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => live.overdue.includes(kind)),
 }));
 vi.mock("@/components/fleet/git-pushes", () => ({
   useGitPushes: () => ({
@@ -43,6 +46,7 @@ beforeEach(() => {
   live.pushes = [];
   live.settled = [];
   live.fresh = [];
+  live.overdue = [];
   live.warnings = undefined;
 });
 afterEach(cleanup);
@@ -453,6 +457,35 @@ describe("FleetView", () => {
     expect(clusterNames()).toEqual([]);
   });
 
+  const clustersNotRead =
+    "Not known: the fleet manager has no current list of CamundaCluster.";
+
+  it("does not say that an environment has no cluster while the cluster list is not current", async () => {
+    const onlyProd = { ...fleet, clusters: [cluster("prod", "orders")] };
+    const { rerender } = render(view({ sources: onlyProd }));
+    await userEvent.click(screen.getByRole("tab", { name: /Staging/ }));
+    expect(
+      screen.getByText("No cluster in this environment yet."),
+    ).toBeTruthy();
+    rerender(view({ sources: onlyProd, stale: ["CamundaCluster"] }));
+    expect(
+      screen.queryByText("No cluster in this environment yet."),
+    ).toBeNull();
+    expect(screen.getAllByText(clustersNotRead)).toHaveLength(2);
+  });
+
+  it("does not say that no cluster matches the filters while the cluster list is not current", async () => {
+    render(view({ stale: ["CamundaCluster"] }));
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search clusters" }),
+      "nothing",
+    );
+    expect(
+      screen.queryByText("No cluster matches the search and the filters."),
+    ).toBeNull();
+    expect(screen.getAllByText(clustersNotRead)).toHaveLength(2);
+  });
+
   it("shows one list without tabs when no Environment exists", () => {
     render(
       view({
@@ -713,6 +746,43 @@ describe("FleetViewLive", () => {
     rerender(<FleetViewLive initial={failed} now={NOW} />);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(/this list can miss entries/)).toBeNull();
+  });
+
+  const empty: FleetPageData = {
+    ...sources(),
+    planes: { clusters: [], claims: [], namespaces: [], environments: [] },
+  };
+
+  it("takes an old cached list as not current once its watch is overdue", () => {
+    live.objects.CamundaCluster = [];
+    live.overdue = ["CamundaCluster"];
+    const { rerender } = render(<FleetViewLive initial={empty} now={NOW} />);
+    expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toHaveLength(2);
+    expect(screen.getByText(/this list can miss entries/)).toBeTruthy();
+    live.overdue = [];
+    live.fresh = ["CamundaCluster"];
+    rerender(<FleetViewLive initial={empty} now={NOW} />);
+    expect(screen.getByText(/No Camunda cluster yet/)).toBeTruthy();
+    expect(screen.queryByText(/has no current list/)).toBeNull();
+  });
+
+  it("does not say there is no management plane while the plane list is not current", () => {
+    live.fresh = ["CamundaManagementCluster"];
+    const { rerender } = render(<FleetViewLive initial={empty} now={NOW} />);
+    expect(screen.getByText("No management plane yet.")).toBeTruthy();
+    live.fresh = [];
+    rerender(<FleetViewLive initial={empty} now={NOW} />);
+    expect(screen.queryByText("No management plane yet.")).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Not known: the fleet manager has no current list of CamundaManagementCluster.",
+      ),
+    ).toHaveLength(2);
   });
 
   it("stops waiting for a push of this browser tab", async () => {

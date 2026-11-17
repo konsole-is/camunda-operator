@@ -1,9 +1,6 @@
 import { clusterVersionOf } from "@/components/cluster/backup-actions";
-import {
-  type SourceReads,
-  unreadKinds,
-} from "@/components/setup/releases/rows";
 import type { KindName } from "@/lib/k8s/kinds";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { byMinor, mergeCluster, minorOf } from "@/lib/merge";
 import { authMethod } from "@/lib/planes/identity";
 import { byCodeUnit } from "@/lib/policy";
@@ -86,11 +83,6 @@ export function unreadMinorKinds(
       (MINOR_KINDS as readonly string[]).includes(kind) &&
       (users.clusters.length > 0 || !CLUSTER_MINOR_KINDS.includes(kind)),
   );
-}
-
-/** unknownUsersText says that the users of a platform config are not known while the lists of kinds are not read. */
-export function unknownUsersText(kinds: readonly string[]): string {
-  return `The users are not known while the fleet manager cannot read ${kinds.join(", ")}.`;
 }
 
 /** platformRows returns one row for each platform config of sources, sorted by name. */

@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import type { SourceReads } from "@/lib/k8s/unread";
 import type { CatalogChart } from "@/startup/bundled-data";
 import catalog from "../../../../catalog/official-plugins.json";
 import { condition, pluginRegistration, registrationSources } from "./fixtures";
 import { registrationGroups, registrationSummary } from "./groups";
 import { RegistrationList } from "./registration-list";
-import type { SourceReads } from "./groups";
 import type { RegistrationSources } from "./sources";
 
 const listOf = (sources: RegistrationSources & SourceReads) => ({

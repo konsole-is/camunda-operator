@@ -5,7 +5,6 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import { platformFixtures } from "./fixtures";
 import {
   platformRows,
-  unknownUsersText,
   unreadMinorKinds,
   unreadUserKinds,
   userMinors,
@@ -124,12 +123,6 @@ describe("unreadUserKinds", () => {
         stale: ["DatabaseServer", "Environment", "Namespace"],
       }),
     ).toEqual(["DatabaseServer", "Environment"]);
-  });
-
-  it("names the kinds that hide the users", () => {
-    expect(unknownUsersText(["DatabaseServer", "Environment"])).toBe(
-      "The users are not known while the fleet manager cannot read DatabaseServer, Environment.",
-    );
   });
 });
 

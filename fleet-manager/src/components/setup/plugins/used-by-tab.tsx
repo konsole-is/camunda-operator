@@ -2,9 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import { resourceFate } from "@/lib/claims/resources";
 import { ConditionBadge } from "./condition-badge";
-import { LINK, NotKnown, ValueError } from "./tab-parts";
+import { LINK, ValueError } from "./tab-parts";
 import type { UsedByRow } from "./used-by";
 
 const MUTED = "block text-xs text-muted";
@@ -26,7 +27,7 @@ export function UsedByTab({
   const requestsUnread = unread.includes("PluginRequest");
   if (rows.length === 0)
     return requestsUnread ? (
-      <NotKnown kinds={["PluginRequest"]} />
+      <NotRead kinds={["PluginRequest"]} />
     ) : (
       <p className="text-sm text-muted">No claim uses this option.</p>
     );
@@ -59,7 +60,7 @@ export function UsedByTab({
                 </Term>
               )}
               <Term label="Environment">
-                {row.environment ?? <NotKnown kinds={environmentKinds} />}
+                {row.environment ?? <NotRead kinds={environmentKinds} />}
               </Term>
               {row.error ? (
                 <Term label="Conditions">
@@ -88,14 +89,14 @@ export function UsedByTab({
                           </span>
                         )
                       ) : (
-                        <NotKnown kinds={["Grant"]} />
+                        <NotRead kinds={["Grant"]} />
                       ))}
                   </Term>
                 </>
               )}
               <Term label="Headline">
                 {row.healthUnknown ? (
-                  <NotKnown kinds={["PluginRequest"]} />
+                  <NotRead kinds={["PluginRequest"]} />
                 ) : !row.headline ? (
                   <span className="text-muted">None</span>
                 ) : "error" in row.headline ? (
@@ -106,7 +107,7 @@ export function UsedByTab({
               </Term>
               <Term label="Resources">
                 {row.healthUnknown ? (
-                  <NotKnown kinds={["PluginRequest"]} />
+                  <NotRead kinds={["PluginRequest"]} />
                 ) : row.resources.length === 0 ? (
                   <span className="text-muted">None reported</span>
                 ) : (
@@ -139,7 +140,7 @@ export function UsedByTab({
               </Term>
               <Term label="Grants">
                 {!row.grants ? (
-                  <NotKnown kinds={["Grant"]} />
+                  <NotRead kinds={["Grant"]} />
                 ) : row.grants.length === 0 ? (
                   <span className="text-muted">None</span>
                 ) : (

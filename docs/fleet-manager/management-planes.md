@@ -152,6 +152,8 @@ In this example, the plane has no access option and the claim has no Console URL
 
 Select the name of a plane in the list at `/fleet/planes`. The page of the plane opens at `/fleet/planes/<namespace>/<name>`.
 
+The list shows `Could not read <kind>:` and the error for a list that it cannot read. For a list that is not current, it shows `Not known: the fleet manager has no current list of <kind>.` In both cases, the list does not say that no plane exists.
+
 The header shows the name of the plane and its `Ready` condition. A reason other than `Healthy` shows next to `Ready`, for example `Ready · Suspended`. Under the name, the header shows these facts:
 
 | Fact | What it shows |
@@ -226,7 +228,7 @@ When the plane and its claim are both deleted, the page shows `This management p
 
 ### A plane that the page could not read
 
-When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted.
+When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted. The same applies while the copy of one of them is not current, for example the copy of an earlier visit. The page then shows `Not known: the fleet manager has no current list of <kind>.` until it gets a current list.
 
 While the copy of the `CamundaManagementCluster` on the page is not current, the header and the dot of each card show `Not known`. While the page cannot read the pods, a card shows `Could not read Pod`. In the `oidc` mode, the issuer shows `Could not read CamundaPlatformConfig` while the page cannot read the platform config.
 
@@ -272,7 +274,7 @@ The public URL comes from the URL of the app on the plane. It is the scheme and 
 
 ### A tab with a list that the page did not read
 
-A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The page could not read <kind>, so this tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
+A tab needs some lists. When the page fails to read such a list, or its copy of the list is not current, the tab names the list. It shows `The fleet manager has no current list of <kind>. This tab can be incomplete or out of date.` The tab does not say that a list is empty or that the contract does not exist. While the page cannot read the namespaces or the environments, the **Clusters served** tab shows `Not known` as the environment of a cluster.
 
 ## Change a management plane
 

@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { SourceReads } from "@/lib/k8s/unread";
 import { releaseFixtures } from "./fixtures";
-import {
-  allowedInText,
-  defaultInText,
-  releaseRows,
-  unreadDeleteText,
-  unreadKinds,
-  usedByText,
-} from "./rows";
+import { allowedInText, defaultInText, releaseRows, usedByText } from "./rows";
 
 const rowOf = (name: string) => {
   const row = releaseRows(releaseFixtures()).find((r) => r.name === name);
@@ -80,7 +74,7 @@ describe("releaseRows", () => {
   });
 
   it("offers no delete while a list failed or is not read on the connection", () => {
-    const deletable = (reads: Parameters<typeof unreadKinds>[0]) =>
+    const deletable = (reads: SourceReads) =>
       releaseRows({ ...releaseFixtures(), ...reads })
         .filter((r) => r.deletable)
         .map((r) => r.name);
@@ -115,25 +109,5 @@ describe("usedByText", () => {
         claims: ["a/one"],
       }),
     ).toBe("2 clusters, 1 database server");
-  });
-});
-
-describe("unreadKinds", () => {
-  it("names each failed and each stale kind once", () => {
-    expect(
-      unreadKinds({
-        errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
-        stale: ["CamundaClusterClaim", "Environment"],
-      }),
-    ).toEqual(["CamundaClusterClaim", "Environment"]);
-    expect(unreadKinds({})).toEqual([]);
-  });
-});
-
-describe("unreadDeleteText", () => {
-  it("names the kinds that the fleet manager cannot read", () => {
-    expect(unreadDeleteText(["CamundaClusterClaim", "Environment"])).toBe(
-      "Delete is possible when the fleet manager can read CamundaClusterClaim, Environment.",
-    );
   });
 });

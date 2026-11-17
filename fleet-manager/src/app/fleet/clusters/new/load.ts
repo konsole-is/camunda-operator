@@ -1,9 +1,9 @@
 import "server-only";
 import type { ClusterCreateData } from "@/components/create/cluster-create-flow";
-import type { ReadError } from "@/components/planes/planes-table";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
 import { list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 
 /**

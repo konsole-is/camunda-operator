@@ -1,12 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError, SourceReads } from "@/lib/k8s/unread";
 import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import type { ReleaseActions } from "./release-detail";
 import { ReleaseSettings } from "./release-settings";
-import type { SourceReads } from "./rows";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
 /**

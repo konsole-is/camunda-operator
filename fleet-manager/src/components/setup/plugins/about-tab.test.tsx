@@ -116,7 +116,7 @@ describe("AboutTab", () => {
       />,
     );
     expect(termOf("Other options of this controller").textContent).toBe(
-      "Not known: PluginRegistration is not read.",
+      "Not known: the fleet manager has no current list of PluginRegistration.",
     );
   });
 

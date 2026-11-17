@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useGitPushes } from "./git-pushes";
 import { GitWaitingLine } from "./git-waiting-line";
+import { useClock } from "./use-clock";
 
 const NOW_INTERVAL_MS = 30_000;
 
@@ -44,14 +45,7 @@ export function GitBannerView({
  */
 export function GitBanner() {
   const { pushes } = useGitPushes();
-  const [now, setNow] = useState(() => new Date().toISOString());
-  useEffect(() => {
-    const timer = setInterval(
-      () => setNow(new Date().toISOString()),
-      NOW_INTERVAL_MS,
-    );
-    return () => clearInterval(timer);
-  }, []);
+  const now = useClock(new Date().toISOString(), true, NOW_INTERVAL_MS);
   return (
     <GitBannerView count={pushes.length}>
       {pushes.map((push) => (

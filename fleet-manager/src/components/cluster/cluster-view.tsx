@@ -7,11 +7,11 @@ import {
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
 import { useClock } from "@/components/fleet/use-clock";
-import { unreadKinds } from "@/components/setup/releases/rows";
 import { useAnswered } from "@/lib/k8s/answered";
 import {
   useResource,
@@ -20,6 +20,7 @@ import {
   useWatchesOverdue,
 } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -53,7 +54,6 @@ import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
 import { ComponentSettings } from "./component-settings";
-import { NotRead } from "./not-read";
 import { endpointRows } from "./endpoints";
 import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
@@ -400,15 +400,7 @@ export function ClusterView({
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
   );
-  // Until the watch of a kind answers, the page shows the read of the
-  // server, and a failed read stays an error.
-  const errors = [
-    ...liveErrors,
-    ...(initial.readErrors ?? []).filter(
-      (e) =>
-        !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
-    ),
-  ];
+  const errors = currentReadErrors(liveErrors, initial.readErrors, answered);
   const requestsError = errors.find((e) => e.kind === "PluginRequest")?.message;
   const stale = followedLists
     .filter(

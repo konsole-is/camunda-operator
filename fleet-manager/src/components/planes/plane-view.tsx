@@ -8,12 +8,9 @@ import { ComponentCards } from "@/components/cluster/component-card";
 import { EndpointsTab } from "@/components/cluster/endpoints-tab";
 import type { ClaimActions } from "@/components/fleet/claim-edit";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
-import {
-  type SourceReads,
-  unreadKinds,
-} from "@/components/setup/releases/rows";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
 import {
@@ -26,6 +23,12 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { planeFields } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import {
+  currentReadErrors,
+  type ReadError,
+  type SourceReads,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import { CLAIM_LABEL, isManaged, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 import { usePodUsage } from "@/lib/observe/use-observe";
@@ -50,10 +53,8 @@ import { planeEndpointRows } from "./plane-endpoints";
 import { contractReaders, isOidc, optimizeRows } from "./plane-optimize";
 import { PlaneHeader } from "./plane-header";
 import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
-import type { ReadError } from "./planes-table";
 import { servedClusters } from "./served-clusters";
 import { ServedClustersTab } from "./served-clusters-tab";
-import { UnreadNote, unreadText } from "./unread-note";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined
@@ -202,24 +203,12 @@ export function PlaneView({
   const answered = useAnswered(followed);
   const fresh = useWatchesFresh(followed);
   const overdue = useWatchesOverdue(followed);
-  const firstErrors = (data.readErrors ?? []).filter(
-    (e) => !answered.has(e.kind) && !liveErrors.some((l) => l.kind === e.kind),
-  );
-  const errors = [...liveErrors, ...firstErrors];
-  // A watch that answered once and then lost its connection keeps its last
-  // items, which can be out of date. Before its first answer, the page
-  // shows the read of the server.
-  const reads: SourceReads = {
-    errors,
-    stale: followed
-      .filter(({ kind }, i) => answered.has(kind) && !fresh[i])
-      .map(({ kind }) => kind),
-  };
-  // The Claim tab takes the rule of the cluster page: a list that never
-  // answered is not current once its snapshot is overdue.
-  const claimStale = followed
+  const errors = currentReadErrors(liveErrors, data.readErrors, answered);
+  // Before its first answer, a list can also be the cache of an earlier visit.
+  const stale = followed
     .filter(({ kind }, i) => (answered.has(kind) ? !fresh[i] : overdue[i]))
     .map(({ kind }) => kind);
+  const reads: SourceReads = { errors, stale };
   const unreadOf = (kinds: readonly KindName[]) =>
     unreadKinds(reads).filter((k) => kinds.includes(k as KindName));
   const unread = (kind: KindName) => errors.some((e) => e.kind === kind);
@@ -231,16 +220,21 @@ export function PlaneView({
 
   const plane = planeResult.item;
   const live = claimResult.item;
+  const objectUnread = unreadOf([
+    "CamundaManagementCluster",
+    "CamundaManagementClusterClaim",
+  ]);
   if (!plane && !live) {
     return (
       <div className="flex flex-col gap-2">
         {alerts}
-        {!unread("CamundaManagementCluster") &&
-          !unread("CamundaManagementClusterClaim") && (
-            <p className="text-sm text-muted">
-              This management plane no longer exists.
-            </p>
-          )}
+        {objectUnread.length === 0 ? (
+          <p className="text-sm text-muted">
+            This management plane no longer exists.
+          </p>
+        ) : (
+          <NotRead kinds={objectUnread} />
+        )}
         <Link
           href="/fleet/planes"
           className="relative w-fit text-sm font-medium text-text underline underline-offset-4 hit-area hover:text-accent"
@@ -378,8 +372,8 @@ export function PlaneView({
         namespaces={namespaces.items}
         environments={environments.items}
         optimizes={optimizes.items}
-        pageUnread={[...new Set([...unreadKinds(reads), ...claimStale])]}
-        pageStale={claimStale}
+        pageUnread={unreadKinds(reads)}
+        pageStale={stale}
         writeMode={writeMode}
         actions={claimActions}
       >
@@ -416,14 +410,15 @@ export function PlaneView({
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {!plane &&
-                  !unread("CamundaManagementCluster") &&
-                  !unread("CamundaManagementClusterClaim") && (
-                    <p className="text-sm text-muted">
-                      The claim controller has not created the management plane
-                      yet.
-                    </p>
-                  )}
+                {!plane && objectUnread.length === 0 && (
+                  <p className="text-sm text-muted">
+                    The claim controller has not created the management plane
+                    yet.
+                  </p>
+                )}
+                {!plane && objectUnread.length > 0 && !planeUnknown && (
+                  <NotRead kinds={objectUnread} />
+                )}
                 {planeUnknown && (
                   <p className="text-sm text-muted">
                     The page could not read the management plane, so it cannot
@@ -432,7 +427,8 @@ export function PlaneView({
                 )}
                 {plane && (
                   <>
-                    <UnreadNote
+                    <NotRead
+                      tab
                       kinds={unreadOf([
                         "CamundaManagementCluster",
                         "Pod",
@@ -506,14 +502,14 @@ export function PlaneView({
             <div className="flex flex-col gap-2">
               {endpointRows.length > 0 && endpointsUnread.length > 0 && (
                 <p className="text-sm text-muted">
-                  {unreadText(endpointsUnread)}
+                  {notReadText(endpointsUnread, true)}
                 </p>
               )}
               <EndpointsTab
                 rows={endpointRows}
                 emptyText={
                   endpointsUnread.length > 0
-                    ? unreadText(endpointsUnread)
+                    ? notReadText(endpointsUnread, true)
                     : "This plane reports no endpoints yet."
                 }
               />

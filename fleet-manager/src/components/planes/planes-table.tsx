@@ -4,14 +4,12 @@ import { type ReactNode, useMemo } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { useResources } from "@/lib/k8s/hooks";
+import type { ReadError } from "@/lib/k8s/unread";
 import { PlaneClusters, PlaneName, PlaneServes } from "./cells";
 import { NotAttachedChip } from "./not-attached-chip";
 import { type Plane, type PlaneSources, planesIn, planesOf } from "./plane";
 
 export type { Plane, PlaneSources } from "./plane";
-
-/** ReadError is the error of the watch of one kind. */
-export type ReadError = { kind: string; message: string };
 
 /**
  * usePlanes follows the four lists of initial live and returns their

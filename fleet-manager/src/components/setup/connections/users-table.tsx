@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
-import { unknownUsersText } from "@/components/setup/platform/model";
+import { unknownUsersText } from "@/lib/k8s/unread";
 import type { ContractUser } from "@/lib/usage";
 
 /**

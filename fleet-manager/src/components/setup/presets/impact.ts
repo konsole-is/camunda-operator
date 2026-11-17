@@ -1,9 +1,9 @@
 import { RESTART_ALL } from "@/components/cluster/impacts";
-import type { ReadError } from "@/components/planes/planes-table";
 import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpreset";
 import type { DatabaseServerPresetSpec } from "@/generated/crds/databaseserverpreset";
 import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import {
   mergeCluster,
   mergeDatabaseServer,

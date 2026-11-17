@@ -1,8 +1,8 @@
 import "server-only";
-import type { ReadError } from "@/components/planes/planes-table";
 import { PRESET_SOURCE_KINDS } from "@/components/setup/presets/source-kinds";
 import type { PresetSnapshot } from "@/components/setup/presets/sources";
 import { list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 
 /**
  * loadPresets reads the first snapshot of the preset pages from the cache

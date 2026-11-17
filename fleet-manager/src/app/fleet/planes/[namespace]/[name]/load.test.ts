@@ -241,6 +241,29 @@ describe("loadPlanePage", () => {
     expect(data?.claimTab?.sections).toEqual([]);
   });
 
+  it("reads the platform configs and the registrations once for the page and its Claim tab", async () => {
+    k8s.objects = [claim("plane-a")];
+    await loadPlanePage("platform", "plane-a");
+    const reads = (kind: string) =>
+      k8s.lists.filter((l) => l.kind === kind).length;
+    expect(reads("CamundaPlatformConfig")).toBe(1);
+    expect(reads("PluginRegistration")).toBe(1);
+  });
+
+  it("names a failed list that the page and its Claim tab share in the read errors of both", async () => {
+    k8s.objects = [claim("plane-a")];
+    k8s.failing = ["CamundaPlatformConfig"];
+    const data = await loadPlanePage("platform", "plane-a");
+    const failure = {
+      kind: "CamundaPlatformConfig",
+      message: "CamundaPlatformConfig is forbidden",
+    };
+    expect(data?.readErrors).toEqual([failure]);
+    expect(data?.claimTab?.readErrors).toEqual([failure]);
+    expect(data?.platformConfigs).toEqual([]);
+    expect(data?.claimTab?.platformConfigs).toEqual([]);
+  });
+
   it("reads no Secret", async () => {
     k8s.objects = [claim("plane-a")];
     await loadPlanePage("platform", "plane-a");

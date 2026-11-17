@@ -11,7 +11,6 @@ import {
 } from "@/components/fleet/secret-refs-union";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
-import type { ReadError } from "@/components/planes/planes-table";
 import {
   EditorSection,
   SelectField,
@@ -22,6 +21,13 @@ import type {
   CamundaRelease,
   CamundaReleaseSpec,
 } from "@/generated/crds/camundarelease";
+import {
+  type ReadError,
+  type SourceReads,
+  unreadDeleteText,
+  unreadKinds,
+} from "@/lib/k8s/unread";
+import { minorOf } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
 import { releaseUsage } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
@@ -39,15 +45,10 @@ import {
 } from "./draft";
 import { namedSecretRefs } from "./env";
 import { EnvScopes } from "./env-scopes";
-import { minorOf, releaseImages } from "./images";
+import { releaseImages } from "./images";
 import { ImagesPanel } from "./images-panel";
 import type { ReleaseActions } from "./release-detail";
-import {
-  releaseRows,
-  type SourceReads,
-  unreadDeleteText,
-  unreadKinds,
-} from "./rows";
+import { releaseRows } from "./rows";
 import type { ReleasesData } from "./sources";
 
 const LIST_HREF = "/setup/releases";

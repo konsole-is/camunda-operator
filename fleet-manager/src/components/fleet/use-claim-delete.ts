@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReadError } from "@/components/planes/planes-table";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
 import {
   useGitSync,
@@ -9,6 +8,7 @@ import {
   useResources,
   useWatchesFresh,
 } from "@/lib/k8s/hooks";
+import type { ReadError } from "@/lib/k8s/unread";
 import {
   CLEANUP_FINALIZER,
   claimObserved,

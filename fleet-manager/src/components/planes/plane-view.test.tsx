@@ -18,8 +18,12 @@ import { type PlanePageData, PlaneView } from "./plane-view";
 
 // live holds what the mocked watches report. useResource reports the
 // snapshot of the server for a kind that live.objects does not name.
+// useResources reports the list of live.cached, as the query cache does when
+// an earlier visit left the list of the kind there, else the server
+// snapshot.
 const live = vi.hoisted(() => ({
   objects: new Map<string, unknown>(),
+  cached: new Map<string, unknown[]>(),
   errors: new Map<string, string>(),
   fresh: new Set<string>(),
   overdue: new Set<string>(),
@@ -29,7 +33,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: initial,
+    items: live.cached.get(kind) ?? initial,
     ...(live.errors.has(kind) && { error: live.errors.get(kind) }),
   }),
   useResource: (kind: string, _ref: unknown, initial?: unknown) => ({
@@ -58,6 +62,7 @@ const now = "2026-11-15T12:00:00Z";
 
 beforeEach(() => {
   live.objects = new Map();
+  live.cached = new Map();
   live.errors = new Map();
   live.fresh = new Set();
   live.overdue = new Set();
@@ -253,6 +258,46 @@ describe("PlaneView", () => {
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
   });
 
+  const objectsNotRead =
+    "Not known: the fleet manager has no current list of CamundaManagementCluster, CamundaManagementClusterClaim.";
+
+  it("does not say the plane is gone while an old cached answer is overdue", () => {
+    live.objects.set("CamundaManagementCluster", undefined);
+    live.objects.set("CamundaManagementClusterClaim", undefined);
+    live.overdue.add("CamundaManagementCluster");
+    live.overdue.add("CamundaManagementClusterClaim");
+    const page = data();
+    const { rerender } = render(<PlaneView data={page} />);
+    expect(
+      screen.queryByText("This management plane no longer exists."),
+    ).toBeNull();
+    expect(screen.getByText(objectsNotRead)).toBeTruthy();
+    live.overdue.clear();
+    live.fresh.add("CamundaManagementCluster");
+    live.fresh.add("CamundaManagementClusterClaim");
+    rerender(<PlaneView data={page} />);
+    expect(
+      screen.getByText("This management plane no longer exists."),
+    ).toBeTruthy();
+    expect(screen.queryByText(objectsNotRead)).toBeNull();
+  });
+
+  it("does not say the plane is not created while an old cached answer is overdue", () => {
+    live.objects.set("CamundaManagementCluster", undefined);
+    live.overdue.add("CamundaManagementCluster");
+    render(<PlaneView data={data()} />);
+    expect(
+      screen.queryByText(
+        "The claim controller has not created the management plane yet.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaManagementCluster.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("selects the tab of the tab query parameter", () => {
     window.history.replaceState(null, "", "?tab=clusters");
     render(<PlaneView data={data()} />);
@@ -404,7 +449,7 @@ describe("PlaneView", () => {
       ["endpoints", "This plane reports no endpoints yet."],
     ];
     const unreadPlane =
-      "The page could not read CamundaManagementCluster, so this tab can be incomplete or out of date.";
+      "The fleet manager has no current list of CamundaManagementCluster. This tab can be incomplete or out of date.";
 
     it("lists Overview, Clusters served, Optimize, Contract, and Endpoints in that order", () => {
       render(<PlaneView data={data()} />);
@@ -526,7 +571,34 @@ describe("PlaneView", () => {
       expect(screen.queryByText("No Optimize reads this contract.")).toBeNull();
       expect(
         screen.getByText(
-          "The page could not read CamundaOptimize, so this tab can be incomplete or out of date.",
+          "The fleet manager has no current list of CamundaOptimize. This tab can be incomplete or out of date.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("does not say that the contract is missing while the list of an earlier visit waits for an overdue snapshot", () => {
+      window.history.replaceState(null, "", "?tab=contract");
+      const plane = planeOf();
+      plane.status = { ...plane.status, managementAuthConfig: "plane-a" };
+      const contract = {
+        apiVersion: "core.camunda.io/v1",
+        kind: "ManagementAuthConfig",
+        metadata: { namespace: "platform", name: "plane-a" },
+        spec: {},
+      } as unknown as Resource<"ManagementAuthConfig">;
+      // The server read has the contract. The cache still holds the empty
+      // list of an earlier visit, and the watch has not answered since.
+      live.cached.set("ManagementAuthConfig", []);
+      live.overdue.add("ManagementAuthConfig");
+      render(
+        <PlaneView data={data({ plane, managementAuthConfigs: [contract] })} />,
+      );
+      expect(
+        screen.queryByText("The contract plane-a does not exist."),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          "The fleet manager has no current list of ManagementAuthConfig. This tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });
@@ -548,7 +620,7 @@ describe("PlaneView", () => {
       ).toBeNull();
       expect(
         screen.getByText(
-          "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
+          "The fleet manager has no current list of ManagementAuthConfig. This tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });
@@ -634,7 +706,7 @@ describe("PlaneView", () => {
         }),
       ).toBeTruthy();
       expect(
-        screen.getByText(/could not read CamundaManagementCluster/),
+        screen.getByText(/has no current list of CamundaManagementCluster/),
       ).toBeTruthy();
     });
   });

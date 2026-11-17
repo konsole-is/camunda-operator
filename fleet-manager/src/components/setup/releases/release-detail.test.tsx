@@ -9,6 +9,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { SourceReads } from "@/lib/k8s/unread";
 import {
   imagesFixture,
   releaseFixtures,
@@ -18,7 +19,6 @@ import { type ReleaseActions, ReleaseDetailView } from "./release-detail";
 import type { ReleaseTab } from "./release-tabs";
 import { rolloutData } from "./rollout-fixtures";
 import type { RolloutLists } from "./rollout-sources";
-import type { SourceReads } from "./rows";
 import type { ReleasesData } from "./sources";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));

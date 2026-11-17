@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReadError } from "@/components/planes/planes-table";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
@@ -8,6 +7,7 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ROLLOUT_SOURCE_KINDS } from "./source-kinds";
 import { useLive } from "./sources";
 

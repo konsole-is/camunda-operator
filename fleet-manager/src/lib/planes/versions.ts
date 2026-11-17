@@ -94,7 +94,7 @@ export function versionPrefill(
   table: ImagesTable,
   release: CamundaRelease | undefined,
 ): VersionPrefill | undefined {
-  const minor = minorOf(release);
+  const minor = wellFormedMinor(release?.spec.version);
   if (minor === undefined || !Object.hasOwn(table.minors, minor)) {
     return undefined;
   }
@@ -210,11 +210,9 @@ export function versionMatrixWarning(
   running: Running,
 ): string | undefined {
   const apps = runningFields(running).flatMap((field) => {
-    const parsed =
-      field === "keycloak" ? undefined : parseVersion(versions[field]);
-    return parsed
-      ? [{ label: VERSION_LABEL[field], minor: `${parsed[0]}.${parsed[1]}` }]
-      : [];
+    const minor =
+      field === "keycloak" ? undefined : wellFormedMinor(versions[field]);
+    return minor ? [{ label: VERSION_LABEL[field], minor }] : [];
   });
   const minors = [...new Set(apps.map((a) => a.minor))];
   if (minors.length < 2) return undefined;
@@ -247,14 +245,17 @@ export function prefillNote(
   release: CamundaRelease | undefined,
 ): string {
   if (prefill) return `Tested with release ${prefill.minor}`;
-  const minor = minorOf(release);
+  const minor = wellFormedMinor(release?.spec.version);
   if (minor === undefined) {
     return "The first served environment has no default release. Enter each version.";
   }
   return `The images table has no versions for Camunda ${minor}. Enter each version.`;
 }
 
-function minorOf(release: CamundaRelease | undefined): string | undefined {
-  const parsed = parseVersion(release?.spec.version);
+// wellFormedMinor gives the minor only of a version of the form
+// major.minor.patch, the form that the operator reads, as numbers: 8.09.1
+// gives 8.9. minorOf of lib/merge keeps the digits as written.
+function wellFormedMinor(version: string | undefined): string | undefined {
+  const parsed = parseVersion(version);
   return parsed && `${parsed[0]}.${parsed[1]}`;
 }

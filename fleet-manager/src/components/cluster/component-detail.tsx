@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { ConditionList } from "@/components/fleet/condition-list";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,7 +16,6 @@ import { DetailEvents } from "./detail-events";
 import { type ControllerLogs, DetailLogs } from "./detail-logs";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "./not-read";
 import { NO_PODS, type PodLike, PodTable } from "./pod-table";
 
 /** DetailTab names one tab of a component detail. */

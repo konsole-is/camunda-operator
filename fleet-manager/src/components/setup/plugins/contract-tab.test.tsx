@@ -69,7 +69,9 @@ describe("ContractTab", () => {
       within(sections).queryByText("Not a section on this cluster"),
     ).toBeNull();
     expect(
-      within(sections).getByText("Not known: PluginSection is not read."),
+      within(sections).getByText(
+        "Not known: the fleet manager has no current list of PluginSection.",
+      ),
     ).toBeTruthy();
   });
 

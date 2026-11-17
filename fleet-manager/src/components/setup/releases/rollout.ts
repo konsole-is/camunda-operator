@@ -4,6 +4,7 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { Resource } from "@/lib/k8s/kinds";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL, isManaged } from "@/lib/labels";
 import {
   byCodeUnit,
@@ -23,7 +24,6 @@ import {
   validateClusterClaim,
 } from "@/lib/session";
 import type { ApiError, Change, WriteResult } from "@/lib/write/types";
-import { type SourceReads, unreadKinds } from "./rows";
 import { RELEASE_SOURCE_KINDS, ROLLOUT_SOURCE_KINDS } from "./source-kinds";
 
 /** ClusterClaim is a CamundaClusterClaim as the watch gives it. */

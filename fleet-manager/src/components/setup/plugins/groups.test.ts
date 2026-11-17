@@ -12,7 +12,6 @@ import {
   registrationRow,
   registrationSummary,
   sectionFields,
-  unreadKinds,
 } from "./groups";
 
 describe("registrationGroups", () => {
@@ -343,18 +342,6 @@ describe("registrationRow on lists that are not read", () => {
       });
     },
   );
-});
-
-describe("unreadKinds", () => {
-  it("names each failed or stale kind once", () => {
-    expect(
-      unreadKinds({
-        errors: [{ kind: "PluginRequest", message: "forbidden" }],
-        stale: ["PluginSection", "PluginRequest"],
-      }),
-    ).toEqual(["PluginRequest", "PluginSection"]);
-    expect(unreadKinds({})).toEqual([]);
-  });
 });
 
 describe("registrationSummary", () => {

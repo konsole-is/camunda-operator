@@ -11,11 +11,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { SourceReads } from "@/lib/k8s/unread";
 import type { WriteMode } from "@/lib/write/types";
 import { claim, releaseFixtures } from "./fixtures";
 import { ReleaseList } from "./release-list";
 import type { ReleaseActions } from "./release-detail";
-import { releaseRows, type SourceReads } from "./rows";
+import { releaseRows } from "./rows";
 import type { ReleasesData } from "./sources";
 
 vi.mock("@/lib/k8s/hooks", () => ({

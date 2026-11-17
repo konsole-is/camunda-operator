@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Panel } from "@/components/cluster/claim-tab";
+import { NotRead } from "@/components/fleet/not-read";
 import {
   Table,
   TableBody,
@@ -10,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import type { ContractInput, ContractOutput, ContractView } from "./contract";
 import { fillsText } from "./groups";
-import { NotKnown, ValueError } from "./tab-parts";
+import { ValueError } from "./tab-parts";
 import { type Invalid, isInvalid } from "./values";
 
 const MUTED = "block text-xs text-muted";
@@ -38,7 +39,7 @@ export function ContractTab({
                 <span className={`${MUTED} font-mono`}>{section.name}</span>
                 {section.label === undefined ? (
                   contract.sectionsUnknown ? (
-                    <NotKnown kinds={["PluginSection"]} />
+                    <NotRead kinds={["PluginSection"]} />
                   ) : (
                     <span className="text-xs text-warn">
                       Not a section on this cluster

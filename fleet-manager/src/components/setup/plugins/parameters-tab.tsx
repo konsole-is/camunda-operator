@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import type { PolicyResult } from "@/lib/policy/types";
 import type { ParameterRow } from "./parameters";
-import { NotKnown, ValueError } from "./tab-parts";
+import { ValueError } from "./tab-parts";
 
 /**
  * ParametersTab shows each parameter of rows in its own panel: its type,
@@ -23,7 +24,7 @@ export function ParametersTab({
     );
   if (rows.value.length === 0)
     return unread.includes("Environment") ? (
-      <NotKnown kinds={["Environment"]} />
+      <NotRead kinds={["Environment"]} />
     ) : (
       <p className="text-sm text-muted">This option takes no parameters.</p>
     );
@@ -36,7 +37,7 @@ export function ParametersTab({
       </p>
       {unread.includes("Environment") && (
         <p className="text-sm text-muted">
-          Values of the environments: Not known: Environment is not read.
+          Values of the environments: {notReadText(["Environment"])}
         </p>
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

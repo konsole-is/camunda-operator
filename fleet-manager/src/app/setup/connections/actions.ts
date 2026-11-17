@@ -2,6 +2,7 @@
 
 import type { ConnectionPageData } from "@/components/setup/connections/sources";
 import { contractsOf } from "@/components/setup/connections/tabs";
+import { unreadChangeText, unreadDeleteText } from "@/lib/k8s/unread";
 import {
   CONTRACT_KINDS,
   type ContractKind,
@@ -139,9 +140,7 @@ function refusalsOf(
     );
   const blind = unreadUserKinds(kind, unread);
   if (blind.length > 0)
-    return refuse(
-      `${deleting ? "Delete" : "A change"} is possible when the fleet manager can read ${blind.join(", ")}.`,
-    );
+    return refuse(deleting ? unreadDeleteText(blind) : unreadChangeText(blind));
   if (!deleting) return [];
   const users =
     contractUsage(sources).get(

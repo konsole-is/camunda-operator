@@ -101,6 +101,24 @@ describe("useResources", () => {
     );
   });
 
+  it("returns the list that an earlier hook left in the cache, not initial, until the next snapshot", async () => {
+    const first = renderHook(
+      () => useResources("Pod", { namespace: "team" }, []),
+      { wrapper },
+    );
+    const s = await source();
+    s.emit("snapshot", { watch: s.ids()[0], kind: "Pod", objects: [pod("a")] });
+    await waitFor(() => expect(first.result.current.items).toEqual([pod("a")]));
+    first.unmount();
+    await flush();
+
+    const { result } = renderHook(
+      () => useResources("Pod", { namespace: "team" }, [pod("b")]),
+      { wrapper },
+    );
+    expect(result.current.items).toEqual([pod("a")]);
+  });
+
   it("applies each delta", async () => {
     const { result } = renderHook(
       () => useResources("Pod", { namespace: "team" }, [pod("a"), pod("b")]),

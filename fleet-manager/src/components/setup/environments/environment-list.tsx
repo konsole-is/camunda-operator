@@ -5,8 +5,8 @@ import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
-import type { ReadError } from "@/components/planes/planes-table";
 import { Button } from "@/components/ui/button";
+import type { ReadError } from "@/lib/k8s/unread";
 import { EnvironmentName } from "./environment-name";
 import {
   type EnvironmentRow,

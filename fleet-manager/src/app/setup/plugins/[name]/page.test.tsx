@@ -117,7 +117,11 @@ describe("RegistrationPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "New KMS key" }),
     ).toBeTruthy();
-    expect(screen.getByText("Not known: Event is not read.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Event.",
+      ),
+    ).toBeTruthy();
   });
 
   it("opens the About tab for an unknown tab", async () => {

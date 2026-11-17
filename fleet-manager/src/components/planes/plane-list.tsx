@@ -3,28 +3,50 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { Button } from "@/components/ui/button";
+import { useAnswered } from "@/lib/k8s/answered";
+import { useWatchesFresh, useWatchesOverdue } from "@/lib/k8s/hooks";
+import type { KindName } from "@/lib/k8s/kinds";
+import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import { PlaneClusters, PlaneName, PlaneServes } from "./cells";
 import { NotAttachedChip } from "./not-attached-chip";
 import { optimizeLabel, type Plane, type PlaneSources } from "./plane";
-import { type ReadError, usePlanes } from "./planes-table";
+import { usePlanes } from "./planes-table";
 
 const MODES = ["Keycloak", "External Keycloak", "OIDC"];
+const PLANE_KINDS = [
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+];
+// usePlanes follows these lists.
+const FOLLOWED: KindName[] = [
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+  "Namespace",
+  "Environment",
+];
 const STATUSES = ["Ready", "Not ready", "Unknown", "No status"];
 
 /**
  * PlaneList is the page of every management plane, with search, filters,
  * sort, and pages. Each of errors shows above the table, and the rows stay.
+ * stale holds the kinds whose list is not current.
  */
 export function PlaneList({
   planes,
   errors = [],
+  stale = [],
 }: {
   planes: Plane[];
   errors?: ReadError[];
+  stale?: readonly string[];
 }): ReactNode {
+  const planesUnread = unreadKinds({ errors, stale }).filter((kind) =>
+    PLANE_KINDS.includes(kind),
+  );
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -40,9 +62,20 @@ export function PlaneList({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {planes.length > 0 && (
+        <NotRead
+          kinds={stale.filter((kind) => !errors.some((e) => e.kind === kind))}
+        />
+      )}
       <DataTable
         label="Management planes"
-        emptyText={planes.length === 0 ? "No management plane yet." : undefined}
+        emptyText={
+          planesUnread.length > 0
+            ? notReadText(planesUnread)
+            : planes.length > 0
+              ? undefined
+              : "No management plane yet."
+        }
         columns={[
           { key: "plane", label: "Management plane", sortable: true },
           { key: "identity", label: "Identity" },
@@ -103,5 +136,13 @@ export function PlaneList({
 /** PlaneListLive is PlaneList on the live planes of usePlanes, starting from initial. */
 export function PlaneListLive({ initial }: { initial: PlaneSources }) {
   const { planes, errors } = usePlanes(initial);
-  return <PlaneList planes={planes} errors={errors} />;
+  const lists = FOLLOWED.map((kind) => ({ kind, opts: {} }));
+  const answered = useAnswered(FOLLOWED);
+  const fresh = useWatchesFresh(lists);
+  const overdue = useWatchesOverdue(lists);
+  // Before its first answer, a list can be the cache of an earlier visit.
+  const stale = FOLLOWED.filter((kind, i) =>
+    answered.has(kind) ? !fresh[i] : overdue[i],
+  );
+  return <PlaneList planes={planes} errors={errors} stale={stale} />;
 }

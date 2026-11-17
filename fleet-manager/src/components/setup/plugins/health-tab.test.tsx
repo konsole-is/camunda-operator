@@ -77,7 +77,7 @@ describe("HealthTab", () => {
     expect(within(conditions).queryByRole("table")).toBeNull();
     expect(
       within(conditions).getByText(
-        "Not known: PluginRegistration is not read.",
+        "Not known: the fleet manager has no current list of PluginRegistration.",
       ),
     ).toBeTruthy();
   });
@@ -94,7 +94,9 @@ describe("HealthTab", () => {
     const events = screen.getByRole("region", { name: "Events" });
     expect(within(events).queryByText("No events")).toBeNull();
     expect(
-      within(events).getByText("Not known: Event is not read."),
+      within(events).getByText(
+        "Not known: the fleet manager has no current list of Event.",
+      ),
     ).toBeTruthy();
   });
 

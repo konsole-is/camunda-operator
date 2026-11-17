@@ -1,9 +1,9 @@
 "use client";
 
 import { DataTable } from "@/components/fleet/data-table";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { byCodeUnit } from "@/lib/policy";
 import type { ServedCluster } from "./served-clusters";
-import { UnreadNote, unreadText } from "./unread-note";
 
 const NO_ENVIRONMENT = "No environment";
 const NOT_KNOWN = "Not known";
@@ -41,14 +41,14 @@ export function ServedClustersTab({
       className="flex flex-col gap-3 rounded-lg border border-border bg-panel p-4"
     >
       <h2 className="font-heading text-base font-semibold">Clusters served</h2>
-      {rows.length > 0 && <UnreadNote kinds={unread} />}
+      {rows.length > 0 && <NotRead kinds={unread} tab />}
       <DataTable
         label="Clusters served table"
         emptyText={
           rows.length > 0
             ? undefined
             : unread.length > 0
-              ? unreadText(unread)
+              ? notReadText(unread, true)
               : "This plane lists no clusters yet."
         }
         columns={[

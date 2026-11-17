@@ -28,12 +28,14 @@ import {
   planeFields,
   type Step,
 } from "@/lib/fields";
+import { useAnswered } from "@/lib/k8s/answered";
 import {
   useResources,
   useWatchesFresh,
   useWatchesOverdue,
 } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors } from "@/lib/k8s/unread";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { APP_FIELD_MANAGER, type FieldPath, type KeptField } from "@/lib/merge";
 import { identityMoveEdits } from "@/lib/planes/edits";
@@ -551,8 +553,7 @@ function lockedFields(
 
 // useClaimTabLists follows the lists of data.claimTab live. unread names
 // each kind whose read failed or whose list is not current, and waiting the
-// kinds whose list is not current, by the rule of the cluster page. Before
-// its first answer, a list is the read of the server.
+// kinds whose list is not current, by the rule of the cluster page.
 function useClaimTabLists(data: PlanePageData) {
   const initial = data.claimTab;
   const { namespace, name } = data;
@@ -595,23 +596,20 @@ function useClaimTabLists(data: PlanePageData) {
   ] as const;
   const fresh = useWatchesFresh(followed);
   const overdue = useWatchesOverdue(followed);
-  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
-  const added = followed
-    .filter(({ kind }, i) => fresh[i] && !answered.has(kind))
-    .map(({ kind }) => kind);
-  if (added.length > 0) setAnswered(new Set([...answered, ...added]));
+  const answered = useAnswered(followed);
   const waiting = followed
     .filter(({ kind }, i) =>
       answered.has(kind) ? !fresh[i] : overdue[i] || !initial,
     )
     .map(({ kind }) => kind);
-  const unread = [
-    ...results.flatMap(([kind, r]) => (r.error ? [kind] : [])),
-    ...(initial?.readErrors ?? [])
-      .map((e) => e.kind)
-      .filter((kind) => !answered.has(kind)),
-    ...waiting,
-  ];
+  const errors = currentReadErrors(
+    results.flatMap(([kind, r]) =>
+      r.error ? [{ kind, message: r.error }] : [],
+    ),
+    initial?.readErrors,
+    answered,
+  );
+  const unread = [...errors.map((e) => e.kind), ...waiting];
   return {
     clusters: results[0][1].items,
     platformConfigs: results[1][1].items,

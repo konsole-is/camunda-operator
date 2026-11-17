@@ -1,9 +1,9 @@
 import "server-only";
 import type { PlaneClaimTabData } from "@/components/planes/claim/data";
 import type { PlanePageData } from "@/components/planes/plane-view";
-import type { ReadError } from "@/components/planes/planes-table";
-import type { KindName } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { get, list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 import { CLAIM_LABEL, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 
@@ -21,7 +21,13 @@ export async function loadPlanePage(
   namespace: string,
   name: string,
 ): Promise<PlanePageData | undefined> {
-  const claimTab = loadClaimTab(namespace, name);
+  // The page and its Claim tab show the same two lists, so each is read
+  // once. Each side catches a failure into its own readErrors.
+  const shared: SharedLists = {
+    platformConfigs: list("CamundaPlatformConfig", {}),
+    registrations: list("PluginRegistration", {}),
+  };
+  const claimTab = loadClaimTab(namespace, name, shared);
   const readErrors: ReadError[] = [];
   const failed =
     <T>(kind: KindName, empty: T) =>
@@ -57,10 +63,8 @@ export async function loadPlanePage(
       namespace,
       labelSelector: `${MANAGEMENT_CLUSTER_LABEL}=${ownerName(name)}`,
     }).catch(failed("Pod", [])),
-    list("CamundaPlatformConfig", {}).catch(
-      failed("CamundaPlatformConfig", []),
-    ),
-    list("PluginRegistration", {}).catch(failed("PluginRegistration", [])),
+    shared.platformConfigs.catch(failed("CamundaPlatformConfig", [])),
+    shared.registrations.catch(failed("PluginRegistration", [])),
   ]);
   const objectUnread = readErrors.some(
     (e) =>
@@ -88,11 +92,18 @@ export async function loadPlanePage(
   };
 }
 
-// loadClaimTab reads the lists of the Claim tab. Its read errors stay
-// apart from those of the page, because the tab follows these kinds.
+type SharedLists = {
+  platformConfigs: Promise<Resource<"CamundaPlatformConfig">[]>;
+  registrations: Promise<Resource<"PluginRegistration">[]>;
+};
+
+// loadClaimTab reads the lists of the Claim tab, and takes those of shared.
+// Its read errors stay apart from those of the page, because the tab
+// follows these kinds.
 async function loadClaimTab(
   namespace: string,
   name: string,
+  shared: SharedLists,
 ): Promise<PlaneClaimTabData> {
   const readErrors: ReadError[] = [];
   const failed = (kind: KindName) => (err: unknown) => {
@@ -105,9 +116,9 @@ async function loadClaimTab(
   const [clusters, platformConfigs, sections, registrations, requests] =
     await Promise.all([
       list("CamundaCluster", {}).catch(failed("CamundaCluster")),
-      list("CamundaPlatformConfig", {}).catch(failed("CamundaPlatformConfig")),
+      shared.platformConfigs.catch(failed("CamundaPlatformConfig")),
       list("PluginSection", {}).catch(failed("PluginSection")),
-      list("PluginRegistration", {}).catch(failed("PluginRegistration")),
+      shared.registrations.catch(failed("PluginRegistration")),
       list("PluginRequest", {
         namespace,
         labelSelector: `${CLAIM_LABEL}=${name}`,
