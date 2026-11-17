@@ -5,7 +5,14 @@ import {
   LAST_APPLIED_ANNOTATION,
   REVISION_ANNOTATION,
 } from "@/lib/labels";
-import { appliedSession, keptFields, savedOf, saveManager } from "./kept";
+import type { ForeignManager, ObjectOwnership } from "@/lib/write/types";
+import {
+  appliedSession,
+  keptFields,
+  savedOf,
+  saveManager,
+  savedSession,
+} from "./kept";
 import {
   claimAfter,
   openSession,
@@ -212,5 +219,73 @@ describe("savedOf", () => {
     expect(saved.firstSync).toBe(true);
     // A client-side sync applies the change as written.
     expect(claimAfter(saved.applied).spec).not.toHaveProperty("deletionPolicy");
+  });
+});
+
+describe("savedSession", () => {
+  const operator = {
+    manager:
+      "CamundaManagementClusterClaim/plane/0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11",
+    operation: "Apply",
+    fieldsV1: { "f:spec": { "f:deletionPolicy": {} } },
+  };
+  const manager = (entry: typeof kubectl): ForeignManager => ({
+    name: entry.manager,
+    operation: entry.operation,
+    kind: entry === operator ? "operator" : "other",
+    known: true,
+  });
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    namespace: "mgmt-ns",
+    name: "mgmt",
+  };
+  // cleared drops qa from the environments and the deletion policy, as the
+  // direct writer names them for the claims of claimOf.
+  const cleared = (): ObjectOwnership => ({
+    ref,
+    changed: [],
+    cleared: [
+      {
+        path: "spec.deletionPolicy",
+        steps: at("spec", "deletionPolicy"),
+        managers: [manager(operator)],
+      },
+      {
+        path: 'spec.environments[="qa"]',
+        steps: [...at("spec", "environments"), { value: "qa" }],
+        managers: [manager(kubectl)],
+      },
+    ],
+  });
+  const dropped = () => {
+    let s = session(claimOf([kubectl, operator]));
+    const set = setValue(s, at("spec", "environments"), ["platform"]);
+    if ("session" in set) s = set.session;
+    const reset = resetValue(s, at("spec", "deletionPolicy"));
+    if ("session" in reset) s = reset.session;
+    return s;
+  };
+
+  it("keeps each cleared field of another tool without the take-over", () => {
+    const s = dropped();
+    expect(claimAfter(savedSession(s, cleared(), false)).spec).toEqual(
+      s.claim.spec,
+    );
+  });
+
+  it("removes each offered cleared field with the take-over, and keeps a field of an operator controller", () => {
+    const s = dropped();
+    expect(claimAfter(savedSession(s, cleared(), true)).spec).toEqual({
+      ...s.claim.spec,
+      environments: ["platform"],
+    });
+  });
+
+  it("is the session itself when the review names no cleared field", () => {
+    const s = dropped();
+    expect(savedSession(s, undefined, false)).toBe(s);
+    expect(savedSession(s, { ...cleared(), cleared: [] }, true)).toBe(s);
   });
 });

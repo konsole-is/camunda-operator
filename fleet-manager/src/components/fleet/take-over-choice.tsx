@@ -81,9 +81,9 @@ export function TakeOverChoice({
               ))}
               {ambiguousPaths(object).map((path) => (
                 <li key={`ambiguous-${path}`} className="text-text">
-                  <Path>{path}</Path> names more than one field of the{" "}
-                  {label}. The fleet manager does not take over a field that it
-                  cannot name exactly.
+                  <Path>{path}</Path> names more than one field of the {label}.
+                  The fleet manager does not take over a field that it cannot
+                  name exactly.
                 </li>
               ))}
             </ul>
@@ -106,8 +106,8 @@ export function TakeOverChoice({
               ) : (
                 <span>
                   <Path>{name}</Path> set a field of an object that a GitOps
-                  tool manages. On its next sync the GitOps tool can set its
-                  own value again, unless the source in Git changes too.
+                  tool manages. On its next sync the GitOps tool can set its own
+                  value again, unless the source in Git changes too.
                 </span>
               )}
             </li>

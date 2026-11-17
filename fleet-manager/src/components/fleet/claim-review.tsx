@@ -9,6 +9,7 @@ import {
   changeOf,
   claimAfter,
   outcomeOf,
+  savedSession,
   valueAt,
   type ClaimObject,
   type FieldError,
@@ -16,6 +17,7 @@ import {
   type WriteOutcome,
 } from "@/lib/session";
 import { withTakeOver } from "@/lib/write/ownership";
+import { refKey } from "@/lib/write/refs";
 import type {
   Change,
   ObjectOwnership,
@@ -58,6 +60,8 @@ export type ReviewConfirm = {
  * disabled while takeOverOpen is true. The choice starts off for each
  * session and intent, so a rebase resets it. When it is on, the review
  * previews the change of withTakeOver, and the confirm writes that change.
+ * The diff of the claim then shows the claim that the save leaves: a
+ * cleared field of another tool stays in it until the take-over.
  * In Git mode it notes each reset field that the preview keeps.
  */
 export function ClaimReview<C extends ClaimObject>({
@@ -133,6 +137,12 @@ export function ClaimReview<C extends ClaimObject>({
   const effective = useMemo(
     () => (chosen ? withTakeOver(base, ownership) : base),
     [chosen, base, ownership],
+  );
+  // The diff shows the claim that the save leaves: a cleared field of
+  // another tool stays until the take-over.
+  const saved = useMemo(
+    () => savedSession(session, ownershipOf(ownership, session), chosen),
+    [session, ownership, chosen],
   );
 
   useEffect(() => {
@@ -217,7 +227,7 @@ export function ClaimReview<C extends ClaimObject>({
 
   return (
     <ReviewPanel
-      lines={objectDiff(session.claim, claimAfter(session))}
+      lines={objectDiff(session.claim, claimAfter(saved))}
       details={
         mergedLines && (
           <DiffView label="Changes to the cluster" lines={mergedLines} />
@@ -272,6 +282,19 @@ function previewOf(
     objects: [],
     errors: [{ code: "Unavailable", message: String(error) }],
   }));
+}
+
+function ownershipOf(
+  ownership: readonly ObjectOwnership[],
+  s: Session,
+): ObjectOwnership | undefined {
+  const { kind, metadata } = s.claim;
+  const key = refKey({
+    kind,
+    namespace: metadata.namespace,
+    name: metadata.name,
+  });
+  return ownership.find((o) => refKey(o.ref) === key);
 }
 
 // TakeOverChoice names the fields of these Conflict errors, so neither an
