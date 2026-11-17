@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
-import type { WriteMode } from "@/lib/write/types";
+import type { Preview, WriteMode } from "@/lib/write/types";
 import { EnvironmentEditor } from "./environment-editor";
 import { environmentFixtures } from "./fixtures";
 
@@ -29,7 +29,10 @@ function renderEditor(
       ok: true as const,
       mode: "direct" as const,
     })),
-    previewLabel: vi.fn(async () => ({ objects: [], errors: [] })),
+    previewLabel: vi.fn(async (): Promise<Preview> => ({
+      objects: [],
+      errors: [],
+    })),
     applyLabel: vi.fn(async () => ({
       ok: true as const,
       mode: "direct" as const,
@@ -108,6 +111,39 @@ describe("NamespacesSection", () => {
         "The namespace sandbox is in the environment production.",
       ),
     );
+  });
+
+  it("offers no take-over of the labels that another tool set, which the label change keeps", async () => {
+    const actions = renderEditor("production");
+    const label = {
+      path: "metadata.labels.team",
+      steps: [{ field: "metadata" }, { field: "labels" }, { field: "team" }],
+      managers: [
+        {
+          name: "kubectl-client-side-apply",
+          operation: "Update",
+          kind: "other" as const,
+          known: true,
+        },
+      ],
+    };
+    actions.previewLabel.mockResolvedValue({
+      objects: [],
+      errors: [],
+      ownership: [
+        {
+          ref: { apiVersion: "v1", kind: "Namespace", name: "sandbox" },
+          changed: [],
+          cleared: [label],
+        },
+      ],
+    });
+    addNamespace("sandbox");
+    const confirm = screen.getByRole("button", { name: "Add the namespace" });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
   });
 
   it("in Git mode, says that the label goes straight to the cluster, and the button does not read Push to Git", async () => {

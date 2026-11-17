@@ -19,6 +19,7 @@ import { CLAIM_LABEL } from "@/lib/labels";
 import {
   claimAfter,
   openSession,
+  rebase,
   resetValue,
   setValue,
   STALE_CLAIM_MESSAGE,
@@ -371,7 +372,8 @@ describe("ClaimReview", () => {
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
-  it("shows a note when the preview keeps a reset field", async () => {
+  it("Git mode shows a note when the preview keeps a reset field", async () => {
+    fakeWriter.reset("git");
     const s = session(resetPartitions);
     // Another field manager owns partitions, so the dry run keeps it.
     fakeWriter.previews = [
@@ -398,10 +400,11 @@ describe("ClaimReview", () => {
         "Another field manager keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
       ),
     );
-    expect((await confirm("Save")).disabled).toBe(false);
+    expect((await confirm("Push to Git")).disabled).toBe(false);
   });
 
-  it("shows a note when the preview keeps a reset field of a list item named by index", async () => {
+  it("Git mode shows a note when the preview keeps a reset field of a list item named by index", async () => {
+    fakeWriter.reset("git");
     const env = { name: "TZ", value: "UTC" };
     const withEnv: ClaimObject = {
       ...claim,
@@ -446,7 +449,8 @@ describe("ClaimReview", () => {
     );
   });
 
-  it("shows a note when the preview keeps a reset list item without keys", async () => {
+  it("Git mode shows a note when the preview keeps a reset list item without keys", async () => {
+    fakeWriter.reset("git");
     const withEnv: ClaimObject = {
       ...claim,
       spec: {
@@ -532,5 +536,198 @@ describe("ClaimReview", () => {
         preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
       },
     ]);
+  });
+});
+
+describe("ClaimReview with fields of another tool", () => {
+  const ref = {
+    apiVersion: claim.apiVersion,
+    kind: claim.kind,
+    namespace: "team-a",
+    name: "orders",
+  };
+  const key = "CamundaClusterClaim/team-a/orders";
+  const kubectl = {
+    name: "kubectl-client-side-apply",
+    operation: "Update",
+    kind: "other" as const,
+    known: true,
+  };
+  const fieldAt = (steps: Step[]) => ({
+    path: steps.map((s) => ("field" in s ? s.field : "")).join("."),
+    steps: steps.map((s) => ({ field: "field" in s ? s.field : "" })),
+    managers: [kubectl],
+  });
+  const conflicted = {
+    objects: [],
+    errors: [
+      {
+        code: "Conflict" as const,
+        message: 'conflict with "kubectl-client-side-apply"',
+        path: "spec.cluster.zeebe.replicas",
+        manager: "kubectl-client-side-apply",
+        ref,
+      },
+    ],
+    ownership: [{ ref, changed: [fieldAt(replicas)], cleared: [] }],
+  };
+  const clean = {
+    objects: [{ ref, after: claimAfter(session()) as KubeObject, diff: [] }],
+    errors: [],
+  };
+  const choice = () =>
+    screen.getByRole("checkbox", { name: "Take over these fields" });
+
+  it("Save stays off until the take-over is chosen, then saves the change with the lists", async () => {
+    fakeWriter.previews = [conflicted, clean];
+    const onRefused = vi.fn();
+    review({ onRefused });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.cluster.zeebe.replicas: kubectl-client-side-apply set it. The save changes it.",
+      ),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+    // The panel names the conflict, so neither an alert nor the field repeats it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onRefused).not.toHaveBeenCalled();
+
+    fireEvent.click(choice());
+    fireEvent.click(await confirm("Save"));
+
+    const withList = {
+      intent: INTENT,
+      apply: [claimAfter(session())],
+      preconditions: { [key]: "41" },
+      takeOver: { [key]: ["spec.cluster.zeebe.replicas"] },
+    };
+    await waitFor(() => expect(fakeWriter.applied).toEqual([withList]));
+    expect(fakeWriter.previewed[1]).toEqual(withList);
+  });
+
+  it("shows a Conflict of the preview with the take-over, and Save stays off", async () => {
+    const message =
+      "The save would take spec.cluster.zeebe.partitions from kubectl-client-side-apply, and the review did not list it.";
+    fakeWriter.previews = [
+      conflicted,
+      {
+        ...clean,
+        errors: [
+          {
+            code: "Conflict" as const,
+            message,
+            path: "spec.cluster.zeebe.partitions",
+            manager: "kubectl-client-side-apply",
+            ref,
+          },
+        ],
+      },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("a save that did not remove each field says what it saved, and Save stays off", async () => {
+    const message =
+      "The fleet manager saved the CamundaClusterClaim orders, but did not remove spec.cluster.zeebe.partitions. The CamundaClusterClaim orders changed since you opened it.";
+    fakeWriter.previews = [conflicted, clean];
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message, ref }] },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    fireEvent.click(await confirm("Save"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      STALE_CLAIM_MESSAGE,
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("a reset of a field of another tool says that it stays, and Save is on", async () => {
+    fakeWriter.previews = [
+      {
+        objects: [{ ref, after: claim as KubeObject, diff: [] }],
+        errors: [],
+        ownership: [{ ref, changed: [], cleared: [fieldAt(partitions)] }],
+      },
+    ];
+    review({ session: session(resetPartitions) });
+
+    expect((await confirm("Save")).disabled).toBe(false);
+    expect(
+      screen.getByRole("group", { name: "Fields that another tool set" })
+        .textContent,
+    ).toContain(
+      "spec.cluster.zeebe.partitions: kubectl-client-side-apply set it. It stays unless you take it over.",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("the choice resets after a rebase", async () => {
+    fakeWriter.previews = [conflicted, clean, conflicted];
+    const first = session();
+    const props = {
+      mode: "direct" as const,
+      intent: INTENT,
+      impacts: [],
+      preview: previewClaimChange,
+      apply: applyClaimChange,
+      show: vi.fn(),
+    };
+    const wrap = (s: Session) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <GitPushesProvider>
+          <ClaimReview session={s} {...props} />
+        </GitPushesProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(wrap(first));
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await confirm("Save");
+
+    rerender(
+      wrap(
+        rebase(first, {
+          ...claim,
+          metadata: { ...claim.metadata, resourceVersion: "42" },
+        }),
+      ),
+    );
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(3));
+    await waitFor(() =>
+      expect(choice().getAttribute("aria-checked")).toBe("false"),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("Git mode shows no choice", async () => {
+    fakeWriter.reset("git");
+    fakeWriter.previews = [{ ...clean, ownership: conflicted.ownership }];
+    review();
+    await confirm("Push to Git");
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
   });
 });

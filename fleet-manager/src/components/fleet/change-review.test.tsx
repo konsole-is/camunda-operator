@@ -115,34 +115,42 @@ function setup({
   mode = "direct",
   gitLabel,
   hold,
+  change: given = change,
+  offerTakeOver,
 }: {
-  preview?: Preview;
+  preview?: Preview | ((change: Change) => Preview);
   result?: WriteResult;
   mode?: WriteMode;
   gitLabel?: string;
   hold?: boolean;
+  change?: Change;
+  offerTakeOver?: boolean;
 } = {}) {
   const props = {
-    preview: vi.fn(async () => preview),
+    preview: vi.fn(async (c: Change) =>
+      typeof preview === "function" ? preview(c) : preview,
+    ),
     apply: vi.fn<(change: Change) => Promise<WriteResult>>(async () => result),
     show: vi.fn(),
     onWritten: vi.fn(),
     onCancel: vi.fn(),
     onWriting: vi.fn(),
   };
-  render(
+  const view = (c: Change) => (
     <ChangeReview
-      change={change}
+      change={c}
       mode={mode}
       diffLabel="Changes to the environment"
       effects={["Changes apply to new claims only."]}
       confirm={{ label: "Save", gitLabel }}
       savedMessage="The environment staging is saved."
       hold={hold}
+      offerTakeOver={offerTakeOver}
       {...props}
-    />,
+    />
   );
-  return props;
+  const { rerender } = render(view(given));
+  return { ...props, rerender: (c: Change) => rerender(view(c)) };
 }
 
 const confirm = (name = "Save") => screen.getByRole("button", { name });
@@ -233,8 +241,9 @@ describe("ChangeReview", () => {
     );
   });
 
-  it("notes each kept field", async () => {
+  it("notes each kept field of a forced change", async () => {
     setup({
+      change: { ...change, force: true },
       preview: {
         ...clean,
         objects: [
@@ -352,5 +361,252 @@ describe("ChangeReview", () => {
     expect(confirm()).toHaveProperty("disabled", true);
     fireEvent.click(confirm());
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangeReview with fields of another tool", () => {
+  const key = "Environment//staging";
+  const updated: Change = {
+    intent: "Change the environment staging",
+    apply: [applied],
+    preconditions: { [key]: "12" },
+  };
+  const kubectl = {
+    name: "kubectl-client-side-apply",
+    operation: "Update",
+    kind: "other" as const,
+    known: true,
+  };
+  const displayName = {
+    path: "spec.displayName",
+    steps: [{ field: "spec" }, { field: "displayName" }],
+    managers: [kubectl],
+  };
+  const color = {
+    path: "spec.color",
+    steps: [{ field: "spec" }, { field: "color" }],
+    managers: [kubectl],
+  };
+  const conflicted: Preview = {
+    objects: [],
+    errors: [
+      {
+        code: "Conflict",
+        message: 'conflict with "kubectl-client-side-apply"',
+        path: "spec.displayName",
+        manager: "kubectl-client-side-apply",
+        ref,
+      },
+    ],
+    ownership: [{ ref, changed: [displayName], cleared: [] }],
+  };
+  const taken: Preview = {
+    objects: [
+      {
+        ref,
+        diff: [
+          { op: "same", text: "spec:" },
+          { op: "removed", text: "  displayName: Staging" },
+          { op: "added", text: "  displayName: Taken over" },
+        ],
+      },
+    ],
+    errors: [],
+    ownership: conflicted.ownership,
+  };
+  const byChange = (c: Change) => (c.takeOver || c.remove ? taken : conflicted);
+  const choice = () =>
+    screen.getByRole("checkbox", { name: "Take over these fields" });
+
+  it("Save stays off until the take-over is chosen, then saves the change with the lists", async () => {
+    const { preview, apply } = setup({ change: updated, preview: byChange });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.displayName: kubectl-client-side-apply set it. The save changes it.",
+      ),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+    // The panel names the conflict, so no alert repeats it.
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(choice());
+    const withList = { ...updated, takeOver: { [key]: ["spec.displayName"] } };
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    expect(preview).toHaveBeenLastCalledWith(withList);
+    fireEvent.click(confirm());
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(withList));
+  });
+
+  it("a cleared field only: Save is on, and the note says the field stays", async () => {
+    const { apply } = setup({
+      change: updated,
+      preview: {
+        ...clean,
+        ownership: [{ ref, changed: [], cleared: [color] }],
+      },
+    });
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    expect(
+      screen.getByText(
+        "kubectl-client-side-apply set it. It stays unless you take it over.",
+        { exact: false },
+      ),
+    ).toBeTruthy();
+    fireEvent.click(confirm());
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(updated));
+  });
+
+  it("shows the diff of the change with the take-over before the save", async () => {
+    setup({ change: updated, preview: byChange });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("figure", { name: "Changes to the environment" })
+          .textContent,
+      ).toContain("displayName: Taken over"),
+    );
+  });
+
+  it("shows a Conflict of the preview with the take-over, and Save stays off", async () => {
+    const unlisted = {
+      code: "Conflict" as const,
+      message:
+        "The save would take spec.owner from kubectl-client-side-apply, and the review did not list it.",
+      path: "spec.owner",
+      manager: "kubectl-client-side-apply",
+      ref,
+    };
+    setup({
+      change: updated,
+      preview: (c) =>
+        c.takeOver ? { ...taken, errors: [unlisted] } : conflicted,
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(unlisted.message),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
+  it("keeps the errors of a refused save when the choice changes", async () => {
+    const message =
+      "The fleet manager saved the Environment staging, but did not remove spec.color. The Environment staging changed since you opened it.";
+    setup({
+      change: updated,
+      preview: byChange,
+      result: { ok: false, errors: [{ code: "Stale", message, ref }] },
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    fireEvent.click(confirm());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+
+    fireEvent.click(choice());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(choice().getAttribute("aria-checked")).toBe("true"),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(message);
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
+  it("the choice resets for a new change", async () => {
+    const { rerender, apply } = setup({ change: updated, preview: byChange });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+
+    rerender({ ...updated });
+    await waitFor(() =>
+      expect(choice().getAttribute("aria-checked")).toBe("false"),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+    fireEvent.click(confirm());
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("Git mode shows the kept notes and no choice", async () => {
+    setup({
+      mode: "git",
+      change: updated,
+      preview: {
+        ...clean,
+        objects: [
+          {
+            ...clean.objects[0],
+            after: { ...applied, spec: { displayName: "Stage", color: "red" } },
+          },
+        ],
+        ownership: [{ ref, changed: [], cleared: [color] }],
+      },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "spec.color stays, because another field manager set it.",
+        ),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("offers no choice when the page sets offerTakeOver to false", async () => {
+    setup({ change: updated, preview: conflicted, offerTakeOver: false });
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        'conflict with "kubectl-client-side-apply"',
+      ),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
+  it("a forced change shows no choice", async () => {
+    setup({
+      change: { ...updated, force: true },
+      preview: { ...clean, ownership: conflicted.ownership },
+    });
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
+  });
+
+  it("an operator field keeps Save off and offers no choice", async () => {
+    const operator = {
+      ...displayName,
+      managers: [
+        {
+          name: "camunda-operator/environment",
+          operation: "Apply",
+          kind: "operator" as const,
+          known: true,
+        },
+      ],
+    };
+    setup({
+      change: updated,
+      preview: {
+        ...conflicted,
+        ownership: [{ ref, changed: [operator], cleared: [] }],
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/Leave it as it is to save\./)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(confirm()).toHaveProperty("disabled", true);
   });
 });

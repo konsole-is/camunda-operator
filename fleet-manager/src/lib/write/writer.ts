@@ -25,6 +25,7 @@ import { clientSideApplyPatch } from "./merge-patch";
 import {
   foreignFields,
   offered,
+  partialSaveMessage,
   takenFields,
   withoutFields,
 } from "./ownership";
@@ -113,16 +114,18 @@ export function diffView(
 /**
  * directWriter writes to the API server of kc, kubeConfig() by default, by
  * server-side apply with the field manager fleet-manager and force=false
- * unless the change sets force or takes over a field. It refuses a kind outside KindMap and
- * WriteOnlyKindMap with Invalid, before any request.
+ * unless the change sets force or takes over a field. It refuses a kind
+ * outside KindMap and WriteOnlyKindMap with Invalid, before any request.
  *
  * apply writes nothing when the preview of any object fails. Then it
  * applies and deletes in the order of the change, and a failure keeps the
  * objects written before it. A delete of an object that is gone succeeds.
  * An apply with a precondition fails with Stale when the object was
  * deleted or changed since the page read it, also when the change would
- * conflict. A delete with a precondition or a UID
- * fails with Stale when the object changed or was created again since.
+ * conflict. When the read after such a conflict fails, the Conflict stays,
+ * and one more error names the failed read. A delete with a precondition
+ * or a UID fails with Stale when the object changed or was created again
+ * since.
  * After a delete between the preview and the write, a kind that the app
  * may not delete, such as a Namespace, can exist again, with the error of
  * that delete beside Stale.
@@ -138,18 +141,20 @@ export function diffView(
  *
  * The preview names in ownership each updated object with a precondition
  * that has a field of spec, metadata.labels, or metadata.annotations of
- * another field manager that the change changes or clears. For an object that change.takeOver or change.remove lists, both
- * writes refuse it after the read, with no other request for it: with
- * Conflict for each listed field that a controller of the operator owns,
- * and with Invalid when the lists are not the offered fields of ownership
- * at the precondition. Then a dry run with force must take no field
- * that takeOver does not list, or the object fails with Conflict. apply
- * applies such an object with force only when takeOver lists a field, and
- * then removes the fields of remove with a JSON patch at the
- * resourceVersion that the apply returned. The preview shows the object
- * after the removal. When the removal fails, apply stops, the apply stays,
- * and each error says which fields the fleet manager did not remove. A
- * newer write between the apply and the removal gives Stale.
+ * another field manager that the change changes or clears. For an object
+ * that change.takeOver or change.remove lists, both writes refuse it after
+ * the read, with no other request for it: with Conflict for each listed
+ * field that a controller of the operator owns, with Invalid for a listed
+ * path that names more than one field of the object in ownership, and with
+ * Invalid when the lists are not the offered fields of ownership at the
+ * precondition. Then a dry run with force must take no field that takeOver
+ * does not list, or the object fails with Conflict. apply applies such an
+ * object with force only when takeOver lists a field, and then removes the
+ * fields of remove with a JSON patch at the resourceVersion that the apply
+ * returned. The preview shows the object after the removal. When the
+ * removal fails, apply stops, the apply stays, and each error says which
+ * fields the fleet manager did not remove. A newer write between the apply
+ * and the removal gives Stale.
  */
 export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const send = <T>(
@@ -180,9 +185,19 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       !errors.some((e) => e.code === "Conflict")
     )
       return errors;
-    const now = await read(ref).catch(() => null);
-    if (now === null || now?.metadata.resourceVersion === resourceVersion)
-      return errors;
+    let now: KubeObject | undefined;
+    try {
+      now = await read(ref);
+    } catch (error) {
+      return [
+        ...errors,
+        ...apiErrorsOf(error, ref, false).map((e) => ({
+          ...e,
+          message: `The fleet manager could not read the ${ref.kind} ${ref.name} again, so it cannot tell if another write changed it. ${e.message}`,
+        })),
+      ];
+    }
+    if (now?.metadata.resourceVersion === resourceVersion) return errors;
     return [staleError(ref)];
   };
 
@@ -472,12 +487,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           false,
         );
       } catch (error) {
-        const paths = plan.cleared.map((f) => f.path).join(", ");
+        const paths = plan.cleared.map((f) => f.path);
         return {
           ok: false,
           errors: apiErrorsOf(error, ref, true).map((e) => ({
             ...e,
-            message: `The fleet manager saved the ${ref.kind} ${ref.name}, but did not remove ${paths}. ${e.message}`,
+            message: partialSaveMessage(ref, paths, e.message),
           })),
         };
       }
@@ -647,8 +662,7 @@ function replacePatch(
         if (Object.hasOwn(x, key)) ops.push({ op: "remove", path });
       } else if (!Object.hasOwn(x, key) || !equalJSON(x[key], y[key]))
         // A field of a list item that the patch sends with its old value
-        // keeps its field managers. The fleet manager does not become a
-        // manager of a field that the patch sends with its old value.
+        // keeps its field managers.
         ops.push({ op: "add", path, value: y[key] });
     }
   };

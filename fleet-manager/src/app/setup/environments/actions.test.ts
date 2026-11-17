@@ -20,7 +20,6 @@ const environmentChange = (kind = "Environment") => ({
     },
   ],
   preconditions: { [`${kind}//staging` as const]: "3" },
-  force: true,
 });
 
 const labelChange = (directOnly = true) => ({

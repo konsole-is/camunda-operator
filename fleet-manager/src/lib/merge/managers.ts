@@ -104,6 +104,8 @@ const KNOWN_TOOLS: readonly string[] = [
   "kubectl-patch",
   "kubectl-create",
   "kubectl-replace",
+  "kubectl-label",
+  "kubectl-annotate",
   "helm",
   APP_FIELD_MANAGER,
 ];

@@ -1,8 +1,9 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { byCodeUnit, equalJSON, isObject } from "@/lib/policy";
+import { withTakeOver } from "@/lib/write/ownership";
 import type {
   ApiError,
   Change,
@@ -14,20 +15,28 @@ import type {
 import type { ReviewConfirm } from "./claim-review";
 import { DiffView } from "./diff-view";
 import { ReviewPanel } from "./review-panel";
+import {
+  TakeOverChoice,
+  takeOverOpen,
+  withoutTakeOverConflicts,
+} from "./take-over-choice";
 
 /**
- * ChangeReview is the review of one Change of a Setup page. It previews
- * change once for each change object, shows the diff of the first previewed
- * object under diffLabel and each other object as its own diff, the effects,
- * the caution, the errors of the preview, and a note for each field that the
- * preview keeps although the change leaves it out. The confirm stays disabled
- * until the preview is clean. The confirm also stays disabled when every
- * previewed object is unchanged. A confirm sends one write, and Back is
- * hidden while it runs. An ok write goes to show with savedMessage, then
- * onWritten. A refused write shows its errors, and the confirm stays
- * disabled unless the API server did not answer. While hold is set, the
- * confirm stays disabled whatever the preview says; the effects say why.
- * onWriting gets true when the write starts and false when it settles.
+ * ChangeReview previews change once for each change object and shows the
+ * diff of each previewed object, the first under diffLabel, with the
+ * effects and the caution. The confirm stays disabled until the preview is
+ * clean, and while hold is set.
+ *
+ * In direct mode, unless change sets force or offerTakeOver is false, it
+ * asks in TakeOverChoice before the save takes over a field of another
+ * tool. The choice starts off for each new change. While it is on, preview
+ * and apply get the change of withTakeOver. Set offerTakeOver to false
+ * when apply refuses takeOver and remove.
+ *
+ * A confirm writes once, and Back is hidden while it runs. An ok write goes
+ * to show with savedMessage, then onWritten. A refused write shows its
+ * errors. onWriting gets true when the write starts and false when it
+ * settles.
  */
 export function ChangeReview({
   change,
@@ -37,6 +46,7 @@ export function ChangeReview({
   caution,
   confirm: confirmProps,
   hold = false,
+  offerTakeOver = true,
   savedMessage,
   preview,
   apply,
@@ -53,6 +63,7 @@ export function ChangeReview({
   caution?: ReactNode;
   confirm: ReviewConfirm;
   hold?: boolean;
+  offerTakeOver?: boolean;
   savedMessage: string;
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
@@ -65,6 +76,11 @@ export function ChangeReview({
     change: Change;
     result: Preview;
   }>();
+  const [takenPreview, setTakenPreview] = useState<{
+    change: Change;
+    result: Preview;
+  }>();
+  const [choice, setChoice] = useState<{ change: Change; chosen: boolean }>();
   const [refused, setRefused] = useState<{
     change: Change;
     errors: ApiError[];
@@ -77,45 +93,59 @@ export function ChangeReview({
     previewRef.current = preview;
   });
 
-  useEffect(() => {
-    let current = true;
-    previewRef
-      .current(change)
-      .catch((error: unknown): Preview => ({
-        objects: [],
-        errors: [{ code: "Unavailable", message: String(error) }],
-      }))
-      .then((result) => {
-        if (current) setPreviewed({ change, result });
-      });
-    return () => {
-      current = false;
-    };
-  }, [change]);
+  const given = previewed?.change === change ? previewed.result : undefined;
+  const choosing = mode === "direct" && !change.force && offerTakeOver;
+  const ownership = useMemo(
+    () => (choosing ? (given?.ownership ?? []) : []),
+    [choosing, given],
+  );
+  const chosen = choice?.change === change && choice.chosen;
+  const effective = useMemo(
+    () => (chosen ? withTakeOver(change, ownership) : change),
+    [chosen, change, ownership],
+  );
 
-  const checked = previewed?.change === change ? previewed.result : undefined;
+  useEffect(() => previewOnce(previewRef, change, setPreviewed), [change]);
+  useEffect(() => {
+    if (effective === change) return;
+    return previewOnce(previewRef, effective, setTakenPreview);
+  }, [effective, change]);
+
+  const checked =
+    effective === change
+      ? given
+      : takenPreview?.change === effective
+        ? takenPreview.result
+        : undefined;
+  const previewErrors =
+    effective === change
+      ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
+      : (checked?.errors ?? []);
   const writeErrors = refused?.change === change ? refused.errors : [];
   const changesNothing =
     checked !== undefined &&
-    checked.errors.length === 0 &&
+    previewErrors.length === 0 &&
     checked.objects.length > 0 &&
     checked.objects.every((o) => o.diff.every((line) => line.op === "same"));
   const blocked =
     hold ||
     !checked ||
-    checked.errors.length > 0 ||
+    previewErrors.length > 0 ||
     changesNothing ||
+    takeOverOpen(ownership, chosen) ||
     writeErrors.some((e) => e.code !== "Unavailable");
-  const alerts = [...(checked?.errors ?? []), ...writeErrors].map(textOf);
-  const kept = (checked?.objects ?? []).flatMap((object) => {
-    const sent = change.apply.find(
-      (o) =>
-        o.kind === object.ref.kind &&
-        o.metadata.name === object.ref.name &&
-        o.metadata.namespace === object.ref.namespace,
-    );
-    return sent ? keptPaths(sent, object.after) : [];
-  });
+  const alerts = [...previewErrors, ...writeErrors].map(textOf);
+  const kept = choosing
+    ? []
+    : (checked?.objects ?? []).flatMap((object) => {
+        const sent = change.apply.find(
+          (o) =>
+            o.kind === object.ref.kind &&
+            o.metadata.name === object.ref.name &&
+            o.metadata.namespace === object.ref.namespace,
+        );
+        return sent ? keptPaths(sent, object.after) : [];
+      });
   const [first, ...others] = checked?.objects ?? [];
 
   async function confirm() {
@@ -124,7 +154,7 @@ export function ChangeReview({
     setWriting(true);
     onWriting?.(true);
     try {
-      const result = await apply(change).catch(
+      const result = await apply(effective).catch(
         (error: unknown): WriteResult => ({
           ok: false,
           errors: [{ code: "Unavailable", message: String(error) }],
@@ -171,6 +201,13 @@ export function ChangeReview({
           )}
           {changesNothing && (
             <p className="text-sm text-muted">The change writes nothing.</p>
+          )}
+          {ownership.length > 0 && (
+            <TakeOverChoice
+              ownership={ownership}
+              chosen={chosen}
+              onChoose={(next) => setChoice({ change, chosen: next })}
+            />
           )}
           {kept.length > 0 && (
             <div role="note" aria-label="Kept fields">
@@ -243,6 +280,28 @@ function missingIn(sent: unknown, kept: unknown, path: string): string[] {
       ? missingIn(object[key], value, `${path}.${key}`)
       : [`${path}.${key}`],
   );
+}
+
+// previewOnce previews change and hands the result to set, unless the
+// returned cleanup ran first.
+function previewOnce(
+  previewRef: { current: (change: Change) => Promise<Preview> },
+  change: Change,
+  set: (previewed: { change: Change; result: Preview }) => void,
+): () => void {
+  let current = true;
+  previewRef
+    .current(change)
+    .catch((error: unknown): Preview => ({
+      objects: [],
+      errors: [{ code: "Unavailable", message: String(error) }],
+    }))
+    .then((result) => {
+      if (current) set({ change, result });
+    });
+  return () => {
+    current = false;
+  };
 }
 
 function textOf(error: ApiError): string {

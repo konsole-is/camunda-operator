@@ -1,5 +1,6 @@
 import { pathFrom, type Step } from "@/lib/fields";
 import { child, type FieldPath } from "@/lib/merge";
+import { isPartialSave } from "@/lib/write/ownership";
 import type { Preview, WriteResult } from "@/lib/write/types";
 import type { FieldError } from "./cluster";
 import { claimAfter, type PendingChange, type Session } from "./session";
@@ -19,11 +20,13 @@ export type WriteOutcome =
   | { ok: false; stale: boolean; fields: FieldError[]; messages: string[] };
 
 /**
- * outcomeOf maps a result to what the session shows. A Stale error gives
- * STALE_CLAIM_MESSAGE and nothing else. An error whose path names a pending
- * field or a field below it, with or without the leading spec, goes to that
- * pending field. An error at an object inside spec that holds pending fields
- * goes to each of them. It does not change s.
+ * outcomeOf maps a result to what the session shows. When an error is
+ * Stale, the outcome is stale and has no field error, and its messages are
+ * the message of each Stale error that isPartialSave accepts, then
+ * STALE_CLAIM_MESSAGE. An error whose path names a pending field or a field
+ * below it, with or without the leading spec, goes to that pending field.
+ * An error at an object inside spec that holds pending fields goes to each
+ * of them. It does not change s.
  */
 export function outcomeOf(
   result: WriteResult | Preview,
@@ -37,7 +40,12 @@ export function outcomeOf(
       ok: false,
       stale: true,
       fields: [],
-      messages: [STALE_CLAIM_MESSAGE],
+      messages: [
+        ...errors
+          .filter((e) => e.code === "Stale" && isPartialSave(e))
+          .map((e) => e.message),
+        STALE_CLAIM_MESSAGE,
+      ],
     };
   const fields: FieldError[] = [];
   const messages: string[] = [];
