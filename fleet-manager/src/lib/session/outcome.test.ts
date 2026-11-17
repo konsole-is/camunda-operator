@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Step } from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
+import { partialSaveMessage } from "@/lib/write/ownership";
 import { outcomeOf, STALE_CLAIM_MESSAGE } from "./outcome";
 import {
   openSession,
@@ -87,6 +88,23 @@ describe("outcomeOf", () => {
       stale: true,
       fields: [],
       messages: [STALE_CLAIM_MESSAGE],
+    });
+  });
+
+  it("Stale after a save that did not remove each field keeps the message of that save", () => {
+    const s = session();
+    const message = partialSaveMessage(
+      ref,
+      ["spec.cluster.zeebe.partitions"],
+      "The claim changed.",
+    );
+    expect(
+      outcomeOf({ ok: false, errors: [{ code: "Stale", message, ref }] }, s),
+    ).toEqual({
+      ok: false,
+      stale: true,
+      fields: [],
+      messages: [message, STALE_CLAIM_MESSAGE],
     });
   });
 

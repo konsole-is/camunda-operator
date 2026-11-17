@@ -639,6 +639,28 @@ describe("ClaimReview with fields of another tool", () => {
     ).toBe(true);
   });
 
+  it("a save that did not remove each field says what it saved, and Save stays off", async () => {
+    const message =
+      "The fleet manager saved the CamundaClusterClaim orders, but did not remove spec.cluster.zeebe.partitions. The CamundaClusterClaim orders changed since you opened it.";
+    fakeWriter.previews = [conflicted, clean];
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message, ref }] },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    fireEvent.click(await confirm("Save"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      STALE_CLAIM_MESSAGE,
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
   it("a reset of a field of another tool says that it stays, and Save is on", async () => {
     fakeWriter.previews = [
       {

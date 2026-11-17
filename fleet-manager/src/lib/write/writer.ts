@@ -25,6 +25,7 @@ import { clientSideApplyPatch } from "./merge-patch";
 import {
   foreignFields,
   offered,
+  partialSaveMessage,
   takenFields,
   withoutFields,
 } from "./ownership";
@@ -486,12 +487,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           false,
         );
       } catch (error) {
-        const paths = plan.cleared.map((f) => f.path).join(", ");
+        const paths = plan.cleared.map((f) => f.path);
         return {
           ok: false,
           errors: apiErrorsOf(error, ref, true).map((e) => ({
             ...e,
-            message: `The fleet manager saved the ${ref.kind} ${ref.name}, but did not remove ${paths}. ${e.message}`,
+            message: partialSaveMessage(ref, paths, e.message),
           })),
         };
       }

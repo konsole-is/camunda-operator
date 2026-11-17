@@ -17,15 +17,37 @@ import {
 import { equalJSON } from "@/lib/policy/json";
 import { refKey, refOf } from "./refs";
 import type {
+  ApiError,
   Change,
   ForeignField,
   ForeignManager,
   KubeObject,
   ObjectOwnership,
+  ObjectRef,
   RefKey,
 } from "./types";
 
 type JsonMap = Record<string, unknown>;
+
+const PARTIAL_SAVE = "The fleet manager saved the ";
+
+/**
+ * partialSaveMessage is the message of an error of a save that applied ref
+ * and did not remove the fields of paths. message is the error of the
+ * removal.
+ */
+export function partialSaveMessage(
+  ref: ObjectRef,
+  paths: readonly FieldPath[],
+  message: string,
+): string {
+  return `${PARTIAL_SAVE}${ref.kind} ${ref.name}, but did not remove ${paths.join(", ")}. ${message}`;
+}
+
+/** isPartialSave reports whether error has a message of partialSaveMessage. */
+export function isPartialSave(error: ApiError): boolean {
+  return error.message.startsWith(PARTIAL_SAVE);
+}
 
 /**
  * foreignFields returns the fields of spec, metadata.labels, and

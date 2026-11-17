@@ -1,7 +1,8 @@
 import { describeIsomorphic } from "../../../test/imports/scan";
 
-// Each of these is isomorphic under its own guard. @/lib/write/refs is the
-// one isomorphic module of the server-only write folder.
+// Each of these is isomorphic under its own guard. @/lib/write/refs and
+// @/lib/write/ownership are isomorphic modules of the server-only write
+// folder.
 describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/clusters/storage",
   "@/lib/drafts",
@@ -16,5 +17,6 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/planes/versions",
   "@/lib/policy",
   "@/lib/schema",
+  "@/lib/write/ownership",
   "@/lib/write/refs",
 ]);
