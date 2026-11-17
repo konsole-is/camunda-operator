@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import type { Resource } from "@/lib/k8s/kinds";
-import type { Change } from "@/lib/write/types";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { PlaneActions } from "./plane-actions";
 
 const claim = (suspend?: boolean) =>
@@ -18,8 +18,8 @@ const meta = {
   args: {
     claim: claim(),
     served: 3,
-    apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
-    preview: fn(async () => ({ objects: [], errors: [] })),
+    apply: fn(async (): Promise<WriteResult> => ({ ok: true, mode: "direct" })),
+    preview: fn(async (): Promise<Preview> => ({ objects: [], errors: [] })),
     deleteHref: "/fleet/planes/platform/plane-a/delete",
     writeMode: "direct",
     now: "2026-11-15T12:00:00Z",
@@ -99,12 +99,12 @@ export const SuspendAsksToTakeOver: Story = {
   name: "Suspend asks to take over",
   args: {
     // kubectl set spec.suspend, so a write without the take-over conflicts.
-    apply: fn(async (change: Change) =>
+    apply: fn(async (change: Change): Promise<WriteResult> =>
       change.takeOver
-        ? { ok: true as const, mode: "direct" as const }
-        : { ok: false as const, errors: [conflict] },
+        ? { ok: true, mode: "direct" }
+        : { ok: false, errors: [conflict] },
     ),
-    preview: fn(async () => ({
+    preview: fn(async (): Promise<Preview> => ({
       objects: [],
       errors: [conflict],
       ownership: [
