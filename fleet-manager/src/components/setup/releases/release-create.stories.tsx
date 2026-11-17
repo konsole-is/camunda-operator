@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { fn } from "storybook/test";
 import { imagesFixture, releaseFixtures } from "./fixtures";
-import { ReleaseCreateView } from "./release-create";
+import { ReleaseCreate } from "./release-create";
 
 const meta = {
-  title: "setup/releases/ReleaseCreateView",
-  component: ReleaseCreateView,
+  title: "setup/releases/ReleaseCreate",
+  component: ReleaseCreate,
   args: {
     sources: { ...releaseFixtures(), errors: [] },
     imagesTable: imagesFixture,
@@ -23,7 +23,7 @@ const meta = {
       })),
     },
   },
-} satisfies Meta<typeof ReleaseCreateView>;
+} satisfies Meta<typeof ReleaseCreate>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

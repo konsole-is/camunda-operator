@@ -61,7 +61,7 @@ const staleErrorOf = (namespace: string, name: string): ApiError => ({
   },
 });
 
-// StatefulTab holds the failed move, as ReleaseDetailView does.
+// StatefulTab holds the failed move, as ReleaseDetail does.
 function StatefulTab(
   props: Omit<ComponentProps<typeof RolloutTab>, "failed" | "onFailed">,
 ) {

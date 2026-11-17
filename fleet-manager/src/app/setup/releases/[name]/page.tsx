@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { ReleaseDetail } from "@/components/setup/releases/release-detail";
+import { ReleaseDetailLive } from "@/components/setup/releases/release-detail";
 import { releaseTabOf } from "@/components/setup/releases/release-tabs";
 import { getBundledData } from "@/lib/bundled";
 import { get } from "@/lib/k8s/read";
@@ -42,7 +42,7 @@ export default async function ReleasePage({
     releaseSecretNamespaces(name, sources),
   );
   return (
-    <ReleaseDetail
+    <ReleaseDetailLive
       data={{ name, sources, rollout, imagesTable, secrets }}
       tab={releaseTabOf(tab)}
       mode={mode}

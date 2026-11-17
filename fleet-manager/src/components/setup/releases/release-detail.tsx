@@ -49,8 +49,8 @@ export type ReleaseDetailData = {
   secrets: Readonly<Record<string, SecretRefs>>;
 };
 
-/** ReleaseDetail is the release page on the live sources, opened on tab. */
-export function ReleaseDetail({
+/** ReleaseDetailLive is the release page on the live sources, opened on tab. */
+export function ReleaseDetailLive({
   data,
   tab,
   mode,
@@ -64,7 +64,7 @@ export function ReleaseDetail({
   const sources = useReleaseSources(data.sources);
   const rollout = useRolloutSources(data.rollout);
   return (
-    <ReleaseDetailView
+    <ReleaseDetail
       sources={sources}
       rollout={rollout}
       name={data.name}
@@ -78,12 +78,12 @@ export function ReleaseDetail({
 }
 
 /**
- * ReleaseDetailView is the page of the release name, with a tab for each
+ * ReleaseDetail is the page of the release name, with a tab for each
  * entry of RELEASE_TABS: the Settings tab, and the Rollout tab, which moves
  * clusters to the release and is the only tab that reads rollout. A tab
  * change sets the tab query parameter without a navigation.
  */
-export function ReleaseDetailView({
+export function ReleaseDetail({
   sources,
   rollout,
   name,

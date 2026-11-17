@@ -1,4 +1,4 @@
-import { ReleaseCreate } from "@/components/setup/releases/release-create";
+import { ReleaseCreateLive } from "@/components/setup/releases/release-create";
 import { getBundledData } from "@/lib/bundled";
 import { writeMode } from "@/lib/write/writer";
 import {
@@ -28,7 +28,7 @@ export default async function NewReleasePage({
     ),
   ]);
   return (
-    <ReleaseCreate
+    <ReleaseCreateLive
       data={{
         sources,
         imagesTable,

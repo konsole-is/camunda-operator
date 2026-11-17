@@ -9,12 +9,12 @@ import { ReleaseSettings } from "./release-settings";
 import { type ReleasesData, useReleaseSources } from "./sources";
 
 /**
- * ReleaseCreate is the create page of a release on the live sources. It
+ * ReleaseCreateLive is the create page of a release on the live sources. It
  * starts as a copy of the release that from names, when it names one. A new
  * release has no user and no environment allows it yet, so its env entries
  * can name no Secret of a namespace.
  */
-export function ReleaseCreate({
+export function ReleaseCreateLive({
   data,
   mode,
   actions,
@@ -25,7 +25,7 @@ export function ReleaseCreate({
 }): ReactNode {
   const sources = useReleaseSources(data.sources);
   return (
-    <ReleaseCreateView
+    <ReleaseCreate
       sources={sources}
       imagesTable={data.imagesTable}
       from={data.from}
@@ -35,8 +35,8 @@ export function ReleaseCreate({
   );
 }
 
-/** ReleaseCreateView is the create page of a release on sources. */
-export function ReleaseCreateView({
+/** ReleaseCreate is the create page of a release on sources. */
+export function ReleaseCreate({
   sources,
   imagesTable,
   from,
