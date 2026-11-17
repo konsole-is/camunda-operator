@@ -208,6 +208,39 @@ describe("TakeOverChoice", () => {
     expect(group.textContent).not.toContain("The save removes it");
   });
 
+  it("cuts a long default value to 80 characters and gives the whole value in its title", () => {
+    const long = "x".repeat(100);
+    const ownership = [
+      owned(claim("orders"), [], [field("spec.color", kubectl)]),
+    ];
+    const { group } = show(
+      ownership,
+      true,
+      undefined,
+      takenPreview(claim("orders"), { color: long }),
+    );
+    expect(group.textContent).toContain(
+      `It gets its default value ${"x".repeat(80)}… again.`,
+    );
+    expect(within(group).getByTitle(long).textContent).toBe(
+      `${"x".repeat(80)}…`,
+    );
+  });
+
+  it("shows a default value of 80 characters whole and with no title", () => {
+    const value = "y".repeat(80);
+    const { group } = show(
+      [owned(claim("orders"), [], [field("spec.color", kubectl)])],
+      true,
+      undefined,
+      takenPreview(claim("orders"), { color: value }),
+    );
+    expect(group.textContent).toContain(
+      `It gets its default value ${value} again.`,
+    );
+    expect(within(group).queryByTitle(value)).toBeNull();
+  });
+
   it("names both outcomes of a chosen cleared field until the preview with the take-over has its object", () => {
     const ownership = [
       owned(claim("orders"), [], [field("spec.color", kubectl)]),

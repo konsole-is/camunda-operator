@@ -255,21 +255,29 @@ function removal(field: ForeignField, final: unknown): ReactNode {
   if (value === undefined) return "The save removes it.";
   if (typeof value === "object" && value !== null)
     return "It gets its default value again.";
+  const text =
+    typeof value === "string" && value !== "" ? value : JSON.stringify(value);
+  const chars = [...text];
+  const long = chars.length > VALUE_CHARS;
   return (
     <>
       It gets its default value{" "}
-      <Path>
-        {typeof value === "string" && value !== ""
-          ? value
-          : JSON.stringify(value)}
+      <Path title={long ? text : undefined}>
+        {long ? `${chars.slice(0, VALUE_CHARS).join("")}…` : text}
       </Path>{" "}
       again.
     </>
   );
 }
 
-function Path({ children }: { children: string }) {
-  return <span className="font-mono break-all text-text">{children}</span>;
+const VALUE_CHARS = 80;
+
+function Path({ children, title }: { children: string; title?: string }) {
+  return (
+    <span title={title} className="font-mono break-all text-text">
+      {children}
+    </span>
+  );
 }
 
 // A list names each path once, so the server cannot tell two fields of one
