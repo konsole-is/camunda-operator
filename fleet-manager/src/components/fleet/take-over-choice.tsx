@@ -20,12 +20,12 @@ const TITLE = "Fields that another tool set";
 /**
  * TakeOverChoice shows the fields of other field managers that a save changes
  * or clears, from Preview.ownership, with one checkbox that takes them over.
- * The cleared fields of an operator controller stay, and one quiet line names
- * each controller of an object with its fields. It heads the fields of each
- * object with labelOf when ownership holds more than one object. It offers no
- * checkbox when no field is offered, or when a path names more than one field
- * of an object, because the server refuses that take-over. onChoose gets the
- * new state of the checkbox. The caller holds chosen, and must reset it for
+ * The cleared fields of an operator controller stay, and one quiet line for
+ * each set of controllers of an object names its fields. It heads the fields of
+ * each object with labelOf when ownership holds more than one object. It offers
+ * no checkbox when no field is offered, or when a path names more than one
+ * field of an object, because the server refuses that take-over. onChoose gets
+ * the new state of the checkbox. The caller holds chosen, and must reset it for
  * each new change. taken is the preview of the change with the take-over.
  * Without the object in taken, a chosen cleared row says that the save removes
  * the field or that the field gets its default value again.
@@ -295,7 +295,7 @@ function ambiguousPaths(object: ObjectOwnership): string[] {
 }
 
 // A cleared field of the operator stays, and the operator sets it again,
-// so one line for each controller names its fields instead of one row each.
+// so one line for each set of controllers names its fields, not a row each.
 function kept(object: ObjectOwnership): { names: string; paths: string[] }[] {
   const lines = new Map<string, Set<string>>();
   for (const field of object.cleared.filter((f) => !offered(f))) {

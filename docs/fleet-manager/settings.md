@@ -116,7 +116,7 @@ The review asks on every save. The fleet manager does not keep the choice for a 
 
 One review does not ask. When the Environments page adds a namespace to an environment, the labels and annotations that other tools set on the namespace stay.
 
-The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and **Save** stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays. The review names such fields in one muted line for each controller, with no choice:
+The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and **Save** stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays. The review names such fields in muted lines, with no choice. Each line names the controllers that set its fields:
 
 ```text
 camunda-operator/databaseserver-recovery of the operator sets this field. It stays: spec.pitr.lastRecovery.
