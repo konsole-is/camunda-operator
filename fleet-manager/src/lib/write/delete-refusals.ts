@@ -1,7 +1,8 @@
 import "server-only";
 import type { z } from "zod";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { listEach } from "@/lib/k8s/list-each";
+import { loadSnapshot } from "@/lib/k8s/snapshot";
+import { messageOf } from "@/lib/text";
 import { type DeleteBlock, deleteRefusalText } from "@/lib/usage";
 import type { ApiError, Change, ObjectRef } from "./types";
 
@@ -43,15 +44,15 @@ export async function deleteRefusals<
   const deletes = parsed.success ? (parsed.data.delete ?? []) : [];
   if (deletes.length === 0) return [];
   const needed = new Set(deletes.flatMap(rule.needs));
-  const read = await listEach(
+  const { readErrors, ...read } = await loadSnapshot(
     Object.fromEntries(
       Object.entries(rule.kinds).filter(([, kind]) => needed.has(kind)),
     ),
   );
   const lists = Object.fromEntries(
-    Object.keys(rule.kinds).map((key) => [key, read.lists[key] ?? []]),
+    Object.keys(rule.kinds).map((key) => [key, read[key] ?? []]),
   ) as DeleteLists<M>;
-  const unread = read.readErrors.map((e) => e.kind);
+  const unread = readErrors.map((e) => e.kind);
   const refusal = (ref: ObjectRef, message: string): ApiError => ({
     code: "Forbidden",
     message,
@@ -64,11 +65,10 @@ export async function deleteRefusals<
       return block ? [refusal(ref, deleteRefusalText(block))] : [];
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
     return deletes.map((ref) =>
       refusal(
         ref,
-        `Could not check the users of ${ref.kind} ${ref.name}: ${message}`,
+        `Could not check the users of ${ref.kind} ${ref.name}: ${messageOf(err)}`,
       ),
     );
   }
