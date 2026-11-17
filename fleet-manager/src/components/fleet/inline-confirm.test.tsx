@@ -46,4 +46,29 @@ describe("InlineConfirm", () => {
     await userEvent.click(button("Delete"));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it("shows children, keeps the confirm off while confirmDisabled, and calls onCancel on Cancel", async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <InlineConfirm
+        triggerLabel="Resume"
+        confirmLabel="Resume the plane"
+        goes={[]}
+        defaultOpen
+        confirmDisabled
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      >
+        <p>A choice first</p>
+      </InlineConfirm>,
+    );
+    const group = screen.getByRole("group", { name: "Resume" });
+    expect(group.textContent).toContain("A choice first");
+    expect(group.textContent).not.toContain("What goes");
+    expect(button("Resume the plane").disabled).toBe(true);
+    await userEvent.click(button("Cancel"));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
