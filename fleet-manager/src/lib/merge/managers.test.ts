@@ -549,6 +549,8 @@ describe("isKnownManager", () => {
     ["kubectl-patch", true],
     ["kubectl-create", true],
     ["kubectl-replace", true],
+    ["kubectl-label", true],
+    ["kubectl-annotate", true],
     ["helm", true],
     ["fleet-manager", true],
     ["camunda-operator/camundacluster", true],
