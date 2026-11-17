@@ -553,8 +553,7 @@ function lockedFields(
 
 // useClaimTabLists follows the lists of data.claimTab live. unread names
 // each kind whose read failed or whose list is not current, and waiting the
-// kinds whose list is not current, by the rule of the cluster page. Before
-// its first answer, a list is the read of the server.
+// kinds whose list is not current, by the rule of the cluster page.
 function useClaimTabLists(data: PlanePageData) {
   const initial = data.claimTab;
   const { namespace, name } = data;

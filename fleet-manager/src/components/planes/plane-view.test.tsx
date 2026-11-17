@@ -18,8 +18,12 @@ import { type PlanePageData, PlaneView } from "./plane-view";
 
 // live holds what the mocked watches report. useResource reports the
 // snapshot of the server for a kind that live.objects does not name.
+// useResources reports the list of live.cached, as the query cache does when
+// an earlier visit left the list of the kind there, else the server
+// snapshot.
 const live = vi.hoisted(() => ({
   objects: new Map<string, unknown>(),
+  cached: new Map<string, unknown[]>(),
   errors: new Map<string, string>(),
   fresh: new Set<string>(),
   overdue: new Set<string>(),
@@ -29,7 +33,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: initial,
+    items: live.cached.get(kind) ?? initial,
     ...(live.errors.has(kind) && { error: live.errors.get(kind) }),
   }),
   useResource: (kind: string, _ref: unknown, initial?: unknown) => ({
@@ -58,6 +62,7 @@ const now = "2026-11-15T12:00:00Z";
 
 beforeEach(() => {
   live.objects = new Map();
+  live.cached = new Map();
   live.errors = new Map();
   live.fresh = new Set();
   live.overdue = new Set();
@@ -527,6 +532,33 @@ describe("PlaneView", () => {
       expect(
         screen.getByText(
           "The page could not read CamundaOptimize, so this tab can be incomplete or out of date.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it("does not say that the contract is missing while the list of an earlier visit waits for an overdue snapshot", () => {
+      window.history.replaceState(null, "", "?tab=contract");
+      const plane = planeOf();
+      plane.status = { ...plane.status, managementAuthConfig: "plane-a" };
+      const contract = {
+        apiVersion: "core.camunda.io/v1",
+        kind: "ManagementAuthConfig",
+        metadata: { namespace: "platform", name: "plane-a" },
+        spec: {},
+      } as unknown as Resource<"ManagementAuthConfig">;
+      // The server read has the contract. The cache still holds the empty
+      // list of an earlier visit, and the watch has not answered since.
+      live.cached.set("ManagementAuthConfig", []);
+      live.overdue.add("ManagementAuthConfig");
+      render(
+        <PlaneView data={data({ plane, managementAuthConfigs: [contract] })} />,
+      );
+      expect(
+        screen.queryByText("The contract plane-a does not exist."),
+      ).toBeNull();
+      expect(
+        screen.getByText(
+          "The page could not read ManagementAuthConfig, so this tab can be incomplete or out of date.",
         ),
       ).toBeTruthy();
     });

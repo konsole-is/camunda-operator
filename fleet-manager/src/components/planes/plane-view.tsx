@@ -204,20 +204,14 @@ export function PlaneView({
   const fresh = useWatchesFresh(followed);
   const overdue = useWatchesOverdue(followed);
   const errors = currentReadErrors(liveErrors, data.readErrors, answered);
-  // A watch that answered once and then lost its connection keeps its last
-  // items, which can be out of date. Before its first answer, the page
-  // shows the read of the server.
-  const reads: SourceReads = {
-    errors,
-    stale: followed
-      .filter(({ kind }, i) => answered.has(kind) && !fresh[i])
-      .map(({ kind }) => kind),
-  };
-  // The Claim tab takes the rule of the cluster page: a list that never
-  // answered is not current once its snapshot is overdue.
-  const claimStale = followed
+  // A list is not current when its watch answered and is not fresh, or
+  // never answered and is overdue, as on the cluster page. Before its
+  // first answer, a list can also be the cache of an earlier visit, which
+  // has no time limit.
+  const stale = followed
     .filter(({ kind }, i) => (answered.has(kind) ? !fresh[i] : overdue[i]))
     .map(({ kind }) => kind);
+  const reads: SourceReads = { errors, stale };
   const unreadOf = (kinds: readonly KindName[]) =>
     unreadKinds(reads).filter((k) => kinds.includes(k as KindName));
   const unread = (kind: KindName) => errors.some((e) => e.kind === kind);
@@ -376,8 +370,8 @@ export function PlaneView({
         namespaces={namespaces.items}
         environments={environments.items}
         optimizes={optimizes.items}
-        pageUnread={[...new Set([...unreadKinds(reads), ...claimStale])]}
-        pageStale={claimStale}
+        pageUnread={unreadKinds(reads)}
+        pageStale={stale}
         writeMode={writeMode}
         actions={claimActions}
       >

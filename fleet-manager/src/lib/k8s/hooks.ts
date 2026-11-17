@@ -24,7 +24,9 @@ export interface Ref {
 
 /**
  * useResources returns the objects of kind that opts select. It returns
- * initial, the snapshot of the server render, at once. It then follows
+ * initial, the snapshot of the server render, at once, unless an earlier
+ * hook of the same kind and filter left its list in the cache: it then
+ * returns that list, which can be old, until the next snapshot. It follows
  * /api/watch: each snapshot frame replaces the list, also after a
  * reconnect, and each delta changes it. When the first list of the kind on
  * the server fails, error holds its message and items keep the last list,
