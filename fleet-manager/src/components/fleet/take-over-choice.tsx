@@ -105,9 +105,9 @@ export function TakeOverChoice({
                 </span>
               ) : (
                 <span>
-                  <Path>{name}</Path> changed an object that a GitOps tool
-                  manages. On its next sync the GitOps tool can set its own
-                  value again, unless the source in Git changes too.
+                  <Path>{name}</Path> set a field of an object that a GitOps
+                  tool manages. On its next sync the GitOps tool can set its
+                  own value again, unless the source in Git changes too.
                 </span>
               )}
             </li>

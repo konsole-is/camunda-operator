@@ -174,16 +174,35 @@ describe("TakeOverChoice", () => {
     expect(within(group).getByRole("checkbox")).toBeTruthy();
   });
 
-  it("says that a tool whose name is no GitOps tool changed an object that a GitOps tool manages", () => {
+  it("says that a tool whose name is no GitOps tool set a field of an object that a GitOps tool manages", () => {
     const { group } = show([
       owned(environment, [
         field("spec.displayName", { ...edit, kind: "gitops" }),
       ]),
     ]);
     expect(group.textContent).toContain(
-      "kubectl-edit changed an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
+      "kubectl-edit set a field of an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
     );
     expect(group.textContent).not.toContain("kubectl-edit is a GitOps tool");
+  });
+
+  it("does not say that the GitOps tool of the fleet manager changed the object when its name is no GitOps tool", () => {
+    // kubectl in a CI job that applies the Git repository of the fleet
+    // manager is the GitOps tool, found by the revision annotation.
+    const { group } = show([
+      owned(environment, [
+        field("spec.displayName", {
+          name: "kubectl",
+          operation: "Apply",
+          kind: "gitops",
+          known: true,
+        }),
+      ]),
+    ]);
+    expect(group.textContent).toContain(
+      "kubectl set a field of an object that a GitOps tool manages. On its next sync the GitOps tool can set its own value again, unless the source in Git changes too.",
+    );
+    expect(group.textContent).not.toContain("changed an object");
   });
 
   it("warns only about a tool that a row names", () => {
@@ -306,6 +325,7 @@ describe("TakeOverChoice", () => {
     );
     expect(group.textContent).not.toContain(BLOCKED);
   });
+
 });
 
 describe("takeOverOpen", () => {
