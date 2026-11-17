@@ -548,6 +548,28 @@ describe("PlaneActions with a field of another tool", () => {
     expect(screen.getByText("The plane changed.")).toBeTruthy();
   });
 
+  it("Suspend clears the line that the plane changed", async () => {
+    const { rerender } = await asked();
+    rerender({ claim: claimOf({}, "8", ownedBy("helm")) });
+    await userEvent.click(button("Suspend"));
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+    expect(button("Suspend the management plane")).toBeTruthy();
+  });
+
+  it("Resume clears the line that the plane changed", async () => {
+    const { apply, rerender } = await asked();
+    apply.mockReturnValueOnce(new Promise(() => {}));
+    rerender({
+      claim: claimOf({ suspend: true }, "8", {
+        ...ownedBy("kubectl"),
+        generation: 4,
+      }),
+    });
+    expect(screen.getByText("The plane changed.")).toBeTruthy();
+    await userEvent.click(button("Resume"));
+    expect(screen.queryByText(/The plane changed/)).toBeNull();
+  });
+
   it("Cancel closes the take-over and writes nothing more", async () => {
     const { apply } = conflicted();
     await userEvent.click(button("Suspend"));

@@ -48,8 +48,8 @@ import type {
  * once takeOverOpen is false. The choice starts off for each write. A
  * change of metadata.generation of the claim, or of the managers of
  * spec.suspend, closes that confirm and drops the choice. A line then says
- * that the plane changed, until a write starts. Otherwise the refusal shows
- * as before.
+ * that the plane changed, until a write starts or the Suspend confirm
+ * opens. Otherwise the refusal shows as before.
  */
 export function PlaneActions({
   claim,
@@ -102,7 +102,7 @@ export function PlaneActions({
   const generation = claim.metadata?.generation;
   const owners = suspendOwners(claim);
   const [takeOver, setTakeOver] = useState<TakeOver>();
-  // The choice that a take-over dropped, until a write starts.
+  // The choice that a take-over dropped, until a write or a confirm starts.
   const [dropped, setDropped] = useState<boolean>();
   if (
     takeOver !== undefined &&
@@ -236,6 +236,7 @@ export function PlaneActions({
             confirmLabel="Suspend the management plane"
             goes={goes}
             stays={stays}
+            onOpen={() => setDropped(undefined)}
             onConfirm={() => void write(true)}
           />
         )}
