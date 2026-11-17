@@ -765,8 +765,13 @@ describe("directWriter with a take-over", () => {
 
     const result = await directWriter(apiConfig).apply({
       intent: "Rename",
+      // The take-over row sends sections, so only keep makes its list wrong.
       apply: [
-        environment({ displayName: list === "takeOver" ? "Prod" : "Stage" }),
+        environment(
+          list === "takeOver"
+            ? { displayName: "Prod", sections: { gone: { required: true } } }
+            : { displayName: "Stage" },
+        ),
       ],
       preconditions: { [key]: "7" },
       [list]: { [key]: [path] },
