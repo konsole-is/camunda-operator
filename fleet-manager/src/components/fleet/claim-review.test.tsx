@@ -408,7 +408,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
       ),
     );
     expect((await confirm("Push to Git")).disabled).toBe(false);
@@ -455,7 +455,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
       ),
     );
   });
@@ -504,7 +504,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
       ),
     );
   });

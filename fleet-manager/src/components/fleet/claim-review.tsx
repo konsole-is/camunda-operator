@@ -366,7 +366,7 @@ function keptResets(s: Session, preview: Preview): string[] {
     })
     .map(
       (entry) =>
-        `Another field manager keeps ${entry.path}, so the reset does not remove it.`,
+        `Another tool keeps ${entry.path}, so the reset does not remove it.`,
     );
 }
 
