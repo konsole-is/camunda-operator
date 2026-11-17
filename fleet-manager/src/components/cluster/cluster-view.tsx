@@ -7,6 +7,7 @@ import {
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
@@ -19,6 +20,7 @@ import {
   useWatchesOverdue,
 } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -52,7 +54,6 @@ import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
 import { ComponentSettings } from "./component-settings";
-import { NotRead } from "@/components/fleet/not-read";
 import { endpointRows } from "./endpoints";
 import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
@@ -72,7 +73,6 @@ import type { ClusterSlotContext, ClusterSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
-import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
 
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced

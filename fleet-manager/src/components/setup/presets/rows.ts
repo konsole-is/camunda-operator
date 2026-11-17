@@ -1,8 +1,8 @@
-import { type ReadError, unreadDeleteText } from "@/lib/k8s/unread";
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { KindName } from "@/lib/k8s/kinds";
+import { type ReadError, unreadDeleteText } from "@/lib/k8s/unread";
 import { presetDescription } from "@/lib/labels";
 import { lastChanged } from "@/lib/merge";
 import { byCodeUnit } from "@/lib/policy";

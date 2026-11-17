@@ -12,7 +12,6 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
-import type { ReadError } from "@/lib/k8s/unread";
 import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
@@ -32,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { hostConflicts, renderHosts, takenHosts } from "@/lib/claims/hosts";
 import { claimNameErrors, namesIn } from "@/lib/claims/names";
 import { grantPreviews } from "@/lib/claims/templates";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 import { clusterFields, pathFrom, type Step } from "@/lib/fields";
 import {

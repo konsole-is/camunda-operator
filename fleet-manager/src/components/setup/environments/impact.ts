@@ -1,5 +1,5 @@
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
+import type { ReadError } from "@/lib/k8s/unread";
 import {
   ALLOW_VERSION_DOWNGRADE_ANNOTATION,
   CLAIM_LABEL,

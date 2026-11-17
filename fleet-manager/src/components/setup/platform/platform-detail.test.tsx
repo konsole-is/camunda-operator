@@ -13,8 +13,8 @@ import {
   SecretRefsReaderContext,
   staticSecretRefs,
 } from "@/components/fleet/namespaced-secret-ref-picker";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";

@@ -1,7 +1,6 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
@@ -10,6 +9,7 @@ import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster
 import type { Environment } from "@/generated/crds/environment";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { RELEASE_SOURCE_KINDS } from "./source-kinds";
 
 /** ReleasesData holds every list that the release pages read, in all namespaces. */

@@ -1,10 +1,8 @@
 import "server-only";
-import type {
-  FleetPageData,
-  ReadError,
-} from "@/components/fleet-view/fleet-view";
+import type { FleetPageData } from "@/components/fleet-view/fleet-view";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 
 /**
  * loadFleetPage reads the first snapshot of the fleet page from the cache of

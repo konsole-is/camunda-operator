@@ -47,8 +47,6 @@ import {
 } from "./model";
 import { MissingSources } from "./warning-chips";
 
-export type { ReadError };
-
 /**
  * FleetPageData is the first snapshot of the fleet page. readErrors holds
  * the kinds whose first read failed.

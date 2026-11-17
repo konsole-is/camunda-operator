@@ -1,6 +1,7 @@
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 import { REQUEST_LABEL } from "@/lib/labels";
 import { byCodeUnit } from "@/lib/policy/json";
 import { environmentOf } from "@/lib/policy/environment";
@@ -14,7 +15,6 @@ import {
   isText,
   itemsOf,
 } from "./values";
-import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
 
 /** ResourceRef is one resource that a plugin reports for a request. */
 export type ResourceRef = NonNullable<

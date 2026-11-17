@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Term, Terms } from "@/components/cluster/claim-tab";
+import { NotRead } from "@/components/fleet/not-read";
 import {
   Table,
   TableBody,
@@ -10,7 +11,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Resource } from "@/lib/k8s/kinds";
-import { NotRead } from "@/components/fleet/not-read";
 
 const NOT_SET = <span className="text-muted">Not set</span>;
 

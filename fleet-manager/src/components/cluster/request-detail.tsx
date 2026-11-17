@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { age } from "@/components/fleet/age";
 import { ConditionList } from "@/components/fleet/condition-list";
 import { DELETION_LABELS } from "@/components/fleet/deletion-choice";
+import { NotRead } from "@/components/fleet/not-read";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import {
@@ -23,7 +24,6 @@ import { cn } from "@/lib/utils";
 import { Term, Terms } from "./claim-tab";
 import { SeverityMark } from "./component-card";
 import { DetailSection } from "./detail-section";
-import { NotRead } from "@/components/fleet/not-read";
 import type {
   ConnectedRef,
   GrantRow,

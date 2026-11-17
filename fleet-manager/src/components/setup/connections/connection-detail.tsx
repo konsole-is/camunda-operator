@@ -8,6 +8,8 @@ import { ChangeReview } from "@/components/fleet/change-review";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
+import { EditorSection } from "@/components/setup/form-parts";
+import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import {
   type ReadError,
   type SourceReads,
@@ -15,8 +17,6 @@ import {
   unreadDeleteText,
   unreadKinds,
 } from "@/lib/k8s/unread";
-import { EditorSection } from "@/components/setup/form-parts";
-import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import {
   type ContractRef,
   contractKey,

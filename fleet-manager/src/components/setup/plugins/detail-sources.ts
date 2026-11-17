@@ -1,10 +1,10 @@
 "use client";
 
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { REGISTRATION_LABEL } from "@/lib/labels";
 import { regards } from "@/lib/observe/events";
 import { type RegistrationSources, useRegistrationSources } from "./sources";

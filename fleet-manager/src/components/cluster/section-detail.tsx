@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import type { SectionComponent } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
 import { labelSelectorString } from "@/lib/labels";
 import { conditionsOf } from "@/lib/policy";
 import { ComponentDetail } from "./component-detail";
-import { NotRead } from "@/components/fleet/not-read";
 
 /**
  * SectionComponentDetail is the component detail of a selection of the

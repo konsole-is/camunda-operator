@@ -8,6 +8,7 @@ import { ComponentCards } from "@/components/cluster/component-card";
 import { EndpointsTab } from "@/components/cluster/endpoints-tab";
 import type { ClaimActions } from "@/components/fleet/claim-edit";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { useClock } from "@/components/fleet/use-clock";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +23,12 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { planeFields } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import {
+  currentReadErrors,
+  type ReadError,
+  type SourceReads,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import { CLAIM_LABEL, isManaged, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 import { usePodUsage } from "@/lib/observe/use-observe";
@@ -46,15 +53,8 @@ import { planeEndpointRows } from "./plane-endpoints";
 import { contractReaders, isOidc, optimizeRows } from "./plane-optimize";
 import { PlaneHeader } from "./plane-header";
 import { PLANE_TABS, type PlaneTab, planeTabOf } from "./plane-tabs";
-import {
-  currentReadErrors,
-  type ReadError,
-  type SourceReads,
-  unreadKinds,
-} from "@/lib/k8s/unread";
 import { servedClusters } from "./served-clusters";
 import { ServedClustersTab } from "./served-clusters-tab";
-import { NotRead, notReadText } from "@/components/fleet/not-read";
 
 /**
  * PlanePageData is the first snapshot of the plane page. plane is undefined

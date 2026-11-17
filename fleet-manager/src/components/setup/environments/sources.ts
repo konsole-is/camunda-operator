@@ -1,7 +1,6 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
@@ -17,6 +16,7 @@ import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { SOURCE_KINDS } from "./source-kinds";
 
 /** EnvironmentSources holds every list that the Environments page reads, in all namespaces. */

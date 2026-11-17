@@ -5,12 +5,12 @@ import { type ReactNode, useState } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { type ConditionLike, describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type ReadError,
   type SourceReads,
   unreadKinds,
 } from "@/lib/k8s/unread";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { byCodeUnit, readyOf } from "@/lib/policy";
 import {
   type ContractKind,

@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import { LimitsList } from "@/components/fleet/limits-list";
-import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { NotRead } from "@/components/fleet/not-read";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { LINK, ValueError } from "./tab-parts";
 import { isRecord, isText, listOf } from "./values";
 

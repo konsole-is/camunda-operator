@@ -2,8 +2,8 @@
 
 import { type ReactNode, useState } from "react";
 import { useClock } from "@/components/fleet/use-clock";
-import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import { AboutTab } from "./about-tab";
 import { contractOf } from "./contract";
 import { ContractTab } from "./contract-tab";

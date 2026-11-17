@@ -1,5 +1,5 @@
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 
 /**
  * PlaneClaimTabData holds the lists that the Claim tab of a plane reads

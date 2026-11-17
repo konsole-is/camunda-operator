@@ -1,5 +1,4 @@
 // This module runs in the browser and on the server.
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
@@ -10,6 +9,7 @@ import {
 } from "@/lib/claims/deletion";
 import type { SectionClaim } from "@/lib/claims/sections";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import {

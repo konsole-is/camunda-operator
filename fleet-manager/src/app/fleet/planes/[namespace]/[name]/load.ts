@@ -1,9 +1,9 @@
 import "server-only";
 import type { PlaneClaimTabData } from "@/components/planes/claim/data";
 import type { PlanePageData } from "@/components/planes/plane-view";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { get, list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 import { CLAIM_LABEL, MANAGEMENT_CLUSTER_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 

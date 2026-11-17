@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import { resourceFate } from "@/lib/claims/resources";
 import { ConditionBadge } from "./condition-badge";
-import { NotRead } from "@/components/fleet/not-read";
 import { LINK, ValueError } from "./tab-parts";
 import type { UsedByRow } from "./used-by";
 

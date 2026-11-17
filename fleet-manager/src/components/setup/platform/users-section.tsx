@@ -3,8 +3,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { EditorSection } from "@/components/setup/form-parts";
-import { platformUserCount, type PlatformUsers } from "@/lib/usage";
 import { unknownUsersText } from "@/lib/k8s/unread";
+import { platformUserCount, type PlatformUsers } from "@/lib/usage";
 
 type Item = { key: string; content: ReactNode };
 

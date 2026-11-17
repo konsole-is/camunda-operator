@@ -1,9 +1,9 @@
 "use client";
 
 import { DataTable } from "@/components/fleet/data-table";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { byCodeUnit } from "@/lib/policy";
 import type { ServedCluster } from "./served-clusters";
-import { NotRead, notReadText } from "@/components/fleet/not-read";
 
 const NO_ENVIRONMENT = "No environment";
 const NOT_KNOWN = "Not known";

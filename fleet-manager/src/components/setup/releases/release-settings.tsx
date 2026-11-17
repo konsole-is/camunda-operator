@@ -12,12 +12,6 @@ import {
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import {
-  type ReadError,
-  type SourceReads,
-  unreadDeleteText,
-  unreadKinds,
-} from "@/lib/k8s/unread";
-import {
   EditorSection,
   SelectField,
   TextField,
@@ -27,8 +21,14 @@ import type {
   CamundaRelease,
   CamundaReleaseSpec,
 } from "@/generated/crds/camundarelease";
-import type { ValidationError } from "@/lib/schema";
+import {
+  type ReadError,
+  type SourceReads,
+  unreadDeleteText,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import { minorOf } from "@/lib/merge";
+import type { ValidationError } from "@/lib/schema";
 import { releaseUsage } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";

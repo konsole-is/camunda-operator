@@ -1,9 +1,9 @@
 "use client";
 
-import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { PRESET_SOURCE_KINDS } from "./source-kinds";
 
@@ -26,7 +26,8 @@ export type PresetActions = {
 /**
  * usePresetSources follows each list of initial live. errors holds each
  * failed watch, and a failed server read until its watch sends a list, in
- * the order of the lists. pending holds each other kind whose watch is not fresh (freshKey).
+ * the order of the lists. pending holds each other kind whose watch is not
+ * fresh (freshKey).
  */
 export function usePresetSources(
   initial: PresetSnapshot,

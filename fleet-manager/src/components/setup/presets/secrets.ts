@@ -1,7 +1,7 @@
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { ReadError } from "@/lib/k8s/unread";
 import { byCodeUnit, environmentOf, isObject } from "@/lib/policy";
 import type { KindName } from "@/lib/k8s/kinds";
 import { allowedIn, type PresetKind, presetUsers } from "@/lib/usage";

@@ -2,6 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
+import { NotRead } from "@/components/fleet/not-read";
 import {
   DOT_TONE,
   type StatusTone,
@@ -25,7 +26,6 @@ import {
   type RestoreRow,
   type ScheduleView,
 } from "./backups";
-import { NotRead } from "@/components/fleet/not-read";
 
 const PANEL =
   "flex flex-col gap-3 rounded-lg border border-border bg-panel p-4";

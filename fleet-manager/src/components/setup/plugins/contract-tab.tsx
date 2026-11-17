@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Panel } from "@/components/cluster/claim-tab";
+import { NotRead } from "@/components/fleet/not-read";
 import {
   Table,
   TableBody,
@@ -10,7 +11,6 @@ import {
 } from "@/components/ui/table";
 import type { ContractInput, ContractOutput, ContractView } from "./contract";
 import { fillsText } from "./groups";
-import { NotRead } from "@/components/fleet/not-read";
 import { ValueError } from "./tab-parts";
 import { type Invalid, isInvalid } from "./values";
 

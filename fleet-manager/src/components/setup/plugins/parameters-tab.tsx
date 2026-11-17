@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import type { PolicyResult } from "@/lib/policy/types";
 import type { ParameterRow } from "./parameters";
-import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { ValueError } from "./tab-parts";
 
 /**

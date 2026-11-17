@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
-import type { ReadError, SourceReads } from "@/lib/k8s/unread";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ReadError, SourceReads } from "@/lib/k8s/unread";
 import type {
   Change,
   Preview,

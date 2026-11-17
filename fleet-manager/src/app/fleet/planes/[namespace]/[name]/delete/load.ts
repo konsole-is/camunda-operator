@@ -1,8 +1,8 @@
 import "server-only";
 import type { DeletePlaneData } from "@/components/planes/delete-plane-model";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { KindName } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 
 /**
  * loadDeletePlanePage reads the first snapshot of the delete page of a

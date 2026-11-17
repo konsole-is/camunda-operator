@@ -14,8 +14,8 @@ import {
   SecretRefsReaderContext,
   staticSecretRefs,
 } from "@/components/fleet/namespaced-secret-ref-picker";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { ContractRef } from "@/lib/usage";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { type ContractActions, ConnectionDetail } from "./connection-detail";

@@ -1,3 +1,4 @@
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import {
@@ -9,7 +10,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { OptimizeRow } from "./plane-optimize";
-import { NotRead, notReadText } from "@/components/fleet/not-read";
 
 /**
  * OptimizeTab is the Optimize tab of a plane: the state of callbacks once,

@@ -10,8 +10,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
-import type { ReadError } from "@/lib/k8s/unread";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { WriteMode, WriteResult } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
 import { presetFixtures } from "./fixtures";

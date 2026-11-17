@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Panel, Term, Terms } from "@/components/cluster/claim-tab";
 import { ConditionList } from "@/components/fleet/condition-list";
+import { NotRead } from "@/components/fleet/not-read";
 import type { Grant } from "@/generated/crds/grant";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import { ConditionBadge } from "./condition-badge";
@@ -16,7 +17,6 @@ import {
   grantTemplates,
   refusalText,
 } from "./grants";
-import { NotRead } from "@/components/fleet/not-read";
 import { ValueError } from "./tab-parts";
 
 /**

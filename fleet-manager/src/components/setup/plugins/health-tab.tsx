@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { Panel } from "@/components/cluster/claim-tab";
 import { ConditionsTable } from "@/components/fleet/conditions-table";
 import { EventList } from "@/components/fleet/event-list";
+import { NotRead } from "@/components/fleet/not-read";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { Resource } from "@/lib/k8s/kinds";
-import { NotRead } from "@/components/fleet/not-read";
 import { ValueError } from "./tab-parts";
 import { conditionsOf } from "./values";
 
