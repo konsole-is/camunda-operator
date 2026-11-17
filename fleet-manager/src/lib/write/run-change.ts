@@ -60,6 +60,26 @@ const fieldListSchema = z
   .record(refKeySchema, z.array(z.string().min(1)).min(1))
   .optional();
 
+// A client sends keep, so the schema bounds it.
+const MAX_KEEP_PATHS = 64;
+
+const keepListSchema = z
+  .record(
+    refKeySchema,
+    z
+      .array(
+        z
+          .string()
+          .min(1)
+          .refine((path) => !path.includes("["), {
+            message: "keep names paths through maps only, not a list item.",
+          }),
+      )
+      .min(1)
+      .max(MAX_KEEP_PATHS),
+  )
+  .optional();
+
 // takeOverIssues gives the issues of the field list name of c: each key
 // names an applied object with a precondition, no field twice.
 function takeOverIssues(
@@ -71,18 +91,23 @@ function takeOverIssues(
   const applied: string[] = c.apply.map((o) => refKey(refOf(o)));
   const keys = Object.keys(lists) as RefKey[];
   const issues = [];
+  const keep = name === "keep";
   if (
     !keys.every(
       (key) => applied.includes(key) && c.preconditions?.[key] !== undefined,
     )
   )
     issues.push({
-      message: "A take-over names an object that the change updates.",
+      message: keep
+        ? "keep names an object that the change updates."
+        : "A take-over names an object that the change updates.",
       path: [name],
     });
   if (keys.some((key) => new Set(lists[key]).size !== lists[key].length))
     issues.push({
-      message: "A take-over lists each field once.",
+      message: keep
+        ? "keep lists each path once."
+        : "A take-over lists each field once.",
       path: [name],
     });
   return issues;
@@ -93,8 +118,9 @@ function takeOverIssues(
  * apply or delete. Each key of create names an applied object that has no
  * precondition. Each key of uids and of generations names a deleted object.
  * Each key of takeOver, remove, and keep names an applied object with a
- * precondition, and lists each field once. A change with a list has no
- * force.
+ * precondition, and lists each field once. A change with takeOver or
+ * remove does not set force, not even to false. keep holds at most 64
+ * paths for an object, and no path of a list item.
  */
 export const changeSchema: z.ZodType<Change> = z
   .object({
@@ -108,7 +134,7 @@ export const changeSchema: z.ZodType<Change> = z
     force: z.boolean().optional(),
     takeOver: fieldListSchema,
     remove: fieldListSchema,
-    keep: fieldListSchema,
+    keep: keepListSchema,
     directOnly: z.boolean().optional(),
   })
   .superRefine((c, ctx) => {

@@ -1804,6 +1804,53 @@ describe("take-over lists", () => {
     ]);
   });
 
+  it("words the issues of keep as keep", () => {
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        keep: { [envKey]: ["spec.sections"] },
+      }),
+    ).toEqual([
+      {
+        message: "keep names an object that the change updates.",
+        path: "keep",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...update,
+        keep: { [envKey]: ["spec.sections", "spec.sections"] },
+      }),
+    ).toEqual([{ message: "keep lists each path once.", path: "keep" }]);
+  });
+
+  it("refuses a keep path of a list item", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        keep: { [envKey]: ["spec.sections", "spec.extraEnv[name=TZ]"] },
+      }),
+    ).toEqual([
+      {
+        message: "keep names paths through maps only, not a list item.",
+        path: `keep.${envKey}.1`,
+      },
+    ]);
+  });
+
+  it("refuses more than 64 keep paths for an object", () => {
+    const paths = (n: number) =>
+      Array.from({ length: n }, (_, i) => `spec.sections.s${i}`);
+    expect(
+      changeSchema.safeParse({ ...update, keep: { [envKey]: paths(64) } })
+        .success,
+    ).toBe(true);
+    expect(
+      changeSchema.safeParse({ ...update, keep: { [envKey]: paths(65) } })
+        .success,
+    ).toBe(false);
+  });
+
   it("refuses an empty list and an empty path", () => {
     expect(
       changeSchema.safeParse({ ...update, takeOver: { [envKey]: [] } }).success,

@@ -80,6 +80,7 @@ export function foreignFields(
   const changed: ForeignField[] = [];
   const cleared: ForeignField[] = [];
   const managersOf = (owners: FieldOwner[]) => foreignManagers(owners, live);
+  const keeps = new Set(keep);
 
   const visit = (
     node: OwnerTree,
@@ -89,7 +90,7 @@ export function foreignFields(
     steps: OwnedStep[],
     kept: boolean,
   ): void => {
-    if (keep.includes(path)) kept = true;
+    if (keeps.has(path)) kept = true;
     if (after === undefined) {
       if (kept) return;
       if (holdsKept(before, path)) {
@@ -110,7 +111,7 @@ export function foreignFields(
   };
 
   const holdsKept = (value: unknown, path: FieldPath): boolean =>
-    keep.includes(path) ||
+    keeps.has(path) ||
     (isRecord(value) &&
       Object.entries(value).some(([key, inner]) =>
         holdsKept(inner, stepPath(path, { field: key })),
@@ -168,7 +169,7 @@ export function foreignFields(
       applied.spec ?? {},
       "spec",
       [{ field: "spec" }],
-      keep.includes("spec"),
+      keeps.has("spec"),
     );
   const metadata = tree.children.get("f:metadata");
   for (const name of ["labels", "annotations"]) {
@@ -181,7 +182,7 @@ export function foreignFields(
       applied.metadata[name] ?? {},
       path,
       [{ field: "metadata" }, { field: name }],
-      keep.includes(path),
+      keeps.has(path),
       name === "annotations" ? LAST_APPLIED_ANNOTATION : undefined,
     );
   }
