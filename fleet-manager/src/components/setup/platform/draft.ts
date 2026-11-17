@@ -44,13 +44,15 @@ export function draftOf(
 }
 
 /**
- * specOf returns the spec that a save writes. In basic mode, auth is
+ * specOf returns draft as a save writes it. In basic mode, auth is
  * { method: "basic" } with no oidc block, so the CRD rule refuses a save
  * that leaves an oidc block of another field manager. Empty strings, empty
  * management clients, and empty images are left out.
  */
 export function specOf(draft: PlatformDraft): CamundaPlatformConfig["spec"] {
-  const spec: CamundaPlatformConfig["spec"] = {};
+  const spec: CamundaPlatformConfig["spec"] = { ...draft };
+  delete spec.licenseSecretRef;
+  delete spec.images;
   const oidc = draft.auth?.oidc;
   spec.auth =
     draft.auth?.method === "oidc"
@@ -136,10 +138,9 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
 
 /**
  * updateChange applies live with the spec of specOf, with the
- * resourceVersion of live as its precondition, and without force: a field
- * of another tool changes only through a take-over that the review adds.
- * It keeps the labels and the annotations of live, without the last
- * applied file of kubectl.
+ * resourceVersion of live as its precondition, and without force. It
+ * keeps the labels and the annotations of live, without the last applied
+ * file of kubectl.
  */
 export function updateChange(
   live: CamundaPlatformConfig,

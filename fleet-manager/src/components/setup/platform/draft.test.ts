@@ -104,6 +104,29 @@ describe("draftOf and specOf", () => {
 
     expect(specOf(draft).auth?.oidc).not.toHaveProperty("management");
   });
+
+  it("keeps a spec field that the form does not edit", () => {
+    const draft = {
+      ...draftOf(configOf("basic-lab")),
+      tracing: { endpoint: "otel:4317" },
+    } as PlatformDraft;
+
+    expect(specOf(draft)).toEqual({
+      auth: { method: "basic" },
+      tracing: { endpoint: "otel:4317" },
+    });
+  });
+
+  it("leaves out the license and the images when the form clears them", () => {
+    const draft = draftOf(configOf("oidc-prod"));
+    delete draft.licenseSecretRef;
+    draft.images = { camunda: "" };
+
+    const spec = specOf(draft);
+
+    expect(spec).not.toHaveProperty("licenseSecretRef");
+    expect(spec).not.toHaveProperty("images");
+  });
 });
 
 describe("draftErrors", () => {
