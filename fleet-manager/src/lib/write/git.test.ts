@@ -333,6 +333,71 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it("drops ownership from a Git preview", async () => {
+    repo = await serveBareRepository();
+    live.set("Environment//prod", environment("prod"));
+    directPreview.mockResolvedValue({
+      objects: [],
+      errors: [],
+      ownership: [
+        {
+          ref: refOf(environment("prod")),
+          changed: [],
+          cleared: [
+            {
+              path: "spec.color",
+              steps: [{ field: "spec" }, { field: "color" }],
+              managers: [
+                { name: "kubectl", operation: "Apply", kind: "other" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const preview = await writerFor().preview({
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+    });
+
+    expect(preview).not.toHaveProperty("ownership");
+    const directOnly = await writerFor().preview({
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+      directOnly: true,
+    });
+    expect(directOnly).not.toHaveProperty("ownership");
+  });
+
+  it("refuses a take-over in the preview and in the apply, and commits nothing", async () => {
+    repo = await serveBareRepository();
+    const change: Change = {
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+      remove: { "Environment//prod": ["spec.color"] },
+    };
+    const refusal = {
+      code: "Invalid",
+      message: "A take-over is for direct mode.",
+      ref: refOf(environment("prod")),
+    };
+
+    expect(await writerFor().preview(change)).toEqual({
+      objects: [],
+      errors: [refusal],
+    });
+    expect(await writerFor().apply(change)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(directPreview).not.toHaveBeenCalled();
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("a change that the dry run refuses makes no commit and returns the API errors", async () => {
     repo = await serveBareRepository();
     const refusal = {

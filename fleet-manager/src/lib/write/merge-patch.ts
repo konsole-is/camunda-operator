@@ -40,8 +40,8 @@ export function clientSideApplyPatch(
   // The steps of CreateThreeWayJSONMergePatch of
   // k8s.io/apimachinery/pkg/util/jsonmergepatch, which kubectl calls,
   // without its conflict and precondition checks.
-  const changes = keepOrDeleteNull(diff(live as JsonMap, next), false);
-  const removals = keepOrDeleteNull(diff(last, next), true);
+  const changes = keepOrDeleteNull(mergePatch(live as JsonMap, next), false);
+  const removals = keepOrDeleteNull(mergePatch(last, next), true);
   const patch = merged(removals, changes);
   if (resourceVersion !== undefined) {
     const meta = isMap(patch.metadata) ? patch.metadata : {};
@@ -50,14 +50,18 @@ export function clientSideApplyPatch(
   return patch;
 }
 
-// diff is CreateMergePatch of gopkg.in/evanphx/json-patch.v4.
-function diff(from: JsonMap, to: JsonMap): JsonMap {
+/**
+ * mergePatch returns the JSON merge patch (RFC 7386) that turns from into
+ * to: CreateMergePatch of gopkg.in/evanphx/json-patch.v4. A key that to
+ * leaves out is null in the patch, and a list that differs is sent whole.
+ */
+export function mergePatch(from: JsonMap, to: JsonMap): JsonMap {
   const patch: JsonMap = {};
   for (const [key, value] of Object.entries(to)) {
     if (!Object.hasOwn(from, key)) {
       setOwn(patch, key, value);
     } else if (isMap(from[key]) && isMap(value)) {
-      const inner = diff(from[key], value);
+      const inner = mergePatch(from[key], value);
       if (Object.keys(inner).length > 0) setOwn(patch, key, inner);
     } else if (!equal(from[key], value)) {
       setOwn(patch, key, value);
