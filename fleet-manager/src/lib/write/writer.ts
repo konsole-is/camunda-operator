@@ -145,12 +145,12 @@ export function diffView(
  * that change.takeOver or change.remove lists, both writes refuse it after
  * the read, with no other request for it: with Conflict for each listed
  * field that a controller of the operator owns, with Invalid for a listed
- * path that names more than one field of the object, and with Invalid when
- * the lists are not the offered fields of ownership at the precondition.
- * Then a dry run with force must take no field that takeOver does not
- * list, or the object fails with Conflict. apply applies such an object
- * with force only when takeOver lists a field, and then removes the fields
- * of remove with a JSON patch at the resourceVersion that the apply
+ * path that names more than one field of the object in ownership, and with
+ * Invalid when the lists are not the offered fields of ownership at the
+ * precondition. Then a dry run with force must take no field that takeOver
+ * does not list, or the object fails with Conflict. apply applies such an
+ * object with force only when takeOver lists a field, and then removes the
+ * fields of remove with a JSON patch at the resourceVersion that the apply
  * returned. The preview shows the object after the removal. When the
  * removal fails, apply stops, the apply stays, and each error says which
  * fields the fleet manager did not remove. A newer write between the apply
