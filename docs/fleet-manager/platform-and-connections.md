@@ -59,7 +59,7 @@ When you change a field, a bar at the bottom of the page offers **Review**. The 
 
 Another tool, such as `kubectl apply` or your GitOps tool, can set a field that your change changes or clears. The review names each such field and the tool, and asks before the save takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what the take-over does.
 
-To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool set the OIDC block, the review names `spec.auth.oidc` and offers the take-over. The take-over cannot remove the block, because a platform config with the basic method and an OIDC block is not valid. With or without the take-over, the review shows this error, and **Save** stays off:
+To turn off OIDC, select **Basic**. The save sends the basic method and no OIDC block. When another tool set the OIDC block, the review names `spec.auth.oidc` and offers the take-over. The take-over cannot remove the block, because a platform config with the basic method and an OIDC block is not valid. **Save** stays off. After the take-over, the review shows this error:
 
 `spec.auth: Invalid value: oidc is required when method is oidc and must not be set when method is basic`
 
@@ -231,7 +231,7 @@ While the fleet manager cannot read a kind that can use the contract, the form s
 
 The page shows this line for a short time after it opens or connects again. If the line stays, the error above the page gives the cause, as for a delete below.
 
-Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The operator writes these two fields. The review names them as fields of the operator, and the save keeps them.
+Select **Save** to write the change. The users react to it without a further step. In Git mode, the button reads **Push to Git**. The save keeps the labels and the annotations of the contract. A database server contract can hold `spec.recovery` and `spec.pitr.lastRecovery`. The page does not show these two fields. The save keeps them, also with a take-over.
 
 The save applies only if the contract did not change after the page read it. When a person or a tool changed it in the meantime, the save writes nothing, and the review shows this error:
 
