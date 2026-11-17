@@ -125,10 +125,10 @@ export function ChangeReview({
       : takenPreview?.change === effective
         ? takenPreview.result
         : undefined;
-  const previewErrors = withoutTakeOverConflicts(
-    checked?.errors ?? [],
-    ownership,
-  );
+  const previewErrors =
+    effective === change
+      ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
+      : (checked?.errors ?? []);
   const writeErrors = refused?.change === effective ? refused.errors : [];
   const changesNothing =
     checked !== undefined &&

@@ -471,6 +471,28 @@ describe("ChangeReview with fields of another tool", () => {
     );
   });
 
+  it("shows a Conflict of the preview with the take-over, and Save stays off", async () => {
+    const unlisted = {
+      code: "Conflict" as const,
+      message:
+        "The save would take spec.owner from kubectl-client-side-apply, and the review did not list it.",
+      path: "spec.owner",
+      manager: "kubectl-client-side-apply",
+      ref,
+    };
+    setup({
+      change: updated,
+      preview: (c) =>
+        c.takeOver ? { ...taken, errors: [unlisted] } : conflicted,
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(unlisted.message),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
   it("the choice resets for a new change", async () => {
     const { rerender, apply } = setup({ change: updated, preview: byChange });
     await waitFor(() => expect(choice()).toBeTruthy());

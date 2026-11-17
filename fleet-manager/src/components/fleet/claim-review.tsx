@@ -172,7 +172,11 @@ export function ClaimReview<C extends ClaimObject>({
         ? takenPreview.result
         : undefined;
   const previewOutcome =
-    checked && outcomeOf(withoutConflicts(checked, ownership), session);
+    checked &&
+    outcomeOf(
+      effective === base ? withoutConflicts(checked, ownership) : checked,
+      session,
+    );
   const writeOutcome =
     refused?.session === session ? refused.outcome : undefined;
   const blocked =

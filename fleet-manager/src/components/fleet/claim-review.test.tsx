@@ -610,6 +610,35 @@ describe("ClaimReview with fields of another tool", () => {
     expect(fakeWriter.previewed[1]).toEqual(withList);
   });
 
+  it("shows a Conflict of the preview with the take-over, and Save stays off", async () => {
+    const message =
+      "The save would take spec.cluster.zeebe.partitions from kubectl-client-side-apply, and the review did not list it.";
+    fakeWriter.previews = [
+      conflicted,
+      {
+        ...clean,
+        errors: [
+          {
+            code: "Conflict" as const,
+            message,
+            path: "spec.cluster.zeebe.partitions",
+            manager: "kubectl-client-side-apply",
+            ref,
+          },
+        ],
+      },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
   it("a reset of a field of another tool says that it stays, and Save is on", async () => {
     fakeWriter.previews = [
       {

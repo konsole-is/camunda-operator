@@ -155,7 +155,8 @@ export function takeOverOpen(
 /**
  * withoutTakeOverConflicts returns errors without the Conflict errors of
  * each object that has an offered changed field in ownership, because
- * TakeOverChoice names those fields.
+ * TakeOverChoice names those fields. Pass it only the errors of the
+ * preview without the take-over.
  */
 export function withoutTakeOverConflicts(
   errors: readonly ApiError[],
