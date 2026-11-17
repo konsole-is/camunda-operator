@@ -33,8 +33,10 @@ type Claim = {
 };
 
 // The scenario applied the claim with kubectl, which owns its fields. A
-// field that kubectl owns stays until the review takes it over.
-test("a move of the identity mode shows what it does, and a field that kubectl owns waits for the take-over", async ({
+// field that kubectl owns stays until the review takes it over. The save
+// removes the fields of kubectl after it applies the new provider, and the
+// CRD refuses a claim with two providers, so this move cannot save.
+test("a move of the identity mode shows what it does, and the take-over of the kubectl provider meets the one-provider rule", async ({
   page,
   scenario,
 }) => {
@@ -79,6 +81,10 @@ test("a move of the identity mode shows what it does, and a field that kubectl o
     "spec.management.identityProvider.oidc: kubectl set it. The save removes it.",
   );
   await expect(dialog.getByText(/Sign-in moves/).first()).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "exactly one identity provider",
+  );
+  await expect(save).toBeDisabled();
   await checkPage(page, "plane-claim-review-take-over");
 });
 

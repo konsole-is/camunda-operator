@@ -774,6 +774,63 @@ describe("a take-over against the API server", () => {
     ).toBe(false);
   });
 
+  it("a move of the plane identity mode that kubectl set fails in the preview with the take-over, and writes nothing", async () => {
+    // The removal of oidc and of the claim pair comes after the apply, and
+    // the CRD refuses the claim between the two writes.
+    const spec = {
+      environments: [namespace],
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          externalUrl: "https://management.example.com/identity",
+          admin: { claimName: "sub", claimValue: "42" },
+        },
+      },
+      versions: { identity: "8.9.14" },
+    };
+    const made: KubeObject = {
+      apiVersion: fleet,
+      kind: "CamundaManagementClusterClaim",
+      metadata: { name: unique("plane"), namespace },
+      spec,
+    };
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    const change = updateOf("Move the sign-in", live, {
+      ...made,
+      spec: {
+        ...spec,
+        management: {
+          identityProvider: {
+            externalKeycloak: {
+              url: "https://keycloak.example.com/auth",
+              adminCredentialsSecretRef: { name: "keycloak-admin" },
+            },
+          },
+          identity: {
+            externalUrl: "https://management.example.com/identity",
+            admin: { username: "admin" },
+          },
+        },
+      },
+    });
+
+    const preview = await previewPlaneClaimChange(change);
+    const chosen = withTakeOver(change, preview.ownership ?? []);
+    const checked = await previewPlaneClaimChange(chosen);
+    expect(checked.errors).toContainEqual(
+      expect.objectContaining({
+        code: "Invalid",
+        path: "spec.management.identityProvider",
+        message: expect.stringContaining("exactly one identity provider"),
+      }),
+    );
+    expect(await applyPlaneClaimChange(chosen)).toMatchObject({ ok: false });
+    expect((await read(made)).metadata.resourceVersion).toBe(
+      live.metadata.resourceVersion,
+    );
+  });
+
   it("the choice is not stored", async () => {
     const made = environment(unique("env"), { displayName: "Stage" });
     await createClientSideApplied(api, made);
