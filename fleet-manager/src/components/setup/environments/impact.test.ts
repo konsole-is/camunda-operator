@@ -393,7 +393,11 @@ describe("environmentImpact", () => {
   it("names no namespace for a first environment while a list that it reads is not current", () => {
     for (const reads of [
       { stale: ["Environment"] },
-      { errors: [{ kind: "CamundaManagementClusterClaim", message: "forbidden" }] },
+      {
+        errors: [
+          { kind: "CamundaManagementClusterClaim", message: "forbidden" },
+        ],
+      },
     ])
       expect(
         environmentImpact(undefined, edit({}), {

@@ -198,7 +198,10 @@ describe("unassignedNamespaces", () => {
     for (const kind of LIST_KINDS) {
       expect(unassignedNamespaces({ ...s, stale: [kind] })).toBeUndefined();
       expect(
-        unassignedNamespaces({ ...s, errors: [{ kind, message: "forbidden" }] }),
+        unassignedNamespaces({
+          ...s,
+          errors: [{ kind, message: "forbidden" }],
+        }),
       ).toBeUndefined();
     }
     expect(unassignedNamespaces({ ...s, stale: ["PluginSection"] })).toEqual([
