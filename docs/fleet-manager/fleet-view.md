@@ -4,7 +4,7 @@ The **Fleet** page of the fleet manager lists each Camunda cluster of this Kuber
 
 The page updates live. A new cluster, a change of status, or a new backup shows without a reload. The warnings of the pods update every 15 seconds.
 
-When the page cannot read a list, it shows `Could not read <kind>:` and the error. A list can also be not current, for example the copy of an earlier visit. The page then shows `Not known: the fleet manager has no current list of <kind>.` In both cases, the page does not say that there is no cluster or no plane.
+When the page cannot read a list, it shows `Could not read <kind>:` and the error. A list can also be not current, for example the copy of an earlier visit. The page then shows `Not known: the fleet manager has no current list of <kind>.` In both cases, the page does not say that there is no cluster or no plane. The line goes away when the page gets a current list.
 
 ## Needs attention
 
@@ -17,7 +17,7 @@ The panel **Needs attention** is at the top of the page, above the tabs. It show
 | Option | The `Accepted` or the `Ready` condition of a `PluginRegistration` is `False`. The entry shows the label of the option, or its name. | No link. |
 | Management plane | The `Ready` condition of the plane is `False`. | No link. |
 
-Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When the page cannot read one of these lists, or the list is not current, the panel says "Some lists could not be read, so this list can miss entries."
+Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When one of these lists is not read or not current, the panel says "Some lists could not be read, so this list can miss entries."
 
 ## Environments and tabs
 

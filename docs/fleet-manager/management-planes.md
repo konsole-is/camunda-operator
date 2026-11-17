@@ -228,7 +228,7 @@ When the plane and its claim are both deleted, the page shows `This management p
 
 ### A plane that the page could not read
 
-When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted. The same applies while the copy of one of them is not current, for example the copy of an earlier visit. The page then shows `Not known: the fleet manager has no current list of <kind>.`
+When the fleet manager cannot read the `CamundaManagementCluster` or the claim, the page shows `Could not read <kind>:` and the error. The page then does not say that the plane is missing or deleted. The same applies while the copy of one of them is not current, for example the copy of an earlier visit. The page then shows `Not known: the fleet manager has no current list of <kind>.` until it gets a current list.
 
 While the copy of the `CamundaManagementCluster` on the page is not current, the header and the dot of each card show `Not known`. While the page cannot read the pods, a card shows `Could not read Pod`. In the `oidc` mode, the issuer shows `Could not read CamundaPlatformConfig` while the page cannot read the platform config.
 
