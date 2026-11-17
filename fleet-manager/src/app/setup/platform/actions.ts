@@ -28,12 +28,10 @@ export async function previewPlatformConfigChange(
 
 /**
  * applyPlatformConfigChange writes an update or a delete of
- * CamundaPlatformConfigs with the writer of the settings. Before a delete,
- * it reads the lists that can name the config from the cache of the server. It
- * refuses with Forbidden the whole change when platformDeleteBlock blocks
- * the delete of one of its configs: a config that a resource, a claim, or
- * an environment uses, with each user named, or a config whose users
- * cannot be read.
+ * CamundaPlatformConfigs with the writer of the settings. It refuses with
+ * Forbidden the whole change when platformDeleteBlock blocks the delete of
+ * one of its configs: a config that a resource, a claim, or an environment
+ * uses, with each user named, or a config whose users cannot be read.
  */
 export async function applyPlatformConfigChange(
   change: Change,

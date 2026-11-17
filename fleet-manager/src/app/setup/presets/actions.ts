@@ -32,11 +32,10 @@ export async function previewPresetChange(change: Change): Promise<Preview> {
 
 /**
  * applyPresetChange writes a change of presets of the three kinds with the
- * writer of the settings. Before a delete, it reads the lists that can name
- * the preset from the cache of the server. It refuses with Forbidden the whole
- * change when presetDeleteChecks blocks the delete of one of its presets:
- * a preset in use or allowed in an environment, with each user named, or a
- * preset whose users cannot be read.
+ * writer of the settings. It refuses with Forbidden the whole change when
+ * presetDeleteChecks blocks the delete of one of its presets: a preset in
+ * use or allowed in an environment, with each user named, or a preset whose
+ * users cannot be read.
  */
 export async function applyPresetChange(change: Change): Promise<WriteResult> {
   const errors = await deleteRefusals(change, presetSchema, presetRule);

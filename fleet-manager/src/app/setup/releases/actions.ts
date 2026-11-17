@@ -24,12 +24,10 @@ export async function previewReleaseChange(change: Change): Promise<Preview> {
 
 /**
  * applyReleaseChange writes a create, an update, or a delete of
- * CamundaReleases with the writer of the settings. Before a delete, it
- * reads the lists that can name the release from the cache of the server. It
- * refuses with Forbidden the whole change when releaseDeleteBlock blocks
- * the delete of one of its releases: a release in use, allowed in an
- * environment, or the default of one, with each user named, or any delete
- * while a list cannot be read.
+ * CamundaReleases with the writer of the settings. It refuses with Forbidden
+ * the whole change when releaseDeleteBlock blocks the delete of one of its
+ * releases: a release in use, allowed in an environment, or the default of
+ * one, with each user named, or any delete while a list cannot be read.
  */
 export async function applyReleaseChange(change: Change): Promise<WriteResult> {
   const errors = await deleteRefusals(change, releaseSchema, releaseRule);
