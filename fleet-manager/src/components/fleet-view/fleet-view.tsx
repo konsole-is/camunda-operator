@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useId, useMemo, useState } from "react";
 import { type PendingPush, useGitPushes } from "@/components/fleet/git-pushes";
+import { NotRead, notReadText } from "@/components/fleet/not-read";
 import { useClock } from "@/components/fleet/use-clock";
 import { PlanesTable, usePlanes } from "@/components/planes/planes-table";
 import {
@@ -18,9 +19,17 @@ import {
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources } from "@/lib/k8s/hooks";
+import {
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
-import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
+import {
+  currentReadErrors,
+  type ReadError,
+  unreadKinds,
+} from "@/lib/k8s/unread";
 import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
 import type { PodWarnings, Warning } from "@/lib/warnings";
@@ -67,20 +76,24 @@ const isReady = (row: ClusterRow) => row.ready?.status === "True";
 // page does not say that the fleet is empty.
 const UNREAD_EMPTY = ["CamundaCluster", "CamundaClusterClaim"];
 
+const PLANE_KINDS = [
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+];
+
 // A failed read of one of these kinds can hide an entry of Needs attention.
 const ATTENTION_KINDS = [
   ...UNREAD_EMPTY,
   "LogicalBackupElasticsearch",
   "LogicalBackupRDBMS",
   "PluginRegistration",
-  "CamundaManagementCluster",
-  "CamundaManagementClusterClaim",
+  ...PLANE_KINDS,
 ];
 
 /**
  * FleetView is the fleet page on the given lists. It fetches nothing.
  * Without podWarnings a row shows only the warnings of its backups and
- * requests.
+ * requests. stale holds the kinds whose list is not current.
  */
 export function FleetView({
   sources,
@@ -88,6 +101,7 @@ export function FleetView({
   pushes,
   podWarnings,
   errors = [],
+  stale = [],
   now,
   onStopWaiting,
 }: {
@@ -96,6 +110,7 @@ export function FleetView({
   pushes: PendingPush[];
   podWarnings?: PodWarnings | Unavailable;
   errors?: ReadError[];
+  stale?: readonly string[];
   now: string;
   onStopWaiting?: (key: RefKey) => void;
 }): ReactNode {
@@ -119,6 +134,7 @@ export function FleetView({
   });
   const waiting = waitingRows(pushes, sources.claims);
   const tabs = environmentTabs(sources.environments, rows);
+  const unread = unreadKinds({ errors, stale });
   const active = tabs.some((t) => t.value === tab) ? tab : ALL_TAB;
 
   const content = (
@@ -133,7 +149,8 @@ export function FleetView({
       filter={filter}
       onFilter={setFilter}
       now={now}
-      unread={errors.some((e) => UNREAD_EMPTY.includes(e.kind))}
+      unread={unread.some((kind) => UNREAD_EMPTY.includes(kind))}
+      planesUnread={unread.filter((kind) => PLANE_KINDS.includes(kind))}
       onStopWaiting={onStopWaiting}
     />
   );
@@ -153,9 +170,12 @@ export function FleetView({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      <NotRead
+        kinds={stale.filter((kind) => !errors.some((e) => e.kind === kind))}
+      />
       <AttentionPanel
         items={attention}
-        incomplete={errors.some((e) => ATTENTION_KINDS.includes(e.kind))}
+        incomplete={unread.some((kind) => ATTENTION_KINDS.includes(kind))}
       />
       {tabs.length === 0 ? (
         content
@@ -210,6 +230,7 @@ function TabContent({
   onFilter,
   now,
   unread,
+  planesUnread,
   onStopWaiting,
 }: {
   tab?: string;
@@ -223,6 +244,7 @@ function TabContent({
   onFilter: (filter: RowFilter) => void;
   now: string;
   unread: boolean;
+  planesUnread: readonly string[];
   onStopWaiting?: (key: RefKey) => void;
 }) {
   const environment =
@@ -269,9 +291,11 @@ function TabContent({
           />
         ) : (
           <p className="text-sm text-muted">
-            {environment === undefined
-              ? "No management plane yet."
-              : "No management plane serves this environment."}
+            {planesUnread.length > 0
+              ? notReadText(planesUnread)
+              : environment === undefined
+                ? "No management plane yet."
+                : "No management plane serves this environment."}
           </p>
         )}
       </section>
@@ -520,6 +544,13 @@ export function FleetViewLive({
     "CamundaManagementClusterClaim",
   ];
   const answered = useAnswered(followed);
+  const lists = followed.map((kind) => ({ kind, opts: {} }));
+  const fresh = useWatchesFresh(lists);
+  const overdue = useWatchesOverdue(lists);
+  // Before its first answer, a list can be the cache of an earlier visit.
+  const stale = followed.filter((kind, i) =>
+    answered.has(kind) ? !fresh[i] : overdue[i],
+  );
   const errors = currentReadErrors(
     liveErrors,
     initial.readErrors?.filter((e) => followed.includes(e.kind as KindName)),
@@ -533,6 +564,7 @@ export function FleetViewLive({
       pushes={pushes}
       podWarnings={podWarnings}
       errors={errors}
+      stale={stale}
       now={clock}
       onStopWaiting={settle}
     />

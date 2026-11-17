@@ -152,6 +152,8 @@ In this example, the plane has no access option and the claim has no Console URL
 
 Select the name of a plane in the list at `/fleet/planes`. The page of the plane opens at `/fleet/planes/<namespace>/<name>`.
 
+The list shows `Could not read <kind>:` and the error for a list that it cannot read. For a list that is not current, it shows `Not known: the fleet manager has no current list of <kind>.` In both cases, the list does not say that no plane exists.
+
 The header shows the name of the plane and its `Ready` condition. A reason other than `Healthy` shows next to `Ready`, for example `Ready · Suspended`. Under the name, the header shows these facts:
 
 | Fact | What it shows |
