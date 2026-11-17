@@ -7,8 +7,8 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseServer } from "@/generated/crds/databaseserver";
 import type { ElasticsearchCluster } from "@/generated/crds/elasticsearchcluster";
 import type { Environment } from "@/generated/crds/environment";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
 import type { ReadError } from "@/lib/k8s/unread";
 import { RELEASE_SOURCE_KINDS } from "./source-kinds";
 
@@ -62,21 +62,4 @@ export function useReleaseSources(
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };
-}
-
-/**
- * useLive follows the list of kind from initial, as useResources does. A
- * Resource is plain JSON, so it differs from its model type only in its
- * timestamps, which the release pages do not read.
- */
-export function useLive<K extends KindName, T>(
-  kind: K,
-  initial: T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

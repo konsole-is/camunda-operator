@@ -14,8 +14,8 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
 import type { ReadError } from "@/lib/k8s/unread";
 import { SOURCE_KINDS } from "./source-kinds";
 
@@ -116,18 +116,4 @@ export function useEnvironmentSources(
     errors,
     namespacesStale: !namespacesFresh,
   };
-}
-
-// A Resource is plain JSON, so it differs from its model type only in its
-// timestamps, which the Environments page does not read.
-function useLive<K extends KindName, T>(
-  kind: K,
-  initial: T[],
-): { items: T[]; error?: string } {
-  const { items, error } = useResources(
-    kind,
-    {},
-    initial as unknown as Resource<K>[],
-  );
-  return { items: items as unknown as T[], ...(error && { error }) };
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useAnswered } from "@/lib/k8s/answered";
-import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { Change, Preview, WriteResult } from "@/lib/write/types";
@@ -76,11 +77,4 @@ export function usePresetSources(
     keys.map((key) => [key, lists[key].items]),
   ) as PresetSources;
   return { ...items, errors, pending };
-}
-
-function useLive<K extends KindName>(
-  kind: K,
-  initial: Resource<K>[],
-): { items: Resource<K>[]; error?: string } {
-  return useResources(kind, {}, initial);
 }

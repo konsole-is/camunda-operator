@@ -7,9 +7,9 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
+import { useLive } from "@/lib/k8s/live";
 import type { ReadError } from "@/lib/k8s/unread";
 import { ROLLOUT_SOURCE_KINDS } from "./source-kinds";
-import { useLive } from "./sources";
 
 /**
  * RolloutLists holds the lists, in all namespaces, that a move of clusters
