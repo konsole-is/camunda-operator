@@ -4,7 +4,7 @@ import type { ManagedFieldsEntry } from "@/lib/merge";
 import {
   fieldValue,
   foreignFields,
-  keepUntouchedEmpty,
+  keepEmpty,
   MAX_KEEP_PATHS,
   offered,
   takenFields,
@@ -493,7 +493,7 @@ describe("withTakeOver", () => {
   });
 });
 
-describe("keepUntouchedEmpty", () => {
+describe("keepEmpty", () => {
   const key = "Environment//staging";
   const kubectl = (fieldsV1: object) =>
     entry("kubectl-client-side-apply", "Update", fieldsV1);
@@ -538,25 +538,22 @@ describe("keepUntouchedEmpty", () => {
     ["an empty list", { allowed: [] }],
     ["an empty string", { color: "" }],
     ["a map of only empty values", { creation: { labels: {}, keys: [] } }],
-  ])(
-    "keeps %s that the page leaves out and the edit did not touch",
-    (_, empty) => {
-      const live = liveWith(empty);
-      const change = keepUntouchedEmpty(
-        save(environment({ displayName: "Prod" })),
-        live,
-        environment({ displayName: "Prod", ...empty }),
-      );
-      expect(clearedAfter(live, change)).toEqual([]);
-      expect(change.keep).toEqual({
-        [key]: Object.keys(empty).map((k) => `spec.${k}`),
-      });
-    },
-  );
+  ])("keeps %s that the page leaves out", (_, empty) => {
+    const live = liveWith(empty);
+    const change = keepEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", ...empty }),
+    );
+    expect(clearedAfter(live, change)).toEqual([]);
+    expect(change.keep).toEqual({
+      [key]: Object.keys(empty).map((k) => `spec.${k}`),
+    });
+  });
 
   it("keeps an empty annotation that the page leaves out", () => {
     const live = liveWith({}, { annotations: { description: "" } });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod" }, [], {
@@ -568,7 +565,7 @@ describe("keepUntouchedEmpty", () => {
 
   it("keeps an empty string that the edit left out", () => {
     const live = liveWith({ color: "" });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod" }),
@@ -576,20 +573,44 @@ describe("keepUntouchedEmpty", () => {
     expect(clearedAfter(live, change)).toEqual([]);
   });
 
-  it("does not keep an empty map that the edit removed", () => {
+  it("keeps an empty map that the edit removed", () => {
     const live = liveWith({ images: {} });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod" }),
     );
-    expect(change.keep).toBeUndefined();
+    expect(clearedAfter(live, change)).toEqual([]);
+  });
+
+  it("keeps an empty map that the edit holds with undefined values in it", () => {
+    const live = liveWith({ management: { clients: {} } });
+    const change = keepEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({
+        displayName: "Prod",
+        management: {
+          clients: { identity: { clientSecretRef: undefined, audience: "" } },
+        },
+      }),
+    );
+    expect(clearedAfter(live, change)).toEqual([]);
+  });
+
+  it("does not keep an empty map that the edit holds with a value in it", () => {
+    const live = liveWith({ images: {} });
+    const change = keepEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", images: { keycloak: "x" } }),
+    );
     expect(clearedAfter(live, change)).toEqual(["spec.images"]);
   });
 
   it("does not keep a value that the edit cleared", () => {
     const live = liveWith({ color: "red" });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod", color: "" }),
@@ -599,7 +620,7 @@ describe("keepUntouchedEmpty", () => {
 
   it("keeps an empty map that the edit holds with an empty value in it", () => {
     const live = liveWith({ images: {} });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod", images: { keycloak: "" } }),
@@ -617,7 +638,7 @@ describe("keepUntouchedEmpty", () => {
     ],
   ])("does not keep %s", (_, value) => {
     const live = liveWith(value);
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod", ...value }),
@@ -630,7 +651,7 @@ describe("keepUntouchedEmpty", () => {
 
   it("does not keep an empty value inside a field that the page leaves out", () => {
     const live = liveWith({ oidc: { issuer: "https://a", audience: "" } });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({
@@ -650,7 +671,7 @@ describe("keepUntouchedEmpty", () => {
       ],
       { resourceVersion: "7" },
     );
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod", color: "" }),
@@ -672,7 +693,7 @@ describe("keepUntouchedEmpty", () => {
       ],
       { resourceVersion: "7" },
     );
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ extraEnv: [{ name: "TZ" }] })),
       live,
       environment({ extraEnv: [{ name: "TZ", value: "" }] }),
@@ -682,7 +703,7 @@ describe("keepUntouchedEmpty", () => {
 
   it("adds to the keep list of the change", () => {
     const live = liveWith({ images: {}, sections: { a: 1 } });
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       {
         ...save(environment({ displayName: "Prod" })),
         keep: { [key]: ["spec.sections"] },
@@ -698,7 +719,7 @@ describe("keepUntouchedEmpty", () => {
       Array.from({ length: MAX_KEEP_PATHS + 1 }, (_, i) => [`e${i}`, ""]),
     );
     const live = liveWith(empty);
-    const change = keepUntouchedEmpty(
+    const change = keepEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod", ...empty }),
@@ -714,20 +735,16 @@ describe("keepUntouchedEmpty", () => {
       apply: [environment({ displayName: "Prod" })],
     };
     expect(
-      keepUntouchedEmpty(
-        change,
-        live,
-        environment({ displayName: "Prod", images: {} }),
-      ),
+      keepEmpty(change, live, environment({ displayName: "Prod", images: {} })),
     ).toBe(change);
   });
 
   it("returns the same change when no empty value is cleared", () => {
     const live = liveWith({});
     const change = save(environment({ displayName: "Prod" }));
-    expect(
-      keepUntouchedEmpty(change, live, environment({ displayName: "Prod" })),
-    ).toBe(change);
+    expect(keepEmpty(change, live, environment({ displayName: "Prod" }))).toBe(
+      change,
+    );
   });
 });
 

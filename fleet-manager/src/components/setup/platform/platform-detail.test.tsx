@@ -15,6 +15,7 @@ import {
 } from "@/components/fleet/namespaced-secret-ref-picker";
 import type { Environment } from "@/generated/crds/environment";
 import type { ReadError } from "@/lib/k8s/unread";
+import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";
@@ -659,5 +660,57 @@ describe("PlatformDetail", () => {
     setup({ stale: ["Namespace", "DatabaseServer"] });
 
     expect(screen.queryByText(/can be incomplete/)).toBeNull();
+  });
+});
+
+describe("PlatformDetail over the empty values of another tool", () => {
+  it("shows no row for empty management clients when the edit picks and clears a client secret", async () => {
+    const sources = platformFixtures();
+    const config = sources.platformConfigs.find(
+      (c) => c.metadata.name === "oidc-prod",
+    )!;
+    config.spec.auth!.oidc!.management = { clients: {} };
+    config.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": {
+            "f:auth": {
+              "f:oidc": {
+                "f:issuerUrl": {},
+                "f:management": { "f:clients": {} },
+              },
+            },
+          },
+        },
+      },
+    ];
+    const { actions } = setup({ sources });
+    const secret = within(
+      screen.getByRole("group", { name: "Management Identity" }),
+    ).getByRole("group", { name: "Client secret" });
+    const namespace = within(secret).getByLabelText("Namespace");
+    fireEvent.change(namespace, { target: { value: "camunda-system" } });
+    fireEvent.change(within(secret).getByLabelText("Secret"), {
+      target: { value: "oidc-credentials" },
+    });
+    fireEvent.change(within(secret).getByLabelText("Key"), {
+      target: { value: "identity-secret" },
+    });
+    fireEvent.change(namespace, { target: { value: "" } });
+    fireEvent.change(input("Issuer URL"), {
+      target: { value: "https://login.example.com/realms/other" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const change = actions.previewChange.mock.lastCall![0];
+    const { changed, cleared } = foreignFields(
+      config as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["CamundaPlatformConfig//oidc-prod"],
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.auth.oidc.issuerUrl"]);
+    expect(cleared).toEqual([]);
   });
 });

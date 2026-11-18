@@ -106,7 +106,7 @@ spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
 [ ] Take over these fields
 ```
 
-Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it. An empty string, list, or map that another tool set also stays when you do not edit it, and the review does not name it.
+Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it. An empty string, list, or map that another tool set stays unless you give it a value, and the review does not name it.
 
 With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each field that the change leaves out. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example `It gets its default value 7 again.` If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
 

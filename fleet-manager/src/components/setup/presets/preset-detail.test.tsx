@@ -433,6 +433,43 @@ describe("PresetDetail", () => {
     expect(cleared).toEqual([]);
   });
 
+  it("shows no row for a block of another tool that holds only an empty field the edit typed into and emptied again", async () => {
+    const sources = presetFixtures();
+    const preset = sources.clusterPresets[0];
+    preset.spec.cluster!.zeebe = { storageClassName: "" };
+    preset.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": {
+            "f:cluster": { "f:zeebe": { "f:storageClassName": {} } },
+          },
+        },
+      },
+    ];
+    const { actions } = setup({ sources });
+    const brokers = screen.getByRole("region", { name: "Brokers settings" });
+    const storageClass = within(
+      within(brokers).getByRole("group", { name: "storageClassName" }),
+    ).getByRole("textbox");
+    fireEvent.change(storageClass, { target: { value: "h" } });
+    fireEvent.change(storageClass, { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "For production workloads." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const change = actions.previewChange.mock.calls.at(-1)![0];
+    expect(
+      foreignFields(
+        preset as unknown as KubeObject,
+        change.apply[0],
+        change.keep?.["CamundaClusterPreset//medium"],
+      ).cleared,
+    ).toEqual([]);
+  });
+
   it("reads Push to Git in Git mode", async () => {
     setup({ mode: "git", preview: dryRun() });
     editReplicas("5");

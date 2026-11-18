@@ -4,7 +4,7 @@ import {
   presetDescription,
 } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
-import { keepUntouchedEmpty } from "@/lib/write/ownership";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { type PresetObject, presetBody } from "./kinds";
@@ -58,7 +58,7 @@ export function presetUpdateChange(
       [live.kind === "DatabaseServerPreset" ? "server" : "cluster"]: draft.body,
     },
   };
-  return keepUntouchedEmpty(
+  return keepEmpty(
     {
       intent: `Change the preset ${name}`,
       apply: [object],
