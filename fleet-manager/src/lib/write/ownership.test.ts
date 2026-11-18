@@ -30,7 +30,10 @@ const environment = (
   spec: object,
   managedFields: ManagedFieldsEntry[] = [],
   metadata: object = {},
-): KubeObject => ({
+): KubeObject & {
+  spec: object;
+  metadata: { managedFields: ManagedFieldsEntry[] };
+} => ({
   apiVersion: ref.apiVersion,
   kind: ref.kind,
   metadata: { name: ref.name, managedFields, ...metadata },
@@ -582,6 +585,37 @@ describe("keepUntouchedEmpty", () => {
       environment({ displayName: "Prod", color: "" }),
     );
     expect(clearedAfter(live, change)).toEqual(["spec.color"]);
+  });
+
+  it("keeps an empty map that the edit holds with an empty value in it", () => {
+    const live = liveWith({ images: {} });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", images: { keycloak: "" } }),
+    );
+    expect(clearedAfter(live, change)).toEqual([]);
+  });
+
+  it.each([
+    ["false", { enabled: false }],
+    ["0", { replicas: 0 }],
+    ["null", { note: null }],
+    [
+      "a map with a value that is not empty",
+      { creation: { labels: {}, allowed: true } },
+    ],
+  ])("does not keep %s", (_, value) => {
+    const live = liveWith(value);
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", ...value }),
+    );
+    expect(change.keep).toBeUndefined();
+    expect(clearedAfter(live, change)).toEqual(
+      Object.keys(value).map((k) => `spec.${k}`),
+    );
   });
 
   it("does not keep an empty value inside a field that the page leaves out", () => {

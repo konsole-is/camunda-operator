@@ -194,18 +194,25 @@ export const MAX_KEEP_PATHS = 64;
 
 /**
  * keepUntouchedEmpty returns change with keep extended, for the applied
- * object of live, by each cleared field of foreignFields that live holds
- * with an empty value and that edited holds with the same value. edited
- * is the object as the page edits it, before the page leaves out its
- * empty values. An empty value is an empty string, list, or map, or a map
- * of only empty values. The apply leaves such a field as it is. A field in
+ * object of live, by each cleared field of foreignFields that live and
+ * edited both hold with an empty value. edited is the object as the page
+ * edits it, before the page leaves out its empty values. An empty value
+ * is an empty string, list, or map, or a map of only empty values. The apply leaves such a field as it is. A field in
  * a list item is not kept. keep holds at most MAX_KEEP_PATHS paths, and a
  * further field stays offered. It returns change itself when change has
  * no precondition for live or there is no such field.
  */
 export function keepUntouchedEmpty(
   change: Change,
-  live: { kind: string; metadata: { name?: string; namespace?: string } },
+  live: {
+    kind: string;
+    metadata: {
+      name?: string;
+      namespace?: string;
+      managedFields?: readonly object[];
+    };
+    spec: unknown;
+  },
   edited: KubeObject,
 ): Change {
   const { name = "", namespace } = live.metadata;
@@ -221,7 +228,7 @@ export function keepUntouchedEmpty(
         f.steps.every((s) => "field" in s) &&
         !f.path.includes("[") &&
         isEmpty(fieldValue(object, f)) &&
-        equalJSON(fieldValue(edited, f), fieldValue(object, f)),
+        isEmpty(fieldValue(edited, f)),
     )
     .map((f) => f.path);
   if (untouched.length === 0) return change;

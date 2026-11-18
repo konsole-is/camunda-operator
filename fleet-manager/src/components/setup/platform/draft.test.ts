@@ -336,6 +336,17 @@ describe("updateChange over the empty values of another tool", () => {
     });
   });
 
+  it("shows no row for an empty map that the edit typed into and emptied again", () => {
+    const draft = draftOf(live);
+    draft.images = { keycloak: "" };
+    draft.auth!.oidc!.management = { clients: { console: { clientId: "" } } };
+    draft.auth!.oidc!.issuerUrl = "https://login.example.com/realms/other";
+    expect(rows(draft)).toEqual({
+      changed: ["spec.auth.oidc.issuerUrl"],
+      cleared: [],
+    });
+  });
+
   it("still shows the OIDC block on a switch to basic", () => {
     const draft = draftOf(live);
     draft.auth!.method = "basic";

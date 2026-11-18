@@ -1028,6 +1028,14 @@ describe("a save of the platform config editor against the API server", () => {
       images: {},
     });
     expect(shown).toEqual(after.spec);
+    for (const keys of [
+      ["f:spec", "f:auth", "f:oidc", "f:audience"],
+      ["f:spec", "f:auth", "f:oidc", "f:management", "f:clients"],
+      ["f:spec", "f:images"],
+    ]) {
+      expect(owns(after, "kubectl-client-side-apply", keys)).toBe(true);
+      expect(owns(after, APP_FIELD_MANAGER, keys)).toBe(false);
+    }
   });
 
   it("a switch to basic of an OIDC block that kubectl set fails with the rule of the CRD, also with the take-over, and writes nothing", async () => {
