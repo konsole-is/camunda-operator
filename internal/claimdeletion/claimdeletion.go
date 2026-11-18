@@ -48,7 +48,7 @@ const (
 	eventActionDelete          = "Delete"
 )
 
-// Deleter sends the reads, the writes, and the deletes of a deleted claim.
+// Deleter sends the reads, the writes, and the deletes of a claim.
 type Deleter struct {
 	// Client writes the requests and the claim, deletes, and lists the
 	// PluginRegistrations.
@@ -139,7 +139,8 @@ func (d Deleter) Finalize(ctx context.Context, in Input) ([]string, error) {
 // claim lacks it. Then it writes in.DeletionPolicy on each request that
 // the claim controls and that has no deletion timestamp. It returns a
 // *conditions.PreCheckFailure, and writes no policy, when a selected
-// registration does not support the policy.
+// registration does not support the policy. A write that loses a conflict
+// returns an error that apierrors.IsConflict reports.
 func (d Deleter) Prepare(ctx context.Context, in Policy) error {
 	if controllerutil.AddFinalizer(in.Claim, fleetv1alpha1.FinalizerCleanup) {
 		if err := d.Client.Update(ctx, in.Claim); err != nil {

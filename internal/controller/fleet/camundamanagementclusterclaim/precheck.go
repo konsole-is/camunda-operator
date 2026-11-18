@@ -142,14 +142,6 @@ func (r *Reconciler) preCheck(
 		return res, err
 	}
 
-	if err := claimpolicy.CheckDeletionPolicy(
-		claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, &res.resolution.Policy),
-		claim.Spec.Plugins,
-		res.registrations,
-	); err != nil {
-		return res, err
-	}
-
 	if err := claimpolicy.CheckSlotConflicts(
 		res.sections,
 		claim.Spec.Plugins,

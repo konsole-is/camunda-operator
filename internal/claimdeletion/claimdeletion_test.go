@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -277,4 +278,21 @@ func TestPrepareRefusesAnOrphanPolicyThatARegistrationDoesNotSupport(t *testing.
 	current := liveClaim()
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(current), current))
 	assert.Contains(t, current.Finalizers, fleetv1alpha1.FinalizerCleanup, "the finalizer goes back also on a refusal")
+}
+
+func TestPrepareReportsAConflictOfTheFinalizerUpdateAndWritesNoPolicy(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access, keepingRegistration())
+	d.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Update: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.UpdateOption) error {
+			resource := fleetv1alpha1.GroupVersion.WithResource("camundamanagementclusterclaims").GroupResource()
+			return apierrors.NewConflict(resource, obj.GetName(), errors.New("changed"))
+		},
+	})
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	assert.True(t, apierrors.IsConflict(err), "got %v", err)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c))
 }

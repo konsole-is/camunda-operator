@@ -102,6 +102,25 @@ var _ = Describe("A live plane claim", func() {
 		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 	})
 
+	It("reports NotAllowed for Orphan before a failed reference, and keeps Delete on both requests", func() {
+		claim := newPlaneClaim()
+		claim.Spec.Plugins[1] = selection(pluginstartup.SectionManagementDatabase, registrationDeleteOnly)
+		claim = readyClaim(claim)
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.PlatformConfigRef = uniqueName("missing-platform")
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+
+		expectNotReady(claim, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(registrationDeleteOnly))
+		expectObserved(claim)
+		for _, section := range planeSections {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
 	It("adds the cleanup finalizer back, also while its check fails", func() {
 		claim := readyClaim(newPlaneClaim())
 

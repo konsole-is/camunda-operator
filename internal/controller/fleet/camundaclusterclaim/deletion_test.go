@@ -307,6 +307,25 @@ var _ = Describe("A cluster claim with a registration that cannot orphan", func(
 		}, consistently, interval).Should(Succeed())
 	})
 
+	It("reports NotAllowed for Orphan before a failed reference, and keeps Delete on its requests", func() {
+		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationDeleteOnly))
+		create(claim)
+		eventuallyCluster(claim)
+
+		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+			c.Spec.PresetRef = uniqueName("missing-preset")
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+
+		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(registrationDeleteOnly))
+		expectObserved(claim)
+		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
 	It("deletes nothing while it asks for Orphan, and is gone after the policy is Delete", func() {
 		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationDeleteOnly))
 		create(claim)

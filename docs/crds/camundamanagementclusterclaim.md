@@ -181,7 +181,7 @@ The claim always deletes the `CamundaManagementCluster` `<claim>` first. Then it
 
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing, and changes nothing except the deletion policy of its requests, as [Deletion](#deletion) describes:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It only gives its deletion policy to its requests, as [Deletion](#deletion) describes. It also adds the finalizer `fleet.camunda.io/cleanup` back if someone removed it:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |

@@ -41,6 +41,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
+	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementclusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -81,13 +82,9 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
-// Reconcile converges a CamundaManagementClusterClaim. A pass of a live claim
-// that recorded its policy first adds the finalizer back when it is missing,
-// and writes the deletion policy on the requests. A failed precheck then
-// reports its reason on Ready and writes nothing else. The first pass that
-// passes the precheck adds the finalizer, records status.environment and
-// status.resolvedPolicy, and writes no resource, so no request exists before
-// the policy of the claim does. Later passes apply the requests, then the
+// Reconcile converges a CamundaManagementClusterClaim. A failed precheck
+// reports its reason on Ready. The first pass that passes the precheck
+// applies no request and no plane. Later passes apply the requests, then the
 // plane, and set Ready from RequestsReady and ManagementClusterReady. A
 // deleted claim reports Ready=False with reason Deleting until nothing that
 // it generated is left, or with reason NotAllowed while a selected
@@ -149,16 +146,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// When a claim is deleted with foreground propagation, the garbage
 	// collector can delete its requests before this controller sees the
 	// delete. So the requests get the current policy before a check can
-	// stop the pass. The precheck reports a refused policy.
+	// stop the pass, and a refused policy outranks every other refusal.
+	var failure *conditions.PreCheckFailure
 	if claim.Status.ResolvedPolicy != nil {
 		err := r.prepareDeletion(ctx, &claim)
-		if err != nil && !errors.As(err, new(*conditions.PreCheckFailure)) {
+		switch {
+		case apierrors.IsConflict(err):
+			return ctrl.Result{RequeueAfter: ownerstatus.ConflictRequeue}, nil
+		case errors.As(err, &failure):
+			conditions.Stage(&claim, conditions.Failed(&claim, failure))
+			return ctrl.Result{}, nil
+		case err != nil:
 			return ctrl.Result{}, err
 		}
 	}
 
 	res, err := r.preCheck(ctx, &claim)
-	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
 		conditions.Stage(&claim, conditions.Failed(&claim, failure))
 		return ctrl.Result{}, nil
@@ -170,6 +173,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// Record, then act: the flush of this pass writes the policy, and the
 	// next pass reads it back before it writes a request.
 	if claim.Status.ResolvedPolicy == nil {
+		err := claimpolicy.CheckDeletionPolicy(
+			claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, &res.resolution.Policy),
+			claim.Spec.Plugins,
+			res.registrations,
+		)
+		if errors.As(err, &failure) {
+			conditions.Stage(&claim, conditions.Failed(&claim, failure))
+			return ctrl.Result{}, nil
+		}
+
 		return ctrl.Result{}, r.recordSnapshot(ctx, &claim, res)
 	}
 
