@@ -81,7 +81,9 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
-// Reconcile converges a CamundaManagementClusterClaim. A failed precheck
+// Reconcile converges a CamundaManagementClusterClaim. A pass of a live claim
+// that recorded its policy first adds the finalizer back when it is missing,
+// and writes the deletion policy on the requests. A failed precheck then
 // reports its reason on Ready and writes nothing else. The first pass that
 // passes the precheck adds the finalizer, records status.environment and
 // status.resolvedPolicy, and writes no resource, so no request exists before
@@ -142,6 +144,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 			claim.Generation,
 		))
 		return ctrl.Result{}, nil
+	}
+
+	// When a claim is deleted with foreground propagation, the garbage
+	// collector can delete its requests before this controller sees the
+	// delete. So the requests get the current policy before a check can
+	// stop the pass. The precheck reports a refused policy.
+	if claim.Status.ResolvedPolicy != nil {
+		err := r.prepareDeletion(ctx, &claim)
+		if err != nil && !errors.As(err, new(*conditions.PreCheckFailure)) {
+			return ctrl.Result{}, err
+		}
 	}
 
 	res, err := r.preCheck(ctx, &claim)

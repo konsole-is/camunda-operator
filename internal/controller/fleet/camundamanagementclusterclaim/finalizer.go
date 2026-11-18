@@ -35,20 +35,34 @@ func (r *Reconciler) finalize(
 	ctx context.Context,
 	claim *fleetv1alpha1.CamundaManagementClusterClaim,
 ) ([]string, error) {
-	deleter := claimdeletion.Deleter{
+	return r.deleter().Finalize(ctx, claimdeletion.Input{
+		Policy: deletionPolicy(claim),
+		Stages: [][]client.Object{{
+			&v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{Name: claim.Name, Namespace: claim.Namespace}},
+		}},
+	})
+}
+
+// prepareDeletion keeps a claim that is not deleted ready for its delete, as
+// claimdeletion.Deleter.Prepare does.
+func (r *Reconciler) prepareDeletion(ctx context.Context, claim *fleetv1alpha1.CamundaManagementClusterClaim) error {
+	return r.deleter().Prepare(ctx, deletionPolicy(claim))
+}
+
+func (r *Reconciler) deleter() claimdeletion.Deleter {
+	return claimdeletion.Deleter{
 		Client:        r.Client,
 		APIReader:     r.APIReader,
 		Scheme:        r.Scheme,
 		EventRecorder: r.EventRecorder,
 	}
+}
 
-	return deleter.Finalize(ctx, claimdeletion.Input{
+func deletionPolicy(claim *fleetv1alpha1.CamundaManagementClusterClaim) claimdeletion.Policy {
+	return claimdeletion.Policy{
 		Claim:              claim,
 		FieldManagerPrefix: fleetv1alpha1.FieldManagerPrefixPlaneClaim,
 		DeletionPolicy:     components.DeletionPolicy(claim),
 		Selections:         claim.Spec.Plugins,
-		Stages: [][]client.Object{{
-			&v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{Name: claim.Name, Namespace: claim.Namespace}},
-		}},
-	})
+	}
 }

@@ -260,6 +260,33 @@ var _ = Describe("A live cluster claim", func() {
 			}
 		}, timeout, interval).Should(Succeed())
 	})
+
+	It("writes a policy change on every request while its check fails", func() {
+		claim := readyClaim(newNamespace(nil))
+
+		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+			c.Spec.PresetRef = uniqueName("missing-preset")
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+		expectFalse(claim, v1.ConditionReady, v1.ReasonInvalidReference, Not(BeEmpty()))
+		expectObserved(claim)
+		collectRequests(claim)
+
+		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+	})
+
+	It("adds the cleanup finalizer back, also while its check fails", func() {
+		claim := readyClaim(newNamespace(nil))
+
+		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+			c.Spec.PresetRef = uniqueName("missing-preset")
+			controllerutil.RemoveFinalizer(c, fleetv1alpha1.FinalizerCleanup)
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, claim).Finalizers).To(ContainElement(fleetv1alpha1.FinalizerCleanup))
+		}, timeout, interval).Should(Succeed())
+	})
 })
 
 var _ = Describe("A cluster claim with a registration that cannot orphan", func() {
@@ -357,6 +384,27 @@ func expectPoliciesAtDeletion(claim *fleetv1alpha1.CamundaClusterClaim, policy p
 			g.Expect(got).To(Equal(policy), section)
 		}
 	}, timeout, interval).Should(Succeed())
+}
+
+// expectObserved polls until status.observedGeneration of claim is its
+// generation.
+func expectObserved(claim *fleetv1alpha1.CamundaClusterClaim) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		current := latest(g, claim)
+		g.Expect(current.Status.ObservedGeneration).To(Equal(current.Generation))
+	}, timeout, interval).Should(Succeed())
+}
+
+// collectRequests deletes each request of claim, as the garbage collector
+// does when a GitOps tool deletes the claim with foreground propagation.
+// envtest runs no garbage collector.
+func collectRequests(claim *fleetv1alpha1.CamundaClusterClaim) {
+	GinkgoHelper()
+	for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
+		request := &pluginsv1alpha1.PluginRequest{ObjectMeta: objectMeta(requestKey(claim, section))}
+		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
+	}
 }
 
 // expectGone polls until obj does not exist.
