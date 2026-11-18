@@ -206,9 +206,7 @@ const RECOVERY_PATHS = [
  * file of kubectl, so a contract kept from a registration keeps its plugin
  * labels. A field that draft leaves empty is left out. The recovery
  * request of a database server contract and its answer are left out too,
- * and the change keeps them. An empty value of another tool that the edit
- * did not touch stays, and the review does not offer it, as
- * keepUntouchedEmpty says.
+ * and the change keeps them.
  */
 export function updateChange(
   live: ContractObject,

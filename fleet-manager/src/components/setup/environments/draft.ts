@@ -188,9 +188,7 @@ export function createChange(draft: EnvironmentDraft): Change {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition. It leaves out the last
  * applied file of kubectl. A field that another tool set and the edit
- * changes or clears needs the take-over of the review. An empty value of
- * another tool that the edit did not touch stays, and the review does not
- * offer it, as keepUntouchedEmpty says.
+ * changes or clears needs the take-over of the review.
  */
 export function updateChange(
   live: Environment,

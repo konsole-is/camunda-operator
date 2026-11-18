@@ -158,8 +158,7 @@ export function createChange(draft: ReleaseDraft): Change {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and without force. It
  * keeps the labels and annotations of live, without the last applied file
- * of kubectl. An empty value of another tool that the edit did not touch
- * stays, and the review does not offer it, as keepUntouchedEmpty says.
+ * of kubectl.
  */
 export function updateChange(
   live: CamundaRelease,

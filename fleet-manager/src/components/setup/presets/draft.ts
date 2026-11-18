@@ -28,9 +28,7 @@ export function presetDraftOf(preset: PresetObject | undefined): PresetDraft {
  * draft, with the resourceVersion of live as its precondition, and without
  * force. A blank description leaves out the annotation. In direct mode,
  * an annotation that another field manager set stays, unless the take-over
- * of the review removes it. An empty value of another tool that the edit
- * did not touch stays, and the review does not offer it, as
- * keepUntouchedEmpty says. It keeps the labels and the other annotations
+ * of the review removes it. It keeps the labels and the other annotations
  * of live, without the last applied file of kubectl.
  */
 export function presetUpdateChange(

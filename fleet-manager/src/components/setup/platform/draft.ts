@@ -142,9 +142,7 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and without force. It
  * keeps the labels and the annotations of live, without the last applied
- * file of kubectl. An empty value of another tool that the edit did not
- * touch stays, and the review does not offer it, as keepUntouchedEmpty
- * says.
+ * file of kubectl.
  */
 export function updateChange(
   live: CamundaPlatformConfig,
