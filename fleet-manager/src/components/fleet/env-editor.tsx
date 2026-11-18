@@ -17,6 +17,7 @@ import {
   type SecretRefs,
   SecretRefPicker,
 } from "./secret-ref-picker";
+import { useErrorsReport } from "./errors-report";
 
 /** EnvVar is one entry of extraEnv, as the CRDs define it. */
 export type EnvVar = NonNullable<CamundaClusterSpec["extraEnv"]>[number];
@@ -36,7 +37,7 @@ type Row =
  * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
  * the hint and error elements of the field for each control of a row.
  * missingIn gives the namespaces that lack a picked Secret key, and the row
- * names them.
+ * names them. onErrors gets the errors that it shows, also at mount.
  */
 export function EnvEditor({
   label,
@@ -45,6 +46,7 @@ export function EnvEditor({
   describedBy,
   missingIn,
   onChange,
+  onErrors,
 }: {
   label: string;
   secrets: SecretRefs;
@@ -52,6 +54,7 @@ export function EnvEditor({
   describedBy?: string;
   missingIn?: (name: string, key: string) => readonly string[];
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const next = useRef(defaultValue.length);
@@ -59,6 +62,7 @@ export function EnvEditor({
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
   const errors = rowErrors(rows);
+  useErrorsReport(errors, onErrors);
   const env = rows.map(toEnv);
   const report = JSON.stringify([env, errors]);
   const reported = useRef(report);

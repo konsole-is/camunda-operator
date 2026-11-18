@@ -589,13 +589,67 @@ describe("SettingsEditor collapsed", () => {
     expect(summary().textContent).not.toMatch(/error/);
   });
 
-  it("opens at once with an error that an editor shows for a value from below the claim", () => {
-    renderClosed({
+  it.each([
+    [
+      "resources",
+      { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      "The limit is below the request",
+    ],
+    [
+      "tolerations",
+      { scheduling: { tolerations: [{ effect: "NoSchedule" }] } },
+      "Enter a key, or use the operator Exists",
+    ],
+    ["a map of labels", { podLabels: { "bad key!": "a" } }, undefined],
+    [
+      "environment variables",
+      { extraEnv: [{ name: "", value: "a" }] },
+      "Enter a name",
+    ],
+    ["a storage size", { storageSize: "0Gi" }, "Enter a size above 0"],
+    ["a number", { replicas: -1 }, "Enter 0 or more"],
+  ])(
+    "opens at once with an error that the editor of %s shows for a value from below the claim",
+    (_, zeebe, message) => {
+      const { invalid, set } = renderClosed({
+        preset: { zeebe } as SettingsPage["preset"],
+      });
+      expect(details().open).toBe(true);
+      // A value from below the claim is not the user's change to refuse.
+      expect(invalid).not.toHaveBeenCalled();
+      expect(set).not.toHaveBeenCalled();
+      expect(summary().textContent).toContain("1 setting has an error");
+      if (message) expect(within(section()).getByText(message)).toBeDefined();
+    },
+  );
+
+  it("drops the error from the heading once the editor shows none, though the value below the claim still fails", async () => {
+    const { set } = renderClosed({
       preset: {
         zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
       },
     });
+    expect(summary().textContent).toContain("1 setting has an error");
+    const limit = within(settingRow("resources")).getByRole("group", {
+      name: "CPU limit",
+    });
+    await userEvent.clear(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+    );
+    expect(
+      within(section()).queryByText("The limit is below the request"),
+    ).toBeNull();
+    expect(set).toHaveBeenCalled();
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it("stays closed after the user closes it while its count of errors stays the same", async () => {
+    const { rerender } = renderClosed({}, [REFUSAL]);
     expect(details().open).toBe(true);
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+    rerender([{ ...REFUSAL }]);
+    expect(details().open).toBe(false);
     expect(summary().textContent).toContain("1 setting has an error");
   });
 

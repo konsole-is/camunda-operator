@@ -2,13 +2,13 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
+import { useErrorsReport } from "@/components/fleet/errors-report";
 import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
   ResourcesEditor,
   type Resources,
-  resourcesErrors,
 } from "@/components/fleet/resources-editor";
 import {
   SchedulingEditor,
@@ -20,7 +20,7 @@ import {
   SecretRefPicker,
 } from "@/components/fleet/secret-ref-picker";
 import { StorageSizeEditor } from "@/components/fleet/storage-size-editor";
-import { YamlEditor, yamlErrors } from "@/components/fleet/yaml-editor";
+import { YamlEditor } from "@/components/fleet/yaml-editor";
 import { EditorSection } from "@/components/setup/form-parts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -85,25 +85,20 @@ export function SettingsEditor({
   const [open, setOpen] = useState(false);
   const [counted, setCounted] = useState(0);
   const failing = settings.filter(
-    (s) =>
-      shown.has(s.key) ||
-      errorsAt(errors, s.steps).length > 0 ||
-      showsErrorAtMount(s),
+    (s) => shown.has(s.key) || errorsAt(errors, s.steps).length > 0,
   ).length;
   if (counted !== failing) {
     setCounted(failing);
     if (failing > counted) setOpen(true);
   }
-  const report =
-    (key: string) => (steps: Step[], message: string | undefined) => {
-      setShown((keys) => {
-        const next = new Set(keys);
-        if (message === undefined) next.delete(key);
-        else next.add(key);
-        return next;
-      });
-      invalid?.(steps, message);
-    };
+  const report = (key: string) => (shows: boolean) =>
+    setShown((keys) => {
+      if (keys.has(key) === shows) return keys;
+      const next = new Set(keys);
+      if (shows) next.add(key);
+      else next.delete(key);
+      return next;
+    });
   const title = group.embedded ? `${group.label} (embedded)` : group.label;
   const body = (
     <>
@@ -122,7 +117,8 @@ export function SettingsEditor({
             errors={errorsAt(errors, setting.steps)}
             set={set}
             reset={reset}
-            invalid={collapsed ? report(setting.key) : invalid}
+            invalid={invalid}
+            onShows={collapsed ? report(setting.key) : undefined}
             onReset={() => setResets((n) => n + 1)}
           />
         ))}
@@ -165,20 +161,6 @@ export function SettingsEditor({
   );
 }
 
-// showsErrorAtMount says whether the editor of setting shows an error for
-// its value before any edit: the editors of resources and YAML report
-// their errors only after an edit.
-function showsErrorAtMount(setting: Setting): boolean {
-  const { editor } = setting;
-  if (!editor || !setting.steps) return false;
-  const initial = editorValueOf(editor, setting.value);
-  if (editor.kind === "resources")
-    return resourcesErrors(initial as Resources).length > 0;
-  if (editor.kind === "yaml")
-    return yamlErrors(initial, editor.schema).length > 0;
-  return false;
-}
-
 /**
  * SettingRow is one setting: its editor with its state and reset link, or
  * its lock reason. A change with errors shows them and is not passed on. A
@@ -188,7 +170,9 @@ function showsErrorAtMount(setting: Setting): boolean {
  * click on the reset link: the caller remounts the rows, so that they show
  * the values below the claim. invalid gets the claim steps of the shown
  * field and "<label>: <error>" while the editor shows an error, and
- * undefined once the error goes or the row unmounts.
+ * undefined once the error goes or the row unmounts. onShows gets whether
+ * the editor shows an error, also for a value from below the claim before
+ * any edit, which invalid does not get.
  */
 export function SettingRow({
   setting,
@@ -197,6 +181,7 @@ export function SettingRow({
   set,
   reset,
   invalid,
+  onShows,
   onReset,
 }: {
   setting: Setting;
@@ -205,6 +190,7 @@ export function SettingRow({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
+  onShows?: (shows: boolean) => void;
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
@@ -222,6 +208,16 @@ export function SettingRow({
     steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
     invalid,
   );
+  const reportShows = useRef(onShows);
+  useEffect(() => {
+    reportShows.current = onShows;
+  });
+  // A locked row and a row that unmounts show no error.
+  const editable = editor !== undefined && steps !== undefined;
+  useEffect(() => {
+    if (!editable) reportShows.current?.(false);
+    return () => reportShows.current?.(false);
+  }, [editable]);
   if (!editor || !steps)
     return (
       <div className="py-3">
@@ -264,6 +260,7 @@ export function SettingRow({
         onInvalid={own((message: string | undefined) =>
           shows(message && `${setting.label}: ${message}`),
         )}
+        onShown={(message) => reportShows.current?.(message !== undefined)}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -323,9 +320,11 @@ function useShownError(
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
 // reported; onInvalid gets its first error, and undefined after a valid
-// change. current is the value before the pending changes. replaces reaches
-// only the editor of a map of strings. describedBy reaches only the editors
-// of resources, storage size, environment, maps of strings, and tolerations.
+// change. For an editor kind that can show an error, onShown gets its
+// first error, or undefined, also at mount. current is the value before
+// the pending changes. replaces reaches only the editor of a map of
+// strings. describedBy reaches only the editors of resources, storage
+// size, environment, maps of strings, and tolerations.
 function Editor({
   label,
   editor,
@@ -336,6 +335,7 @@ function Editor({
   secrets,
   onChange,
   onInvalid,
+  onShown,
 }: {
   label: string;
   editor: SettingEditor;
@@ -346,8 +346,11 @@ function Editor({
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
+  onShown: (message: string | undefined) => void;
 }) {
   const initial = editorValueOf(editor, value);
+  const onErrors = (errors: readonly ValidationError[]) =>
+    onShown(errors[0]?.message);
   const [startsSet] = useState(value !== undefined);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
     onInvalid(errors[0]?.message);
@@ -362,6 +365,7 @@ function Editor({
           defaultValue={initial as number | undefined}
           onChange={onChange}
           onInvalid={onInvalid}
+          onShown={onShown}
         />
       );
     case "text":
@@ -405,6 +409,7 @@ function Editor({
           defaultValue={initial as Resources}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "storageSize":
@@ -418,6 +423,7 @@ function Editor({
               : undefined
           }
           describedBy={describedBy}
+          onErrors={onErrors}
           onChange={(size, errors) =>
             valid(
               typeof (current ?? value) === "number" && /^\d+$/.test(size ?? "")
@@ -436,6 +442,7 @@ function Editor({
           defaultValue={initial as EnvVar[]}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "keyValue":
@@ -447,6 +454,7 @@ function Editor({
           emptyMap={replaces && startsSet ? "inherited" : undefined}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "tolerations":
@@ -456,6 +464,7 @@ function Editor({
           defaultValue={initial as Toleration[]}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "secretRef":
@@ -475,6 +484,7 @@ function Editor({
           rows={6}
           defaultValue={initial}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
   }
@@ -508,12 +518,14 @@ function EnvSetting({
   defaultValue,
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue: EnvVar[];
   describedBy?: string;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
+  onErrors: (errors: ValidationError[]) => void;
 }) {
   const { mark, only } = useUserEdit(secrets);
   return (
@@ -524,6 +536,7 @@ function EnvSetting({
         defaultValue={defaultValue}
         describedBy={describedBy}
         onChange={only(onChange)}
+        onErrors={onErrors}
       />
     </div>
   );
@@ -560,18 +573,23 @@ function NumberEditor({
   defaultValue,
   onChange,
   onInvalid,
+  onShown,
 }: {
   label: string;
   editor: Extract<SettingEditor, { kind: "number" }>;
   defaultValue: number | undefined;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
+  onShown: (message: string | undefined) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(
     defaultValue === undefined ? "" : String(defaultValue),
   );
   const error = numberError(text, editor);
+  useErrorsReport(error ? [{ path: "", message: error }] : [], (errors) =>
+    onShown(errors[0]?.message),
+  );
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium text-muted">

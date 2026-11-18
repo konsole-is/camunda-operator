@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/native-select";
 import { parseQuantity } from "@/lib/observe/quantity";
 import type { ValidationError } from "@/lib/schema";
+import { useErrorsReport } from "./errors-report";
 
 const UNITS = [
   { value: "Mi", label: "MiB" },
@@ -25,7 +26,8 @@ const NOT_POSITIVE = "Enter a size above 0";
  * below current shows that volumes cannot shrink. onChange gets the size,
  * or undefined when empty, and the errors: an amount that is not a
  * positive number, at the path "". describedBy names the hint and error
- * elements of the field for the amount and the unit.
+ * elements of the field for the amount and the unit. onErrors gets the
+ * errors that it shows, also at mount.
  */
 export function StorageSizeEditor({
   label,
@@ -33,16 +35,19 @@ export function StorageSizeEditor({
   current,
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   defaultValue?: string;
   current?: string;
   describedBy?: string;
   onChange?: (value: string | undefined, errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [size, setSize] = useState(() => parse(defaultValue));
   const error = errorOf(size.amount);
+  useErrorsReport(error ? [{ path: "", message: error }] : [], onErrors);
   const shrinks = !error && size.amount !== "" && below(size, current);
   const described =
     [error ? `${id}-error` : shrinks && `${id}-shrink`, describedBy]
