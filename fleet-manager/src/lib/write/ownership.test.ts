@@ -566,15 +566,25 @@ describe("keepUntouchedEmpty", () => {
     expect(clearedAfter(live, change)).toEqual([]);
   });
 
-  it("does not keep an empty value that the edit removed", () => {
+  it("keeps an empty string that the edit left out", () => {
     const live = liveWith({ color: "" });
     const change = keepUntouchedEmpty(
       save(environment({ displayName: "Prod" })),
       live,
       environment({ displayName: "Prod" }),
     );
+    expect(clearedAfter(live, change)).toEqual([]);
+  });
+
+  it("does not keep an empty map that the edit removed", () => {
+    const live = liveWith({ images: {} });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod" }),
+    );
     expect(change.keep).toBeUndefined();
-    expect(clearedAfter(live, change)).toEqual(["spec.color"]);
+    expect(clearedAfter(live, change)).toEqual(["spec.images"]);
   });
 
   it("does not keep a value that the edit cleared", () => {

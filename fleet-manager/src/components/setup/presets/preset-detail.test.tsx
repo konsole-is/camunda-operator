@@ -13,6 +13,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ReadError } from "@/lib/k8s/unread";
 import type { PresetKind } from "@/lib/usage";
+import { foreignFields } from "@/lib/write/ownership";
 import type { Change, KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { presetDeleteChange } from "./delete";
 import { presetDraftOf, presetUpdateChange } from "./draft";
@@ -392,6 +393,44 @@ describe("PresetDetail", () => {
       },
     });
     expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
+  it("shows no row for an empty field of another tool that the edit typed into and emptied again", async () => {
+    const sources = presetFixtures();
+    const preset = sources.clusterPresets[0];
+    const zeebe = preset.spec.cluster!.zeebe!;
+    zeebe.storageClassName = "";
+    preset.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": {
+            "f:cluster": {
+              "f:zeebe": { "f:replicas": {}, "f:storageClassName": {} },
+            },
+          },
+        },
+      },
+    ];
+    const { actions } = setup({ sources });
+    const brokers = screen.getByRole("region", { name: "Brokers settings" });
+    const storageClass = within(
+      within(brokers).getByRole("group", { name: "storageClassName" }),
+    ).getByRole("textbox");
+    fireEvent.change(storageClass, { target: { value: "h" } });
+    fireEvent.change(storageClass, { target: { value: "" } });
+    editReplicas("5");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const change = actions.previewChange.mock.calls.at(-1)![0];
+    const { changed, cleared } = foreignFields(
+      preset as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["CamundaClusterPreset//medium"],
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.cluster.zeebe.replicas"]);
+    expect(cleared).toEqual([]);
   });
 
   it("reads Push to Git in Git mode", async () => {

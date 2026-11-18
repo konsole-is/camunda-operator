@@ -195,9 +195,10 @@ export const MAX_KEEP_PATHS = 64;
 /**
  * keepUntouchedEmpty returns change with keep extended, for the applied
  * object of live, by each cleared field of foreignFields that live and
- * edited both hold with an empty value. edited is the object as the page
- * edits it, before the page leaves out its empty values. An empty value
- * is an empty string, list, or map, or a map of only empty values. The apply leaves such a field as it is. A field in
+ * edited both hold with an empty value, or that live holds as an empty
+ * string and edited leaves out. edited is the object as the page edits
+ * it, before the page leaves out its empty values. An empty value is an
+ * empty string, list, or map, or a map of only empty values. The apply leaves such a field as it is. A field in
  * a list item is not kept. keep holds at most MAX_KEEP_PATHS paths, and a
  * further field stays offered. It returns change itself when change has
  * no precondition for live or there is no such field.
@@ -227,8 +228,7 @@ export function keepUntouchedEmpty(
         // keep names paths through maps only.
         f.steps.every((s) => "field" in s) &&
         !f.path.includes("[") &&
-        isEmpty(fieldValue(object, f)) &&
-        isEmpty(fieldValue(edited, f)),
+        leftEmpty(fieldValue(object, f), fieldValue(edited, f)),
     )
     .map((f) => f.path);
   if (untouched.length === 0) return change;
@@ -236,6 +236,13 @@ export function keepUntouchedEmpty(
     ...new Set([...(change.keep?.[key] ?? []), ...untouched]),
   ].slice(0, MAX_KEEP_PATHS);
   return { ...change, keep: { ...change.keep, [key]: kept } };
+}
+
+// The forms drop a text input that the user emptied, so a live empty
+// string that edited leaves out was not removed on purpose.
+function leftEmpty(live: unknown, edited: unknown): boolean {
+  if (live === "" && edited === undefined) return true;
+  return isEmpty(live) && isEmpty(edited);
 }
 
 function isEmpty(value: unknown): boolean {
