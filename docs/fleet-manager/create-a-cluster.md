@@ -28,7 +28,15 @@ When another cluster or plane already uses a host of the access option, the step
 
 ## Cluster settings
 
-Pick the **Release** and the **Platform config**. Both start at the default of the environment. Under them, the step shows the settings of the cluster, one group for the whole cluster and one group for each process. A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
+Pick the **Release** and the **Platform config**. Both start at the default of the environment.
+
+Under them, a note names the preset that you picked in **Environment and name**. Your admin made this preset. It sets each value that shows **From preset**. You can change such a value here. The change applies to this cluster only and does not change the preset.
+
+The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. Under the name, a line says how many settings the group has and where their values come from, for example `14 settings: 3 from the preset, 11 not set`. A setting is `not set` when the preset, the release, and the claim give it no value. A setting that you change counts as `changed in the claim` as soon as you change it. A value that you typed stays when you close the group.
+
+When a setting of a group shows an error, for example a number that is out of range, the group opens. It opens again each time that one more of its settings shows an error. The line under its name then also says how many settings have an error, for example `1 setting has an error`. This line stays when you close the group.
+
+A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 
 A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. A new namespace holds no Secret yet. [A Secret that the namespace does not hold](#a-secret-that-the-namespace-does-not-hold) says what the step shows then.
 

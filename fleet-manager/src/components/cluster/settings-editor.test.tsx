@@ -16,6 +16,7 @@ import {
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
+import { settingsSummary } from "./editable-settings";
 import { SettingsEditor } from "./settings-editor";
 import type { Process } from "./topology";
 
@@ -467,5 +468,134 @@ describe("SettingsEditor", () => {
         description: "too many labels",
       }),
     ).toBeDefined();
+  });
+});
+
+describe("SettingsEditor collapsed", () => {
+  function renderClosed(page: SettingsPage = {}, errors?: FieldError[]) {
+    const set = vi.fn();
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", page);
+    const ui = (shown?: FieldError[]) => (
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        errors={shown}
+        set={set}
+        reset={vi.fn()}
+        invalid={invalid}
+      />
+    );
+    const view = render(ui(errors));
+    return {
+      set,
+      invalid,
+      settings,
+      rerender: (shown?: FieldError[]) => view.rerender(ui(shown)),
+    };
+  }
+  const section = () =>
+    screen.getByRole("region", { name: "Brokers settings" });
+  const details = () => section().querySelector("details")!;
+  const summary = () => section().querySelector("summary")!;
+  const replicas = () =>
+    within(settingRow("replicas")).getByRole<HTMLInputElement>("spinbutton");
+  const REFUSAL: FieldError = {
+    path: "spec.cluster.zeebe.replicas",
+    message: "replicas must be odd",
+  };
+
+  it("starts closed with its rows in the page", () => {
+    renderClosed();
+    expect(details().open).toBe(false);
+    expect(details().contains(replicas())).toBe(true);
+  });
+
+  it("opens and closes on a click on its summary", async () => {
+    renderClosed();
+    await userEvent.click(summary());
+    expect(details().open).toBe(true);
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+  });
+
+  it("names the group, its settings, and where their values come from on the summary", () => {
+    const { settings } = renderClosed({
+      preset: { zeebe: { replicas: 3 } },
+      claim: { cluster: { zeebe: { partitions: 6 } } },
+    });
+    expect(summary().textContent).toContain("Brokers");
+    expect(summary().textContent).toContain(settingsSummary(settings));
+    expect(settingsSummary(settings)).toContain("1 from the preset");
+    expect(settingsSummary(settings)).toContain("1 changed in the claim");
+  });
+
+  it("keeps a typed value while it is closed", async () => {
+    const { set } = renderClosed();
+    await userEvent.click(summary());
+    await userEvent.type(replicas(), "2");
+    await userEvent.click(summary());
+    await userEvent.click(summary());
+    expect(replicas().value).toBe("2");
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "replicas"),
+      2,
+    );
+  });
+
+  it("opens when a refusal of the server arrives at one of its settings", () => {
+    const { rerender } = renderClosed();
+    expect(details().open).toBe(false);
+    rerender([REFUSAL]);
+    expect(details().open).toBe(true);
+    expect(
+      within(settingRow("replicas")).getByText("replicas must be odd"),
+    ).toBeDefined();
+  });
+
+  it("starts open with a refusal of the server at one of its settings", () => {
+    renderClosed({}, [REFUSAL]);
+    expect(details().open).toBe(true);
+  });
+
+  it("stays closed for a refusal of the server at a field of another group", () => {
+    renderClosed({}, [
+      { path: "spec.cluster.gateway.replicas", message: "too few" },
+    ]);
+    expect(details().open).toBe(false);
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it("says on the summary that a setting has an error after the user closes it", async () => {
+    const { invalid } = renderClosed();
+    await userEvent.click(summary());
+    fireEvent.change(replicas(), { target: { value: "-1" } });
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "replicas"),
+      "replicas: Enter 0 or more",
+    );
+  });
+
+  it("drops the error from the summary once the value is valid", async () => {
+    renderClosed();
+    await userEvent.click(summary());
+    fireEvent.change(replicas(), { target: { value: "-1" } });
+    fireEvent.change(replicas(), { target: { value: "1" } });
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it("counts a refusal of the server on the summary", () => {
+    renderClosed({}, [REFUSAL]);
+    expect(summary().textContent).toContain("1 setting has an error");
+  });
+
+  it("is not a disclosure without collapsed", () => {
+    renderEditor("zeebe", "zeebe");
+    expect(section().querySelector("details")).toBeNull();
   });
 });

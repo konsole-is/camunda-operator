@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { type ComponentProps, useState } from "react";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { createReleaseChoices } from "@/components/cluster/edit/release-options";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
@@ -180,5 +180,46 @@ export const NewNamespace: Story = {
       namespace: { kind: "new", name: "team-new", labels: {} },
     },
     secrets: [],
+  },
+};
+
+// brokers returns the settings group of the brokers and its heading.
+function brokers(canvasElement: HTMLElement) {
+  const group = within(canvasElement).getByRole("region", {
+    name: "Brokers settings",
+  });
+  return { group, summary: group.querySelector("summary")! };
+}
+
+export const ChangedSetting: Story = {
+  name: "Changed setting",
+  args: {
+    initial: {
+      ...base,
+      claim: {
+        ...base.claim,
+        spec: { ...base.claim.spec, cluster: { zeebe: { replicas: 5 } } },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(brokers(canvasElement).summary).toHaveTextContent(
+      "1 changed in the claim",
+    );
+  },
+};
+
+export const ErrorInSection: Story = {
+  name: "Error in a section",
+  play: async ({ canvasElement }) => {
+    const { group, summary } = brokers(canvasElement);
+    await userEvent.click(summary);
+    const replicas = within(
+      within(group).getAllByRole("group", { name: "replicas" })[0],
+    ).getByRole("spinbutton");
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "-1");
+    await userEvent.click(summary);
+    await expect(summary).toHaveTextContent("1 setting has an error");
   },
 };

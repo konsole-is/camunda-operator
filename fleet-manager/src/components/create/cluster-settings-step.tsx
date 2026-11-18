@@ -30,7 +30,8 @@ const PICKED = new Set([
 /**
  * ClusterSettingsStep is step 3 of the cluster create flow: the release,
  * the platform config, then the settings editors over fields, without the
- * fields at presetRef, releaseRef, and platformConfigRef. fields are
+ * fields at presetRef, releaseRef, and platformConfigRef. A note names the
+ * preset of the draft, and each settings group starts closed. fields are
  * clusterFields of the draft cluster. A field that a step 2 option fills
  * shows locked with its section. unread are the kinds that could not be
  * read. It holds no draft: pick sets releaseRef or platformConfigRef, an
@@ -75,6 +76,7 @@ export function ClusterSettingsStep({
   const environmentName =
     environment?.spec.displayName || environment?.metadata.name;
   const claim = draft.claim.spec.cluster ?? {};
+  const preset = draft.claim.spec.presetRef;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -142,21 +144,32 @@ export function ClusterSettingsStep({
           )}
         </div>
       </div>
-      {settingsGroupsOf(
-        fields.filter((f) => !PICKED.has(f.claimPath ?? "")),
-        merged.spec,
-      ).map((group) => (
-        <SettingsEditor
-          key={group.component}
-          group={group}
-          // A new cluster has no volume yet, so no size is current.
-          settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
-          secrets={secrets}
-          set={set}
-          reset={reset}
-          invalid={invalid}
-        />
-      ))}
+      <div className="flex flex-col gap-3">
+        {preset && (
+          <p className="max-w-prose text-sm text-muted">
+            Your admin made the preset{" "}
+            <span className="font-medium text-text">{preset}</span>. It sets
+            each value that shows “From preset”. A change here applies to this
+            cluster only. It does not change the preset.
+          </p>
+        )}
+        {settingsGroupsOf(
+          fields.filter((f) => !PICKED.has(f.claimPath ?? "")),
+          merged.spec,
+        ).map((group) => (
+          <SettingsEditor
+            key={group.component}
+            collapsed
+            group={group}
+            // A new cluster has no volume yet, so no size is current.
+            settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
+            secrets={secrets}
+            set={set}
+            reset={reset}
+            invalid={invalid}
+          />
+        ))}
+      </div>
     </div>
   );
 }

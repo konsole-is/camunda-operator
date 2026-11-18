@@ -20,6 +20,7 @@ import {
 } from "@/components/fleet/secret-ref-picker";
 import { StorageSizeEditor } from "@/components/fleet/storage-size-editor";
 import { YamlEditor } from "@/components/fleet/yaml-editor";
+import { EditorSection } from "@/components/setup/form-parts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,7 +40,11 @@ import {
 import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
-import { type Setting, settingChange } from "./editable-settings";
+import {
+  type Setting,
+  settingChange,
+  settingsSummary,
+} from "./editable-settings";
 import type { SettingsGroup } from "./settings";
 
 /**
@@ -49,14 +54,17 @@ import type { SettingsGroup } from "./settings";
  * settings apply when the app runs standalone. A change with errors is not
  * passed on. errors are the field errors of the claim, such as a refusal of
  * the server, and each shows at the setting whose claim path holds it.
- * invalid gets the error that a setting shows, as SettingRow gives it. It
- * holds no session.
+ * invalid gets the error that a setting shows, as SettingRow gives it. A
+ * collapsed group starts closed, with settingsSummary and the number of
+ * settings with an error on its heading, and opens each time that number
+ * grows. It holds no session.
  */
 export function SettingsEditor({
   group,
   settings,
   secrets,
   errors = [],
+  collapsed = false,
   set,
   reset,
   invalid,
@@ -65,19 +73,36 @@ export function SettingsEditor({
   settings: readonly Setting[];
   secrets: SecretRefs;
   errors?: readonly FieldError[];
+  collapsed?: boolean;
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
 }) {
   const [resets, setResets] = useState(0);
-  return (
-    <section
-      aria-label={`${group.label} settings`}
-      className="flex min-w-0 flex-col gap-1"
-    >
-      <h3 className="font-heading text-sm font-semibold">
-        {group.embedded ? `${group.label} (embedded)` : group.label}
-      </h3>
+  // The keys of the settings whose editor shows an error.
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = useState(false);
+  const [counted, setCounted] = useState(0);
+  const failing = settings.filter(
+    (s) => shown.has(s.key) || errorsAt(errors, s.steps).length > 0,
+  ).length;
+  if (counted !== failing) {
+    setCounted(failing);
+    if (failing > counted) setOpen(true);
+  }
+  const report =
+    (key: string) => (steps: Step[], message: string | undefined) => {
+      setShown((keys) => {
+        const next = new Set(keys);
+        if (message === undefined) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      invalid?.(steps, message);
+    };
+  const title = group.embedded ? `${group.label} (embedded)` : group.label;
+  const body = (
+    <>
       {group.embedded && (
         <p className="text-sm text-muted">
           Applies when {group.label} runs standalone. The exception is extraEnv
@@ -93,11 +118,44 @@ export function SettingsEditor({
             errors={errorsAt(errors, setting.steps)}
             set={set}
             reset={reset}
-            invalid={invalid}
+            invalid={collapsed ? report(setting.key) : invalid}
             onReset={() => setResets((n) => n + 1)}
           />
         ))}
       </div>
+    </>
+  );
+  if (collapsed)
+    return (
+      <section aria-label={`${group.label} settings`} className="min-w-0">
+        <EditorSection
+          title={title}
+          open={open}
+          onToggle={setOpen}
+          summary={
+            <>
+              {settingsSummary(settings)}
+              {failing > 0 && (
+                <span className="block text-bad">
+                  {failing === 1
+                    ? "1 setting has an error"
+                    : `${failing} settings have an error`}
+                </span>
+              )}
+            </>
+          }
+        >
+          {body}
+        </EditorSection>
+      </section>
+    );
+  return (
+    <section
+      aria-label={`${group.label} settings`}
+      className="flex min-w-0 flex-col gap-1"
+    >
+      <h3 className="font-heading text-sm font-semibold">{title}</h3>
+      {body}
     </section>
   );
 }

@@ -157,6 +157,69 @@ export function settingsOf(input: {
 }
 
 /**
+ * settingsSummary returns the line that says how many settings there are
+ * and where their values come from, in the words of stateLabel, as in
+ * "12 settings: 8 from the preset, 1 changed in the claim". A source that
+ * no setting has is left out, and the changes in the claim come last.
+ */
+export function settingsSummary(settings: readonly Setting[]): string {
+  if (settings.length === 0) return "No settings";
+  const counts = new Map<string, { rank: number; n: number }>();
+  for (const { state } of settings) {
+    const source = sourceOf(state);
+    const rank = SOURCE_ORDER.indexOf(state?.kind ?? "unset");
+    const count = counts.get(source) ?? { rank, n: 0 };
+    counts.set(source, { rank, n: count.n + 1 });
+  }
+  const parts = [...counts]
+    .sort(([, a], [, b]) => a.rank - b.rank)
+    .map(([source, { n }]) => `${n} ${source}${n === 1 ? "" : plural(source)}`);
+  const total = `${settings.length} setting${settings.length === 1 ? "" : "s"}`;
+  return `${total}: ${parts.join(", ")}`;
+}
+
+const SOURCE_ORDER: readonly (FieldState["kind"] | "unset")[] = [
+  "preset",
+  "release",
+  "environment",
+  "admin",
+  "filled",
+  "setBy",
+  "default",
+  "unset",
+  "claim",
+];
+
+function sourceOf(state: FieldState | undefined): string {
+  switch (state?.kind) {
+    case undefined:
+      return "not set";
+    case "preset":
+      return "from the preset";
+    case "release":
+      return "from the release";
+    case "environment":
+      return "from the environment";
+    case "admin":
+      return "set by your admin";
+    case "filled":
+      return `filled by ${state.sectionLabel}`;
+    case "setBy":
+      return `set by ${state.manager ?? "an unknown writer"}`;
+    case "default":
+      return "default value";
+    case "claim":
+      return "changed in the claim";
+  }
+}
+
+// plural returns the ending of source for more than one setting: only a
+// noun takes one.
+function plural(source: string): string {
+  return source === "default value" ? "s" : "";
+}
+
+/**
  * settingChange returns where an editor value goes and its claim value. A
  * value of undefined resets the field at steps. A setting with a holder
  * writes the whole held field with the setting changed, and resets it when
