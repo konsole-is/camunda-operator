@@ -4,27 +4,29 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { applyContractChange } from "@/app/setup/connections/actions";
 import { deleteChange } from "@/components/setup/connections/draft";
 import type { ContractObject } from "@/components/setup/connections/facts";
-import { ResourceCache } from "@/lib/k8s/cache";
+import { defaultCache, ResourceCache } from "@/lib/k8s/cache";
 import { getJSON } from "@/lib/k8s/client";
 import { KindMap, type KindName } from "@/lib/k8s/kinds";
 import { get, listFrom } from "@/lib/k8s/read";
 import { type Envtest, startEnvtest } from "../envtest/envtest";
 import { kubeRequest } from "../scenarios/kube";
 
-// The reader may list every kind but watch only the kinds that WATCHED
-// holds. A watch of any other kind fails on each try after its first list,
+// Each test has its own user, which may get, list, and watch every kind
+// but one. The watch of that kind fails on each try after its first list,
 // as it does when the permission to watch is taken away.
-const READER = "fleet-reader";
-const UNWATCHED: readonly KindName[] = ["Environment", "PluginRequest"];
-const WATCHED = (Object.keys(KindMap) as KindName[]).filter(
-  (kind) => !UNWATCHED.includes(kind),
-);
+const CACHE_READER = "cache-reader";
+const ACTION_READER = "action-reader";
 
 let envtest: Envtest;
 const namespace = `watch-recovery-${randomUUID().slice(0, 8)}`;
 const rbac = "/apis/rbac.authorization.k8s.io/v1";
 
-async function grant(name: string, verbs: string[], kinds: "*" | KindName[]) {
+async function grant(
+  user: string,
+  name: string,
+  verbs: string[],
+  kinds: "*" | KindName[],
+) {
   const kc = envtest.kubeConfig;
   const rules =
     kinds === "*"
@@ -50,17 +52,29 @@ async function grant(name: string, verbs: string[], kinds: "*" | KindName[]) {
       name,
     },
     subjects: [
-      { kind: "User", name: READER, apiGroup: "rbac.authorization.k8s.io" },
+      { kind: "User", name: user, apiGroup: "rbac.authorization.k8s.io" },
     ],
   });
 }
 
+// readAllButWatchOf lets user get and list every kind, and watch every
+// kind but unwatched.
+async function readAllButWatchOf(user: string, unwatched: KindName) {
+  await grant(user, `${user}-list`, ["get", "list"], "*");
+  await grant(
+    user,
+    `${user}-watch`,
+    ["watch"],
+    (Object.keys(KindMap) as KindName[]).filter((k) => k !== unwatched),
+  );
+}
+
 beforeAll(async () => {
-  envtest = await startEnvtest({ users: [{ name: READER }] });
-  await grant("reader-list", ["get", "list"], "*");
-  await grant("reader-watch", ["watch"], WATCHED);
+  envtest = await startEnvtest({
+    users: [{ name: CACHE_READER }, { name: ACTION_READER }],
+  });
   // The data layer reads KUBECONFIG through kubeConfig, on its first call.
-  process.env.KUBECONFIG = envtest.users[READER].kubeconfigPath;
+  process.env.KUBECONFIG = envtest.users[ACTION_READER].kubeconfigPath;
   await kubeRequest(envtest.kubeConfig, "POST", "/api/v1/namespaces", {
     apiVersion: "v1",
     kind: "Namespace",
@@ -71,11 +85,15 @@ beforeAll(async () => {
   process.env.FLEET_NAMESPACE = namespace;
   delete process.env.FLEET_SETTINGS_GIT_REPOSITORY;
 }, 120_000);
-afterAll(async () => envtest?.stop(), 60_000);
+afterAll(async () => {
+  await defaultCache().stop();
+  await envtest?.stop();
+}, 60_000);
 
 describe("a watch that fails on each try after the first list", () => {
   it("makes the cache report the kind as not current within the limit, and current again once the watch works", async () => {
-    const reader = envtest.users[READER].kubeConfig;
+    await readAllButWatchOf(CACHE_READER, "Environment");
+    const reader = envtest.users[CACHE_READER].kubeConfig;
     const limitMs = 1_000;
     const cache = new ResourceCache({
       list: (path) => getJSON(reader, path, 10_000),
@@ -108,21 +126,27 @@ describe("a watch that fails on each try after the first list", () => {
           spec: { displayName: "Created while the watch failed" },
         },
       );
-      await grant("reader-watch-environments", ["watch"], ["Environment"]);
-
-      const environments = await vi.waitFor(
-        () => listFrom(cache, "Environment"),
-        {
-          timeout: 10_000,
-        },
+      await grant(
+        CACHE_READER,
+        `${CACHE_READER}-watch-environments`,
+        ["watch"],
+        ["Environment"],
       );
-      expect(environments.map((e) => e.metadata.name)).toEqual(["missed"]);
+
+      await vi.waitFor(
+        async () =>
+          expect(
+            (await listFrom(cache, "Environment")).map((e) => e.metadata.name),
+          ).toEqual(["missed"]),
+        { timeout: 10_000 },
+      );
     } finally {
       await cache.stop();
     }
   }, 30_000);
 
   it("makes the delete of a connection contract refuse with the kind that a check reads", async () => {
+    await readAllButWatchOf(ACTION_READER, "PluginRequest");
     const name = "backups";
     await kubeRequest(
       envtest.kubeConfig,
@@ -156,6 +180,8 @@ describe("a watch that fails on each try after the first list", () => {
     // The first sync of PluginRequest worked, and its watch fails since.
     const result = await vi.waitFor(
       async () => {
+        // The reader may not delete, so a call that the guard lets through
+        // before the limit fails at the API server and deletes nothing.
         const refused = await applyContractChange(deleteChange(live));
         expect(refused.ok).toBe(false);
         expect(JSON.stringify(refused)).toContain("PluginRequest");

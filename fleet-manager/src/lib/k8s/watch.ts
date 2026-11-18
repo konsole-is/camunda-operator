@@ -248,10 +248,14 @@ export function watchStream(
               }
               pumping = false;
             };
-            // The changes that wait were made before the cache lost the
-            // kind, and the snapshot after it holds them.
+            let release: (() => void) | undefined;
+            // The cache ended the subscription. The changes that wait were
+            // made before the cache lost the kind, and the snapshot after it
+            // holds them.
             const lost = (error: Error) => {
               if (closed) return;
+              const at = release ? unsubscribes.indexOf(release) : -1;
+              if (at >= 0) unsubscribes.splice(at, 1);
               for (const [, , bytes] of queue.splice(0)) queuedBytes -= bytes;
               void sendWhenRoom("failure", {
                 watch: id,
@@ -286,6 +290,7 @@ export function watchStream(
                 unsubscribe();
                 return true;
               }
+              release = unsubscribe;
               unsubscribes.push(unsubscribe);
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));

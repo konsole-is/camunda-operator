@@ -20,14 +20,15 @@ import { stripSecret } from "./strip-secret";
 export const SYNC_TIMEOUT_MS = 10_000;
 
 /**
- * WATCH_RECOVERY_MS is the time that the watch of a kind has to start again
- * after it failed. After that time the cache has no current list of the kind
- * until a watch starts again.
+ * WATCH_RECOVERY_MS is the time that a kind has, after its watch failed, to
+ * list again and start a new watch. After that time the cache has no current
+ * list of the kind until it does.
  */
-// The watch tries again after 1, 2, and 4 seconds, so it gets over a dropped
-// connection or a short restart of the API server within this time. A longer
-// time lets a delete guard pass on a list that misses the changes of that
-// time.
+// After an error the cache lists again after 1, 2, and 4 seconds, so it gets
+// over a dropped connection or a short restart of the API server within this
+// time. A longer time lets a delete guard pass on a list that misses the
+// changes of that time. A connection that goes silent counts as failed only
+// when the client ends the watch for no data, after 30 seconds.
 export const WATCH_RECOVERY_MS = 10_000;
 
 /** CacheDeps are the API calls of the cache. Tests pass fakes. */
@@ -66,11 +67,11 @@ export interface Subscription<K extends KindName> {
 /**
  * ResourceCache holds one informer for each kind that a reader asked for,
  * started by the first read of the kind. An informer lists the kind in every
- * namespace and keeps the list current from a watch. After 410 Gone it lists
- * again, and after another watch error it watches again after a delay. A
- * watch that does not start again within watchRecoveryMs makes the kind not
- * current: its reads fail until a watch starts again. A Secret enters the
- * cache only as a SecretSummary.
+ * namespace and keeps the list current from a watch. After a watch failed,
+ * it lists again before it watches again, after a delay when the failure was
+ * an error. A kind that does not list and watch again within watchRecoveryMs
+ * is not current: its reads fail until it does. A Secret enters the cache
+ * only as a SecretSummary.
  */
 export class ResourceCache {
   private readonly informers = new Map<KindName, KindInformer>();
@@ -150,6 +151,10 @@ class KindInformer {
   private recoveryTimer?: NodeJS.Timeout;
   private watchError: unknown;
   private current = true;
+  // failing is set from a failure of the watch until a new list and a new
+  // watch. listedAgain is set once that new list answered.
+  private failing = false;
+  private listedAgain = false;
   private readonly lostHandlers = new Set<CacheLost>();
 
   constructor(
@@ -170,7 +175,7 @@ class KindInformer {
         this.syncTimeout(),
       );
       this.listed = true;
-      this.retryDelay = deps.retryDelayMs;
+      if (this.failing) this.listedAgain = true;
       return {
         ...list,
         items: (list.items ?? []).map((o) =>
@@ -192,6 +197,18 @@ class KindInformer {
         // ListWatch does not check that it stopped after the first list or
         // after the reconnect delay, so a stopped informer opens no watch.
         if (this.stopped) return Promise.resolve(new AbortController());
+        // A watch that the API server accepts after a failure does not show
+        // what changed in the meantime. 410 Gone makes ListWatch list again
+        // first. It must come after this request is in place, because
+        // ListWatch keeps the request that it got last.
+        if (this.failing && !this.listedAgain) {
+          setTimeout(() => {
+            void (done(GONE) as unknown as Promise<void>).catch((e: unknown) =>
+              this.onError(e),
+            );
+          });
+          return Promise.resolve(new AbortController());
+        }
         // The client ends a watch that the API server refuses before the
         // request resolves, and a watch that it accepted only after.
         let ended = false;
@@ -199,23 +216,26 @@ class KindInformer {
           .watch(
             watchPath,
             params,
-            (phase, object, raw) =>
+            (phase, object, raw) => {
+              // The API server ends a watch after an ERROR event.
+              if (phase === "ERROR") this.watchFailed(object);
               callback(
                 phase,
                 ["ADDED", "MODIFIED", "DELETED"].includes(phase)
                   ? shape(object)
                   : object,
                 raw,
-              ),
+              );
+            },
             // done of ListWatch is async and the client does not await it, so
             // a watch that cannot start again would reject with no handler.
             (err) => {
-              const timeout = (err as Error | null)?.name === "TimeoutError";
-              // A watch that ends with no error or at its request timeout ran.
-              if (!err || timeout) this.retryDelay = deps.retryDelayMs;
-              // ListWatch starts a watch again at once after a timeout, and
-              // gives no error, also when the API server never answered.
-              if (timeout && !ended) this.watchFailed(err);
+              // The client gives up on a request that gets no answer, and on
+              // a watch that sends no data, with a TimeoutError. ListWatch
+              // then watches again at once and gives no error.
+              if ((err as Error | null)?.name === "TimeoutError") {
+                this.watchFailed(err);
+              }
               ended = true;
               void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
                 this.onError(e),
@@ -224,8 +244,7 @@ class KindInformer {
           )
           .then((request) => {
             if (this.stopped) request.abort();
-            else if (!ended) this.watchStarted();
-            ended = true;
+            else if (!ended && this.listedAgain) this.recovered();
             return request;
           });
       },
@@ -316,6 +335,8 @@ class KindInformer {
 
   private watchFailed(err: unknown): void {
     this.watchError = err;
+    this.failing = true;
+    this.listedAgain = false;
     if (this.recoveryTimer || !this.current || this.stopped) return;
     this.recoveryTimer = setTimeout(() => {
       this.recoveryTimer = undefined;
@@ -325,18 +346,20 @@ class KindInformer {
     }, this.deps.watchRecoveryMs);
   }
 
-  private watchStarted(): void {
+  private recovered(): void {
     clearTimeout(this.recoveryTimer);
     this.recoveryTimer = undefined;
+    this.failing = false;
+    this.listedAgain = false;
     this.current = true;
+    this.retryDelay = this.deps.retryDelayMs;
   }
 
   private notCurrentError(): Error {
     const seconds = this.deps.watchRecoveryMs / 1000;
     const reason =
-      this.watchError instanceof Error
-        ? this.watchError.message
-        : String(this.watchError);
+      (this.watchError as { message?: string } | undefined)?.message ??
+      String(this.watchError);
     return new Error(
       `The fleet manager has no current list of ${this.kind}: its watch failed and did not start again within ${seconds} seconds: ${reason}`,
       { cause: this.watchError },
@@ -376,6 +399,8 @@ class KindInformer {
 }
 
 class SyncTimeoutError extends Error {}
+
+const GONE = { statusCode: 410 };
 
 function listFailure(kind: KindName, err: unknown): Error {
   if (err instanceof SyncTimeoutError) return err;

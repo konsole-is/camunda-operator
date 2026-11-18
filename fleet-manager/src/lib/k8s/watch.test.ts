@@ -384,6 +384,40 @@ describe("watchStream", () => {
     abort.abort();
   });
 
+  it("releases at the end of the stream only the subscription that is still active", async () => {
+    const unsubscribes = [vi.fn(), vi.fn()];
+    let lost: ((error: Error) => void) | undefined;
+    const cache = {
+      subscribe: vi.fn(
+        async (
+          _kind: string,
+          _listener: CacheListener<"Pod">,
+          onLost: (error: Error) => void,
+        ) => {
+          lost = onLost;
+          return { snapshot: [], unsubscribe: unsubscribes.shift()! };
+        },
+      ),
+    } as unknown as ResourceCache;
+    const [ended, active] = unsubscribes;
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [{ id: "a", request: { kinds: ["Pod"] } }],
+      abort.signal,
+      { retryMs: 20 },
+    ).getReader();
+    await readFrames(reader, 1);
+
+    // The cache ends a lost subscription itself.
+    lost!(new Error("The fleet manager has no current list of Pod"));
+    await readFrames(reader, 2);
+    abort.abort();
+
+    expect(ended).not.toHaveBeenCalled();
+    expect(active).toHaveBeenCalledOnce();
+  });
+
   it("starts every watch before the first snapshot", async () => {
     const never = () => new Promise(() => {});
     const { cache } = fakeCache({ Pod: never, Service: never });
