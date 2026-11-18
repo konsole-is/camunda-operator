@@ -5,6 +5,7 @@ import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
   ENVIRONMENT_LABEL,
@@ -208,7 +209,12 @@ export function connectionFixtures(): ConnectionSources {
       apiVersion: "plugins.camunda.io/v1alpha1",
       kind: "PluginRequest",
       metadata: { namespace: "team-a", name: "orders-backup" },
-      spec: {},
+      spec: {
+        section: "backup-storage",
+        registration: "aws-s3",
+        parameters: {},
+      },
+      status: { outputs: { objectStorageConfig: "orders-backup" } },
     } as unknown as PluginRequest,
   ];
   const optimizes = [
@@ -277,6 +283,13 @@ export function connectionFixtures(): ConnectionSources {
     requests,
     planeClaims: [],
     registrations: [],
-    sections: [],
+    sections: [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "backup-storage" },
+        spec: { selection: "One", slot: "backupStorage" },
+      } as PluginSection,
+    ],
   };
 }

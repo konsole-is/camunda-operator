@@ -374,6 +374,39 @@ describe("applyContractChange", () => {
       ]);
     });
 
+    it.each([
+      ["has no output yet", { status: {} }],
+      ["names a section that does not exist", { section: "gone" }],
+    ])(
+      "refuses a delete while a request %s, and names the request",
+      async (_, patch) => {
+        const [request] = cache.lists.PluginRequest as {
+          spec: { section: string };
+          status: unknown;
+        }[];
+        if ("status" in patch) request.status = patch.status;
+        else request.spec.section = patch.section;
+        const messages = await refusedWith(
+          remove("ObjectStorageConfig", "camunda-system", "archive"),
+          "Forbidden",
+        );
+        expect(messages).toEqual([
+          "Delete is possible when the fleet manager knows the contracts of PluginRequest camunda-system/orders-backups.",
+        ]);
+      },
+    );
+
+    it("deletes while a request that is being deleted has no output", async () => {
+      const [request] = cache.lists.PluginRequest as {
+        metadata: Record<string, string>;
+        status: unknown;
+      }[];
+      request.metadata.deletionTimestamp = "2026-11-18T10:00:00Z";
+      request.status = {};
+      const change = remove("ObjectStorageConfig", "camunda-system", "archive");
+      expect((await applyContractChange(change)).ok).toBe(true);
+    });
+
     it.each(["PluginSection", "PluginRegistration"])(
       "refuses a delete while %s cannot be read, and names it",
       async (kind) => {
@@ -389,7 +422,11 @@ describe("applyContractChange", () => {
     );
 
     it("deletes a contract that no output names", async () => {
-      cache.lists.PluginRequest = [];
+      (
+        cache.lists.PluginRequest as {
+          status: { outputs: Record<string, string> };
+        }[]
+      )[0].status.outputs = { objectStorageConfig: "other" };
       const change = remove("ObjectStorageConfig", "camunda-system", "archive");
       expect((await applyContractChange(change)).ok).toBe(true);
       expect(fakeWriter.applied).toEqual([change]);

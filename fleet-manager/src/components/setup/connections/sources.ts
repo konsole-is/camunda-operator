@@ -123,7 +123,7 @@ export function useConnectionSources(
     planeClaims,
     registrations,
     sections,
-  };
+  } satisfies Record<keyof ConnectionSources, { error?: string }>;
   const liveErrors = (
     Object.keys(results) as (keyof ConnectionSources)[]
   ).flatMap((key) => {

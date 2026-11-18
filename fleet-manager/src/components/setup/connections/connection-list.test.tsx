@@ -208,6 +208,14 @@ describe("ConnectionList", () => {
 });
 
 describe("contractRows", () => {
+  it("names the sections in the Users column of a contract that a slot output can name while they cannot be read", () => {
+    failing.kind = "PluginSection";
+    render(<ConnectionListLive initial={connectionFixtures()} />);
+    expect(
+      within(rowOf("backups")).getByText("Could not read PluginSection"),
+    ).toBeTruthy();
+  });
+
   it("treats a plugin output as managed while the requests are not known", () => {
     failing.kind = "PluginRequest";
     render(<ConnectionListLive initial={connectionFixtures()} />);

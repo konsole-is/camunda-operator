@@ -594,7 +594,12 @@ describe("ConnectionDetail with changes", () => {
           registration: "acme-postgres",
           parameters: {},
         },
-        status: { outputs: { identityDatabaseConfig: "orders-db" } },
+        status: {
+          outputs: { identityDatabaseConfig: "orders-db" },
+          conditions: [
+            { type: "OutputsReady", status: "True", observedGeneration: 0 },
+          ],
+        },
       } as unknown as ConnectionSources["requests"][number],
     ];
     edit(inTeamA("DatabaseConfig", "orders-db"), { sources });
@@ -605,6 +610,43 @@ describe("ConnectionDetail with changes", () => {
     expect(
       screen.getByText(
         "Delete is possible when no resource uses this contract.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type orders-db to confirm")).toBeNull();
+  });
+
+  it("refuses Delete and names the request while a custom request has no output yet", () => {
+    const sources = connectionFixtures();
+    sources.sections = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "management-database" },
+        spec: { selection: "One", slot: "managementDatabases" },
+      } as ConnectionSources["sections"][number],
+    ];
+    sources.requests = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRequest",
+        metadata: { namespace: "team-a", name: "plane-a-databases" },
+        spec: {
+          section: "management-database",
+          registration: "acme-postgres",
+          parameters: { identity: "orders-db" },
+        },
+      } as unknown as ConnectionSources["requests"][number],
+    ];
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources });
+
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager knows the contracts of PluginRequest team-a/plane-a-databases.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(panel("Used by")).getByText(
+        "The users are not known while the fleet manager does not know the contracts of PluginRequest team-a/plane-a-databases.",
       ),
     ).toBeTruthy();
     expect(screen.queryByLabelText("Type orders-db to confirm")).toBeNull();

@@ -10,6 +10,9 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
+  waitingChangeText,
+  waitingDeleteText,
+  waitingRequests,
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
@@ -141,15 +144,18 @@ function refusalsOf(
   const blind = unreadUserKinds(kind, unread);
   if (blind.length > 0)
     return refuse(deleting ? unreadDeleteText(blind) : unreadChangeText(blind));
+  const contract = {
+    kind,
+    ...(ref.namespace !== undefined && { namespace: ref.namespace }),
+    name: ref.name,
+  };
+  const waiting = waitingRequests(contract, sources);
+  if (waiting.length > 0)
+    return refuse(
+      deleting ? waitingDeleteText(waiting) : waitingChangeText(waiting),
+    );
   if (!deleting) return [];
-  const users =
-    contractUsage(sources).get(
-      contractKey({
-        kind,
-        ...(ref.namespace !== undefined && { namespace: ref.namespace }),
-        name: ref.name,
-      }),
-    ) ?? [];
+  const users = contractUsage(sources).get(contractKey(contract)) ?? [];
   if (users.length > 0)
     return refuse(
       `Delete is possible when no resource uses ${named}. Used by ${users

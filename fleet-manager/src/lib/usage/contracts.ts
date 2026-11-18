@@ -15,6 +15,7 @@ import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupe
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
@@ -37,6 +38,7 @@ import {
   nameOf,
   own,
   type PluginSelection,
+  readyOutputs,
   type ResolvedPolicy,
   resolve,
 } from "@/lib/policy";
@@ -210,7 +212,7 @@ export type ContractUserSources = {
 };
 
 type SelectingRequest = {
-  metadata: { namespace?: string; name?: string };
+  metadata: { namespace?: string; name?: string; deletionTimestamp?: unknown };
   spec: { section?: string; registration: string; parameters?: unknown };
   status?: {
     outputs?: Record<string, string>;
@@ -650,8 +652,8 @@ type LabeledObject = {
   };
 };
 
-// writtenBy says whether the contract kind/name in the namespace of request
-// carries the request labels of request.
+// writtenBy says whether the request wrote the contract kind/name in its
+// namespace.
 function writtenBy(
   request: SelectingRequest,
   kind: ContractKind,
@@ -667,11 +669,77 @@ function writtenBy(
   const contract = (lists[kind] ?? []).find(
     (c) => c.metadata.name === name && c.metadata.namespace === namespace,
   );
-  const labels = contract?.metadata.labels ?? {};
+  if (!contract) return false;
+  const writer = contractWriter(contract, sources.requests, sources.planes);
+  const labels = contract.metadata.labels ?? {};
   return (
+    writer.by === "registration" &&
+    writer.registration === request.spec.registration &&
     labels[REQUEST_LABEL] === request.metadata.name &&
     (labels[REQUEST_NAMESPACE_LABEL] ?? namespace) === namespace
   );
+}
+
+/**
+ * waitingRequests returns each request in the namespace of ref that can
+ * name a contract of its kind in its outputs but has not done so yet, as
+ * "PluginRequest <namespace>/<name>", sorted. The users of ref are not known
+ * while one exists. A request counts when its section has a slot output of
+ * that kind with no value and readyOutputs does not give its outputs yet,
+ * and when its section is not in sources. A request of a built-in
+ * registration and a request that is being deleted do not count.
+ */
+export function waitingRequests(
+  ref: ContractRef,
+  sources: ContractUserSources,
+): string[] {
+  const outputs = SLOT_FIELDS.filter(
+    (row) => own(OUTPUT_CONTRACTS, row.output) === ref.kind,
+  );
+  if (outputs.length === 0) return [];
+  return sources.requests
+    .filter((request) => {
+      if (
+        request.metadata.namespace !== ref.namespace ||
+        request.metadata.deletionTimestamp ||
+        own(BUILTIN_OPTIONS, request.spec.registration)
+      ) {
+        return false;
+      }
+      const section = sources.sections.find(
+        (s) => s.metadata?.name === request.spec.section,
+      );
+      if (!section) return true;
+      const values = request.status?.outputs ?? {};
+      const missing = outputs.some(
+        (row) => row.slot === section.spec.slot && !own(values, row.output),
+      );
+      return (
+        missing &&
+        !readyOutputs(
+          [request as PluginRequest],
+          request.spec.section ?? "",
+          request.spec.registration,
+        )
+      );
+    })
+    .map((r) => `PluginRequest ${r.metadata.namespace}/${r.metadata.name}`)
+    .sort(byCodeUnit);
+}
+
+/** waitingDeleteText says why a delete is off while requests have not named their contracts. */
+export function waitingDeleteText(requests: readonly string[]): string {
+  return `Delete is possible when the fleet manager knows the contracts of ${requests.join(", ")}.`;
+}
+
+/** waitingChangeText says why a change is off while requests have not named their contracts. */
+export function waitingChangeText(requests: readonly string[]): string {
+  return `A change is possible when the fleet manager knows the contracts of ${requests.join(", ")}.`;
+}
+
+/** waitingUsersText says that the users of a contract are not known while requests have not named their contracts. */
+export function waitingUsersText(requests: readonly string[]): string {
+  return `The users are not known while the fleet manager does not know the contracts of ${requests.join(", ")}.`;
 }
 
 function isContractKind(kind: string): kind is ContractKind {

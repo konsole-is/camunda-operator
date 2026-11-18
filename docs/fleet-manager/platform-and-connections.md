@@ -185,7 +185,7 @@ The panel **Used by** lists each object that names the contract, with the fields
 | Object storage, secondary storage | `CamundaClusterClaim` | `spec.plugins.<registration>.parameters.name`, for the registrations `existing-object-storage` and `existing-secondary-storage` |
 | Databases | `CamundaManagementClusterClaim` | `spec.plugins.existing-database-configs.parameters.<component>`, for example `parameters.keycloak` |
 | Object storage, secondary storage, databases | `PluginRequest` | `spec.parameters.name` or `spec.parameters.<component>` of a request of these registrations |
-| Object storage, secondary storage, databases | `PluginRequest` | `status.outputs.objectStorageConfig`, `status.outputs.secondaryStorageConfig`, or `status.outputs.<component>DatabaseConfig` of a request of a plugin, when the section of the request has the slot `backupStorage`, `secondaryStorage`, or `managementDatabases`. A request does not use a contract that the plugin made for it. |
+| Object storage, secondary storage, databases | `PluginRequest` | `status.outputs.objectStorageConfig`, `status.outputs.secondaryStorageConfig`, or `status.outputs.<component>DatabaseConfig` of a request of any other registration, when the section of the request has the slot `backupStorage`, `secondaryStorage`, or `managementDatabases`. A request does not use a contract that its registration made for it. Until the request has a value for the output, the page offers no change and no delete of such a contract in its namespace. |
 
 An `ElasticsearchCluster` or a `DatabaseServer` can take its reference from its preset. It is then a user of the contract too, and it shows `from preset <preset>` under its field.
 

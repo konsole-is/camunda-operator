@@ -33,6 +33,7 @@ import {
   type ContractWriter,
   contractKey,
   contractUsage,
+  waitingRequests,
   contractWriter,
   unreadUserKinds,
   writerEditable,
@@ -1065,6 +1066,29 @@ describe("contractUsage", () => {
         );
       });
 
+      it("counts a request whose output names a contract that has its request label but no registration label", () => {
+        const sources = sourcesWith({
+          sections: [section("backups", "backupStorage")],
+          requests: [request("backups", { objectStorageConfig: "orders-s3" })],
+          objectStorageConfigs: [
+            {
+              kind: "ObjectStorageConfig",
+              metadata: {
+                namespace: "team-a",
+                name: "orders-s3",
+                labels: { "plugins.camunda.io/request": "orders-backups" },
+              },
+              spec: {},
+            } as unknown as ObjectStorageConfig,
+          ],
+        });
+        expect(
+          usersOf(sources, objectStorage("team-a", "orders-s3")).map(
+            (u) => u.name,
+          ),
+        ).toEqual(["orders-backups"]);
+      });
+
       it("ignores an output that is not a contract of the slot, and a section without a slot", () => {
         const sources = sourcesWith({
           sections: [section("backups", "backupStorage"), section("extras")],
@@ -1287,6 +1311,125 @@ describe("contractUsage", () => {
       "ElasticsearchCluster es",
       "LogicalBackupRDBMS bk",
     ]);
+  });
+});
+
+describe("waitingRequests", () => {
+  const section = (name: string, slot?: string) =>
+    ({
+      metadata: { name },
+      spec: { selection: "One", ...(slot && { slot }) },
+    }) as unknown as PluginSection;
+  const request = (
+    name: string,
+    spec: { section: string; registration: string },
+    outputs?: Record<string, string>,
+    deleting = false,
+  ) =>
+    ({
+      metadata: {
+        namespace: "team-a",
+        name,
+        ...(deleting && { deletionTimestamp: "2026-11-18T10:00:00Z" }),
+      },
+      spec: { ...spec, parameters: { bucket: "archive" } },
+      ...(outputs && { status: { outputs } }),
+    }) as unknown as PluginRequest;
+  const archive = objectStorage("team-a", "archive");
+
+  it("names a request of a custom registration whose slot output for the kind has no value yet", () => {
+    const sources = sourcesWith({
+      sections: [section("backups", "backupStorage")],
+      requests: [
+        request("orders-backups", {
+          section: "backups",
+          registration: "acme-s3",
+        }),
+      ],
+    });
+    expect(waitingRequests(archive, sources)).toEqual([
+      "PluginRequest team-a/orders-backups",
+    ]);
+  });
+
+  it("names no request whose outputs are ready, also when an output of the kind has no value", () => {
+    const sources = sourcesWith({
+      sections: [section("database", "managementDatabases")],
+      requests: [
+        {
+          ...request(
+            "databases",
+            { section: "database", registration: "acme-postgres" },
+            { identityDatabaseConfig: "identity-db" },
+          ),
+          status: {
+            outputs: { identityDatabaseConfig: "identity-db" },
+            conditions: [
+              { type: "OutputsReady", status: "True", observedGeneration: 0 },
+            ],
+          },
+        } as unknown as PluginRequest,
+      ],
+    });
+    expect(
+      waitingRequests(
+        { kind: "DatabaseConfig", namespace: "team-a", name: "keycloak-db" },
+        sources,
+      ),
+    ).toEqual([]);
+  });
+
+  it("names a request whose section is not in the section list", () => {
+    const sources = sourcesWith({
+      requests: [
+        request(
+          "orders-backups",
+          { section: "backups", registration: "acme-s3" },
+          { objectStorageConfig: "other" },
+        ),
+      ],
+    });
+    expect(waitingRequests(archive, sources)).toEqual([
+      "PluginRequest team-a/orders-backups",
+    ]);
+  });
+
+  it("names no request that gave its output, is being deleted, is built in, is in another namespace, or cannot name the kind", () => {
+    const sources = sourcesWith({
+      sections: [
+        section("backups", "backupStorage"),
+        section("storage", "secondaryStorage"),
+      ],
+      requests: [
+        request(
+          "named",
+          { section: "backups", registration: "acme-s3" },
+          { objectStorageConfig: "other" },
+        ),
+        request(
+          "deleting",
+          { section: "backups", registration: "acme-s3" },
+          undefined,
+          true,
+        ),
+        request("built-in", {
+          section: "backups",
+          registration: "existing-object-storage",
+        }),
+        request("secondary", {
+          section: "storage",
+          registration: "acme-es",
+        }),
+        {
+          ...request("elsewhere", {
+            section: "backups",
+            registration: "acme-s3",
+          }),
+          metadata: { namespace: "team-b", name: "elsewhere" },
+        } as unknown as PluginRequest,
+      ],
+    });
+    expect(waitingRequests(archive, sources)).toEqual([]);
   });
 });
 
