@@ -218,6 +218,11 @@ func orphanPolicy(claim client.Object) Policy {
 	return in
 }
 
+// keepingRegistration returns registration test-access with both policies.
+func keepingRegistration() *pluginsv1alpha1.PluginRegistration {
+	return registration(pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan)
+}
+
 func policyOf(t *testing.T, c client.Client) pluginsv1alpha1.DeletionPolicy {
 	request := accessRequest()
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(request), request))
@@ -228,7 +233,7 @@ func policyOf(t *testing.T, c client.Client) pluginsv1alpha1.DeletionPolicy {
 func TestPrepareWritesThePolicyOnTheRequestsThatTheClaimControls(t *testing.T) {
 	claim := liveClaim()
 	access := controlledBy(accessRequest(), claim)
-	d, c := newDeleter(t, claim, access, registration(pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan))
+	d, c := newDeleter(t, claim, access, keepingRegistration())
 
 	err := d.Prepare(context.Background(), orphanPolicy(claim))
 
@@ -238,7 +243,7 @@ func TestPrepareWritesThePolicyOnTheRequestsThatTheClaimControls(t *testing.T) {
 
 func TestPrepareLeavesARequestThatTheClaimDoesNotControl(t *testing.T) {
 	claim := liveClaim()
-	d, c := newDeleter(t, claim, accessRequest(), registration(pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan))
+	d, c := newDeleter(t, claim, accessRequest(), keepingRegistration())
 
 	err := d.Prepare(context.Background(), orphanPolicy(claim))
 

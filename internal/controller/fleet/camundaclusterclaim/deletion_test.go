@@ -45,7 +45,7 @@ var _ = Describe("Deleting a cluster claim", func() {
 		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
 
-		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+		expectOrphanAtDeletion(claim)
 	})
 
 	It("uses the default of the snapshot after the Environment changed", func() {
@@ -64,7 +64,7 @@ var _ = Describe("Deleting a cluster claim", func() {
 		Expect(k8sClient.Update(ctx, environment)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
 
-		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+		expectOrphanAtDeletion(claim)
 		expectGone(claim)
 		expectGone(&v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: claim.Name, Namespace: claim.Namespace}})
 	})
@@ -203,7 +203,7 @@ var _ = Describe("Deleting a cluster claim", func() {
 		}, timeout, interval).Should(Succeed())
 		setTestHold(cluster, false)
 
-		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+		expectOrphanAtDeletion(claim)
 	})
 
 	It("keeps an object that the claim does not control", func() {
@@ -272,7 +272,7 @@ var _ = Describe("A live cluster claim", func() {
 		expectObserved(claim)
 		collectRequests(claim)
 
-		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+		expectOrphanAtDeletion(claim)
 	})
 
 	It("adds the cleanup finalizer back, also while its check fails", func() {
@@ -373,15 +373,15 @@ func setTestHold(obj client.Object, hold bool) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectPoliciesAtDeletion polls until the fake plugin saw the deletion of
-// both requests of claim with policy.
-func expectPoliciesAtDeletion(claim *fleetv1alpha1.CamundaClusterClaim, policy pluginsv1alpha1.DeletionPolicy) {
+// expectOrphanAtDeletion polls until the fake plugin saw the deletion of
+// both requests of claim with the policy Orphan.
+func expectOrphanAtDeletion(claim *fleetv1alpha1.CamundaClusterClaim) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
 			got, seen := plugin.deletionPolicyOf(requestKey(claim, section))
 			g.Expect(seen).To(BeTrue(), section)
-			g.Expect(got).To(Equal(policy), section)
+			g.Expect(got).To(Equal(pluginsv1alpha1.DeletionPolicyOrphan), section)
 		}
 	}, timeout, interval).Should(Succeed())
 }

@@ -167,7 +167,9 @@ func collectRequests(claim *fleetv1alpha1.CamundaManagementClusterClaim) {
 	GinkgoHelper()
 	for _, section := range planeSections {
 		key := requestKey(claim, section)
-		request := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}}
+		request := &pluginsv1alpha1.PluginRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+		}
 		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
 	}
 }
