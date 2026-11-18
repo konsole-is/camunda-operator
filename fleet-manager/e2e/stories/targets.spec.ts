@@ -29,3 +29,15 @@ test("the target check counts only the part of a hit area that no other control 
   expect(lines.filter((l) => l.includes('"First"'))).toHaveLength(1);
   expect(lines.filter((l) => l.includes('"Third"'))).toEqual([]);
 });
+
+test("the target check skips a control inside a closed details and counts its summary", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<details><summary style="font-size: 8px">Brokers</summary>' +
+      '<input aria-label="replicas" style="width: 10px"></details>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"replicas"'))).toEqual([]);
+  expect(lines.filter((l) => l.includes('"Brokers"'))).toHaveLength(1);
+});

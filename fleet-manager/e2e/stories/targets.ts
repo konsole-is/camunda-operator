@@ -20,7 +20,14 @@ export async function smallTargets(page: Page): Promise<string[]> {
     const shown = (el: Element) => {
       const r = el.getBoundingClientRect();
       const style = getComputedStyle(el);
-      return r.width > 1 && r.height > 1 && style.visibility !== "hidden";
+      // checkVisibility is false inside a closed details, which keeps the
+      // box of its content.
+      return (
+        r.width > 1 &&
+        r.height > 1 &&
+        style.visibility !== "hidden" &&
+        el.checkVisibility()
+      );
     };
     // WCAG 2.5.8 exempts a target in a sentence or a block of text.
     const inRunningText = (el: Element) => {
