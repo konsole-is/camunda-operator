@@ -121,6 +121,34 @@ var _ = Describe("A live plane claim", func() {
 		}
 	})
 
+	It("reports NotAllowed for Orphan while a selected registration does not exist, and keeps Delete", func() {
+		gone := testRegistration(uniqueName("delete-only"), pluginstartup.SectionManagementDatabase)
+		gone.Spec.DeletionPolicies = []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete}
+		create(gone)
+		plugin.serve(gone.Name, databaseOutputs)
+		environment := planeEnvironment()
+		database := environment.Spec.Sections[pluginstartup.SectionManagementDatabase]
+		database.Allowed = append(database.Allowed, gone.Name)
+		environment.Spec.Sections[pluginstartup.SectionManagementDatabase] = database
+		claim := newClaim(newEnvironmentNamespace(environment), environment.Name)
+		claim.Spec.Plugins[1] = selection(pluginstartup.SectionManagementDatabase, gone.Name)
+		claim = readyClaim(claim)
+		Expect(k8sClient.Delete(ctx, gone)).To(Succeed())
+		expectNotReady(claim, v1.ReasonInvalidReference, ContainSubstring(gone.Name))
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+
+		expectNotReady(claim, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(gone.Name))
+		expectObserved(claim)
+		for _, section := range planeSections {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
 	It("adds the cleanup finalizer back, also while its check fails", func() {
 		claim := readyClaim(newPlaneClaim())
 

@@ -102,7 +102,7 @@ func (d Deleter) Finalize(ctx context.Context, in Input) ([]string, error) {
 
 	// A plugin reads the policy when its request gets a deletion timestamp,
 	// so the policy goes on before any delete of this pass.
-	if err := d.writeDeletionPolicy(ctx, in.Policy, requests); err != nil {
+	if err := d.writeDeletionPolicy(ctx, in.Policy, requests, claimpolicy.MissingPasses); err != nil {
 		return nil, err
 	}
 
@@ -132,14 +132,15 @@ func (d Deleter) Finalize(ctx context.Context, in Input) ([]string, error) {
 	return d.describe(slices.Concat(stages...))
 }
 
-// Prepare keeps in.Claim, which has no deletion timestamp, ready for a
-// delete that its controller does not see before the garbage collector
-// deletes the requests, such as a delete with foreground propagation. It
-// adds the finalizer fleet.camunda.io/cleanup back with an update when the
-// claim lacks it. Then it writes in.DeletionPolicy on each request that
-// the claim controls and that has no deletion timestamp. It returns a
+// Prepare keeps in.Claim, which has no deletion timestamp, ready for a delete
+// that its controller does not see before the garbage collector deletes the
+// requests, such as a delete with foreground propagation. It adds the
+// finalizer fleet.camunda.io/cleanup back with an update when the claim lacks
+// it. Then it writes in.DeletionPolicy on each request that the claim
+// controls and that has no deletion timestamp. It returns a
 // *conditions.PreCheckFailure, and writes no policy, when a selected
-// registration does not support the policy. A write that loses a conflict
+// registration does not support the policy, or when the policy is Orphan and
+// a selected registration does not exist. A write that loses a conflict
 // returns an error that apierrors.IsConflict reports.
 func (d Deleter) Prepare(ctx context.Context, in Policy) error {
 	if controllerutil.AddFinalizer(in.Claim, fleetv1alpha1.FinalizerCleanup) {
@@ -153,7 +154,7 @@ func (d Deleter) Prepare(ctx context.Context, in Policy) error {
 		return err
 	}
 
-	return d.writeDeletionPolicy(ctx, in, requests)
+	return d.writeDeletionPolicy(ctx, in, requests, claimpolicy.MissingRefuses)
 }
 
 // ownedRequests reads the PluginRequests in the namespace of claim that
@@ -178,14 +179,20 @@ func (d Deleter) ownedRequests(ctx context.Context, claim client.Object) ([]clie
 
 // writeDeletionPolicy applies in.DeletionPolicy to each of requests that has
 // no deletion timestamp and another policy. It writes nothing and returns
-// the refusal of claimpolicy.CheckDeletionPolicy when a selected
-// registration does not support the policy.
-func (d Deleter) writeDeletionPolicy(ctx context.Context, in Policy, requests []client.Object) error {
+// the refusal of claimpolicy.CheckDeletionPolicy with missing, when there is
+// one.
+func (d Deleter) writeDeletionPolicy(
+	ctx context.Context,
+	in Policy,
+	requests []client.Object,
+	missing claimpolicy.Missing,
+) error {
 	var registrations pluginsv1alpha1.PluginRegistrationList
 	if err := d.Client.List(ctx, &registrations); err != nil {
 		return fmt.Errorf("listing the PluginRegistrations: %w", err)
 	}
-	if err := claimpolicy.CheckDeletionPolicy(in.DeletionPolicy, in.Selections, registrations.Items); err != nil {
+	err := claimpolicy.CheckDeletionPolicy(in.DeletionPolicy, in.Selections, registrations.Items, missing)
+	if err != nil {
 		return err
 	}
 

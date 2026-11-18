@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,9 +44,20 @@ func TestReconcileRequeuesWhenTheFinalizerUpdateConflicts(t *testing.T) {
 	require.NoError(t, fleetv1alpha1.AddToScheme(scheme))
 	require.NoError(t, pluginsv1alpha1.AddToScheme(scheme))
 	require.NoError(t, v1.AddToScheme(scheme))
+	ready := metav1.Condition{
+		Type:               v1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             v1.ReasonHealthy,
+		ObservedGeneration: 1,
+		LastTransitionTime: metav1.Now(),
+	}
 	claim := &fleetv1alpha1.CamundaManagementClusterClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-plane", Namespace: "team-a"},
-		Status:     fleetv1alpha1.CamundaManagementClusterClaimStatus{ResolvedPolicy: &fleetv1alpha1.ResolvedPolicy{}},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-plane", Namespace: "team-a", Generation: 2},
+		Status: fleetv1alpha1.CamundaManagementClusterClaimStatus{
+			ResolvedPolicy:     &fleetv1alpha1.ResolvedPolicy{},
+			ObservedGeneration: 1,
+			Conditions:         []metav1.Condition{ready},
+		},
 	}
 	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(claim).WithStatusSubresource(claim).Build()
 	c := interceptor.NewClient(base, interceptor.Funcs{
@@ -62,4 +74,11 @@ func TestReconcileRequeuesWhenTheFinalizerUpdateConflicts(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, ownerstatus.ConflictRequeue, res.RequeueAfter)
+	var current fleetv1alpha1.CamundaManagementClusterClaim
+	require.NoError(t, base.Get(context.Background(), client.ObjectKeyFromObject(claim), &current))
+	assert.Equal(t, int64(1), current.Status.ObservedGeneration)
+	got := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+	require.NotNil(t, got)
+	assert.Equal(t, v1.ReasonHealthy, got.Reason)
+	assert.Equal(t, int64(1), got.ObservedGeneration)
 }

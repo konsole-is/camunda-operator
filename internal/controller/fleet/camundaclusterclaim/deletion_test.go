@@ -326,6 +326,28 @@ var _ = Describe("A cluster claim with a registration that cannot orphan", func(
 		}
 	})
 
+	It("reports NotAllowed for Orphan while a selected registration does not exist, and keeps Delete", func() {
+		gone := testRegistration(uniqueName("delete-only"), pluginstartup.SectionEncryptionKey)
+		gone.Spec.DeletionPolicies = []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete}
+		create(gone)
+		plugin.serve(gone.Name, map[string]string{pluginstartup.OutputKeyRef: keyARN})
+		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, gone.Name))
+		create(claim)
+		eventuallyCluster(claim)
+		Expect(k8sClient.Delete(ctx, gone)).To(Succeed())
+		expectFalse(claim, v1.ConditionReady, v1.ReasonInvalidReference, ContainSubstring(gone.Name))
+
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+
+		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(gone.Name))
+		expectObserved(claim)
+		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
 	It("deletes nothing while it asks for Orphan, and is gone after the policy is Delete", func() {
 		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationDeleteOnly))
 		create(claim)

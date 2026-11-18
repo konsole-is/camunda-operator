@@ -296,3 +296,17 @@ func TestPrepareReportsAConflictOfTheFinalizerUpdateAndWritesNoPolicy(t *testing
 	assert.True(t, apierrors.IsConflict(err), "got %v", err)
 	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c))
 }
+
+func TestPrepareRefusesOrphanForARegistrationThatDoesNotExist(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access)
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	var failure *conditions.PreCheckFailure
+	require.True(t, errors.As(err, &failure))
+	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
+	assert.Contains(t, failure.Message, `PluginRegistration "test-access"`)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c), "a refused policy is not written")
+}
