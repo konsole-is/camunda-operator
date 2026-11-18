@@ -6,6 +6,7 @@ import { NamespaceSecrets } from "./namespace-secrets";
 const live = vi.hoisted(() => ({
   items: [] as unknown[],
   error: undefined as string | undefined,
+  overdue: false,
   asked: [] as { kind: string; opts: unknown }[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
@@ -13,11 +14,13 @@ vi.mock("@/lib/k8s/hooks", () => ({
     live.asked.push({ kind, opts });
     return { items: live.items, error: live.error };
   },
+  useWatchesOverdue: (lists: unknown[]) => lists.map(() => live.overdue),
 }));
 
 beforeEach(() => {
   live.items = [];
   live.error = undefined;
+  live.overdue = false;
   live.asked = [];
 });
 afterEach(cleanup);
@@ -65,5 +68,25 @@ describe("NamespaceSecrets", () => {
     live.items = [secret("db", ["password"])];
     rerender(<NamespaceSecrets namespace="team-a" onChange={onChange} />);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an error while its watch is overdue, until the next snapshot", () => {
+    live.items = [secret("db", ["password"])];
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <NamespaceSecrets namespace="team-a" onChange={onChange} />,
+    );
+    live.overdue = true;
+    rerender(<NamespaceSecrets namespace="team-a" onChange={onChange} />);
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "db", keys: ["password"] }],
+      "the list of Secrets is out of date",
+    );
+    live.overdue = false;
+    rerender(<NamespaceSecrets namespace="team-a" onChange={onChange} />);
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "db", keys: ["password"] }],
+      undefined,
+    );
   });
 });

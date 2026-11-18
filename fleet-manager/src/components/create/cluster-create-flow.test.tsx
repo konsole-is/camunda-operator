@@ -33,6 +33,7 @@ const live = vi.hoisted(() => ({
   errors: {} as Record<string, string>,
   asked: new Set<string>(),
   fresh: new Set<string>(),
+  overdue: new Set<string>(),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
@@ -41,6 +42,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   },
   useWatchesFresh: (lists: { kind: string }[]) =>
     lists.map((l) => live.fresh.has(l.kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map((l) => live.overdue.has(l.kind)),
   useResource: (kind: string, ref: { namespace?: string; name: string }) => {
     live.asked.add(kind);
     const item = (
@@ -62,6 +65,7 @@ beforeEach(() => {
   live.errors = {};
   live.asked = new Set();
   live.fresh = new Set();
+  live.overdue = new Set();
   fakeWriter.reset();
 });
 afterEach(() => {
@@ -1702,6 +1706,24 @@ describe("ClusterCreateFlow write", () => {
     ];
     view.rerender(flowOf(initial));
     await waitFor(() => expect(next().disabled).toBe(false));
+  });
+
+  it("refuses the reference while the Secret watch is overdue", async () => {
+    const { view, initial } = await pickInTeamA();
+    live.objects.Secret = [
+      {
+        metadata: { namespace: "team-b", name: "orders-oidc" },
+        keys: ["secret"],
+      },
+    ];
+    view.rerender(flowOf(initial));
+    await waitFor(() => expect(next().disabled).toBe(false));
+    live.overdue.add("Secret");
+    view.rerender(flowOf(initial));
+    await waitFor(() => expect(next().disabled).toBe(true));
+    expect(footer()).toContain(
+      "Cluster settings: auth.clientSecretRef: The fleet manager could not read the Secrets of team-b, so it cannot check this reference: the list of Secrets is out of date",
+    );
   });
 });
 
