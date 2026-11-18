@@ -295,45 +295,76 @@ func TestReconcileNamesTheWaitWhenACheckFails(t *testing.T) {
 }
 
 // TestReconcileEndsAWaitWithAnEventThatIsTrueForEveryStart covers a wait over
-// two passes: the pass that parks the workloads and the pass that starts them.
-// An instance that rendered no workload yet announces no wait, so the event
-// that ends one must be true whether or not the start was announced.
+// several passes. An instance that rendered no workload yet announces no wait,
+// and a change of case during a wait records no event, so the event that ends
+// a wait names the case that held the workloads last.
 func TestReconcileEndsAWaitWithAnEventThatIsTrueForEveryStart(t *testing.T) {
+	type pass struct {
+		arrange  func(t *testing.T, h *reconcileHarness)
+		replicas int32
+		want     map[string]int
+	}
+	releaseClaim := func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) }
+	takeClaim := func(t *testing.T, h *reconcileHarness) { h.takeClaim(t) }
+	suspend := func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) }
+	resume := func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, false) }
+
 	cases := map[string]struct {
-		// running starts the workloads before the wait.
-		running   bool
-		park      func(t *testing.T, h *reconcileHarness)
-		unpark    func(t *testing.T, h *reconcileHarness)
-		wantStart map[string]int
-		wantEnd   map[string]int
+		// running starts the workloads before the first pass.
+		running bool
+		passes  []pass
 	}{
 		"the first pass meets the storage claim before the cluster takes it": {
-			park:      func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
-			unpark:    func(t *testing.T, h *reconcileHarness) { h.takeClaim(t) },
-			wantStart: map[string]int{},
-			wantEnd:   map[string]int{eventReasonStorageClaimHeld: 1},
+			passes: []pass{
+				{arrange: releaseClaim, replicas: 0, want: map[string]int{}},
+				{arrange: takeClaim, replicas: 1, want: map[string]int{eventReasonStorageClaimHeld: 1}},
+			},
 		},
 		"a running instance waits for the storage claim": {
-			running:   true,
-			park:      func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
-			unpark:    func(t *testing.T, h *reconcileHarness) { h.takeClaim(t) },
-			wantStart: map[string]int{eventReasonStorageClaimAwaited: 1},
-			wantEnd:   map[string]int{eventReasonStorageClaimHeld: 1},
+			running: true,
+			passes: []pass{
+				{arrange: releaseClaim, replicas: 0, want: map[string]int{eventReasonStorageClaimAwaited: 1}},
+				{arrange: takeClaim, replicas: 1, want: map[string]int{eventReasonStorageClaimHeld: 1}},
+			},
 		},
 		// The cluster was suspended and resumed, whether or not this instance
 		// said so when it was created.
 		"the first pass meets a suspended cluster": {
-			park:      func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
-			unpark:    func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, false) },
-			wantStart: map[string]int{},
-			wantEnd:   map[string]int{eventReasonClusterResumed: 1},
+			passes: []pass{
+				{arrange: suspend, replicas: 0, want: map[string]int{}},
+				{arrange: resume, replicas: 1, want: map[string]int{eventReasonClusterResumed: 1}},
+			},
 		},
 		"a running instance follows the suspension of its cluster": {
-			running:   true,
-			park:      func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
-			unpark:    func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, false) },
-			wantStart: map[string]int{eventReasonClusterSuspended: 1},
-			wantEnd:   map[string]int{eventReasonClusterResumed: 1},
+			running: true,
+			passes: []pass{
+				{arrange: suspend, replicas: 0, want: map[string]int{eventReasonClusterSuspended: 1}},
+				{arrange: resume, replicas: 1, want: map[string]int{eventReasonClusterResumed: 1}},
+			},
+		},
+		"the cluster resumes while it does not hold its backend": {
+			running: true,
+			passes: []pass{
+				{arrange: suspend, replicas: 0, want: map[string]int{eventReasonClusterSuspended: 1}},
+				{
+					arrange:  func(t *testing.T, h *reconcileHarness) { resume(t, h); releaseClaim(t, h) },
+					replicas: 0,
+					want:     map[string]int{},
+				},
+				{arrange: takeClaim, replicas: 1, want: map[string]int{eventReasonStorageClaimHeld: 1}},
+			},
+		},
+		"the cluster is suspended while it waits for its backend": {
+			running: true,
+			passes: []pass{
+				{arrange: releaseClaim, replicas: 0, want: map[string]int{eventReasonStorageClaimAwaited: 1}},
+				{
+					arrange:  func(t *testing.T, h *reconcileHarness) { takeClaim(t, h); suspend(t, h) },
+					replicas: 0,
+					want:     map[string]int{},
+				},
+				{arrange: resume, replicas: 1, want: map[string]int{eventReasonClusterResumed: 1}},
+			},
 		},
 	}
 
@@ -344,19 +375,14 @@ func TestReconcileEndsAWaitWithAnEventThatIsTrueForEveryStart(t *testing.T) {
 				h.start(t)
 			}
 
-			tc.park(t, h)
-			require.NoError(t, h.reconcile(t))
-			for _, key := range h.workloadKeys() {
-				require.Equal(t, int32(0), h.replicas(t, key), key.Name)
+			for i, p := range tc.passes {
+				p.arrange(t, h)
+				require.NoError(t, h.reconcile(t))
+				for _, key := range h.workloadKeys() {
+					require.Equal(t, p.replicas, h.replicas(t, key), "pass %d: %s", i+1, key.Name)
+				}
+				assert.Equal(t, p.want, h.suspensionEvents(), "pass %d", i+1)
 			}
-			assert.Equal(t, tc.wantStart, h.suspensionEvents(), "the pass that parks the workloads")
-
-			tc.unpark(t, h)
-			require.NoError(t, h.reconcile(t))
-			for _, key := range h.workloadKeys() {
-				require.Equal(t, int32(1), h.replicas(t, key), key.Name)
-			}
-			assert.Equal(t, tc.wantEnd, h.suspensionEvents(), "the pass that starts the workloads")
 		})
 	}
 }

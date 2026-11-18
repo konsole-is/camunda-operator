@@ -34,9 +34,8 @@ const (
 	// eventReasonClusterSuspended is recorded when the referenced cluster
 	// starts suspending and the Optimize workloads follow it to zero.
 	eventReasonClusterSuspended = "ClusterSuspended"
-	// eventReasonClusterResumed is recorded when the referenced cluster holds
-	// its backend and is not suspended, and the Optimize workloads follow their
-	// spec again.
+	// eventReasonClusterResumed is recorded when a wait on a suspended cluster
+	// ends.
 	eventReasonClusterResumed = "ClusterResumed"
 	// eventReasonStorageClaimAwaited is recorded when the claim of the backend
 	// scales the Optimize workloads to zero while the cluster itself reports no
