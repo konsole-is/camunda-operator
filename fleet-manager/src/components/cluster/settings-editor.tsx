@@ -169,7 +169,7 @@ export function SettingsEditor({
  * value. errors are field errors from outside the row. onReset runs after a
  * click on the reset link: the caller remounts the rows, so that they show
  * the values below the claim. invalid gets the claim steps of the shown
- * field and "<label>: <error>" while the editor shows an error, and
+ * field and "<label>: <error>" after an edit that shows an error, and
  * undefined once the error goes or the row unmounts. onShows gets whether
  * the editor shows an error, also for a value from below the claim before
  * any edit, which invalid does not get.
