@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type { FieldError } from "@/lib/session";
@@ -608,6 +609,15 @@ describe("SettingsEditor collapsed", () => {
     ],
     ["a storage size", { storageSize: "0Gi" }, "Enter a size above 0"],
     ["a number", { replicas: -1 }, "Enter 0 or more"],
+    [
+      "YAML",
+      {
+        scheduling: {
+          nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: 3 },
+        },
+      },
+      undefined,
+    ],
   ])(
     "opens at once with an error that the editor of %s shows for a value from below the claim",
     (_, zeebe, message) => {
@@ -622,6 +632,31 @@ describe("SettingsEditor collapsed", () => {
       if (message) expect(within(section()).getByText(message)).toBeDefined();
     },
   );
+
+  it("counts an error that an editor shows at mount also in strict mode", () => {
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    render(
+      <StrictMode>
+        <SettingsEditor
+          collapsed
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={vi.fn()}
+          reset={vi.fn()}
+          invalid={invalid}
+        />
+      </StrictMode>,
+    );
+    expect(details().open).toBe(true);
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
 
   it("drops the error from the heading once the editor shows none, though the value below the claim still fails", async () => {
     const { set } = renderClosed({

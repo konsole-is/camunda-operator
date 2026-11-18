@@ -14,6 +14,14 @@ export function useErrorsReport(
 ) {
   const report = JSON.stringify(errors);
   const reported = useRef<string | undefined>(undefined);
+  // A remount in strict mode keeps the ref, and its parent can forget the
+  // errors on the unmount, so a remount reports again.
+  useEffect(
+    () => () => {
+      reported.current = undefined;
+    },
+    [],
+  );
   useEffect(() => {
     if (reported.current === report) return;
     reported.current = report;
