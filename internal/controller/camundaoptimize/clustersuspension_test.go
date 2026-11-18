@@ -112,10 +112,15 @@ func TestStageSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
 			now:   v1.OptimizeSuspensionCluster,
 			want:  []string{eventReasonClusterSuspended},
 		},
-		"a suspension ends": {
-			prior: suspension{by: v1.OptimizeSuspensionStorageClaim, rendered: true},
+		"a suspension of the cluster ends": {
+			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
 			now:   "",
 			want:  []string{eventReasonClusterResumed},
+		},
+		"a wait for the storage claim ends": {
+			prior: suspension{by: v1.OptimizeSuspensionStorageClaim, rendered: true},
+			now:   "",
+			want:  []string{eventReasonStorageClaimHeld},
 		},
 		"a suspension holds": {
 			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
@@ -189,12 +194,17 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 				"or pods of another cluster or of a previous instance, or a writer for another cluster, " +
 				"such as a restore, still write it, the Optimize workloads follow it to zero",
 		},
-		// One note covers a resume from either wait, because the cluster was
-		// not suspended in one of them.
-		"the workloads follow their spec again": {
+		"the cluster resumes": {
 			prior: suspension{by: v1.OptimizeSuspensionCluster, rendered: true},
 			want: `Normal ClusterResumed CamundaCluster "my-cluster" holds its backend and is not suspended, ` +
 				"the Optimize workloads follow their spec",
+		},
+		// The first pass of an instance can meet this wait and announce
+		// nothing, so the end of it must not name a suspension or a resume.
+		"the claim of the backend no longer holds the workloads": {
+			prior: suspension{by: v1.OptimizeSuspensionStorageClaim, rendered: true},
+			want: `Normal StorageClaimHeld CamundaCluster "my-cluster" holds its backend and no other writer ` +
+				"writes it, the Optimize workloads follow their spec",
 		},
 	}
 
@@ -223,7 +233,7 @@ func TestBackendClaimAwaitedSaysBothHalvesOfTheGate(t *testing.T) {
 	const bothHalves = "does not hold its backend, or pods of another cluster or of a previous instance, " +
 		"or a writer for another cluster, such as a restore, still write it"
 	said := map[string]string{
-		"the event note":                      backendClaimAwaited.eventNote,
+		"the event note":                      backendClaimAwaited.startNote,
 		"the note on Ready":                   backendClaimAwaited.failureNote,
 		"the condition of a stopped workload": backendClaimAwaited.condition,
 		"the event of a workload it lowered":  backendClaimAwaited.workloadNote,
@@ -272,11 +282,81 @@ func TestReconcileNamesTheWaitWhenACheckFails(t *testing.T) {
 			var suspensionNotes []string
 			for _, note := range recordedNotes(h.recorder) {
 				switch strings.Fields(note)[1] {
-				case eventReasonClusterSuspended, eventReasonClusterResumed, eventReasonStorageClaimAwaited:
+				case eventReasonClusterSuspended,
+					eventReasonClusterResumed,
+					eventReasonStorageClaimAwaited,
+					eventReasonStorageClaimHeld:
 					suspensionNotes = append(suspensionNotes, note)
 				}
 			}
 			assert.Equal(t, []string{tc.want}, suspensionNotes)
+		})
+	}
+}
+
+// TestReconcileEndsAWaitWithAnEventThatIsTrueForEveryStart covers a wait over
+// two passes: the pass that parks the workloads and the pass that starts them.
+// An instance that rendered no workload yet announces no wait, so the event
+// that ends one must be true whether or not the start was announced.
+func TestReconcileEndsAWaitWithAnEventThatIsTrueForEveryStart(t *testing.T) {
+	cases := map[string]struct {
+		// running starts the workloads before the wait.
+		running   bool
+		park      func(t *testing.T, h *reconcileHarness)
+		unpark    func(t *testing.T, h *reconcileHarness)
+		wantStart map[string]int
+		wantEnd   map[string]int
+	}{
+		"the first pass meets the storage claim before the cluster takes it": {
+			park:      func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
+			unpark:    func(t *testing.T, h *reconcileHarness) { h.takeClaim(t) },
+			wantStart: map[string]int{},
+			wantEnd:   map[string]int{eventReasonStorageClaimHeld: 1},
+		},
+		"a running instance waits for the storage claim": {
+			running:   true,
+			park:      func(t *testing.T, h *reconcileHarness) { h.releaseClaim(t) },
+			unpark:    func(t *testing.T, h *reconcileHarness) { h.takeClaim(t) },
+			wantStart: map[string]int{eventReasonStorageClaimAwaited: 1},
+			wantEnd:   map[string]int{eventReasonStorageClaimHeld: 1},
+		},
+		// The cluster was suspended and resumed, whether or not this instance
+		// said so when it was created.
+		"the first pass meets a suspended cluster": {
+			park:      func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
+			unpark:    func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, false) },
+			wantStart: map[string]int{},
+			wantEnd:   map[string]int{eventReasonClusterResumed: 1},
+		},
+		"a running instance follows the suspension of its cluster": {
+			running:   true,
+			park:      func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, true) },
+			unpark:    func(t *testing.T, h *reconcileHarness) { h.setClusterSuspend(t, false) },
+			wantStart: map[string]int{eventReasonClusterSuspended: 1},
+			wantEnd:   map[string]int{eventReasonClusterResumed: 1},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newReconcileHarness(t)
+			if tc.running {
+				h.start(t)
+			}
+
+			tc.park(t, h)
+			require.NoError(t, h.reconcile(t))
+			for _, key := range h.workloadKeys() {
+				require.Equal(t, int32(0), h.replicas(t, key), key.Name)
+			}
+			assert.Equal(t, tc.wantStart, h.suspensionEvents(), "the pass that parks the workloads")
+
+			tc.unpark(t, h)
+			require.NoError(t, h.reconcile(t))
+			for _, key := range h.workloadKeys() {
+				require.Equal(t, int32(1), h.replicas(t, key), key.Name)
+			}
+			assert.Equal(t, tc.wantEnd, h.suspensionEvents(), "the pass that starts the workloads")
 		})
 	}
 }

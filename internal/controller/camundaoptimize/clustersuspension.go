@@ -42,18 +42,23 @@ const (
 	// scales the Optimize workloads to zero while the cluster itself reports no
 	// suspension.
 	eventReasonStorageClaimAwaited = "StorageClaimAwaited"
-	// noteSuspended, noteResumed and noteClaimAwaited carry the name of the
-	// cluster, which is what the Ready condition cannot say. They report the
-	// state of that cluster and nothing about a replica count: an importer that
-	// spec.importer.replicas holds at zero does not start when the cluster
-	// resumes. One resume note covers both waits, because the workloads start
-	// when the cluster holds its backend and is not suspended, whichever of the
-	// two held them.
+	// eventReasonStorageClaimHeld is recorded when the claim of the backend no
+	// longer holds the Optimize workloads at zero, and they follow their spec.
+	eventReasonStorageClaimHeld = "StorageClaimHeld"
+	// The notes carry the name of the cluster, which is what the Ready
+	// condition cannot say. They report the state of that cluster and nothing
+	// about a replica count: an importer that spec.importer.replicas holds at
+	// zero does not start when the wait ends.
 	noteSuspended    = "CamundaCluster %q is suspended, the Optimize workloads follow it to zero"
 	noteClaimAwaited = "CamundaCluster %q does not hold its backend, or pods of another cluster or " +
 		"of a previous instance, or a writer for another cluster, such as a restore, still write it, " +
 		"the Optimize workloads follow it to zero"
 	noteResumed = "CamundaCluster %q holds its backend and is not suspended, the Optimize " +
+		"workloads follow their spec"
+	// noteClaimHeld names no suspension and no resume. The first pass of an
+	// instance can meet the claim before its cluster takes it, and that pass
+	// announces no wait.
+	noteClaimHeld = "CamundaCluster %q holds its backend and no other writer writes it, the Optimize " +
 		"workloads follow their spec"
 )
 
@@ -62,10 +67,13 @@ const (
 // different thing in each: one cluster was suspended, and the other does not
 // hold the backend that its Optimize reads.
 type wait struct {
-	// eventReason and eventNote report the start of this wait. The note carries
-	// one verb for the name of the cluster.
-	eventReason string
-	eventNote   string
+	// startReason and startNote report the start of this wait, and endReason
+	// and endNote its end. Each note carries one verb for the name of the
+	// cluster.
+	startReason string
+	startNote   string
+	endReason   string
+	endNote     string
 	// failureNote is appended to the failure message on Ready, and it carries
 	// the name of the cluster the same way.
 	failureNote string
@@ -81,8 +89,10 @@ var (
 	// clusterSuspended is the wait on a cluster that reports itself suspended,
 	// by spec.suspend or by a state the operator holds it in.
 	clusterSuspended = wait{
-		eventReason:  eventReasonClusterSuspended,
-		eventNote:    noteSuspended,
+		startReason:  eventReasonClusterSuspended,
+		startNote:    noteSuspended,
+		endReason:    eventReasonClusterResumed,
+		endNote:      noteResumed,
 		failureNote:  ". The Optimize workloads are scaled to zero because CamundaCluster %q is suspended",
 		condition:    "Scaled to zero while the referenced cluster is suspended",
 		workloadNote: "because the CamundaCluster it attaches to is suspended",
@@ -92,8 +102,10 @@ var (
 	// the backend. The cluster can report itself healthy through either, so
 	// nothing here says it is suspended.
 	backendClaimAwaited = wait{
-		eventReason: eventReasonStorageClaimAwaited,
-		eventNote:   noteClaimAwaited,
+		startReason: eventReasonStorageClaimAwaited,
+		startNote:   noteClaimAwaited,
+		endReason:   eventReasonStorageClaimHeld,
+		endNote:     noteClaimHeld,
 		failureNote: ". The Optimize workloads are scaled to zero because CamundaCluster %q does not " +
 			"hold its backend, or pods of another cluster or of a previous instance, or a writer for " +
 			"another cluster, such as a restore, still write it",
@@ -184,10 +196,13 @@ func (r *Reconciler) stageSuspensionChange(
 		return nil
 	}
 
-	reason, note := eventReasonClusterResumed, noteResumed
+	var reason, note string
 	if now != "" {
-		held := waitFor(now)
-		reason, note = held.eventReason, held.eventNote
+		started := waitFor(now)
+		reason, note = started.startReason, started.startNote
+	} else {
+		ended := waitFor(prior.by)
+		reason, note = ended.endReason, ended.endNote
 	}
 
 	return func() {

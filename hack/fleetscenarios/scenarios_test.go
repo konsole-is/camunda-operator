@@ -83,7 +83,7 @@ func TestThePlaneScenarioStartsOptimizeOnAClusterThatHoldsItsBackend(t *testing.
 		reason, _, _ := unstructured.NestedString(obj.Object, "reason")
 		assert.NotContains(
 			t,
-			[]string{"StorageClaimAwaited", "ClusterResumed", "UpdatedDeployment"},
+			[]string{"StorageClaimAwaited", "StorageClaimHeld", "ClusterResumed", "UpdatedDeployment"},
 			reason,
 			"the cluster held its backend before the Optimize existed, so the Optimize never waited for it",
 		)
