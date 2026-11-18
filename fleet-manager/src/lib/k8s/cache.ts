@@ -19,6 +19,17 @@ import { stripSecret } from "./strip-secret";
 /** SYNC_TIMEOUT_MS bounds the wait of a reader for the first list of a kind. */
 export const SYNC_TIMEOUT_MS = 10_000;
 
+/**
+ * WATCH_RECOVERY_MS is the time that the watch of a kind has to start again
+ * after it failed. After that time the cache has no current list of the kind
+ * until a watch starts again.
+ */
+// The watch tries again after 1, 2, and 4 seconds, so it gets over a dropped
+// connection or a short restart of the API server within this time. A longer
+// time lets a delete guard pass on a list that misses the changes of that
+// time.
+export const WATCH_RECOVERY_MS = 10_000;
+
 /** CacheDeps are the API calls of the cache. Tests pass fakes. */
 export interface CacheDeps {
   /** list returns all objects at a collection path. */
@@ -31,12 +42,20 @@ export interface CacheDeps {
   maxRetryDelayMs?: number;
   /** timeoutReconnectMs is the most a watch waits to start again after the API server ends it. */
   timeoutReconnectMs?: number;
+  /** watchRecoveryMs defaults to WATCH_RECOVERY_MS. */
+  watchRecoveryMs?: number;
 }
 
 export type CacheListener<K extends KindName> = (
   change: CacheChange,
   object: Resource<K>,
 ) => void;
+
+/**
+ * CacheLost gets the error of a kind that has no current list any more. The
+ * subscription has then ended.
+ */
+export type CacheLost = (error: Error) => void;
 
 /** Subscription is the objects of a kind at subscribe time and the way to stop the changes. */
 export interface Subscription<K extends KindName> {
@@ -49,7 +68,9 @@ export interface Subscription<K extends KindName> {
  * started by the first read of the kind. An informer lists the kind in every
  * namespace and keeps the list current from a watch. After 410 Gone it lists
  * again, and after another watch error it watches again after a delay. A
- * Secret enters the cache only as a SecretSummary.
+ * watch that does not start again within watchRecoveryMs makes the kind not
+ * current: its reads fail until a watch starts again. A Secret enters the
+ * cache only as a SecretSummary.
  */
 export class ResourceCache {
   private readonly informers = new Map<KindName, KindInformer>();
@@ -61,6 +82,7 @@ export class ResourceCache {
       retryDelayMs: 1_000,
       maxRetryDelayMs: 30_000,
       timeoutReconnectMs: 1_000,
+      watchRecoveryMs: WATCH_RECOVERY_MS,
       ...deps,
     };
   }
@@ -69,28 +91,34 @@ export class ResourceCache {
    * objects waits for the first list of kind and returns the cached objects.
    * It rejects at once when the API server refuses the first list, with a
    * message that names the kind, and after syncTimeoutMs when the list does
-   * not answer. A later call tries again. The objects are the cache itself:
-   * a caller must not change them.
+   * not answer. A later call tries again. It also rejects, with a message
+   * that names the kind, while the kind is not current. The objects are the
+   * cache itself: a caller must not change them.
    */
   async objects<K extends KindName>(kind: K): Promise<readonly Resource<K>[]> {
     const informer = this.informer(kind);
     await informer.synced();
+    informer.checkCurrent();
     return informer.list() as unknown as readonly Resource<K>[];
   }
 
   /**
-   * subscribe waits as objects does, then calls listener for each change of
-   * kind until unsubscribe. No change falls between the snapshot and the
-   * first call of listener.
+   * subscribe waits and rejects as objects does, then calls listener for
+   * each change of kind until unsubscribe. No change falls between the
+   * snapshot and the first call of listener. When the kind stops being
+   * current, the subscription ends and lost gets the error, once.
    */
   async subscribe<K extends KindName>(
     kind: K,
     listener: CacheListener<K>,
+    lost?: CacheLost,
   ): Promise<Subscription<K>> {
     const informer = this.informer(kind);
     await informer.synced();
+    informer.checkCurrent();
     return informer.subscribe(
       listener as CacheListener<KindName>,
+      lost,
     ) as unknown as Subscription<K>;
   }
 
@@ -119,6 +147,10 @@ class KindInformer {
   private retryDelay: number;
   private retryTimer?: NodeJS.Timeout;
   private stopped = false;
+  private recoveryTimer?: NodeJS.Timeout;
+  private watchError: unknown;
+  private current = true;
+  private readonly lostHandlers = new Set<CacheLost>();
 
   constructor(
     private readonly kind: KindName,
@@ -160,6 +192,9 @@ class KindInformer {
         // ListWatch does not check that it stopped after the first list or
         // after the reconnect delay, so a stopped informer opens no watch.
         if (this.stopped) return Promise.resolve(new AbortController());
+        // The client ends a watch that the API server refuses before the
+        // request resolves, and a watch that it accepted only after.
+        let ended = false;
         return deps.watch
           .watch(
             watchPath,
@@ -175,10 +210,13 @@ class KindInformer {
             // done of ListWatch is async and the client does not await it, so
             // a watch that cannot start again would reject with no handler.
             (err) => {
+              const timeout = (err as Error | null)?.name === "TimeoutError";
               // A watch that ends with no error or at its request timeout ran.
-              if (!err || (err as Error).name === "TimeoutError") {
-                this.retryDelay = deps.retryDelayMs;
-              }
+              if (!err || timeout) this.retryDelay = deps.retryDelayMs;
+              // ListWatch starts a watch again at once after a timeout, and
+              // gives no error, also when the API server never answered.
+              if (timeout && !ended) this.watchFailed(err);
+              ended = true;
               void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
                 this.onError(e),
               );
@@ -186,6 +224,8 @@ class KindInformer {
           )
           .then((request) => {
             if (this.stopped) request.abort();
+            else if (!ended) this.watchStarted();
+            ended = true;
             return request;
           });
       },
@@ -231,7 +271,10 @@ class KindInformer {
     return this.listWatch.list();
   }
 
-  subscribe(listener: CacheListener<KindName>): Subscription<KindName> {
+  subscribe(
+    listener: CacheListener<KindName>,
+    lost?: CacheLost,
+  ): Subscription<KindName> {
     const on = (change: CacheChange) => (object: KubernetesObject) =>
       listener(change, object as Resource<KindName>);
     const handlers = {
@@ -242,20 +285,62 @@ class KindInformer {
     for (const [verb, handler] of Object.entries(handlers)) {
       this.listWatch.on(verb as CacheChange, handler);
     }
+    const unsubscribe = () => {
+      this.lostHandlers.delete(end);
+      for (const [verb, handler] of Object.entries(handlers)) {
+        this.listWatch.off(verb as CacheChange, handler);
+      }
+    };
+    const end: CacheLost = (error) => {
+      unsubscribe();
+      lost?.(error);
+    };
+    this.lostHandlers.add(end);
     return {
       snapshot: [...this.listWatch.list()] as Resource<KindName>[],
-      unsubscribe: () => {
-        for (const [verb, handler] of Object.entries(handlers)) {
-          this.listWatch.off(verb as CacheChange, handler);
-        }
-      },
+      unsubscribe,
     };
+  }
+
+  /** checkCurrent throws the error of the kind while it is not current. */
+  checkCurrent(): void {
+    if (!this.current) throw this.notCurrentError();
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.retryTimer);
+    clearTimeout(this.recoveryTimer);
     await this.listWatch.stop();
+  }
+
+  private watchFailed(err: unknown): void {
+    this.watchError = err;
+    if (this.recoveryTimer || !this.current || this.stopped) return;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = undefined;
+      this.current = false;
+      const error = this.notCurrentError();
+      [...this.lostHandlers].forEach((end) => end(error));
+    }, this.deps.watchRecoveryMs);
+  }
+
+  private watchStarted(): void {
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
+    this.current = true;
+  }
+
+  private notCurrentError(): Error {
+    const seconds = this.deps.watchRecoveryMs / 1000;
+    const reason =
+      this.watchError instanceof Error
+        ? this.watchError.message
+        : String(this.watchError);
+    return new Error(
+      `The fleet manager has no current list of ${this.kind}: its watch failed and did not start again within ${seconds} seconds: ${reason}`,
+      { cause: this.watchError },
+    );
   }
 
   private async start(): Promise<void> {
@@ -280,6 +365,7 @@ class KindInformer {
       return;
     }
     if (this.stopped) return;
+    this.watchFailed(err);
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(
       () => this.listWatch.start().catch((e: unknown) => this.onError(e)),

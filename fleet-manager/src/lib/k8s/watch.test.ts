@@ -343,6 +343,47 @@ describe("watchStream", () => {
     abort.abort();
   });
 
+  it("a kind that stops being current gets a failure frame, then a new snapshot once the cache answers again", async () => {
+    let lost: ((error: Error) => void) | undefined;
+    let subscribes = 0;
+    const cache = {
+      subscribe: vi.fn(
+        async (
+          _kind: string,
+          _listener: CacheListener<"Pod">,
+          onLost: (error: Error) => void,
+        ) => {
+          subscribes++;
+          if (subscribes === 2) throw new Error("no current list of Pod yet");
+          lost = onLost;
+          return {
+            snapshot: [object("team", `x${subscribes}`)],
+            unsubscribe: vi.fn(),
+          };
+        },
+      ),
+    } as unknown as ResourceCache;
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [{ id: "a", request: { kinds: ["Pod"] } }],
+      abort.signal,
+      { retryMs: 20 },
+    ).getReader();
+    await readFrames(reader, 1);
+
+    lost!(new Error("The fleet manager has no current list of Pod"));
+    const { frames } = await readFrames(reader, 3);
+
+    expect(frames.map((f) => [f.event, f.data.message])).toEqual([
+      ["failure", "The fleet manager has no current list of Pod"],
+      ["failure", "no current list of Pod yet"],
+      ["snapshot", undefined],
+    ]);
+    expect(frames[2].data.objects).toEqual([object("team", "x3")]);
+    abort.abort();
+  });
+
   it("starts every watch before the first snapshot", async () => {
     const never = () => new Promise(() => {});
     const { cache } = fakeCache({ Pod: never, Service: never });

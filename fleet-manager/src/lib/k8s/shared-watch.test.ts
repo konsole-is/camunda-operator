@@ -202,6 +202,25 @@ describe("sharedWatch", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
+  it("a failure after a snapshot marks the watch not fresh and overdue until its next snapshot", async () => {
+    sharedWatch(client).subscribe(team);
+    await flush();
+    const source = FakeEventSource.instances[0];
+    source.emit("snapshot", snapshot(team, [pod("team", "a")]));
+
+    source.emit("failure", {
+      watch: watchId(team),
+      kind: "Pod",
+      message: "The fleet manager has no current list of Pod",
+    });
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    expect(client.getQueryData(overdueKey(team))).toBe(true);
+
+    source.emit("snapshot", snapshot(team, [pod("team", "b")]));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    expect(client.getQueryData(overdueKey(team))).toBe(false);
+  });
+
   it("opens a new source after the browser closed the old one", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     sharedWatch(client).subscribe(team);

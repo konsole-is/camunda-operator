@@ -28,9 +28,10 @@ export interface Ref {
  * hook of the same kind and filter left its list in the cache: it then
  * returns that list, which can be old, until the next snapshot. It follows
  * /api/watch: each snapshot frame replaces the list, also after a
- * reconnect, and each delta changes it. When the first list of the kind on
- * the server fails, error holds its message and items keep the last list,
- * which can be out of date, until the next snapshot. All hooks under one
+ * reconnect, and each delta changes it. When the server has no current list
+ * of the kind, because its first list failed or its watch failed and did not
+ * start again, error holds its message and items keep the last list, which
+ * can be out of date, until the next snapshot. All hooks under one
  * QueryClientProvider share one connection to /api/watch, and hooks with
  * the same kind and filter share one entry. The hook leaves the connection
  * on unmount. A component that calls it needs a QueryClientProvider above
@@ -52,8 +53,8 @@ export function useResources<K extends KindName>(
 /**
  * useWatchesFresh says for each list of lists whether its watch got its
  * snapshot, in the order of lists. It is false until then, and again after
- * an error of the connection or a late snapshot (freshKey) until the next
- * snapshot. It opens
+ * an error of the connection, a failure of the watch, or a late snapshot
+ * (freshKey) until the next snapshot. It opens
  * no watch of its own, so each list needs useResources with the same kind
  * and options in the same tree, or, for a list without labelSelector,
  * useResource with the same kind, namespace, and name.
@@ -67,7 +68,7 @@ export function useWatchesFresh(
 /**
  * useWatchesOverdue says for each list of lists, in the order of lists,
  * whether its watch is overdue (overdueKey): its snapshot did not come in
- * time, or the connection failed since. It opens no watch of its own, as
+ * time, or the connection or the watch failed since. It opens no watch of its own, as
  * useWatchesFresh.
  */
 export function useWatchesOverdue(

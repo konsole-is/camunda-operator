@@ -46,9 +46,10 @@ export function failureKey(spec: WatchSpec) {
 
 /**
  * freshKey is the query key that is true once the watch got its snapshot,
- * until an error of the connection, SNAPSHOT_WAIT_MS after the first new
- * connection that has not sent its snapshot yet, or the end of the watch.
- * A list from before that can be out of date.
+ * until an error of the connection, a failure of the watch,
+ * SNAPSHOT_WAIT_MS after the first new connection that has not sent its
+ * snapshot yet, or the end of the watch. A list from before that can be out
+ * of date.
  */
 export function freshKey(spec: WatchSpec) {
   return [
@@ -62,9 +63,10 @@ export function freshKey(spec: WatchSpec) {
 
 /**
  * overdueKey is the query key that is true while the watch has no snapshot
- * since an error of the connection, or since SNAPSHOT_WAIT_MS after the
- * first new connection that has not sent its snapshot yet. Until then, a list that never had a snapshot is the
- * initial data of its query.
+ * since an error of the connection, since a failure of the watch, or since
+ * SNAPSHOT_WAIT_MS after the first new connection that has not sent its
+ * snapshot yet. Until then, a list that never had a snapshot is the initial
+ * data of its query.
  */
 export function overdueKey(spec: WatchSpec) {
   return [
@@ -114,8 +116,9 @@ export interface SharedWatch {
    * the set of watches opens a new connection in a microtask, so the
    * subscribes of one render share one connection. A watch that was fresh
    * stays fresh until its snapshot on the new connection, but at most
-   * SNAPSHOT_WAIT_MS, also when the set changes again. An error of the connection sets freshKey of each watch to
-   * false until its next snapshot. A watch without subscribers leaves its
+   * SNAPSHOT_WAIT_MS, also when the set changes again. An error of the
+   * connection sets freshKey of each watch to false until its next snapshot,
+   * and a failure of a watch does so for that watch. A watch without subscribers leaves its
    * list in the cache, sets its failure to null, and sets freshKey and
    * overdueKey to false.
    */
@@ -235,6 +238,7 @@ class Connection implements SharedWatch {
     });
     on<WatchFailure>("failure", (spec, frame) => {
       this.client.setQueryData(failureKey(spec), frame.message);
+      this.markOverdue([frame.watch]);
     });
     // EventSource does not connect again after an HTTP error status or a
     // body that is not text/event-stream. It then has readyState CLOSED.
