@@ -8,6 +8,7 @@ import { LockedField } from "@/components/fleet/locked-field";
 import {
   ResourcesEditor,
   type Resources,
+  resourcesErrors,
 } from "@/components/fleet/resources-editor";
 import {
   SchedulingEditor,
@@ -19,7 +20,7 @@ import {
   SecretRefPicker,
 } from "@/components/fleet/secret-ref-picker";
 import { StorageSizeEditor } from "@/components/fleet/storage-size-editor";
-import { YamlEditor } from "@/components/fleet/yaml-editor";
+import { YamlEditor, yamlErrors } from "@/components/fleet/yaml-editor";
 import { EditorSection } from "@/components/setup/form-parts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -84,7 +85,10 @@ export function SettingsEditor({
   const [open, setOpen] = useState(false);
   const [counted, setCounted] = useState(0);
   const failing = settings.filter(
-    (s) => shown.has(s.key) || errorsAt(errors, s.steps).length > 0,
+    (s) =>
+      shown.has(s.key) ||
+      errorsAt(errors, s.steps).length > 0 ||
+      showsErrorAtMount(s),
   ).length;
   if (counted !== failing) {
     setCounted(failing);
@@ -130,6 +134,7 @@ export function SettingsEditor({
       <section aria-label={`${group.label} settings`} className="min-w-0">
         <EditorSection
           title={title}
+          asHeading
           open={open}
           onToggle={setOpen}
           summary={
@@ -158,6 +163,20 @@ export function SettingsEditor({
       {body}
     </section>
   );
+}
+
+// showsErrorAtMount says whether the editor of setting shows an error for
+// its value before any edit: the editors of resources and YAML report
+// their errors only after an edit.
+function showsErrorAtMount(setting: Setting): boolean {
+  const { editor } = setting;
+  if (!editor || !setting.steps) return false;
+  const initial = editorValueOf(editor, setting.value);
+  if (editor.kind === "resources")
+    return resourcesErrors(initial as Resources).length > 0;
+  if (editor.kind === "yaml")
+    return yamlErrors(initial, editor.schema).length > 0;
+  return false;
 }
 
 /**

@@ -589,6 +589,16 @@ describe("SettingsEditor collapsed", () => {
     expect(summary().textContent).not.toMatch(/error/);
   });
 
+  it("opens at once with an error that an editor shows for a value from below the claim", () => {
+    renderClosed({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(details().open).toBe(true);
+    expect(summary().textContent).toContain("1 setting has an error");
+  });
+
   it("counts a refusal of the server on the summary", () => {
     renderClosed({}, [REFUSAL]);
     expect(summary().textContent).toContain("1 setting has an error");

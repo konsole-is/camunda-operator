@@ -77,14 +77,7 @@ export function ResourcesEditor({
   onChange?: (value: Resources, errors: ValidationError[]) => void;
 }) {
   const id = useId();
-  const [amounts, setAmounts] = useState<Record<string, Amount>>(() =>
-    Object.fromEntries(
-      FIELDS.map(([side, resource]) => [
-        `${side}.${resource}`,
-        parse(defaultValue[side]?.[resource], resource),
-      ]),
-    ),
-  );
+  const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
   const errors = amountErrors(amounts);
 
   const update = (path: string, amount: Amount) => {
@@ -156,6 +149,23 @@ export function ResourcesEditor({
         );
       })}
     </fieldset>
+  );
+}
+
+/**
+ * resourcesErrors returns the errors that ResourcesEditor shows for value
+ * before the first edit, which onChange does not get.
+ */
+export function resourcesErrors(value: Resources = {}): ValidationError[] {
+  return amountErrors(amountsOf(value));
+}
+
+function amountsOf(value: Resources): Record<string, Amount> {
+  return Object.fromEntries(
+    FIELDS.map(([side, resource]) => [
+      `${side}.${resource}`,
+      parse(value[side]?.[resource], resource),
+    ]),
   );
 }
 

@@ -97,6 +97,7 @@ function ClusterSettingsStepHarness({
         environment={environment}
         releases={createReleaseChoices(releases, environment)}
         platformConfigs={["basic", "oidc"]}
+        presets={presets.map((p) => p.metadata.name ?? "")}
         fields={fields}
         merged={drafted.merged}
         secrets={secrets}

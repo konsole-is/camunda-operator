@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ResourcesEditor } from "./resources-editor";
+import { ResourcesEditor, resourcesErrors } from "./resources-editor";
 
 afterEach(cleanup);
 
@@ -166,5 +166,23 @@ describe("ResourcesEditor", () => {
       path: "requests.cpu",
       message: "Enter a number",
     });
+  });
+});
+
+describe("resourcesErrors", () => {
+  it("gives the errors that the editor shows before an edit", () => {
+    const value = { requests: { cpu: "2" }, limits: { cpu: "1" } };
+    render(<ResourcesEditor label="Resources" defaultValue={value} />);
+    expect(screen.getByText("The limit is below the request")).toBeTruthy();
+    expect(resourcesErrors(value)).toEqual([
+      { path: "limits.cpu", message: "The limit is below the request" },
+    ]);
+  });
+
+  it("gives no error for a value that the editor shows without one", () => {
+    expect(
+      resourcesErrors({ requests: { cpu: "1" }, limits: { cpu: "2" } }),
+    ).toEqual([]);
+    expect(resourcesErrors(undefined)).toEqual([]);
   });
 });

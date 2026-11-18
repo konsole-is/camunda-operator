@@ -100,6 +100,7 @@ function renderStep(
     environment,
     releases: createReleaseChoices(releases, environment),
     platformConfigs: ["basic", "oidc"],
+    presets: presets.map((p) => p.metadata?.name ?? ""),
     fields,
     merged: drafted.merged,
     secrets: [],
@@ -137,6 +138,7 @@ function LiveStep({
       environment={prod()}
       releases={createReleaseChoices(releases, prod())}
       platformConfigs={["basic"]}
+      presets={["small"]}
       fields={fields}
       merged={drafted.merged}
       secrets={[]}
@@ -400,6 +402,17 @@ describe("ClusterSettingsStep", () => {
   it("shows no preset note without a preset", () => {
     renderStep({ draft: draftOf({ presetRef: undefined }) });
     expect(screen.queryByText(/Your admin made the preset/)).toBeNull();
+  });
+
+  it("shows no preset note for a preset that the live list does not hold", () => {
+    renderStep({}, prod(), []);
+    expect(screen.queryByText(/Your admin made the preset/)).toBeNull();
+  });
+
+  it("names each settings group as a heading", () => {
+    renderStep();
+    for (const name of ["Whole cluster", "Brokers", "Gateway", "Connectors"])
+      expect(screen.getByRole("heading", { level: 3, name })).toBeTruthy();
   });
 
   it("counts a changed setting on its group at once", async () => {

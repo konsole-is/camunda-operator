@@ -34,7 +34,7 @@ Under them, a note names the preset that you picked in **Environment and name**.
 
 The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. Under the name, a line says how many settings the group has and where their values come from, for example `14 settings: 3 from the preset, 11 not set`. A setting is `not set` when the preset, the release, and the claim give it no value. A setting that you change counts as `changed in the claim` as soon as you change it. A value that you typed stays when you close the group.
 
-When a setting of a group shows an error, for example a number that is out of range, the group opens. It opens again each time that one more of its settings shows an error. The line under its name then also says how many settings have an error, for example `1 setting has an error`. This line stays when you close the group.
+When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. The line under its name then also says how many settings have an error, for example `1 setting has an error`. This line stays when you close the group.
 
 A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 

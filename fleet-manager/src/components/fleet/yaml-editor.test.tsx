@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { YamlEditor } from "./yaml-editor";
+import { YamlEditor, yamlErrors } from "./yaml-editor";
 
 afterEach(cleanup);
 
@@ -164,5 +164,30 @@ describe("YamlEditor", () => {
       screen.getByRole("textbox", { name: "Node affinity" }),
     );
     expect(onChange).toHaveBeenLastCalledWith(undefined, []);
+  });
+});
+
+describe("yamlErrors", () => {
+  const schema = { type: "object", properties: { a: { type: "integer" } } };
+
+  it("gives the schema errors that the editor shows before an edit", () => {
+    render(
+      <YamlEditor
+        label="Node affinity"
+        defaultValue={{ a: "x" }}
+        schema={schema}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("textbox", { name: "Node affinity" })
+        .getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(yamlErrors({ a: "x" }, schema)).toHaveLength(1);
+  });
+
+  it("gives no error for a valid value or no value", () => {
+    expect(yamlErrors({ a: 1 }, schema)).toEqual([]);
+    expect(yamlErrors(undefined, schema)).toEqual([]);
   });
 });

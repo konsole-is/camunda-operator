@@ -675,6 +675,7 @@ export function ClusterCreateFlow({
             platformConfigs={platformConfigs
               .map((p) => p.metadata?.name ?? "")
               .sort(byCodeUnit)}
+            presets={live.presets.items.map((p) => p.metadata?.name ?? "")}
             fields={fields}
             merged={drafted.merged}
             // A Secret that cannot be read cannot be picked, and the alert

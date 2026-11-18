@@ -92,6 +92,17 @@ export function YamlEditor({
 }
 
 /**
+ * yamlErrors returns the errors that YamlEditor shows for value and schema
+ * before the first edit, which onChange does not get.
+ */
+export function yamlErrors(
+  value: unknown,
+  schema?: OpenAPISchema,
+): ValidationError[] {
+  return check(value === undefined ? "" : stringify(value), schema)[1];
+}
+
+/**
  * parseYaml returns the value of YAML text, or undefined and the error of
  * text that does not parse, that has an alias which holds itself, or that
  * has a number that is not finite. Empty text is no value and no error.

@@ -158,9 +158,9 @@ export function settingsOf(input: {
 
 /**
  * settingsSummary returns the line that says how many settings there are
- * and where their values come from, in the words of stateLabel, as in
- * "12 settings: 8 from the preset, 1 changed in the claim". A source that
- * no setting has is left out, and the changes in the claim come last.
+ * and where their values come from, as in "12 settings: 8 from the preset,
+ * 1 changed in the claim". A source that no setting has is left out, and
+ * the changes in the claim come last.
  */
 export function settingsSummary(settings: readonly Setting[]): string {
   if (settings.length === 0) return "No settings";

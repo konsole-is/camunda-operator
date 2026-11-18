@@ -32,19 +32,21 @@ const PICKED = new Set([
  * ClusterSettingsStep is step 3 of the cluster create flow: the release,
  * the platform config, then the settings editors over fields, without the
  * fields at presetRef, releaseRef, and platformConfigRef. A note names the
- * preset of the draft, and each settings group starts closed. errors are
- * field errors at paths from the root of the claim, and each one shows
- * only at a setting whose claim path holds it. fields are clusterFields of
- * the draft cluster. A field that a step 2 option fills shows locked with
- * its section. unread are the kinds that could not be read. It holds no
- * draft: pick sets releaseRef or platformConfigRef, an empty value unsets
- * it, and set, reset, and invalid take steps from the root of the claim.
+ * preset of the draft when presets, the names of the live presets, hold
+ * it. errors are field errors at paths from the root of the claim, and
+ * each one shows only at a setting whose claim path holds it. fields are
+ * clusterFields of the draft cluster. A field that a step 2 option fills
+ * shows locked with its section. unread are the kinds that could not be
+ * read. It holds no draft: pick sets releaseRef or platformConfigRef, an
+ * empty value unsets it, and set, reset, and invalid take steps from the
+ * root of the claim.
  */
 export function ClusterSettingsStep({
   draft,
   environment,
   releases,
   platformConfigs,
+  presets,
   fields,
   merged,
   secrets,
@@ -59,6 +61,7 @@ export function ClusterSettingsStep({
   environment: Environment | undefined;
   releases: readonly ReleaseOption[];
   platformConfigs: readonly string[];
+  presets: readonly string[];
   fields: readonly ClusterField[];
   merged: Merged<CamundaClusterSpec>;
   secrets: SecretRefs;
@@ -81,6 +84,8 @@ export function ClusterSettingsStep({
     environment?.spec.displayName || environment?.metadata.name;
   const claim = draft.claim.spec.cluster ?? {};
   const preset = draft.claim.spec.presetRef;
+  // Only a preset that the live list holds gives values to the settings.
+  const presetNote = preset !== undefined && presets.includes(preset);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -149,7 +154,7 @@ export function ClusterSettingsStep({
         </div>
       </div>
       <div className="flex flex-col gap-3">
-        {preset && (
+        {presetNote && (
           <p className="max-w-prose text-sm text-muted">
             Your admin made the preset{" "}
             <span className="font-medium text-text">{preset}</span>. It sets
