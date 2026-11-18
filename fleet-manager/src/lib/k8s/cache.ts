@@ -31,6 +31,16 @@ export const SYNC_TIMEOUT_MS = 10_000;
 // when the client ends the watch for no data, after 30 seconds.
 export const WATCH_RECOVERY_MS = 10_000;
 
+/**
+ * WATCH_TIMEOUT_SECONDS is the time after which the cache asks the API
+ * server to end a watch. The server ends it with no error, and the cache
+ * watches again from where it was, with no new list.
+ */
+// The client ends a watch that sent no data for 30 seconds, and the cache
+// counts that as a failure and lists again. This value stays below it, so a
+// watch of a kind that does not change ends cleanly first.
+export const WATCH_TIMEOUT_SECONDS = 25;
+
 /** CacheDeps are the API calls of the cache. Tests pass fakes. */
 export interface CacheDeps {
   /** list returns all objects at a collection path. */
@@ -45,6 +55,8 @@ export interface CacheDeps {
   timeoutReconnectMs?: number;
   /** watchRecoveryMs defaults to WATCH_RECOVERY_MS. */
   watchRecoveryMs?: number;
+  /** watchTimeoutSeconds defaults to WATCH_TIMEOUT_SECONDS. */
+  watchTimeoutSeconds?: number;
 }
 
 export type CacheListener<K extends KindName> = (
@@ -84,6 +96,7 @@ export class ResourceCache {
       maxRetryDelayMs: 30_000,
       timeoutReconnectMs: 1_000,
       watchRecoveryMs: WATCH_RECOVERY_MS,
+      watchTimeoutSeconds: WATCH_TIMEOUT_SECONDS,
       ...deps,
     };
   }
@@ -215,7 +228,11 @@ class KindInformer {
         return deps.watch
           .watch(
             watchPath,
-            params,
+            {
+              ...params,
+              timeoutSeconds: deps.watchTimeoutSeconds,
+              allowWatchBookmarks: true,
+            },
             (phase, object, raw) => {
               // The API server ends a watch after an ERROR event.
               if (phase === "ERROR") this.watchFailed(object);
@@ -230,12 +247,9 @@ class KindInformer {
             // done of ListWatch is async and the client does not await it, so
             // a watch that cannot start again would reject with no handler.
             (err) => {
-              // The client gives up on a request that gets no answer, and on
-              // a watch that sends no data, with a TimeoutError. ListWatch
-              // then watches again at once and gives no error.
-              if ((err as Error | null)?.name === "TimeoutError") {
-                this.watchFailed(err);
-              }
+              // ListWatch lists again after 410 Gone and watches again at
+              // once after a TimeoutError, and gives no error for either.
+              if (err) this.watchFailed(err);
               ended = true;
               void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
                 this.onError(e),

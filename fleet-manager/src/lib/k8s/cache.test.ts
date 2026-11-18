@@ -4,7 +4,7 @@ import type {
   Watch,
 } from "@kubernetes/client-node";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ResourceCache, type CacheDeps } from "./cache";
+import { ResourceCache, WATCH_TIMEOUT_SECONDS, type CacheDeps } from "./cache";
 import { KubernetesRequestError } from "./client";
 
 type Callback = (phase: string, object: unknown) => void;
@@ -300,22 +300,40 @@ describe("ResourceCache", () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it("stays current, with no new list, when the API server ends a watch", async () => {
+  it("asks the API server for bookmarks and to end a quiet watch before the client gives up on it", async () => {
+    const { cache, watch } = newCache({
+      list: async () => listOf([item("a")], "10"),
+    });
+    await cache.objects("Environment");
+
+    expect(watch.calls[0].params).toMatchObject({
+      allowWatchBookmarks: true,
+      timeoutSeconds: WATCH_TIMEOUT_SECONDS,
+    });
+    // The client ends a watch that sends no data for 30 seconds.
+    expect(WATCH_TIMEOUT_SECONDS).toBeLessThan(30);
+  });
+
+  it("never lists again, loses no subscription, and answers each read while the API server ends quiet watches", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({
       list,
       timeoutReconnectMs: 1,
       watchRecoveryMs: 20,
     });
-    await cache.objects("Environment");
+    const lost = vi.fn();
+    await cache.subscribe("Environment", vi.fn(), lost);
 
-    watch.calls[0].done(null);
-    await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    for (let ends = 1; ends <= 4; ends++) {
+      watch.calls[ends - 1].done(null);
+      await vi.waitFor(() => expect(watch.calls).toHaveLength(ends + 1));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+    }
 
-    expect(names(await cache.objects("Environment"))).toEqual(["a"]);
-    expect(watch.calls[1].params.resourceVersion).toBe("10");
+    expect(watch.calls.at(-1)!.params.resourceVersion).toBe("10");
     expect(list).toHaveBeenCalledOnce();
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it("fails at once when the API server does not serve the kind, and tries again on the next read", async () => {
@@ -399,6 +417,7 @@ describe("ResourceCache", () => {
 class RefusingWatch extends FakeWatch {
   refuse = false;
   timeout = false;
+  gone = false;
   refused = 0;
   tries = 0;
   override async watch(
@@ -413,7 +432,9 @@ class RefusingWatch extends FakeWatch {
     done(
       this.timeout
         ? Object.assign(new Error("timed out"), { name: "TimeoutError" })
-        : Object.assign(new Error("Forbidden"), { statusCode: 403 }),
+        : this.gone
+          ? Object.assign(new Error("Gone"), { statusCode: 410 })
+          : Object.assign(new Error("Forbidden"), { statusCode: 403 }),
     );
     return new AbortController();
   }
@@ -510,6 +531,36 @@ describe("ResourceCache after a watch fails", () => {
 
     expect(names(await cache.objects("Environment"))).toEqual(["a", "b"]);
     expect(watch.calls[1].params.resourceVersion).toBe("2");
+  });
+
+  it("counts a watch that the API server refuses with 410 Gone as failed, and reads the old list only within the limit", async () => {
+    const lists = [
+      Promise.resolve(listOf([item("a")], "1")),
+      new Promise<KubernetesListObject<KubernetesObject>>(() => {}),
+    ];
+    const list = vi.fn(() => lists.shift()!);
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      {
+        list,
+        watchRecoveryMs: 30,
+        syncTimeoutMs: 60_000,
+        timeoutReconnectMs: 1,
+      },
+      watch,
+    );
+    await cache.objects("Environment");
+
+    watch.refuse = true;
+    watch.gone = true;
+    watch.calls[0].done(null);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    await vi.waitFor(() =>
+      expect(cache.objects("Environment")).rejects.toThrow(
+        /no current list of Environment/,
+      ),
+    );
   });
 
   it.each([

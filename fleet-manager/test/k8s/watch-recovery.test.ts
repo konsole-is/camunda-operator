@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Watch } from "@kubernetes/client-node";
+import { type KubernetesObject, Watch } from "@kubernetes/client-node";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { applyContractChange } from "@/app/setup/connections/actions";
 import { deleteChange } from "@/components/setup/connections/draft";
@@ -201,4 +201,69 @@ describe("a watch that fails on each try after the first list", () => {
       ],
     });
   }, 60_000);
+});
+
+describe("a kind that does not change", () => {
+  it("stays current across server ends of its watch, with no new list", async () => {
+    const admin = envtest.kubeConfig;
+    const real = new Watch(admin);
+    const watched: { resourceVersion?: unknown }[] = [];
+    const bookmarks: string[] = [];
+    const lists = vi.fn((path: string) => getJSON(admin, path, 10_000));
+    const watch = {
+      watch: (
+        path: string,
+        params: Record<string, string | number | boolean | undefined>,
+        callback: (phase: string, object: KubernetesObject) => void,
+        done: (err: unknown) => void,
+      ) => {
+        watched.push({ ...params });
+        return real.watch(
+          path,
+          params,
+          (phase, object) => {
+            if (phase === "BOOKMARK") {
+              bookmarks.push(object.metadata?.resourceVersion ?? "");
+            }
+            callback(phase, object);
+          },
+          done,
+        );
+      },
+    } as unknown as Watch;
+    const cache = new ResourceCache({
+      list: lists as never,
+      watch,
+      watchTimeoutSeconds: 2,
+      watchRecoveryMs: 1_000,
+    });
+    try {
+      const lost = vi.fn();
+      await cache.subscribe("BackupSchedule", vi.fn(), lost);
+      // Writes of another kind move the resourceVersion of the API server.
+      for (let i = 0; i < 3; i++) {
+        await kubeRequest(admin, "POST", "/api/v1/namespaces", {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: { name: `quiet-${i}-${randomUUID().slice(0, 8)}` },
+        });
+      }
+
+      await vi.waitFor(() => expect(watched.length).toBeGreaterThan(3), {
+        timeout: 15_000,
+        interval: 200,
+      });
+
+      expect(await listFrom(cache, "BackupSchedule")).toEqual([]);
+      expect(lists).toHaveBeenCalledOnce();
+      expect(lost).not.toHaveBeenCalled();
+      if (bookmarks.length > 0) {
+        expect(watched.at(-1)!.resourceVersion).not.toBe(
+          watched[0].resourceVersion,
+        );
+      }
+    } finally {
+      await cache.stop();
+    }
+  }, 30_000);
 });
