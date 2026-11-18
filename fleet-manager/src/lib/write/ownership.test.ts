@@ -4,6 +4,8 @@ import type { ManagedFieldsEntry } from "@/lib/merge";
 import {
   fieldValue,
   foreignFields,
+  keepUntouchedEmpty,
+  MAX_KEEP_PATHS,
   offered,
   takenFields,
   withTakeOver,
@@ -485,6 +487,203 @@ describe("withTakeOver", () => {
       ]),
     ).toBe(change);
     expect(withTakeOver(change, [])).toBe(change);
+  });
+});
+
+describe("keepUntouchedEmpty", () => {
+  const key = "Environment//staging";
+  const kubectl = (fieldsV1: object) =>
+    entry("kubectl-client-side-apply", "Update", fieldsV1);
+  // live holds displayName and the given empty fields, all of kubectl.
+  const liveWith = (
+    spec: Record<string, unknown>,
+    metadata: Record<string, unknown> = {},
+  ) =>
+    environment(
+      { displayName: "Stage", ...spec },
+      [
+        kubectl({
+          "f:spec": Object.fromEntries(
+            ["displayName", ...Object.keys(spec)].map((k) => [`f:${k}`, {}]),
+          ),
+          ...(metadata.annotations !== undefined && {
+            "f:metadata": {
+              "f:annotations": Object.fromEntries(
+                Object.keys(metadata.annotations as object).map((k) => [
+                  `f:${k}`,
+                  {},
+                ]),
+              ),
+            },
+          }),
+        }),
+      ],
+      { resourceVersion: "7", ...metadata },
+    );
+  const save = (applied: KubeObject): Change => ({
+    intent: "Rename",
+    apply: [applied],
+    preconditions: { [key]: "7" },
+  });
+  const clearedAfter = (live: KubeObject, change: Change) =>
+    foreignFields(live, change.apply[0], change.keep?.[key]).cleared.map(
+      (f) => f.path,
+    );
+
+  it.each([
+    ["an empty map", { images: {} }],
+    ["an empty list", { allowed: [] }],
+    ["an empty string", { color: "" }],
+    ["a map of only empty values", { creation: { labels: {}, keys: [] } }],
+  ])(
+    "keeps %s that the page leaves out and the edit did not touch",
+    (_, empty) => {
+      const live = liveWith(empty);
+      const change = keepUntouchedEmpty(
+        save(environment({ displayName: "Prod" })),
+        live,
+        environment({ displayName: "Prod", ...empty }),
+      );
+      expect(clearedAfter(live, change)).toEqual([]);
+      expect(change.keep).toEqual({
+        [key]: Object.keys(empty).map((k) => `spec.${k}`),
+      });
+    },
+  );
+
+  it("keeps an empty annotation that the page leaves out", () => {
+    const live = liveWith({}, { annotations: { description: "" } });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod" }, [], {
+        annotations: { description: "" },
+      }),
+    );
+    expect(clearedAfter(live, change)).toEqual([]);
+  });
+
+  it("does not keep an empty value that the edit removed", () => {
+    const live = liveWith({ color: "" });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod" }),
+    );
+    expect(change.keep).toBeUndefined();
+    expect(clearedAfter(live, change)).toEqual(["spec.color"]);
+  });
+
+  it("does not keep a value that the edit cleared", () => {
+    const live = liveWith({ color: "red" });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", color: "" }),
+    );
+    expect(clearedAfter(live, change)).toEqual(["spec.color"]);
+  });
+
+  it("does not keep an empty value inside a field that the page leaves out", () => {
+    const live = liveWith({ oidc: { issuer: "https://a", audience: "" } });
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({
+        displayName: "Prod",
+        oidc: { issuer: "", audience: "" },
+      }),
+    );
+    expect(clearedAfter(live, change)).toEqual(["spec.oidc"]);
+  });
+
+  it("does not keep an empty value that only the fleet manager applied", () => {
+    const live = environment(
+      { displayName: "Stage", color: "" },
+      [
+        kubectl({ "f:spec": { "f:displayName": {} } }),
+        entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      ],
+      { resourceVersion: "7" },
+    );
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", color: "" }),
+    );
+    expect(change.keep).toBeUndefined();
+  });
+
+  it("does not keep an empty value inside a list item", () => {
+    const live = environment(
+      { extraEnv: [{ name: "TZ", value: "" }] },
+      [
+        kubectl({
+          "f:spec": {
+            "f:extraEnv": {
+              'k:{"name":"TZ"}': { ".": {}, "f:name": {}, "f:value": {} },
+            },
+          },
+        }),
+      ],
+      { resourceVersion: "7" },
+    );
+    const change = keepUntouchedEmpty(
+      save(environment({ extraEnv: [{ name: "TZ" }] })),
+      live,
+      environment({ extraEnv: [{ name: "TZ", value: "" }] }),
+    );
+    expect(change.keep).toBeUndefined();
+  });
+
+  it("adds to the keep list of the change", () => {
+    const live = liveWith({ images: {}, sections: { a: 1 } });
+    const change = keepUntouchedEmpty(
+      {
+        ...save(environment({ displayName: "Prod" })),
+        keep: { [key]: ["spec.sections"] },
+      },
+      live,
+      environment({ displayName: "Prod", images: {}, sections: { a: 1 } }),
+    );
+    expect(change.keep).toEqual({ [key]: ["spec.sections", "spec.images"] });
+  });
+
+  it("keeps at most MAX_KEEP_PATHS paths, and the others stay offered", () => {
+    const empty = Object.fromEntries(
+      Array.from({ length: MAX_KEEP_PATHS + 1 }, (_, i) => [`e${i}`, ""]),
+    );
+    const live = liveWith(empty);
+    const change = keepUntouchedEmpty(
+      save(environment({ displayName: "Prod" })),
+      live,
+      environment({ displayName: "Prod", ...empty }),
+    );
+    expect(change.keep?.[key]).toHaveLength(MAX_KEEP_PATHS);
+    expect(clearedAfter(live, change)).toHaveLength(1);
+  });
+
+  it("returns the same change without a precondition for live", () => {
+    const live = liveWith({ images: {} });
+    const change: Change = {
+      intent: "Rename",
+      apply: [environment({ displayName: "Prod" })],
+    };
+    expect(
+      keepUntouchedEmpty(
+        change,
+        live,
+        environment({ displayName: "Prod", images: {} }),
+      ),
+    ).toBe(change);
+  });
+
+  it("returns the same change when no empty value is cleared", () => {
+    const live = liveWith({});
+    const change = save(environment({ displayName: "Prod" }));
+    expect(
+      keepUntouchedEmpty(change, live, environment({ displayName: "Prod" })),
+    ).toBe(change);
   });
 });
 

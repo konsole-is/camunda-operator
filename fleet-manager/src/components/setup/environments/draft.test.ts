@@ -1,6 +1,8 @@
 import type { V1Namespace } from "@kubernetes/client-node";
 import { describe, expect, it, vi } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
+import { foreignFields } from "@/lib/write/ownership";
+import type { KubeObject } from "@/lib/write/types";
 import {
   createChange,
   deleteChange,
@@ -330,6 +332,58 @@ describe("draftErrors", () => {
         message: "At most 16 required label keys.",
       },
     ]);
+  });
+});
+
+describe("updateChange over the empty values of another tool", () => {
+  // empty holds a display name, an empty color, and releases with only an
+  // empty list, all of kubectl.
+  const empty: Environment = {
+    ...live,
+    metadata: {
+      ...live.metadata,
+      managedFields: [
+        {
+          manager: "kubectl-client-side-apply",
+          operation: "Update",
+          fieldsV1: {
+            "f:spec": {
+              "f:displayName": {},
+              "f:color": {},
+              "f:releases": { "f:allowed": {} },
+            },
+          },
+        },
+      ],
+    },
+    spec: { displayName: "Staging", color: "", releases: { allowed: [] } },
+  };
+  const rows = (edited: EnvironmentDraft) => {
+    const change = updateChange(empty, edited);
+    const { changed, cleared } = foreignFields(
+      empty as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["Environment//staging"],
+    );
+    return {
+      changed: changed.map((f) => f.path),
+      cleared: cleared.map((f) => f.path),
+    };
+  };
+
+  it("shows only the changed field", () => {
+    const edited = draftOf(empty);
+    edited.spec.displayName = "Stage";
+    expect(rows(edited)).toEqual({
+      changed: ["spec.displayName"],
+      cleared: [],
+    });
+  });
+
+  it("still shows a field that the edit cleared", () => {
+    const edited = draftOf(empty);
+    edited.spec.displayName = "";
+    expect(rows(edited).cleared).toEqual(["spec.displayName"]);
   });
 });
 

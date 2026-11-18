@@ -4,6 +4,7 @@ import {
   presetDescription,
 } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
+import { keepUntouchedEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { type PresetObject, presetBody } from "./kinds";
@@ -27,7 +28,9 @@ export function presetDraftOf(preset: PresetObject | undefined): PresetDraft {
  * draft, with the resourceVersion of live as its precondition, and without
  * force. A blank description leaves out the annotation. In direct mode,
  * an annotation that another field manager set stays, unless the take-over
- * of the review removes it. It keeps the labels and the other annotations
+ * of the review removes it. An empty value of another tool that the edit
+ * did not touch stays, and the review does not offer it, as
+ * keepUntouchedEmpty says. It keeps the labels and the other annotations
  * of live, without the last applied file of kubectl.
  */
 export function presetUpdateChange(
@@ -43,6 +46,7 @@ export function presetUpdateChange(
     ),
   );
   const description = draft.description.trim();
+  const edited = { ...kept, [DESCRIPTION_ANNOTATION]: description };
   if (description !== "") kept[DESCRIPTION_ANNOTATION] = description;
   const object: KubeObject = {
     apiVersion: live.apiVersion,
@@ -56,15 +60,19 @@ export function presetUpdateChange(
       [live.kind === "DatabaseServerPreset" ? "server" : "cluster"]: draft.body,
     },
   };
-  return {
-    intent: `Change the preset ${name}`,
-    apply: [object],
-    ...(live.metadata.resourceVersion !== undefined && {
-      preconditions: {
-        [refKey({ kind: live.kind, name })]: live.metadata.resourceVersion,
-      },
-    }),
-  };
+  return keepUntouchedEmpty(
+    {
+      intent: `Change the preset ${name}`,
+      apply: [object],
+      ...(live.metadata.resourceVersion !== undefined && {
+        preconditions: {
+          [refKey({ kind: live.kind, name })]: live.metadata.resourceVersion,
+        },
+      }),
+    },
+    live,
+    { ...object, metadata: { ...object.metadata, annotations: edited } },
+  );
 }
 
 /**

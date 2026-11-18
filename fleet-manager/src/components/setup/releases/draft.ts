@@ -7,6 +7,7 @@ import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ReleaseUsage } from "@/lib/usage";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepUntouchedEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { usedByText } from "./rows";
@@ -157,7 +158,8 @@ export function createChange(draft: ReleaseDraft): Change {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and without force. It
  * keeps the labels and annotations of live, without the last applied file
- * of kubectl.
+ * of kubectl. An empty value of another tool that the edit did not touch
+ * stays, and the review does not offer it, as keepUntouchedEmpty says.
  */
 export function updateChange(
   live: CamundaRelease,
@@ -180,11 +182,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the release ${name}`,
-    apply: [object],
-    ...preconditionsOf([live]),
-  };
+  return keepUntouchedEmpty(
+    {
+      intent: `Change the release ${name}`,
+      apply: [object],
+      ...preconditionsOf([live]),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes each of releases while it still has its resourceVersion and its UID. */

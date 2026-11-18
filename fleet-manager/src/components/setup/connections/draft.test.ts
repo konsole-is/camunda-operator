@@ -7,6 +7,8 @@ import {
   REQUEST_LABEL,
 } from "@/lib/labels";
 import type { ContractKind } from "@/lib/usage";
+import { foreignFields } from "@/lib/write/ownership";
+import type { KubeObject } from "@/lib/write/types";
 import {
   type ContractDraft,
   changeCount,
@@ -200,6 +202,69 @@ describe("deleteChange", () => {
         name: "plane-a-optimize",
       },
     ]);
+  });
+});
+
+describe("updateChange over the empty values of another tool", () => {
+  // live holds an S3 block that kubectl set, with an empty endpoint and an
+  // empty base path.
+  const live = withMeta(
+    {
+      ...backups,
+      spec: {
+        ...backups.spec,
+        s3: { ...backups.spec.s3!, endpoint: "", basePath: "" },
+      },
+    },
+    {
+      resourceVersion: "41",
+      managedFields: [
+        {
+          manager: "kubectl-client-side-apply",
+          operation: "Update",
+          fieldsV1: {
+            "f:spec": {
+              "f:type": {},
+              "f:s3": {
+                "f:bucketName": {},
+                "f:region": {},
+                "f:endpoint": {},
+                "f:basePath": {},
+              },
+            },
+          },
+        },
+      ],
+    },
+  );
+  const rows = (draft: ContractDraft) => {
+    const change = updateChange(live, draft);
+    const { changed, cleared } = foreignFields(
+      live as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["ObjectStorageConfig/team-a/backups"],
+    );
+    return {
+      changed: changed.map((f) => f.path),
+      cleared: cleared.map((f) => f.path),
+    };
+  };
+
+  it("shows only the changed field", () => {
+    const draft = edited(live, (spec) => {
+      spec.s3!.region = "eu-central-1";
+    });
+    expect(rows(draft)).toEqual({
+      changed: ["spec.s3.region"],
+      cleared: [],
+    });
+  });
+
+  it("still shows a field that the edit cleared", () => {
+    const draft = edited(live, (spec) => {
+      spec.s3!.region = "";
+    });
+    expect(rows(draft).cleared).toEqual(["spec.s3.region"]);
   });
 });
 

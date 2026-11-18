@@ -10,6 +10,7 @@ import {
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepUntouchedEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
@@ -187,7 +188,9 @@ export function createChange(draft: EnvironmentDraft): Change {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition. It leaves out the last
  * applied file of kubectl. A field that another tool set and the edit
- * changes or clears needs the take-over of the review.
+ * changes or clears needs the take-over of the review. An empty value of
+ * another tool that the edit did not touch stays, and the review does not
+ * offer it, as keepUntouchedEmpty says.
  */
 export function updateChange(
   live: Environment,
@@ -210,11 +213,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the environment ${name}`,
-    apply: [object],
-    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
-  };
+  return keepUntouchedEmpty(
+    {
+      intent: `Change the environment ${name}`,
+      apply: [object],
+      ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */

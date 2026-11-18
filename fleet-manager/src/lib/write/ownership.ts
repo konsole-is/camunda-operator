@@ -189,6 +189,54 @@ export function foreignFields(
   return { changed: byPath(changed), cleared: byPath(cleared) };
 }
 
+/** MAX_KEEP_PATHS is the most paths that the keep list of a change holds for one object. */
+export const MAX_KEEP_PATHS = 64;
+
+/**
+ * keepUntouchedEmpty returns change with keep extended, for the applied
+ * object of live, by each cleared field of foreignFields that live holds
+ * with an empty value and that edited holds with the same value. edited
+ * is the object as the page edits it, before the page leaves out its
+ * empty values. An empty value is an empty string, list, or map, or a map
+ * of only empty values. The apply leaves such a field as it is. A field in
+ * a list item is not kept. keep holds at most MAX_KEEP_PATHS paths, and a
+ * further field stays offered. It returns change itself when change has
+ * no precondition for live or there is no such field.
+ */
+export function keepUntouchedEmpty(
+  change: Change,
+  live: { kind: string; metadata: { name?: string; namespace?: string } },
+  edited: KubeObject,
+): Change {
+  const { name = "", namespace } = live.metadata;
+  const key = refKey({ kind: live.kind, namespace, name });
+  const applied = change.apply.find((o) => refKey(refOf(o)) === key);
+  if (applied === undefined || change.preconditions?.[key] === undefined)
+    return change;
+  const object = live as unknown as KubeObject;
+  const untouched = foreignFields(object, applied, change.keep?.[key])
+    .cleared.filter(
+      (f) =>
+        // keep names paths through maps only.
+        f.steps.every((s) => "field" in s) &&
+        !f.path.includes("[") &&
+        isEmpty(fieldValue(object, f)) &&
+        equalJSON(fieldValue(edited, f), fieldValue(object, f)),
+    )
+    .map((f) => f.path);
+  if (untouched.length === 0) return change;
+  const kept = [
+    ...new Set([...(change.keep?.[key] ?? []), ...untouched]),
+  ].slice(0, MAX_KEEP_PATHS);
+  return { ...change, keep: { ...change.keep, [key]: kept } };
+}
+
+function isEmpty(value: unknown): boolean {
+  if (value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  return isRecord(value) && Object.values(value).every(isEmpty);
+}
+
 /** offered reports whether the review offers field for a take-over: no controller of the operator owns it. */
 export function offered(field: ForeignField): boolean {
   return field.managers.every((m) => m.kind !== "operator");

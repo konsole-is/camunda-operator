@@ -4,6 +4,7 @@ import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepUntouchedEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 
@@ -141,7 +142,9 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and without force. It
  * keeps the labels and the annotations of live, without the last applied
- * file of kubectl.
+ * file of kubectl. An empty value of another tool that the edit did not
+ * touch stays, and the review does not offer it, as keepUntouchedEmpty
+ * says.
  */
 export function updateChange(
   live: CamundaPlatformConfig,
@@ -164,11 +167,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the platform config ${name}`,
-    apply: [object],
-    ...preconditionOf(name, live.metadata.resourceVersion),
-  };
+  return keepUntouchedEmpty(
+    {
+      intent: `Change the platform config ${name}`,
+      apply: [object],
+      ...preconditionOf(name, live.metadata.resourceVersion),
+    },
+    live,
+    { ...object, spec: draft },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */

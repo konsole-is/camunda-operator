@@ -986,6 +986,50 @@ describe("a save of the platform config editor against the API server", () => {
     expect((await read(object)).spec.images).toBeUndefined();
   });
 
+  it("takes over the issuer and keeps the empty values that kubectl set", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: {
+        method: "oidc",
+        oidc: { ...oidc, audience: "", management: { clients: {} } },
+      },
+      images: {},
+    });
+    await createClientSideApplied(api, object);
+    const issuer = (draft: CamundaPlatformConfig["spec"]) => {
+      draft.auth!.oidc!.issuerUrl = "https://login.example.com/realms/other";
+    };
+
+    const given = await edit(object, issuer);
+    expect(changedPaths(given.preview)).toEqual(["spec.auth.oidc.issuerUrl"]);
+    expect(clearedPaths(given.preview)).toEqual([]);
+
+    const taken = await edit(object, issuer, true);
+    expect(taken.change.remove).toBeUndefined();
+    expect(taken.preview.errors).toEqual([]);
+    const shown = taken.preview.objects[0].after!.spec as Record<
+      string,
+      unknown
+    >;
+    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const after = await read(object);
+    expect(after.spec).toEqual({
+      auth: {
+        method: "oidc",
+        oidc: {
+          ...oidc,
+          issuerUrl: "https://login.example.com/realms/other",
+          audience: "",
+          management: { clients: {} },
+        },
+      },
+      images: {},
+    });
+    expect(shown).toEqual(after.spec);
+  });
+
   it("a switch to basic of an OIDC block that kubectl set fails with the rule of the CRD, also with the take-over, and writes nothing", async () => {
     const object = platformConfig(unique("platform"), {
       auth: { method: "oidc", oidc },

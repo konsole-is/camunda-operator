@@ -16,6 +16,7 @@ import {
   runningBackup,
 } from "@/lib/policy";
 import { existsError, staleError } from "./errors";
+import { MAX_KEEP_PATHS } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -61,8 +62,6 @@ const fieldListSchema = z
   .optional();
 
 // A client sends keep, so the schema bounds it.
-const MAX_KEEP_PATHS = 64;
-
 const keepListSchema = z
   .record(
     refKeySchema,

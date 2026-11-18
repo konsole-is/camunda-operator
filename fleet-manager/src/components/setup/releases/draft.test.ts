@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { ReleaseUsage } from "@/lib/usage";
+import { foreignFields } from "@/lib/write/ownership";
+import type { KubeObject } from "@/lib/write/types";
 import {
   changeCount,
   copyDraft,
@@ -9,6 +12,7 @@ import {
   draftErrors,
   draftOf,
   RELEASE_CHANGE_NOTICE,
+  type ReleaseDraft,
   saveEffects,
   specOf,
   updateChange,
@@ -196,6 +200,63 @@ describe("change builders", () => {
         },
       ],
       preconditions: { "CamundaRelease//r": "41" },
+    });
+  });
+
+  describe("a save over the empty values of another tool", () => {
+    // live holds fields that kubectl set: the version, an empty map, an
+    // empty list, and a block of only empty values.
+    const live = release("r", {
+      version: "8.9.0",
+      images: {},
+      extraEnv: [],
+      connectors: { version: "" },
+    });
+    live.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": {
+            "f:version": {},
+            "f:images": {},
+            "f:extraEnv": {},
+            "f:connectors": { "f:version": {} },
+          },
+        },
+      },
+    ];
+    const rows = (object: CamundaRelease, draft: ReleaseDraft) => {
+      const change = updateChange(object, draft);
+      const { changed, cleared } = foreignFields(
+        object as unknown as KubeObject,
+        change.apply[0],
+        change.keep?.["CamundaRelease//r"],
+      );
+      return {
+        changed: changed.map((f) => f.path),
+        cleared: cleared.map((f) => f.path),
+      };
+    };
+
+    it("shows only the changed field", () => {
+      const draft = draftOf(live);
+      draft.spec.version = "8.9.1";
+      expect(rows(live, draft)).toEqual({
+        changed: ["spec.version"],
+        cleared: [],
+      });
+    });
+
+    it("still shows a field that the edit cleared", () => {
+      const set = release("r", {
+        ...live.spec,
+        connectors: { version: "8.9.7" },
+      });
+      set.metadata.managedFields = live.metadata.managedFields;
+      const draft = draftOf(set);
+      draft.spec.connectors = { version: "" };
+      expect(rows(set, draft).cleared).toEqual(["spec.connectors"]);
     });
   });
 

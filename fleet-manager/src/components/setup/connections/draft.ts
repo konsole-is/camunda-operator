@@ -9,6 +9,7 @@ import { equalJSON, isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ContractKind } from "@/lib/usage";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepUntouchedEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import type { ContractObject } from "./facts";
@@ -205,7 +206,9 @@ const RECOVERY_PATHS = [
  * file of kubectl, so a contract kept from a registration keeps its plugin
  * labels. A field that draft leaves empty is left out. The recovery
  * request of a database server contract and its answer are left out too,
- * and the change keeps them.
+ * and the change keeps them. An empty value of another tool that the edit
+ * did not touch stays, and the review does not offer it, as
+ * keepUntouchedEmpty says.
  */
 export function updateChange(
   live: ContractObject,
@@ -229,20 +232,24 @@ export function updateChange(
     spec: specOf(live.kind, draft),
   };
   const guarded = preconditionOf(live);
-  return {
-    intent: `Change the ${kindWords(live.kind)} contract ${name}`,
-    apply: [object],
-    ...guarded,
-    ...(live.kind === "DatabaseServerConfig" &&
-      guarded.preconditions && {
-        keep: Object.fromEntries(
-          Object.keys(guarded.preconditions).map((key) => [
-            key,
-            RECOVERY_PATHS,
-          ]),
-        ),
-      }),
-  };
+  return keepUntouchedEmpty(
+    {
+      intent: `Change the ${kindWords(live.kind)} contract ${name}`,
+      apply: [object],
+      ...guarded,
+      ...(live.kind === "DatabaseServerConfig" &&
+        guarded.preconditions && {
+          keep: Object.fromEntries(
+            Object.keys(guarded.preconditions).map((key) => [
+              key,
+              RECOVERY_PATHS,
+            ]),
+          ),
+        }),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
