@@ -24,6 +24,7 @@ import {
   type PluginSelection,
   releaseAllowed,
 } from "@/lib/policy";
+import type { FieldError } from "@/lib/session/cluster";
 import { filledClaimSteps } from "@/lib/session/locks";
 import { valueAt, without, withValue } from "@/lib/session/steps";
 import { createChangeOf } from "@/lib/write/create";
@@ -669,10 +670,33 @@ export function secretErrors(
   draft: ClusterDraft,
   read: SecretsRead | undefined,
 ): string[] {
+  return secretChecks(draft, read).map(
+    ({ reference, message }) => `${reference.path}: ${message}`,
+  );
+}
+
+/**
+ * secretFieldErrors returns the errors of secretErrors as field errors,
+ * each at the path of its reference from the root of the claim.
+ */
+export function secretFieldErrors(
+  draft: ClusterDraft,
+  read: SecretsRead | undefined,
+): FieldError[] {
+  return secretChecks(draft, read).map(({ reference, message }) => ({
+    path: pathFrom("", reference.steps),
+    message,
+  }));
+}
+
+function secretChecks(
+  draft: ClusterDraft,
+  read: SecretsRead | undefined,
+): { reference: SecretReference; message: string }[] {
   const namespace = draft.namespace;
   if (namespace === undefined) return [];
-  return secretReferences(draft).flatMap(({ path, steps }) => {
-    const { name, key, optional } = valueAt(draft.claim, steps) as {
+  return secretReferences(draft).flatMap((reference) => {
+    const { name, key, optional } = valueAt(draft.claim, reference.steps) as {
       name?: string;
       key?: string;
       optional?: boolean;
@@ -694,6 +718,6 @@ export function secretErrors(
       else if (key !== undefined && !secret.keys.includes(key))
         error = `The Secret ${name} of ${ns} holds no key ${key}. Pick a key of it, or reset the field.`;
     }
-    return error === undefined ? [] : [`${path}: ${error}`];
+    return error === undefined ? [] : [{ reference, message: error }];
   });
 }

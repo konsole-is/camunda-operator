@@ -100,13 +100,13 @@ The error goes away when the fleet manager can read the list again. If it stays,
 
 ## A Secret that the namespace does not hold
 
-A setting that names a Secret needs that Secret, with its key, in the namespace of the cluster. When it is not there, the step of the setting shows an error with the path of the setting, for example:
+A setting that names a Secret needs that Secret, with its key, in the namespace of the cluster. When it is not there, the errors at the bottom of the form show an error with the path of the setting, for example:
 
 ```text
 auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.
 ```
 
-This happens when you pick another namespace after you picked the Secret. Pick a Secret of the new namespace, or reset the field. A new namespace holds no Secret, so the step asks you to reset the field. A reference that sets `optional: true` gets no error.
+A setting of **Cluster settings** also shows the error under its editor, without the path, and its group opens. This happens when you pick another namespace after you picked the Secret. Pick a Secret of the new namespace, or reset the field. A new namespace holds no Secret, so the step asks you to reset the field. A reference that sets `optional: true` gets no error.
 
 ## When the write is refused
 

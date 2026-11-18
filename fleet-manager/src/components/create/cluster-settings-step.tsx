@@ -19,6 +19,7 @@ import { type ClusterDraft, releaseOf } from "@/lib/clusters/draft";
 import type { ClusterField, Step } from "@/lib/fields";
 import type { KindName } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
+import type { FieldError } from "@/lib/session";
 
 // The selects of this step and the preset of step 1 set these.
 const PICKED = new Set([
@@ -31,12 +32,13 @@ const PICKED = new Set([
  * ClusterSettingsStep is step 3 of the cluster create flow: the release,
  * the platform config, then the settings editors over fields, without the
  * fields at presetRef, releaseRef, and platformConfigRef. A note names the
- * preset of the draft, and each settings group starts closed. fields are
- * clusterFields of the draft cluster. A field that a step 2 option fills
- * shows locked with its section. unread are the kinds that could not be
- * read. It holds no draft: pick sets releaseRef or platformConfigRef, an
- * empty value unsets it, and set, reset, and invalid take steps from the
- * root of the claim.
+ * preset of the draft, and each settings group starts closed. errors are
+ * field errors at paths from the root of the claim, and each one shows
+ * only at a setting whose claim path holds it. fields are clusterFields of
+ * the draft cluster. A field that a step 2 option fills shows locked with
+ * its section. unread are the kinds that could not be read. It holds no
+ * draft: pick sets releaseRef or platformConfigRef, an empty value unsets
+ * it, and set, reset, and invalid take steps from the root of the claim.
  */
 export function ClusterSettingsStep({
   draft,
@@ -50,6 +52,7 @@ export function ClusterSettingsStep({
   set,
   reset,
   invalid,
+  errors = [],
   unread = [],
 }: {
   draft: ClusterDraft;
@@ -66,6 +69,7 @@ export function ClusterSettingsStep({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid: (steps: Step[], message: string | undefined) => void;
+  errors?: readonly FieldError[];
   unread?: readonly KindName[];
 }) {
   const id = useId();
@@ -164,6 +168,7 @@ export function ClusterSettingsStep({
             // A new cluster has no volume yet, so no size is current.
             settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
             secrets={secrets}
+            errors={errors}
             set={set}
             reset={reset}
             invalid={invalid}

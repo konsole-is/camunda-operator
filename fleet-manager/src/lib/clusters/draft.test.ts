@@ -28,6 +28,7 @@ import {
   offeredPresets,
   pickerEnvironment,
   secretErrors,
+  secretFieldErrors,
   secretReferences,
   settingsErrors,
   syncedNamespace,
@@ -1182,6 +1183,29 @@ describe("Secret references", () => {
     ]);
     expect(errors[0]).toBe(
       "auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+    );
+  });
+
+  it("gives each Secret error as a field error at the claim path of its reference", () => {
+    const draft = withSecrets("team-b");
+    const missing = {
+      namespace: "team-b",
+      secrets: [{ name: "orders-env", keys: [] }],
+    };
+    expect(secretFieldErrors(draft, missing)).toEqual([
+      {
+        path: "spec.cluster.auth.clientSecretRef",
+        message:
+          "The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+      },
+      {
+        path: "spec.cluster.zeebe.extraEnv[1].valueFrom.secretKeyRef",
+        message:
+          "The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.",
+      },
+    ]);
+    expect(secretFieldErrors(withSecrets("team-a"), read("team-a"))).toEqual(
+      [],
     );
   });
 

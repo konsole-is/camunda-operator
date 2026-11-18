@@ -1703,7 +1703,6 @@ describe("ClusterCreateFlow write", () => {
 
   it("refuses a Secret that the namespace does not hold until it is reset", async () => {
     await pickInTeamA();
-    await openSettings("Whole cluster");
     const setting = screen.getAllByRole("group", {
       name: "auth.clientSecretRef",
     })[0];
@@ -1712,6 +1711,34 @@ describe("ClusterCreateFlow write", () => {
     );
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(footer()).not.toContain("auth.clientSecretRef");
+  });
+
+  it("opens the group of a Secret reference that the namespace does not hold and shows the error at its row", async () => {
+    const { view, initial } = await pickInTeamA();
+    const whole = screen.getByRole("region", {
+      name: "Whole cluster settings",
+    });
+    const message =
+      "The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.";
+    expect(whole.querySelector("details")?.open).toBe(true);
+    expect(whole.querySelector("summary")?.textContent).toContain(
+      "1 setting has an error",
+    );
+    const setting = () =>
+      within(whole).getAllByRole("group", { name: "auth.clientSecretRef" })[0];
+    expect(within(setting()).getByText(message)).toBeTruthy();
+
+    live.objects.Secret = [
+      {
+        metadata: { namespace: "team-b", name: "orders-oidc" },
+        keys: ["secret"],
+      },
+    ];
+    view.rerender(flowOf(initial));
+    await waitFor(() =>
+      expect(within(setting()).queryByText(message)).toBeNull(),
+    );
+    expect(whole.querySelector("summary")?.textContent).not.toMatch(/error/);
   });
 
   it("accepts the reference once the namespace holds the Secret and its key", async () => {

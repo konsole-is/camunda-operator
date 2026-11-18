@@ -439,4 +439,21 @@ describe("ClusterSettingsStep", () => {
       "https://orders.example.com",
     );
   });
+
+  it("opens the group of a setting with a field error and shows the error at its row", () => {
+    renderStep({
+      draft: draftOf({}, false),
+      errors: [
+        { path: "spec.cluster.externalUrl", message: "The URL is taken." },
+      ],
+    });
+    const whole = section("Whole cluster");
+    expect(whole.querySelector("details")?.open).toBe(true);
+    expect(
+      within(
+        within(whole).getAllByRole("group", { name: "externalUrl" })[0],
+      ).getByText("The URL is taken."),
+    ).toBeTruthy();
+    expect(section("Brokers").querySelector("details")?.open).toBe(false);
+  });
 });

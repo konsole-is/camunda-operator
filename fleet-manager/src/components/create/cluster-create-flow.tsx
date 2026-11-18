@@ -58,6 +58,7 @@ import {
   releaseOf,
   type SecretsRead,
   secretErrors,
+  secretFieldErrors,
   settingsErrors,
   withClaimValue,
   withoutClaimValue,
@@ -687,6 +688,7 @@ export function ClusterCreateFlow({
             set={setClaim}
             reset={resetClaim}
             invalid={editor.invalid}
+            errors={secretFieldErrors(flow.draft, secretsRead)}
             unread={unread}
           />
         ) : flow.current === "attachments" ? (
