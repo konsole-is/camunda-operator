@@ -681,65 +681,81 @@ function writtenBy(
 }
 
 /**
- * waitingRequests returns each request in the namespace of ref that can
- * name a contract of its kind in its outputs but has not done so yet, as
- * "PluginRequest <namespace>/<name>", sorted. The users of ref are not known
- * while one exists. A request counts when its section has a slot output of
- * that kind with no value and readyOutputs does not give its outputs yet,
- * and when its section is not in sources. A request of a built-in
- * registration and a request that is being deleted do not count.
+ * WaitingRequest is a request whose outputs can name a contract that the
+ * fleet manager does not know yet. request is "PluginRequest
+ * <namespace>/<name>". section is set when the section of the request does
+ * not exist.
+ */
+export type WaitingRequest = { request: string; section?: string };
+
+/**
+ * waitingRequests returns each request in the namespace of ref whose
+ * outputs can name a contract of its kind and that the fleet manager cannot
+ * check yet, sorted by request. The users of ref are not known while one
+ * exists. A request counts while its section has a slot output of that kind
+ * and readyOutputs does not give its outputs, whatever their values, and
+ * while its section is not in sources. A request of a built-in registration
+ * and a request that is being deleted do not count.
  */
 export function waitingRequests(
   ref: ContractRef,
   sources: ContractUserSources,
-): string[] {
-  const outputs = SLOT_FIELDS.filter(
-    (row) => own(OUTPUT_CONTRACTS, row.output) === ref.kind,
+): WaitingRequest[] {
+  const slots = new Set(
+    SLOT_FIELDS.filter(
+      (row) => own(OUTPUT_CONTRACTS, row.output) === ref.kind,
+    ).map((row) => row.slot),
   );
-  if (outputs.length === 0) return [];
+  if (slots.size === 0) return [];
   return sources.requests
-    .filter((request) => {
+    .flatMap((request): WaitingRequest[] => {
       if (
         request.metadata.namespace !== ref.namespace ||
         request.metadata.deletionTimestamp ||
         own(BUILTIN_OPTIONS, request.spec.registration)
       ) {
-        return false;
+        return [];
       }
+      const name = `PluginRequest ${request.metadata.namespace}/${request.metadata.name}`;
       const section = sources.sections.find(
         (s) => s.metadata?.name === request.spec.section,
       );
-      if (!section) return true;
-      const values = request.status?.outputs ?? {};
-      const missing = outputs.some(
-        (row) => row.slot === section.spec.slot && !own(values, row.output),
+      if (!section) {
+        return [{ request: name, section: request.spec.section ?? "" }];
+      }
+      const slot = section.spec.slot;
+      const ready = readyOutputs(
+        [request as PluginRequest],
+        request.spec.section ?? "",
+        request.spec.registration,
       );
-      return (
-        missing &&
-        !readyOutputs(
-          [request as PluginRequest],
-          request.spec.section ?? "",
-          request.spec.registration,
-        )
-      );
+      return slot && slots.has(slot) && !ready ? [{ request: name }] : [];
     })
-    .map((r) => `PluginRequest ${r.metadata.namespace}/${r.metadata.name}`)
-    .sort(byCodeUnit);
+    .sort((a, b) => byCodeUnit(a.request, b.request));
 }
 
-/** waitingDeleteText says why a delete is off while requests have not named their contracts. */
-export function waitingDeleteText(requests: readonly string[]): string {
-  return `Delete is possible when the fleet manager knows the contracts of ${requests.join(", ")}.`;
+/**
+ * waitingDeleteText says why a delete is off while requests wait: for each
+ * request, that its outputs are not given for its current spec yet, or that
+ * its section does not exist.
+ */
+export function waitingDeleteText(waiting: readonly WaitingRequest[]): string {
+  return `Delete is possible when the fleet manager knows the users. ${waitingCauses(waiting)}`;
 }
 
-/** waitingChangeText says why a change is off while requests have not named their contracts. */
-export function waitingChangeText(requests: readonly string[]): string {
-  return `A change is possible when the fleet manager knows the contracts of ${requests.join(", ")}.`;
+/** waitingUsersText says that the users of a contract are not known while requests wait, and why. */
+export function waitingUsersText(waiting: readonly WaitingRequest[]): string {
+  return `The users are not known. ${waitingCauses(waiting)}`;
 }
 
-/** waitingUsersText says that the users of a contract are not known while requests have not named their contracts. */
-export function waitingUsersText(requests: readonly string[]): string {
-  return `The users are not known while the fleet manager does not know the contracts of ${requests.join(", ")}.`;
+function waitingCauses(waiting: readonly WaitingRequest[]): string {
+  return waiting
+    .map((w) =>
+      w.section === undefined
+        ? `${w.request} has not given its outputs for its current spec yet.`
+        : `The section ${w.section} of ${w.request} does not exist.`,
+    )
+    .join(" ");
 }
 
 function isContractKind(kind: string): kind is ContractKind {

@@ -4,7 +4,11 @@ import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { unknownUsersText } from "@/lib/k8s/unread";
-import { type ContractUser, waitingUsersText } from "@/lib/usage";
+import {
+  type ContractUser,
+  type WaitingRequest,
+  waitingUsersText,
+} from "@/lib/usage";
 
 /**
  * UsersTable lists the objects that name a contract, each with the fields
@@ -12,8 +16,8 @@ import { type ContractUser, waitingUsersText } from "@/lib/usage";
  * that is not ready shows under its status. unread names the kinds that can
  * use the contract and that the page could not read or has not read yet:
  * the users are then not known, and the list shows the users that the page
- * read. waiting names the requests that have not named their contracts
- * yet: the users are then not known too.
+ * read. waiting names the requests of waitingRequests: the users are then
+ * not known too.
  */
 export function UsersTable({
   users,
@@ -22,9 +26,8 @@ export function UsersTable({
 }: {
   users: readonly ContractUser[];
   unread?: readonly string[];
-  waiting?: readonly string[];
+  waiting?: readonly WaitingRequest[];
 }): ReactNode {
-  const incomplete = unread.length > 0 || waiting.length > 0;
   return (
     <div className="flex flex-col gap-2">
       {unread.length > 0 && (
@@ -37,9 +40,11 @@ export function UsersTable({
         label="Users of the contract"
         toolbar={false}
         emptyText={
-          incomplete
+          unread.length > 0
             ? "No resource that the page could read uses this contract."
-            : "No resource uses this contract."
+            : waiting.length > 0
+              ? "No known resource uses this contract."
+              : "No resource uses this contract."
         }
         columns={[
           { key: "kind", label: "Kind", sortable: true },

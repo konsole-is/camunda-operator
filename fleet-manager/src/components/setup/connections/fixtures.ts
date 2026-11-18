@@ -214,7 +214,19 @@ export function connectionFixtures(): ConnectionSources {
         registration: "aws-s3",
         parameters: {},
       },
-      status: { outputs: { objectStorageConfig: "orders-backup" } },
+      status: {
+        outputs: { objectStorageConfig: "orders-backup" },
+        conditions: [
+          {
+            type: "OutputsReady",
+            status: "True",
+            observedGeneration: 0,
+            lastTransitionTime: "2026-11-01T00:00:00Z",
+            reason: "Published",
+            message: "",
+          },
+        ],
+      },
     } as unknown as PluginRequest,
   ];
   const optimizes = [

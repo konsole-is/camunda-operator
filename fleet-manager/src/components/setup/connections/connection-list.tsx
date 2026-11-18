@@ -20,6 +20,7 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
+  waitingRequests,
   writerLabel,
 } from "@/lib/usage";
 import { KEY_FACT_LABELS, type KeyFacts, keyFacts } from "./facts";
@@ -39,7 +40,8 @@ import {
 /**
  * ContractRow is one contract of the Connections list. users counts the
  * distinct objects that name it. unread names the kinds that can use the
- * contract and that the page could not read, so users can be too low.
+ * contract and that the page could not read, and waiting the requests of
+ * waitingRequests, so users can be too low.
  */
 export type ContractRow = {
   ref: ContractRef;
@@ -47,6 +49,7 @@ export type ContractRow = {
   writer: ContractWriter;
   users: number;
   unread: string[];
+  waiting: string[];
   ready?: ConditionLike;
 };
 
@@ -81,6 +84,7 @@ export function contractRows(
         writer: contractWriter(contract, requests, sources.planes),
         users: usage.get(contractKey(ref))?.length ?? 0,
         unread,
+        waiting: waitingRequests(ref, sources).map((w) => w.request),
         ...(ready && { ready }),
       };
     })
@@ -247,12 +251,19 @@ function ContractTable({
             ),
             writer,
             users:
-              row.unread.length > 0 ? (
+              row.unread.length > 0 || row.waiting.length > 0 ? (
                 <div className="flex flex-col items-start gap-0.5">
                   <span>{row.users}</span>
-                  <span className="text-xs text-bad [overflow-wrap:anywhere]">
-                    Could not read {row.unread.join(", ")}
-                  </span>
+                  {row.unread.length > 0 && (
+                    <span className="text-xs text-bad [overflow-wrap:anywhere]">
+                      Could not read {row.unread.join(", ")}
+                    </span>
+                  )}
+                  {row.waiting.length > 0 && (
+                    <span className="text-xs text-bad [overflow-wrap:anywhere]">
+                      Not known: waiting for {row.waiting.join(", ")}
+                    </span>
+                  )}
                 </div>
               ) : (
                 row.users

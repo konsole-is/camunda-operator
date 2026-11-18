@@ -24,7 +24,8 @@ const CORE = "core.camunda.io/v1";
 // sourcesOnServer returns the fixtures with the namespace camunda-system
 // that no Environment holds, an unused contract created by hand in it, and a
 // Management Identity contract created by hand. Each contract has the
-// resourceVersion of the changes below.
+// resourceVersion of the changes below. spare is a second unused contract
+// in camunda-system.
 function sourcesOnServer(): ConnectionSources {
   const sources = connectionFixtures();
   sources.namespaces = [
@@ -34,6 +35,10 @@ function sourcesOnServer(): ConnectionSources {
   sources.objectStorageConfigs.push({
     ...sources.objectStorageConfigs[0],
     metadata: { namespace: "camunda-system", name: "archive" },
+  });
+  sources.objectStorageConfigs.push({
+    ...sources.objectStorageConfigs[0],
+    metadata: { namespace: "camunda-system", name: "spare" },
   });
   sources.managementAuthConfigs.push({
     ...sources.managementAuthConfigs[0],
@@ -359,7 +364,12 @@ describe("applyContractChange", () => {
             registration: "acme-s3",
             parameters: {},
           },
-          status: { outputs: { objectStorageConfig: "archive" } },
+          status: {
+            outputs: { objectStorageConfig: "archive" },
+            conditions: [
+              { type: "OutputsReady", status: "True", observedGeneration: 0 },
+            ],
+          },
         },
       ];
     });
@@ -375,11 +385,19 @@ describe("applyContractChange", () => {
     });
 
     it.each([
-      ["has no output yet", { status: {} }],
-      ["names a section that does not exist", { section: "gone" }],
+      [
+        "has no outputs for its spec yet",
+        { status: {} },
+        "PluginRequest camunda-system/orders-backups has not given its outputs for its current spec yet.",
+      ],
+      [
+        "names a section that does not exist",
+        { section: "gone" },
+        "The section gone of PluginRequest camunda-system/orders-backups does not exist.",
+      ],
     ])(
-      "refuses a delete while a request %s, and names the request",
-      async (_, patch) => {
+      "refuses a delete of an unused contract while a request %s, and names the request",
+      async (_, patch, cause) => {
         const [request] = cache.lists.PluginRequest as {
           spec: { section: string };
           status: unknown;
@@ -387,14 +405,21 @@ describe("applyContractChange", () => {
         if ("status" in patch) request.status = patch.status;
         else request.spec.section = patch.section;
         const messages = await refusedWith(
-          remove("ObjectStorageConfig", "camunda-system", "archive"),
+          remove("ObjectStorageConfig", "camunda-system", "spare"),
           "Forbidden",
         );
         expect(messages).toEqual([
-          "Delete is possible when the fleet manager knows the contracts of PluginRequest camunda-system/orders-backups.",
+          `Delete is possible when the fleet manager knows the users. ${cause}`,
         ]);
       },
     );
+
+    it("writes a change of a contract while a request has no outputs for its spec yet", async () => {
+      (cache.lists.PluginRequest as { status: unknown }[])[0].status = {};
+      const change = update("ObjectStorageConfig", "camunda-system", "spare");
+      expect((await applyContractChange(change)).ok).toBe(true);
+      expect(fakeWriter.applied).toEqual([change]);
+    });
 
     it("deletes while a request that is being deleted has no output", async () => {
       const [request] = cache.lists.PluginRequest as {
@@ -403,7 +428,7 @@ describe("applyContractChange", () => {
       }[];
       request.metadata.deletionTimestamp = "2026-11-18T10:00:00Z";
       request.status = {};
-      const change = remove("ObjectStorageConfig", "camunda-system", "archive");
+      const change = remove("ObjectStorageConfig", "camunda-system", "spare");
       expect((await applyContractChange(change)).ok).toBe(true);
     });
 
@@ -422,12 +447,7 @@ describe("applyContractChange", () => {
     );
 
     it("deletes a contract that no output names", async () => {
-      (
-        cache.lists.PluginRequest as {
-          status: { outputs: Record<string, string> };
-        }[]
-      )[0].status.outputs = { objectStorageConfig: "other" };
-      const change = remove("ObjectStorageConfig", "camunda-system", "archive");
+      const change = remove("ObjectStorageConfig", "camunda-system", "spare");
       expect((await applyContractChange(change)).ok).toBe(true);
       expect(fakeWriter.applied).toEqual([change]);
     });

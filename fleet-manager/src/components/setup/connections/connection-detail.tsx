@@ -23,7 +23,6 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
-  waitingChangeText,
   waitingDeleteText,
   waitingRequests,
   writerEditable,
@@ -125,8 +124,7 @@ export function ConnectionDetail({
     !writing &&
     (!editable ||
       unread.length > 0 ||
-      waiting.length > 0 ||
-      (deleting && users.length > 0))
+      (deleting && (users.length > 0 || waiting.length > 0)))
   )
     editor.cancel();
 
@@ -149,12 +147,7 @@ export function ConnectionDetail({
   }
   const ready = readyOf(shown.status?.conditions);
   const formErrors = draftErrors(target.kind, draft);
-  const unreadLine =
-    unread.length > 0
-      ? unreadChangeText(unread)
-      : waiting.length > 0
-        ? waitingChangeText(waiting)
-        : undefined;
+  const unreadLine = unread.length > 0 ? unreadChangeText(unread) : undefined;
   const count = base ? changeCount(base, draft) : 0;
   const namesIn = (kind: "DatabaseConfig" | "DatabaseServerConfig") =>
     unreadKinds(sources).includes(kind)
@@ -259,12 +252,12 @@ export function ConnectionDetail({
           <EditorSection title="Delete the contract">
             {unread.length > 0 ? (
               <p className="text-sm text-muted">{unreadDeleteText(unread)}</p>
-            ) : waiting.length > 0 ? (
-              <p className="text-sm text-muted">{waitingDeleteText(waiting)}</p>
             ) : users.length > 0 ? (
               <p className="text-sm text-muted">
                 Delete is possible when no resource uses this contract.
               </p>
+            ) : waiting.length > 0 ? (
+              <p className="text-sm text-muted">{waitingDeleteText(waiting)}</p>
             ) : (
               <TypedConfirm
                 name={target.name}

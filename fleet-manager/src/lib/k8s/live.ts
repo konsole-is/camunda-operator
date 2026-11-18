@@ -5,7 +5,8 @@ import type { KindName, Resource } from "./kinds";
 /**
  * useLive is useResources of kind in every namespace, for a page that
  * holds the objects as their model type T. A Resource is plain JSON, so it
- * differs from T only in its timestamps, which such a page must not read.
+ * differs from T only in its timestamps, which are strings, not Dates: such
+ * a page may only check whether one is set.
  */
 export function useLive<K extends KindName, T>(
   kind: K,

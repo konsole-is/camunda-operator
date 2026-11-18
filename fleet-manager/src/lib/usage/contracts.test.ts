@@ -33,6 +33,7 @@ import {
   type ContractWriter,
   contractKey,
   contractUsage,
+  waitingDeleteText,
   waitingRequests,
   contractWriter,
   unreadUserKinds,
@@ -1320,116 +1321,127 @@ describe("waitingRequests", () => {
       metadata: { name },
       spec: { selection: "One", ...(slot && { slot }) },
     }) as unknown as PluginSection;
+  // request is a request of acme-s3 in team-a at generation 2. ready gives
+  // its OutputsReady condition: its status and its observedGeneration.
   const request = (
     name: string,
-    spec: { section: string; registration: string },
-    outputs?: Record<string, string>,
-    deleting = false,
+    opts: {
+      section?: string;
+      registration?: string;
+      outputs?: Record<string, string>;
+      ready?: ["True" | "False", number];
+      deleting?: boolean;
+      namespace?: string;
+    } = {},
   ) =>
     ({
       metadata: {
-        namespace: "team-a",
+        namespace: opts.namespace ?? "team-a",
         name,
-        ...(deleting && { deletionTimestamp: "2026-11-18T10:00:00Z" }),
+        generation: 2,
+        ...(opts.deleting && { deletionTimestamp: "2026-11-18T10:00:00Z" }),
       },
-      spec: { ...spec, parameters: { bucket: "archive" } },
-      ...(outputs && { status: { outputs } }),
+      spec: {
+        section: opts.section ?? "backups",
+        registration: opts.registration ?? "acme-s3",
+        parameters: { bucket: "archive" },
+      },
+      status: {
+        ...(opts.outputs && { outputs: opts.outputs }),
+        ...(opts.ready && {
+          conditions: [
+            {
+              type: "OutputsReady",
+              status: opts.ready[0],
+              observedGeneration: opts.ready[1],
+            },
+          ],
+        }),
+      },
     }) as unknown as PluginRequest;
   const archive = objectStorage("team-a", "archive");
+  const backups = [section("backups", "backupStorage")];
+  const waitingOf = (...requests: PluginRequest[]) =>
+    waitingRequests(archive, sourcesWith({ sections: backups, requests }));
 
-  it("names a request of a custom registration whose slot output for the kind has no value yet", () => {
-    const sources = sourcesWith({
-      sections: [section("backups", "backupStorage")],
-      requests: [
-        request("orders-backups", {
-          section: "backups",
-          registration: "acme-s3",
-        }),
-      ],
-    });
-    expect(waitingRequests(archive, sources)).toEqual([
-      "PluginRequest team-a/orders-backups",
+  it("names a request of a custom registration that has no outputs yet", () => {
+    expect(waitingOf(request("orders-backups"))).toEqual([
+      { request: "PluginRequest team-a/orders-backups" },
     ]);
   });
 
-  it("names no request whose outputs are ready, also when an output of the kind has no value", () => {
-    const sources = sourcesWith({
-      sections: [section("database", "managementDatabases")],
-      requests: [
-        {
-          ...request(
-            "databases",
-            { section: "database", registration: "acme-postgres" },
-            { identityDatabaseConfig: "identity-db" },
-          ),
-          status: {
-            outputs: { identityDatabaseConfig: "identity-db" },
-            conditions: [
-              { type: "OutputsReady", status: "True", observedGeneration: 0 },
-            ],
-          },
-        } as unknown as PluginRequest,
-      ],
-    });
+  it.each([
+    ["ready at an older generation", ["True", 1]],
+    ["not ready", ["False", 2]],
+  ] as const)(
+    "names a request whose outputs are %s, also when an output names a contract",
+    (_, ready) => {
+      expect(
+        waitingOf(
+          request("orders-backups", {
+            outputs: { objectStorageConfig: "old" },
+            ready: [...ready],
+          }),
+        ),
+      ).toEqual([{ request: "PluginRequest team-a/orders-backups" }]);
+    },
+  );
+
+  it("names no request whose outputs are ready for its generation, also with no value for the kind", () => {
     expect(
-      waitingRequests(
-        { kind: "DatabaseConfig", namespace: "team-a", name: "keycloak-db" },
-        sources,
-      ),
+      waitingOf(request("orders-backups", { outputs: {}, ready: ["True", 2] })),
     ).toEqual([]);
   });
 
-  it("names a request whose section is not in the section list", () => {
-    const sources = sourcesWith({
-      requests: [
-        request(
-          "orders-backups",
-          { section: "backups", registration: "acme-s3" },
-          { objectStorageConfig: "other" },
-        ),
-      ],
-    });
-    expect(waitingRequests(archive, sources)).toEqual([
-      "PluginRequest team-a/orders-backups",
+  it("names a request whose section does not exist, with the section", () => {
+    expect(
+      waitingOf(
+        request("orders-backups", { section: "gone", ready: ["True", 2] }),
+      ),
+    ).toEqual([
+      { request: "PluginRequest team-a/orders-backups", section: "gone" },
     ]);
   });
 
-  it("names no request that gave its output, is being deleted, is built in, is in another namespace, or cannot name the kind", () => {
+  it("names no request that is being deleted, is built in, is in another namespace, or has a slot for another kind", () => {
     const sources = sourcesWith({
-      sections: [
-        section("backups", "backupStorage"),
-        section("storage", "secondaryStorage"),
-      ],
+      sections: [...backups, section("storage", "secondaryStorage")],
       requests: [
-        request(
-          "named",
-          { section: "backups", registration: "acme-s3" },
-          { objectStorageConfig: "other" },
-        ),
-        request(
-          "deleting",
-          { section: "backups", registration: "acme-s3" },
-          undefined,
-          true,
-        ),
-        request("built-in", {
-          section: "backups",
-          registration: "existing-object-storage",
-        }),
-        request("secondary", {
-          section: "storage",
-          registration: "acme-es",
-        }),
-        {
-          ...request("elsewhere", {
-            section: "backups",
-            registration: "acme-s3",
-          }),
-          metadata: { namespace: "team-b", name: "elsewhere" },
-        } as unknown as PluginRequest,
+        request("deleting", { deleting: true }),
+        request("built-in", { registration: "existing-object-storage" }),
+        request("elsewhere", { namespace: "team-b" }),
+        request("secondary", { section: "storage", registration: "acme-es" }),
       ],
     });
     expect(waitingRequests(archive, sources)).toEqual([]);
+  });
+
+  it("counts the contract that a stale output names as used", () => {
+    const sources = sourcesWith({
+      sections: backups,
+      requests: [
+        request("orders-backups", {
+          outputs: { objectStorageConfig: "old" },
+          ready: ["True", 1],
+        }),
+      ],
+    });
+    expect(
+      usersOf(sources, objectStorage("team-a", "old")).map((u) => u.name),
+    ).toEqual(["orders-backups"]);
+  });
+});
+
+describe("waitingDeleteText", () => {
+  it("says the cause that an admin can act on for each request", () => {
+    expect(
+      waitingDeleteText([
+        { request: "PluginRequest team-a/a" },
+        { request: "PluginRequest team-a/b", section: "gone" },
+      ]),
+    ).toBe(
+      "Delete is possible when the fleet manager knows the users. PluginRequest team-a/a has not given its outputs for its current spec yet. The section gone of PluginRequest team-a/b does not exist.",
+    );
   });
 });
 

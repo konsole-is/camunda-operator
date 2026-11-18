@@ -216,6 +216,42 @@ describe("contractRows", () => {
     ).toBeTruthy();
   });
 
+  it("says in the Users column that the users are not known while a custom request has no outputs for its spec yet", () => {
+    const initial = connectionFixtures();
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: { namespace: "team-a", name: "orders-archive" },
+        spec: { ...initial.requests[0].spec, registration: "acme-s3" },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    expect(
+      within(rowOf("backups")).getByText(
+        "Not known: waiting for PluginRequest team-a/orders-archive",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not wait for a custom request that is being deleted", () => {
+    const initial = connectionFixtures();
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: {
+          namespace: "team-a",
+          name: "orders-archive",
+          deletionTimestamp: "2026-11-18T10:00:00Z" as unknown as Date,
+        },
+        spec: { ...initial.requests[0].spec, registration: "acme-s3" },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    expect(within(rowOf("backups")).queryByText(/waiting for/)).toBeNull();
+  });
+
   it("treats a plugin output as managed while the requests are not known", () => {
     failing.kind = "PluginRequest";
     render(<ConnectionListLive initial={connectionFixtures()} />);
