@@ -85,7 +85,7 @@ export function SettingsEditor({
   const [open, setOpen] = useState(false);
   const [counted, setCounted] = useState(0);
   const failing = settings.filter(
-    (s) => shown.has(s.key) || errorsAt(errors, s.steps).length > 0,
+    (s) => shown.has(s.key) || settingErrors(errors, s).length > 0,
   ).length;
   if (counted !== failing) {
     setCounted(failing);
@@ -114,7 +114,7 @@ export function SettingsEditor({
             key={`${setting.key}:${resets}`}
             setting={setting}
             secrets={secrets}
-            errors={errorsAt(errors, setting.steps)}
+            errors={settingErrors(errors, setting)}
             set={set}
             reset={reset}
             invalid={invalid}
@@ -756,6 +756,24 @@ function ChoicesEditor({
         </div>
       ))}
     </fieldset>
+  );
+}
+
+/**
+ * settingErrors returns the errors that the row of setting shows: those at
+ * the field that it shows or below it, and those at the field above it
+ * that a layer sets as a whole, which every row of that field shows.
+ */
+export function settingErrors(
+  errors: readonly FieldError[],
+  setting: Setting,
+): FieldError[] {
+  const { steps, holder } = setting;
+  if (!steps || !holder) return errorsAt(errors, steps);
+  const block = pathFrom("", steps);
+  return errors.filter(
+    (e) =>
+      e.path === block || errorsAt([e], [...steps, ...holder.rest]).length > 0,
   );
 }
 

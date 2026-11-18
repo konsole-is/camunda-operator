@@ -653,6 +653,51 @@ describe("SettingsEditor collapsed", () => {
     expect(summary().textContent).toContain("1 setting has an error");
   });
 
+  it("counts a refusal at one field of a block that a layer sets once, at the row of that field", () => {
+    renderClosed(
+      {
+        preset: {
+          zeebe: {
+            scheduling: { tolerations: [{ key: "a", operator: "Exists" }] },
+          },
+        },
+      },
+      [
+        {
+          path: "spec.cluster.zeebe.scheduling.tolerations",
+          message: "too many tolerations",
+        },
+      ],
+    );
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(within(section()).getAllByText("too many tolerations")).toHaveLength(
+      1,
+    );
+    expect(
+      within(settingRow("scheduling.tolerations")).getByText(
+        "too many tolerations",
+      ),
+    ).toBeDefined();
+  });
+
+  it("shows a refusal at a block that a layer sets at each row of the block", () => {
+    renderClosed(
+      {
+        preset: {
+          zeebe: {
+            scheduling: { tolerations: [{ key: "a", operator: "Exists" }] },
+          },
+        },
+      },
+      [{ path: "spec.cluster.zeebe.scheduling", message: "bad block" }],
+    );
+    const shown = within(section()).getAllByText("bad block");
+    expect(shown.length).toBeGreaterThan(1);
+    expect(summary().textContent).toContain(
+      `${shown.length} settings have an error`,
+    );
+  });
+
   it("counts a refusal of the server on the summary", () => {
     renderClosed({}, [REFUSAL]);
     expect(summary().textContent).toContain("1 setting has an error");
