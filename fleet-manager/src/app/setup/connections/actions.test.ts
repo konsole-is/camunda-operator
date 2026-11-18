@@ -340,6 +340,61 @@ describe("applyContractChange", () => {
       "Forbidden",
     );
   });
+
+  describe("a custom registration whose request output names the contract", () => {
+    beforeEach(() => {
+      cache.lists.PluginSection = [
+        {
+          kind: "PluginSection",
+          metadata: { name: "backup-storage" },
+          spec: { selection: "One", slot: "backupStorage" },
+        },
+      ];
+      cache.lists.PluginRequest = [
+        {
+          kind: "PluginRequest",
+          metadata: { namespace: "camunda-system", name: "orders-backups" },
+          spec: {
+            section: "backup-storage",
+            registration: "acme-s3",
+            parameters: {},
+          },
+          status: { outputs: { objectStorageConfig: "archive" } },
+        },
+      ];
+    });
+
+    it("refuses a delete of the contract and names the request", async () => {
+      const messages = await refusedWith(
+        remove("ObjectStorageConfig", "camunda-system", "archive"),
+        "Forbidden",
+      );
+      expect(messages).toEqual([
+        "Delete is possible when no resource uses ObjectStorageConfig camunda-system/archive. Used by PluginRequest camunda-system/orders-backups.",
+      ]);
+    });
+
+    it.each(["PluginSection", "PluginRegistration"])(
+      "refuses a delete while %s cannot be read, and names it",
+      async (kind) => {
+        cache.failing = [kind];
+        const messages = await refusedWith(
+          remove("ObjectStorageConfig", "camunda-system", "archive"),
+          "Forbidden",
+        );
+        expect(messages).toEqual([
+          `Delete is possible when the fleet manager can read ${kind}.`,
+        ]);
+      },
+    );
+
+    it("deletes a contract that no output names", async () => {
+      cache.lists.PluginRequest = [];
+      const change = remove("ObjectStorageConfig", "camunda-system", "archive");
+      expect((await applyContractChange(change)).ok).toBe(true);
+      expect(fakeWriter.applied).toEqual([change]);
+    });
+  });
 });
 
 describe("previewContractChange", () => {

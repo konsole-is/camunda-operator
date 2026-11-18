@@ -277,5 +277,6 @@ export function connectionFixtures(): ConnectionSources {
     requests,
     planeClaims: [],
     registrations: [],
+    sections: [],
   };
 }

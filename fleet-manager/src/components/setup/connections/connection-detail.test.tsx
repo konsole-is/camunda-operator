@@ -574,6 +574,42 @@ describe("ConnectionDetail with changes", () => {
     ).toBeTruthy();
   });
 
+  it("counts the request of a custom registration whose output names the contract, and offers no Delete", () => {
+    const sources = connectionFixtures();
+    sources.sections = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "management-database" },
+        spec: { selection: "One", slot: "managementDatabases" },
+      } as ConnectionSources["sections"][number],
+    ];
+    sources.requests = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRequest",
+        metadata: { namespace: "team-a", name: "plane-a-databases" },
+        spec: {
+          section: "management-database",
+          registration: "acme-postgres",
+          parameters: {},
+        },
+        status: { outputs: { identityDatabaseConfig: "orders-db" } },
+      } as unknown as ConnectionSources["requests"][number],
+    ];
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources });
+
+    expect(
+      within(panel("Used by")).getByText("team-a/plane-a-databases"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Delete is possible when no resource uses this contract.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type orders-db to confirm")).toBeNull();
+  });
+
   it("counts a claim that selects the contract as a user", () => {
     const sources = connectionFixtures();
     sources.planeClaims = [

@@ -13,7 +13,9 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
@@ -312,6 +314,7 @@ function sourcesWith(
     databases: [],
     databaseConfigs: [],
     secondaryStorageConfigs: [],
+    objectStorageConfigs: [],
     optimizes: [],
     planes: [],
     elasticsearchBackups: [],
@@ -319,6 +322,7 @@ function sourcesWith(
     pointInTimeRestores: [],
     planeClaims: [],
     registrations: [],
+    sections: [],
     requests: [],
     ...partial,
   };
@@ -978,6 +982,101 @@ describe("contractUsage", () => {
       ]);
     });
 
+    describe("a request of a custom registration", () => {
+      const section = (name: string, slot?: string) =>
+        ({
+          metadata: { name },
+          spec: { selection: "One", ...(slot && { slot }) },
+        }) as unknown as PluginSection;
+      const request = (
+        sectionName: string,
+        outputs: Record<string, string>,
+        name = "orders-backups",
+      ) =>
+        ({
+          metadata: { namespace: "team-a", name },
+          spec: {
+            section: sectionName,
+            registration: "acme-s3",
+            parameters: {},
+          },
+          status: { outputs },
+        }) as unknown as PluginRequest;
+
+      it("counts a request whose output names the contract through the slot of its section", () => {
+        const sources = sourcesWith({
+          sections: [section("backups", "backupStorage")],
+          requests: [request("backups", { objectStorageConfig: "backups" })],
+        });
+        expect(usersOf(sources, objectStorage("team-a", "backups"))).toEqual([
+          {
+            kind: "PluginRequest",
+            namespace: "team-a",
+            name: "orders-backups",
+            fields: ["status.outputs.objectStorageConfig"],
+          },
+        ]);
+      });
+
+      it("counts each database config that an output of a managementDatabases section names", () => {
+        const sources = sourcesWith({
+          sections: [section("management-database", "managementDatabases")],
+          requests: [
+            request("management-database", {
+              identityDatabaseConfig: "identity-db",
+              webModelerDatabaseConfig: "modeler-db",
+            }),
+          ],
+        });
+        const databaseConfig = (name: string): ContractRef => ({
+          kind: "DatabaseConfig",
+          namespace: "team-a",
+          name,
+        });
+        expect(
+          usersOf(sources, databaseConfig("identity-db")).map((u) => u.fields),
+        ).toEqual([["status.outputs.identityDatabaseConfig"]]);
+        expect(
+          usersOf(sources, databaseConfig("modeler-db")).map((u) => u.fields),
+        ).toEqual([["status.outputs.webModelerDatabaseConfig"]]);
+      });
+
+      it("does not count a request as a user of the contract that it wrote", () => {
+        const sources = sourcesWith({
+          sections: [section("backups", "backupStorage")],
+          requests: [request("backups", { objectStorageConfig: "orders-s3" })],
+          objectStorageConfigs: [
+            {
+              kind: "ObjectStorageConfig",
+              metadata: {
+                namespace: "team-a",
+                name: "orders-s3",
+                labels: {
+                  "plugins.camunda.io/registration": "acme-s3",
+                  "plugins.camunda.io/request": "orders-backups",
+                },
+              },
+              spec: {},
+            } as unknown as ObjectStorageConfig,
+          ],
+        });
+        expect(usersOf(sources, objectStorage("team-a", "orders-s3"))).toEqual(
+          [],
+        );
+      });
+
+      it("ignores an output that is not a contract of the slot, and a section without a slot", () => {
+        const sources = sourcesWith({
+          sections: [section("backups", "backupStorage"), section("extras")],
+          requests: [
+            request("backups", { bucket: "backups" }),
+            request("extras", { objectStorageConfig: "backups" }, "extras"),
+          ],
+        });
+        expect(contractUsage(sources).size).toBe(0);
+      });
+    });
+
     it("ignores a parameter that names no contract", () => {
       const sources = sourcesWith({
         clusterClaims: [
@@ -1220,6 +1319,15 @@ describe("unreadUserKinds", () => {
     ).toEqual([]);
   });
 
+  it("names an unread section list for each kind that a slot output can name", () => {
+    const unread = ["PluginSection"];
+    expect(unreadUserKinds("ObjectStorageConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("SecondaryStorageConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("DatabaseConfig", unread)).toEqual(unread);
+    expect(unreadUserKinds("DatabaseServerConfig", unread)).toEqual([]);
+    expect(unreadUserKinds("ManagementAuthConfig", unread)).toEqual([]);
+  });
+
   it("names an unread point-in-time restore only for a database server contract", () => {
     const unread = ["PointInTimeRestore"];
     expect(unreadUserKinds("DatabaseServerConfig", unread)).toEqual(unread);
@@ -1323,6 +1431,12 @@ describe("unreadUserKinds", () => {
           },
         ),
       ],
+      sections: [
+        {
+          metadata: { name: "backups" },
+          spec: { selection: "One", slot: "backupStorage" },
+        } as unknown as PluginSection,
+      ],
       requests: [
         {
           metadata: { namespace: "ns", name: "rq" },
@@ -1330,6 +1444,11 @@ describe("unreadUserKinds", () => {
             registration: "existing-secondary-storage",
             parameters: { name: "s" },
           },
+        } as unknown as PluginRequest,
+        {
+          metadata: { namespace: "ns", name: "custom" },
+          spec: { section: "backups", registration: "acme-s3" },
+          status: { outputs: { objectStorageConfig: "o" } },
         } as unknown as PluginRequest,
       ],
       pointInTimeRestores: [

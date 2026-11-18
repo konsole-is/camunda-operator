@@ -13,7 +13,9 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
@@ -23,6 +25,7 @@ import {
   REQUEST_LABEL,
   REQUEST_NAMESPACE_LABEL,
 } from "@/lib/labels";
+import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ownerName } from "@/lib/labels/owner-name";
 import { mergeDatabaseServer, mergeElasticsearch } from "@/lib/merge";
 import {
@@ -194,6 +197,7 @@ export type ContractUserSources = {
   databases: readonly Database[];
   databaseConfigs: readonly DatabaseConfig[];
   secondaryStorageConfigs: readonly SecondaryStorageConfig[];
+  objectStorageConfigs: readonly ObjectStorageConfig[];
   optimizes: readonly CamundaOptimize[];
   planes: readonly CamundaManagementCluster[];
   elasticsearchBackups: readonly LogicalBackupElasticsearch[];
@@ -201,12 +205,17 @@ export type ContractUserSources = {
   pointInTimeRestores: readonly PointInTimeRestore[];
   planeClaims: readonly CamundaManagementClusterClaim[];
   registrations: readonly PluginRegistration[];
+  sections: readonly PluginSection[];
   requests: readonly SelectingRequest[];
 };
 
 type SelectingRequest = {
   metadata: { namespace?: string; name?: string };
-  spec: { registration: string; parameters?: unknown };
+  spec: { section?: string; registration: string; parameters?: unknown };
+  status?: {
+    outputs?: Record<string, string>;
+    conditions?: readonly Condition[];
+  };
 };
 
 type SelectingClaim = {
@@ -255,8 +264,10 @@ type Condition = {
  * existing-object-storage: by the parameter that its request gets from the
  * claim policy, else, when the policy does not resolve, by the one of its
  * selection. It names the contract this way before its cluster or plane
- * exists. A request of such a registration names it by its parameter. Each
- * list is sorted by kind, namespace, and name.
+ * exists. A request of such a registration names it by its parameter. A
+ * request of any other registration names each contract that a status output
+ * of the slot of its section gives, unless the request wrote that contract.
+ * Each list is sorted by kind, namespace, and name.
  */
 export function contractUsage(
   sources: ContractUserSources,
@@ -509,10 +520,8 @@ export function contractUsage(
     );
   }
   for (const request of sources.requests) {
-    add(
-      "PluginRequest",
-      request,
-      contractParameters(
+    add("PluginRequest", request, [
+      ...contractParameters(
         request.spec.registration,
         request.spec.parameters,
       ).map(([kind, name, parameter]) => ({
@@ -520,7 +529,8 @@ export function contractUsage(
         name,
         field: `spec.parameters.${parameter}`,
       })),
-    );
+      ...outputContracts(request, sources),
+    ]);
   }
   for (const optimize of sources.optimizes) {
     add("CamundaOptimize", optimize, [
@@ -597,6 +607,73 @@ function contractParameters(
   });
 }
 
+// OUTPUT_CONTRACTS gives the contract kind of each output of SLOT_FIELDS
+// that fills a contract reference.
+const OUTPUT_CONTRACTS: Readonly<Record<string, ContractKind>> = {
+  objectStorageConfig: "ObjectStorageConfig",
+  secondaryStorageConfig: "SecondaryStorageConfig",
+  keycloakDatabaseConfig: "DatabaseConfig",
+  identityDatabaseConfig: "DatabaseConfig",
+  webModelerDatabaseConfig: "DatabaseConfig",
+};
+
+// outputContracts returns the contracts that the status outputs of request
+// name through the slot of its section. A built-in registration names its
+// contracts by its parameters instead.
+function outputContracts(
+  request: SelectingRequest,
+  sources: ContractUserSources,
+): Reference[] {
+  if (own(BUILTIN_OPTIONS, request.spec.registration)) return [];
+  const slot = sources.sections.find(
+    (s) => s.metadata?.name === request.spec.section,
+  )?.spec.slot;
+  const outputs = request.status?.outputs ?? {};
+  const outputKeys = new Set(
+    SLOT_FIELDS.filter((row) => slot && row.slot === slot).map(
+      (row) => row.output,
+    ),
+  );
+  return [...outputKeys].flatMap((output) => {
+    const kind = own(OUTPUT_CONTRACTS, output);
+    const name = own(outputs, output);
+    if (!kind || !name || writtenBy(request, kind, name, sources)) return [];
+    return [{ kind, name, field: `status.outputs.${output}` }];
+  });
+}
+
+type LabeledObject = {
+  metadata: {
+    namespace?: string;
+    name?: string;
+    labels?: Record<string, string>;
+  };
+};
+
+// writtenBy says whether the contract kind/name in the namespace of request
+// carries the request labels of request.
+function writtenBy(
+  request: SelectingRequest,
+  kind: ContractKind,
+  name: string,
+  sources: ContractUserSources,
+): boolean {
+  const lists: Partial<Record<ContractKind, readonly LabeledObject[]>> = {
+    ObjectStorageConfig: sources.objectStorageConfigs,
+    SecondaryStorageConfig: sources.secondaryStorageConfigs,
+    DatabaseConfig: sources.databaseConfigs,
+  };
+  const namespace = request.metadata.namespace;
+  const contract = (lists[kind] ?? []).find(
+    (c) => c.metadata.name === name && c.metadata.namespace === namespace,
+  );
+  const labels = contract?.metadata.labels ?? {};
+  return (
+    labels[REQUEST_LABEL] === request.metadata.name &&
+    (labels[REQUEST_NAMESPACE_LABEL] ?? namespace) === namespace
+  );
+}
+
 function isContractKind(kind: string): kind is ContractKind {
   return (CONTRACT_KINDS as readonly string[]).includes(kind);
 }
@@ -626,12 +703,13 @@ function requestedParameters(
 // contractUsage reads for its users, the presets of those objects included,
 // and the lists that resolve the parameters of a claim.
 // SELECTION_KINDS are the lists that give the contracts that a claim
-// selects through a registration.
+// selects through a registration, and that a request names in its outputs.
 const SELECTION_KINDS = [
   "Environment",
   "Namespace",
   "PluginRegistration",
   "PluginRequest",
+  "PluginSection",
 ];
 
 const USER_KINDS: Record<ContractKind, readonly string[]> = {

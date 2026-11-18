@@ -21,6 +21,7 @@ export const CONNECTION_SOURCE_KINDS = {
   pointInTimeRestores: "PointInTimeRestore",
   planeClaims: "CamundaManagementClusterClaim",
   registrations: "PluginRegistration",
+  sections: "PluginSection",
   objectStorageConfigs: "ObjectStorageConfig",
   databaseServerConfigs: "DatabaseServerConfig",
   managementAuthConfigs: "ManagementAuthConfig",
