@@ -622,7 +622,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
     const refusal = {
       code: "Invalid",
       message:
-        "The CamundaClusterClaim orders has no finalizer fleet.camunda.io/cleanup, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.",
+        "The CamundaClusterClaim orders has no finalizer fleet.camunda.io/cleanup now. The operator adds it back on its next pass of the claim. Delete the claim again after that.",
       ref,
     };
     expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({

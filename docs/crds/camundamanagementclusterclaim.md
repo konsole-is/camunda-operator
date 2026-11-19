@@ -175,11 +175,13 @@ spec:
 
 Without `spec.deletionPolicy`, the claim uses the default that it recorded from its `Environment` at creation, or `Delete`. When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim is refused with `NotAllowed`, and it creates nothing. When you delete such a claim, it deletes nothing and stays, and `Ready` is `False` with reason `NotAllowed`. To continue the deletion, set `spec.deletionPolicy: Delete`.
 
+The claim gives a change of its policy to its requests also while `Ready` reports a failed check, such as `InvalidReference`. It does not give them an `Orphan` policy that a selected registration does not support, or while a selected registration does not exist. `Ready` then has reason `NotAllowed`, and the requests keep the policy that they had. A delete with foreground propagation, as some GitOps tools send, can delete the requests before the claim starts its deletion. Each request then uses the policy that it has at that time. So a request that still has `Delete` deletes the resources of its plugin.
+
 The claim always deletes the `CamundaManagementCluster` `<claim>` first. Then it deletes the requests. The claim stays until each plugin deleted or kept the resources of its request. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. Read it with `kubectl get camundamanagementclusterclaim my-plane -n my-plane-ns -o yaml`.
 
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It only gives its deletion policy to its requests, as [Deletion](#deletion) describes. It also adds the finalizer `fleet.camunda.io/cleanup` back if someone removed it:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |

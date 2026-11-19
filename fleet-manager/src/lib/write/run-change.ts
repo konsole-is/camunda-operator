@@ -384,7 +384,7 @@ async function cleanupRefusalOf(
   if (claim.status?.resolvedPolicy !== undefined && !finalized)
     return {
       code: "Invalid",
-      message: `The ${ref.kind} ${ref.name} has no finalizer ${CLEANUP_FINALIZER}, so the operator cannot give the deletion policy to its options. Add the finalizer back, then delete the claim again.`,
+      message: `The ${ref.kind} ${ref.name} has no finalizer ${CLEANUP_FINALIZER} now. The operator adds it back on its next pass of the claim. Delete the claim again after that.`,
       ref,
     };
   // The cleanup finalizer writes the policy of the claim on each request

@@ -53,7 +53,7 @@ metadata:
 
 When no `Environment` exists in the Kubernetes cluster, a namespace without the label is valid too. The registrations then give the policy. A claim can select each registration of a section. It can change only the parameters in `claimEditable` of the registration. When at least one `Environment` exists, a claim in a namespace without the label is refused with `NoEnvironment`.
 
-On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The claim checks a new preset or release against the current lists of the `Environment`. `spec.presetRef` must be in `spec.presets.camundaCluster`, and the release in `spec.releases.allowed`. The preset of the built-in Elasticsearch must be in `spec.presets.elasticsearchCluster`, and the preset of the built-in PostgreSQL in `spec.presets.databaseServer`. This preset is the parameter `preset` of the option, from the claim or from the policy. When the policy sets the preset, the message names `spec.parameters.<registration>.preset` of the `Environment`. You cannot change that preset in the claim, so ask the admin of the `Environment` to correct the value or the list. Without an `Environment`, a claim can use any preset. A preset or release that the cluster or its storage already uses stays allowed when the `Environment` drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the `Environment` does not list gives `Ready` `False` with reason `NotAllowed`. The requests and the cluster then stay as they are.
+On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The claim checks a new preset or release against the current lists of the `Environment`. `spec.presetRef` must be in `spec.presets.camundaCluster`, and the release in `spec.releases.allowed`. The preset of the built-in Elasticsearch must be in `spec.presets.elasticsearchCluster`, and the preset of the built-in PostgreSQL in `spec.presets.databaseServer`. This preset is the parameter `preset` of the option, from the claim or from the policy. When the policy sets the preset, the message names `spec.parameters.<registration>.preset` of the `Environment`. You cannot change that preset in the claim, so ask the admin of the `Environment` to correct the value or the list. Without an `Environment`, a claim can use any preset. A preset or release that the cluster or its storage already uses stays allowed when the `Environment` drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the `Environment` does not list gives `Ready` `False` with reason `NotAllowed`. The cluster then stays as it is, and the requests change only their deletion policy.
 
 A section of the policy that does not apply to a cluster claim, such as `management-database`, is never required for a cluster. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#claim-kinds) page says what `appliesTo` does.
 
@@ -214,15 +214,21 @@ When the policy is `Orphan` and a selected registration does not list `Orphan` i
 
 The claim stays until each plugin deleted or kept the resources of its request, by the policy. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. See [Status](#status).
 
-To change the policy of a claim that you delete, change `spec.deletionPolicy` first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that the claim shows the new policy:
+The claim gives a change of its policy to its requests also while `Ready` reports a failed check, such as `InvalidReference`. It does not give them an `Orphan` policy that a selected registration does not support, or while a selected registration does not exist. `Ready` then has reason `NotAllowed`, and the requests keep the policy that they had. A delete with foreground propagation, as some GitOps tools send, can delete the requests before the claim starts its deletion. Each request then uses the policy that it has at that time. So a request that still has `Delete` deletes the resources of its plugin.
+
+To change the policy of a claim that you delete, change `spec.deletionPolicy` first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that the claim read the change. `status.observedGeneration` must be equal to `metadata.generation`, and the reason of `Ready` must not be `NotAllowed`. If the two numbers are different, wait and run the command again:
 
 ```bash
-kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o jsonpath='{.spec.deletionPolicy}'
+kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o jsonpath='{.spec.deletionPolicy} {.metadata.generation} {.status.observedGeneration} {.status.conditions[?(@.type=="Ready")].reason}{"\n"}'
+```
+
+```text
+Orphan 4 4 Healthy
 ```
 
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It only gives its deletion policy to its requests, as [Deletion](#deletion) describes. It also adds the finalizer `fleet.camunda.io/cleanup` back if someone removed it:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |
