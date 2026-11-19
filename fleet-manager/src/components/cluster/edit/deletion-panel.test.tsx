@@ -124,6 +124,11 @@ function panel(
             steps={[{ field: "spec" }, { field: "deletionPolicy" }]}
             value="Delete"
           />
+          <Probe
+            label="Keep"
+            steps={[{ field: "spec" }, { field: "deletionPolicy" }]}
+            value="Orphan"
+          />
         </ClusterEditProvider>
       </GitPushesProvider>
     </QueryClientProvider>,
@@ -299,5 +304,36 @@ describe("the Deletion policy panel", () => {
     expect(bar()).toBeTruthy();
     fireEvent.click(radio(DELETE));
     expect(bar()).toBeNull();
+  });
+
+  describe("a selected registration that does not exist", () => {
+    const MISSING =
+      'the deletion policy is Orphan, and the claim cannot tell that these registrations support it, because they do not exist: PluginRegistration "gateway-access" of section "access"';
+    const gone = (unread: string[]) => ({
+      ...contextOf([], "Delete"),
+      registrations: [],
+      unread,
+    });
+
+    it("turns Keep off and names the option, and a save to Keep is refused", () => {
+      panel(gone([]));
+      expect(radio(KEEP).disabled).toBe(true);
+      expect(
+        within(deletion()).getByText("Registration does not exist"),
+      ).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+      expect(barButton("Review").disabled).toBe(true);
+      expect(bar()!.textContent).toContain(MISSING);
+    });
+
+    it("is not missing while PluginRegistration is not read", () => {
+      panel(gone(["PluginRegistration"]));
+      expect(radio(KEEP).disabled).toBe(false);
+      expect(
+        within(deletion()).queryByText("Registration does not exist"),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+      expect(bar()!.textContent).not.toContain(MISSING);
+    });
   });
 });

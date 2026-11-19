@@ -107,7 +107,7 @@ export function ConnectionDetail({
   const [writing, setWriting] = useState(false);
   const { toast, show, dismiss } = useWriteToast();
   const unread = unreadUserKinds(target.kind, unreadKinds(sources));
-  const waiting = waitingRequests(target, sources);
+  const waiting = waitingRequests(target, sources, unreadKinds(sources));
   const users = contractUsage(sources).get(contractKey(target)) ?? [];
   const { base, draft, reviewing, locked } = editor;
   // After a delete, the page shows the last copy until it moves to the list.

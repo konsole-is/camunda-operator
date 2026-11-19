@@ -38,9 +38,13 @@ export function PlaneDeletionPanel() {
     environment: plane.environment as unknown as Environment | undefined,
     sections: plane.sections as unknown as PluginSection[],
     registrations: plane.registrations as unknown as PluginRegistration[],
+    registrationsRead: !plane.unread.includes("PluginRegistration"),
+    // A saved policy reaches the requests only through a live pass of the
+    // claim controller.
+    livePass: true,
     kind: "CamundaManagementClusterClaim",
   });
-  const refused = choice.policy === "Orphan" && !choice.keepAllowed;
+  const refused = choice.policy === "Orphan" && choice.alwaysDeleted.length > 0;
   const claimed = edit.session.claim.spec?.deletionPolicy;
   return (
     <div className="flex flex-col gap-3">

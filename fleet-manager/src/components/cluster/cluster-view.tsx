@@ -556,6 +556,7 @@ export function ClusterView({
     writeMode,
     openId,
     now: clock,
+    unread,
   };
   const slot = (
     slotName: Parameters<typeof ActionSlot>[0]["name"],

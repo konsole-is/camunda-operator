@@ -134,7 +134,7 @@ describe("the delete of a claim against envtest", () => {
       errors: [
         expect.objectContaining({
           code: "Stale",
-          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it.`,
+          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it yet.`,
         }),
       ],
     });
@@ -354,7 +354,7 @@ describe("the delete of a plane claim against envtest", () => {
       errors: [
         expect.objectContaining({
           code: "Stale",
-          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it.`,
+          message: `The request ${request.metadata.name} does not have the deletion policy of the claim. The operator has not updated it yet.`,
         }),
       ],
     });

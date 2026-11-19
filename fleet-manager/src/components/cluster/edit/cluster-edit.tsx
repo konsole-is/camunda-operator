@@ -58,6 +58,7 @@ export function ClusterEditProvider({
     backups,
     requests,
   } = context;
+  const registrationsRead = !context.unread.includes("PluginRegistration");
   const locks = useMemo(() => clusterLocks(fields), [fields]);
   const validate = useCallback(
     (s: Session<ClusterClaim>) =>
@@ -69,6 +70,7 @@ export function ClusterEditProvider({
         cluster,
         backups,
         requests,
+        registrationsRead,
       }),
     [
       environment,
@@ -78,6 +80,7 @@ export function ClusterEditProvider({
       cluster,
       backups,
       requests,
+      registrationsRead,
     ],
   );
   const host: ClaimEditHost<ClusterClaim> = {

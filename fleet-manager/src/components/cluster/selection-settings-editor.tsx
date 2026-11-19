@@ -7,7 +7,7 @@ import { namesOf } from "@/lib/policy/options";
 import type { OpenAPISchema } from "@/lib/schema";
 import { selectionSettingsOf } from "./editable-settings";
 import type { FieldError } from "@/lib/session";
-import { SettingRow, settingErrors } from "./settings-editor";
+import { SettingRow, settingRowErrors } from "./settings-editor";
 
 type Choice = { name: string; value: unknown };
 
@@ -70,7 +70,7 @@ export function SelectionSettingsEditor({
           key={`${setting.key}:${resets}`}
           setting={setting}
           secrets={secrets}
-          errors={settingErrors(errors, setting)}
+          errors={settingRowErrors(errors, setting)}
           set={set}
           reset={reset}
           invalid={invalid}

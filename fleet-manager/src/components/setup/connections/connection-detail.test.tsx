@@ -717,6 +717,24 @@ describe("ConnectionDetail with changes", () => {
     ).toBeTruthy();
   });
 
+  it("does not say that the section of a request does not exist while PluginSection cannot be read", () => {
+    const sources = waitingSources();
+    sources.sections = [];
+    edit(inTeamA("DatabaseConfig", "orders-db"), {
+      sources,
+      errors: [{ kind: "PluginSection", message: "forbidden" }],
+    });
+
+    const users = panel("Used by");
+    expect(
+      within(users).getByText(
+        "The users are not known while the fleet manager cannot read PluginSection.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The section .* does not exist/)).toBeNull();
+    expect(screen.queryByText(/has not given its outputs/)).toBeNull();
+  });
+
   it("offers Delete while the custom request with no outputs is being deleted", () => {
     edit(inTeamA("DatabaseConfig", "orders-db"), {
       sources: waitingSources({ deletionTimestamp: "2026-11-18T10:00:00Z" }),

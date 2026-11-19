@@ -13,10 +13,13 @@ import type { ReadError } from "@/lib/k8s/unread";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import {
+  type ClaimState,
   claimDeletionChoice,
   type DeletionChoice,
   type DeletionPolicy,
+  orphanNeedsLivePass,
   type PluginSelection,
+  type RequestState,
 } from "@/lib/policy";
 
 /**
@@ -58,14 +61,15 @@ export type DeleteTarget = {
 /**
  * DeleteClusterModel is what the delete page shows for a pick. choice is
  * the deletion choice of the claim with policy set to the pick.
- * keepRefused says that the claim keeps its resources and an option cannot.
- * targets are the objects that always go, in the order in which they go,
- * the requests included. kept are the CamundaCluster, CamundaOptimize, and
- * BackupSchedule objects of the cluster that stay, each with the reason in
- * note. backups counts the backups of the cluster of both kinds. warning
- * is the bucketGoneWarning of groups, unset while fatesKnown is false.
- * unread are the kinds that the page could not read; fatesKnown is false
- * when the fates of groups depend on one.
+ * keepRefused says that the claim keeps its resources and an option always
+ * deletes what it made. targets are the objects that always go, in the
+ * order in which they go, the requests included. kept are the
+ * CamundaCluster, CamundaOptimize, and BackupSchedule objects of the
+ * cluster that stay, each with the reason in note. backups counts the
+ * backups of the cluster of both kinds. warning is the bucketGoneWarning
+ * of groups, unset while fatesKnown is false. unread are the kinds that
+ * the page could not read; fatesKnown is false when the fates of groups
+ * depend on one.
  */
 export type DeleteClusterModel = {
   name: string;
@@ -95,8 +99,16 @@ const VOLUME_KINDS: readonly string[] = [
 /** KEPT_ATTACHMENT is the note of each object in kept. */
 export const KEPT_ATTACHMENT = "Kept: the claim did not make it";
 
-/** clusterDeletionChoice is claimDeletionChoice of the claim of data. */
-export function clusterDeletionChoice(data: DeleteClusterData): DeletionChoice {
+/**
+ * clusterDeletionChoice is claimDeletionChoice of the claim of data for a
+ * delete in direct mode when direct is true, while the kinds of unread are
+ * not read.
+ */
+export function clusterDeletionChoice(
+  data: DeleteClusterData,
+  unread: readonly string[],
+  direct: boolean,
+): DeletionChoice {
   const { claim } = data;
   // The cache objects differ from the generated types only in their
   // timestamps, which claimDeletionChoice does not read.
@@ -111,6 +123,12 @@ export function clusterDeletionChoice(data: DeleteClusterData): DeletionChoice {
     environment: environmentOf(data) as unknown as Environment | undefined,
     sections: data.sections as unknown as PluginSection[],
     registrations: data.registrations as unknown as PluginRegistration[],
+    registrationsRead: !unread.includes("PluginRegistration"),
+    livePass: orphanNeedsLivePass(
+      claim as unknown as ClaimState,
+      data.requests as unknown as RequestState[],
+      direct,
+    ),
     kind: "CamundaClusterClaim",
   });
 }
@@ -126,18 +144,20 @@ function environmentOf(
 
 /**
  * deleteClusterModel returns the model of the delete of the cluster of
- * data under picked, while the kinds of unread are not read. The cluster
- * has the name of its claim.
+ * data under picked, while the kinds of unread are not read, for a delete
+ * in direct mode when direct is true. The cluster has the name of its
+ * claim.
  */
 export function deleteClusterModel(
   data: DeleteClusterData,
   picked: DeletionPolicy,
   unread: readonly string[] = [],
+  direct = false,
 ): DeleteClusterModel {
   const { claim } = data;
   const name = claim.metadata?.name ?? "";
   const namespace = claim.metadata?.namespace ?? "";
-  const choice = clusterDeletionChoice(data);
+  const choice = clusterDeletionChoice(data, unread, direct);
   const claimUid = claim.metadata?.uid;
   const controlled = (o: Owned) =>
     claimUid !== undefined &&
@@ -237,7 +257,7 @@ export function deleteClusterModel(
     name,
     namespace,
     choice: { ...choice, policy: picked },
-    keepRefused: choice.policy === "Orphan" && !choice.keepAllowed,
+    keepRefused: choice.policy === "Orphan" && choice.alwaysDeleted.length > 0,
     targets,
     kept: [...clusterKept, ...optimizes.stays, ...schedules.stays],
     groups,
@@ -330,10 +350,11 @@ type Attachment = Owned & { spec: { clusterRef: { name: string } } };
 
 /**
  * initialPolicy is the pick that the delete page opens on: the policy of
- * choice, but Delete when that keeps and Keep is not allowed.
+ * choice, but Delete when that keeps and an option always deletes what it
+ * made.
  */
 export function initialPolicy(choice: DeletionChoice): DeletionPolicy {
-  return choice.policy === "Orphan" && !choice.keepAllowed
+  return choice.policy === "Orphan" && choice.alwaysDeleted.length > 0
     ? "Delete"
     : choice.policy;
 }

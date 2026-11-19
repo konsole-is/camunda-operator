@@ -695,12 +695,16 @@ export type WaitingRequest = { request: string; section?: string };
  * exists. A request counts while its section has a slot output of that kind
  * and readyOutputs does not give its outputs, whatever their values, and
  * while its section is not in sources. A request of a built-in registration
- * and a request that is being deleted do not count.
+ * and a request that is being deleted do not count. It returns no request
+ * while unread holds PluginRequest or PluginSection, the lists that the rule
+ * reads.
  */
 export function waitingRequests(
   ref: ContractRef,
   sources: ContractUserSources,
+  unread: readonly string[],
 ): WaitingRequest[] {
+  if (WAITING_KINDS.some((k) => unread.includes(k))) return [];
   const slots = new Set(
     SLOT_FIELDS.filter(
       (row) => own(OUTPUT_CONTRACTS, row.output) === ref.kind,
@@ -733,6 +737,8 @@ export function waitingRequests(
     })
     .sort((a, b) => byCodeUnit(a.request, b.request));
 }
+
+const WAITING_KINDS = ["PluginRequest", "PluginSection"];
 
 /**
  * waitingDeleteText says why a delete is off while requests wait: for each

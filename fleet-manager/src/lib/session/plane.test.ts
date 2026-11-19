@@ -94,6 +94,7 @@ const ctx = (over: Partial<PlaneClaimContext> = {}): PlaneClaimContext =>
     sections: [],
     registrations: [],
     requests: [],
+    registrationsRead: true,
     ...over,
   }) as PlaneClaimContext;
 
@@ -460,6 +461,55 @@ describe("validatePlaneClaim", () => {
           'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "gateway" of section "access"',
       },
     ]);
+  });
+
+  describe("a selected registration that does not exist", () => {
+    const MISSING =
+      'the deletion policy is Orphan, and the claim cannot tell that these registrations support it, because they do not exist: PluginRegistration "gateway" of section "access"';
+    const recorded = {
+      ...planeClaim({
+        plugins: [{ section: "access", registration: "gateway" }],
+      }),
+      status: { resolvedPolicy: {} },
+    } as PlaneClaim;
+
+    it("refuses Orphan of a claim that recorded its policy", () => {
+      const s = changed(recorded, [at("spec", "deletionPolicy"), "Orphan"]);
+      expect(
+        validatePlaneClaim(s, ctx({ sections: [accessSection] })),
+      ).toContainEqual({ message: MISSING });
+    });
+
+    it("is not missing while the registrations are not read", () => {
+      const s = changed(recorded, [at("spec", "deletionPolicy"), "Orphan"]);
+      expect(
+        validatePlaneClaim(
+          s,
+          ctx({ sections: [accessSection], registrationsRead: false }),
+        ),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
+    it("passes a save that does not move the claim to Orphan", () => {
+      const held = {
+        ...recorded,
+        spec: { ...recorded.spec, deletionPolicy: "Orphan" },
+      } as PlaneClaim;
+      const s = changed(held, [at("spec", "environments"), ["staging"]]);
+      expect(
+        validatePlaneClaim(s, ctx({ sections: [accessSection] })),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
+    it("passes Orphan of a claim that has not recorded its policy", () => {
+      const live = planeClaim({
+        plugins: [{ section: "access", registration: "gateway" }],
+      });
+      const s = changed(live, [at("spec", "deletionPolicy"), "Orphan"]);
+      expect(
+        validatePlaneClaim(s, ctx({ sections: [accessSection] })),
+      ).not.toContainEqual({ message: MISSING });
+    });
   });
 
   it("refuses a parameter change that the registration schema refuses", () => {

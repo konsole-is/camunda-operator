@@ -396,6 +396,7 @@ export function planeClaimContext(
     sections: sources.sections,
     registrations: sources.registrations,
     requests: sources.requests,
+    registrationsRead: !sources.unread.includes("PluginRegistration"),
   };
 }
 

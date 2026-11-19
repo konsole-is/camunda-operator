@@ -211,3 +211,71 @@ describe("deletePlaneModel", () => {
     ).toBe("Orphan");
   });
 });
+
+describe("the deletion choice of a plane claim whose registration does not exist", () => {
+  // gone holds Orphan, recorded its policy, and selects
+  // existing-database-configs, which registrations do not hold. Its request
+  // holds no deletion policy yet.
+  const gone = () =>
+    data({
+      claim: claim(
+        { deletionPolicy: "Orphan" },
+        { resolvedPolicy: { deletionPolicy: "Delete" } },
+      ),
+    });
+
+  it("refuses Keep while a request does not hold Orphan, and names the selection", () => {
+    const { choice } = deletePlaneModel(gone(), "Orphan");
+    expect(choice.keepAllowed).toBe(false);
+    expect(choice.missing).toEqual([
+      {
+        section: "management-database",
+        label: "existing-database-configs (management-database)",
+      },
+    ]);
+  });
+
+  it("offers Keep when each request holds Orphan already", () => {
+    const base = gone();
+    const { choice } = deletePlaneModel(
+      {
+        ...base,
+        requests: base.requests.map((r) =>
+          cast({ ...r, spec: { ...r.spec, deletionPolicy: "Orphan" } }),
+        ),
+      },
+      "Orphan",
+    );
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.missing).toBeUndefined();
+  });
+
+  it("offers Keep in direct mode when the claim has the cleanup finalizer", () => {
+    const base = gone();
+    const { choice } = deletePlaneModel(
+      {
+        ...base,
+        claim: cast({
+          ...base.claim,
+          metadata: {
+            ...base.claim.metadata,
+            finalizers: ["fleet.camunda.io/cleanup"],
+          },
+        }),
+      },
+      "Orphan",
+      [],
+      true,
+    );
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.missing).toBeUndefined();
+  });
+
+  it("does not count the registration as missing while PluginRegistration is not read", () => {
+    const { choice } = deletePlaneModel(gone(), "Orphan", [
+      "PluginRegistration",
+    ]);
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.missing).toBeUndefined();
+  });
+});

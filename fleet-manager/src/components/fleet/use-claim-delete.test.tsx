@@ -21,6 +21,8 @@ import { type ClaimDeleteActions, useClaimDelete } from "./use-claim-delete";
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
 const KIND = "CamundaManagementClusterClaim";
+const NOT_ALLOWED =
+  'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "ebs" of section "management-database"';
 const key = `${KIND}/platform/plane-a` as const;
 const ref = {
   apiVersion: "fleet.camunda.io/v1alpha1",
@@ -460,8 +462,8 @@ describe("useClaimDelete", () => {
         {
           type: "Ready",
           status: "False",
-          reason: "InvalidReference",
-          message: "CamundaRelease r1 does not exist",
+          reason: "NotAllowed",
+          message: NOT_ALLOWED,
         },
       ],
     } as Claim["status"];
@@ -472,8 +474,7 @@ describe("useClaimDelete", () => {
     await waitFor(() =>
       expect(hook.result.current.stage).toEqual({
         kind: "waiting",
-        blocked:
-          "The request plane-a-db does not have the deletion policy of the claim. The operator does not update it while the claim reports InvalidReference: CamundaRelease r1 does not exist",
+        blocked: `The request plane-a-db does not have the deletion policy of the claim. The operator does not update it while the claim reports NotAllowed: ${NOT_ALLOWED}`,
       }),
     );
     expect(fakeWriter.applied).toHaveLength(1);
@@ -485,6 +486,33 @@ describe("useClaimDelete", () => {
     ]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(reviewOf(2));
+  });
+
+  it("Git mode: while a request has the old policy and the claim reports another failed check, the wait does not blame the check", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    const stuck = pushed("42");
+    stuck.status = {
+      ...stuck.status,
+      conditions: [
+        {
+          type: "Ready",
+          status: "False",
+          reason: "InvalidReference",
+          message: "CamundaRelease r1 does not exist",
+        },
+      ],
+    } as Claim["status"];
+    await live(stuck, stuck, [request("plane-a-db", "Delete")]);
+    await waitFor(() =>
+      expect(hook.result.current.stage).toEqual({
+        kind: "waiting",
+        blocked:
+          "The request plane-a-db does not have the deletion policy of the claim. The operator has not updated it yet.",
+      }),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
   });
 
   it.each([
@@ -904,6 +932,103 @@ describe("useClaimDelete", () => {
     expect(fakeWriter.applied).toEqual([]);
     hook.rerender({ policy: "Delete" });
     expect(hook.result.current.keepRefused).toBeUndefined();
+  });
+
+  describe("a selected registration that does not exist", () => {
+    const MISSING =
+      'PluginRegistration "ebs-plain" of section "volume-encryption" does not exist, so the operator cannot give Keep to the options. Bring the registration back, or choose Delete the resources.';
+    // gone is a claim that holds Delete and selects the plain EBS option,
+    // whose registration does not exist.
+    const gone = () => selecting(read("41", "Delete"));
+
+    it("offers Keep in direct mode with the cleanup finalizer, which gives Orphan to the requests on delete, and deletes the claim", async () => {
+      const { hook } = mount(gone(), { policy: "Orphan", registrations: [] });
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      expect((await confirm(hook)).ok).toBe(true);
+      const kept = selecting(read("42"));
+      await live(kept, kept, [request("plane-a-db", "Delete")]);
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+      expect(fakeWriter.applied[1].delete).toHaveLength(1);
+    });
+
+    it("refuses Keep in direct mode when the claim has no cleanup finalizer and a request does not hold Orphan", async () => {
+      const bare = {
+        ...gone(),
+        metadata: { ...gone().metadata, finalizers: [] },
+      } as Claim;
+      const { hook } = mount(bare, { policy: "Orphan", registrations: [] });
+      await live(bare, bare, [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+    });
+
+    it("offers Keep in Git mode when the claim controls no request", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), []);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      // A request that does not hold Orphan is refused, so the list of the
+      // requests was read.
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+    });
+
+    it("offers Keep in Git mode when each request holds Orphan already", async () => {
+      fakeWriter.reset("git");
+      const kept = selecting(read("41"));
+      const { hook } = mount(kept, {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(kept, kept, [request("plane-a-db", "Orphan")]);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      // The same claim with a request that does not hold Orphan yet is
+      // refused, so the list of the requests was read.
+      await live(kept, kept, [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+    });
+
+    it("refuses Keep without a write in Git mode while a request does not hold Orphan, and says why", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+      expect(await confirm(hook)).toEqual({
+        ok: false,
+        errors: [{ code: "Invalid", message: MISSING }],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+      hook.rerender({ policy: "Delete" });
+      expect(hook.result.current.keepRefused).toBeUndefined();
+    });
+
+    it("does not refuse Keep while the list of the requests is not read", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), "unread");
+      expect(hook.result.current.keepRefused).toBeUndefined();
+    });
   });
 
   it("sends no delete when a registration drops Orphan during the wait for the policy", async () => {

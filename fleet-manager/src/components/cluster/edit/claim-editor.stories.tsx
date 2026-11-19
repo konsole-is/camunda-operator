@@ -104,6 +104,7 @@ function contextOf({
     fields: [],
     writeMode: "direct",
     now: "2026-11-10T12:00:00Z",
+    unread: [],
     ...over,
   };
 }

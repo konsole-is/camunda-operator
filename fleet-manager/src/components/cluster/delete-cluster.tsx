@@ -44,7 +44,13 @@ export function DeleteCluster({
   const { toast, show, dismiss } = useWriteToast();
   const all = {};
   const [picked, setPicked] = useState(() =>
-    initialPolicy(clusterDeletionChoice(initial)),
+    initialPolicy(
+      clusterDeletionChoice(
+        initial,
+        initial.errors.map((e) => e.kind),
+        writeMode === "direct",
+      ),
+    ),
   );
   const registrations = useResources(
     "PluginRegistration",
@@ -131,6 +137,7 @@ export function DeleteCluster({
     },
     picked,
     unread,
+    writeMode === "direct",
   );
   const stage = useDeleteStage(
     run,

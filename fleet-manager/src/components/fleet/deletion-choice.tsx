@@ -31,9 +31,10 @@ export function deletionQuestion(
  * resources" or "Delete the resources", with "Default" on the default of
  * choice and choice.policy checked. Keep is disabled while
  * choice.keepAllowed is false, with the options that always delete what
- * they made. When the default keeps and Keep is disabled, a line says why
- * Delete is chosen. Each item of choice.alwaysDeleted shows with "Always
- * deleted".
+ * they made, else the options whose registration does not exist. When the
+ * default keeps and Keep is disabled, a line says why Delete is chosen.
+ * Each item of choice.alwaysDeleted shows with "Always deleted", and each
+ * item of choice.missing with "Registration does not exist".
  */
 export function DeletionChoiceField({
   subject,
@@ -47,6 +48,7 @@ export function DeletionChoiceField({
   disabled?: boolean;
 }) {
   const id = useId();
+  const missing = choice.missing ?? [];
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="mb-1 font-heading text-base font-semibold text-text">
@@ -66,7 +68,9 @@ export function DeletionChoiceField({
           disabledReason={
             choice.keepAllowed
               ? undefined
-              : "Some options always delete what they made."
+              : choice.alwaysDeleted.length === 0 && missing.length > 0
+                ? "Some options have a registration that does not exist."
+                : "Some options always delete what they made."
           }
           disabled={disabled}
           onPick={() => onChange("Orphan")}
@@ -87,15 +91,24 @@ export function DeletionChoiceField({
           them.
         </p>
       )}
-      {choice.alwaysDeleted.length > 0 && (
+      {(choice.alwaysDeleted.length > 0 || missing.length > 0) && (
         <ul className="flex flex-col gap-1.5">
-          {choice.alwaysDeleted.map((item) => (
+          {[
+            ...choice.alwaysDeleted.map((item) => ({
+              ...item,
+              badge: "Always deleted",
+            })),
+            ...missing.map((item) => ({
+              ...item,
+              badge: "Registration does not exist",
+            })),
+          ].map((item) => (
             <li
-              key={`${item.section}/${item.label}`}
+              key={`${item.section}/${item.label}/${item.badge}`}
               className="flex flex-wrap items-center gap-2 text-sm text-text-2"
             >
               {item.label}
-              <Badge variant="outline">Always deleted</Badge>
+              <Badge variant="outline">{item.badge}</Badge>
             </li>
           ))}
         </ul>

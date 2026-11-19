@@ -26,6 +26,7 @@ import {
   generated,
   messagesOf,
   selectionsOf,
+  toOrphan,
 } from "./parameters";
 import { claimAfter, type Session } from "./session";
 import { valueAt } from "./steps";
@@ -37,7 +38,9 @@ export type FieldError = { path?: FieldPath; message: string };
  * ClusterClaimContext is what validateClusterClaim reads beside the session.
  * environment is the Environment of the namespace, cluster the live
  * CamundaCluster, backups the backups of its namespace, and requests the
- * live PluginRequests of the claim.
+ * live PluginRequests of the claim. registrationsRead is false while the
+ * page has not read registrations: a selected registration that they lack
+ * is then not known, not missing.
  */
 export type ClusterClaimContext = {
   environment?: Resource<"Environment">;
@@ -47,6 +50,7 @@ export type ClusterClaimContext = {
   cluster: MovingCluster;
   backups: readonly BackupLike[];
   requests: readonly Resource<"PluginRequest">[];
+  registrationsRead: boolean;
 };
 
 type Claim = Resource<"CamundaClusterClaim">;
@@ -128,6 +132,11 @@ export function validateClusterClaim(
         deletionPolicyOf(spec.deletionPolicy, policy),
         selections,
         generated<PluginRegistration[]>(ctx.registrations),
+        policy &&
+          ctx.registrationsRead &&
+          toOrphan(s.claim.spec?.deletionPolicy, spec.deletionPolicy, policy)
+          ? "Refuses"
+          : "Passes",
       ),
     ),
   );

@@ -17,6 +17,7 @@ limitations under the License.
 package claimpolicy
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,10 +36,20 @@ func TestCheckDeletionPolicyFixtures(t *testing.T) {
 		Policy        pluginsv1alpha1.DeletionPolicy       `json:"policy"`
 		Selections    []fleetv1alpha1.PluginSelection      `json:"selections,omitempty"`
 		Registrations []pluginsv1alpha1.PluginRegistration `json:"registrations,omitempty"`
+		Missing       string                               `json:"missing,omitempty"`
 	}
 
 	runFixtures(t, "check-deletion-policy", func(in input) (any, error) {
-		return struct{}{}, CheckDeletionPolicy(in.Policy, in.Selections, in.Registrations, MissingPasses)
+		missing := MissingPasses
+		switch in.Missing {
+		case "":
+		case "Refuses":
+			missing = MissingRefuses
+		default:
+			return nil, fmt.Errorf("unknown missing %q", in.Missing)
+		}
+
+		return struct{}{}, CheckDeletionPolicy(in.Policy, in.Selections, in.Registrations, missing)
 	})
 }
 

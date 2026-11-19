@@ -327,6 +327,9 @@ export function planMove(
       cluster: row.cluster,
       backups: [...data.elasticsearchBackups, ...data.rdbmsBackups],
       requests,
+      // A move keeps the deletion policy, so a missing registration never
+      // refuses it.
+      registrationsRead: true,
     }))
       errors.push(named(error.message));
     impacts.push({
