@@ -25,8 +25,9 @@ export type DisclosureCount = { text: string; label?: string; bad?: boolean };
  * body: a chevron, label, and a pill for each of counts. The body stays in
  * the page while it is hidden. It holds no state: a click on the row calls
  * onToggle with the other state, and a match of the find function of the
- * browser in the closed body calls it with true. role and name set the
- * role and the accessible name of the group, a group named label by
+ * browser in the closed body calls it with true. The caller must open the
+ * group on true, or the body shows under a closed row. role and name set
+ * the role and the accessible name of the group, a group named label by
  * default. With heading, the row is in a heading of level 3 that label
  * alone names.
  */
@@ -52,7 +53,7 @@ export function DisclosureGroup({
   const id = useId();
   const body = useRef<HTMLDivElement>(null);
   const toggle = useRef(onToggle);
-  useEffect(() => {
+  useLayoutEffect(() => {
     toggle.current = onToggle;
   });
   // React sets hidden only as a boolean. With "until-found", the find
@@ -63,7 +64,10 @@ export function DisclosureGroup({
   }, [open]);
   useEffect(() => {
     const element = body.current;
-    const found = () => toggle.current(true);
+    // beforematch bubbles from a closed element inside an open body.
+    const found = (event: Event) => {
+      if (event.target === element) toggle.current(true);
+    };
     element?.addEventListener("beforematch", found);
     return () => element?.removeEventListener("beforematch", found);
   }, []);

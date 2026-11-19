@@ -52,11 +52,13 @@ export function EnvScopes<S extends EnvSpec>({
         }),
       ),
   );
-  const toggle = (scope: EnvScope) =>
+  const setScopeOpen = (scope: EnvScope, next: boolean) =>
     setOpen((current) => {
-      const next = new Set(current);
-      if (!next.delete(scope)) next.add(scope);
-      return next;
+      if (current.has(scope) === next) return current;
+      const scopes = new Set(current);
+      if (next) scopes.add(scope);
+      else scopes.delete(scope);
+      return scopes;
     });
   const errors = useRef<Record<string, ValidationError[]>>({});
   const report = (
@@ -89,7 +91,7 @@ export function EnvScopes<S extends EnvSpec>({
             label={label}
             counts={[{ text: String(count) }]}
             open={open.has(scope)}
-            onToggle={() => toggle(scope)}
+            onToggle={(next) => setScopeOpen(scope, next)}
           >
             <EnvEditor
               label={`Variables of ${label}`}

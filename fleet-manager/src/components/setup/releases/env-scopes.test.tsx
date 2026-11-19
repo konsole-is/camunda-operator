@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -73,6 +74,31 @@ describe("EnvScopes", () => {
       scope("Gateway").getByRole("button", { expanded: false }),
     ).toBeTruthy();
     expect(scope("Gateway").queryByRole("textbox")).toBeNull();
+  });
+
+  it("opens a closed scope when the find function of the browser matches text in it", () => {
+    setup();
+    const toggle = scope("Gateway").getByRole("button", { expanded: false });
+    act(() => {
+      document
+        .getElementById(toggle.getAttribute("aria-controls")!)!
+        .dispatchEvent(new Event("beforematch"));
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps an open scope open when it is asked to open", () => {
+    setup({
+      version: "8.9.0",
+      zeebe: { extraEnv: [{ name: "A", value: "1" }] },
+    });
+    const toggle = scope("Brokers").getByRole("button", { expanded: true });
+    act(() => {
+      document
+        .getElementById(toggle.getAttribute("aria-controls")!)!
+        .dispatchEvent(new Event("beforematch"));
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("edits the variables of a scope without YAML", async () => {

@@ -70,6 +70,20 @@ describe("DisclosureGroup", () => {
     expect(body.hasAttribute("hidden")).toBe(false);
   });
 
+  it("ignores a match of the find function in a closed element inside its open body", async () => {
+    const onToggle = vi.fn();
+    render(<Live onToggle={onToggle} />);
+    await userEvent.click(toggle());
+    onToggle.mockClear();
+    act(() => {
+      screen
+        .getByRole("textbox", { name: "replicas" })
+        .dispatchEvent(new Event("beforematch", { bubbles: true }));
+    });
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("hides its body again for the find function once it closes", async () => {
     render(<Live />);
     await userEvent.click(toggle());
