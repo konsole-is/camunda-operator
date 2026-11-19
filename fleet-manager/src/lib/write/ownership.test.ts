@@ -714,6 +714,36 @@ describe("keepEmpty", () => {
     expect(change.keep).toEqual({ [key]: ["spec.sections", "spec.images"] });
   });
 
+  it("does not keep an empty value whose path covers another field that the change sets", () => {
+    // The map key "a.b" and the steps a, b give one path string.
+    const live = environment(
+      { parameters: { "a.b": {}, a: { b: { value: 1 } } } },
+      [
+        kubectl({
+          "f:spec": {
+            "f:parameters": {
+              "f:a.b": {},
+              "f:a": { "f:b": { "f:value": {} } },
+            },
+          },
+        }),
+      ],
+      { resourceVersion: "7" },
+    );
+    const change = keepEmpty(
+      save(environment({ parameters: { a: { b: { value: 2 } } } })),
+      live,
+      environment({ parameters: { a: { b: { value: 2 } } } }),
+    );
+    const { changed, cleared } = foreignFields(
+      live,
+      change.apply[0],
+      change.keep?.[key],
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.parameters.a.b.value"]);
+    expect(cleared.map((f) => f.path)).toEqual(["spec.parameters.a.b"]);
+  });
+
   it("keeps at most MAX_KEEP_PATHS paths, and the others stay offered", () => {
     const empty = Object.fromEntries(
       Array.from({ length: MAX_KEEP_PATHS + 1 }, (_, i) => [`e${i}`, ""]),

@@ -221,22 +221,59 @@ export function keepEmpty(
   if (applied === undefined || change.preconditions?.[key] === undefined)
     return change;
   const object = live as unknown as KubeObject;
-  const empty = foreignFields(object, applied, change.keep?.[key])
-    .cleared.filter(
-      (f) =>
-        // keep names paths through maps only.
-        f.steps.every((s) => "field" in s) &&
-        !f.path.includes("[") &&
-        isEmpty(fieldValue(object, f)) &&
-        emptyOrAbsent(fieldValue(edited, f)),
-    )
-    .map((f) => f.path);
+  const { changed, cleared } = foreignFields(
+    object,
+    applied,
+    change.keep?.[key],
+  );
+  const candidates = cleared.filter(
+    (f) =>
+      // keep names paths through maps only.
+      f.steps.every((s) => "field" in s) &&
+      !f.path.includes("[") &&
+      isEmpty(fieldValue(object, f)) &&
+      emptyOrAbsent(fieldValue(edited, f)),
+  );
+  // A keep path is a dotted string, so a map key with a dot can cover
+  // another field. Such a field stays offered.
+  const others = [...changed, ...cleared.filter((f) => !candidates.includes(f))]
+    .map((f) => f.path)
+    .concat(setPaths(applied));
+  const empty = candidates
+    .map((f) => f.path)
+    .filter(
+      (path) =>
+        !others.some(
+          (other) =>
+            other === path ||
+            other.startsWith(`${path}.`) ||
+            path.startsWith(`${other}.`),
+        ),
+    );
   if (empty.length === 0) return change;
   const kept = [...new Set([...(change.keep?.[key] ?? []), ...empty])].slice(
     0,
     MAX_KEEP_PATHS,
   );
   return { ...change, keep: { ...change.keep, [key]: kept } };
+}
+
+// setPaths returns the path of each value that applied sets in spec,
+// metadata.labels, and metadata.annotations, through maps only.
+function setPaths(applied: KubeObject): FieldPath[] {
+  const paths: FieldPath[] = [];
+  const walk = (value: unknown, path: FieldPath) => {
+    if (!isRecord(value)) return;
+    for (const [field, inner] of Object.entries(value)) {
+      const below = stepPath(path, { field });
+      if (isRecord(inner) && Object.keys(inner).length > 0) walk(inner, below);
+      else paths.push(below);
+    }
+  };
+  walk(applied.spec, "spec");
+  for (const name of ["labels", "annotations"])
+    walk(applied.metadata[name], stepPath("metadata", { field: name }));
+  return paths;
 }
 
 function isEmpty(value: unknown): boolean {
