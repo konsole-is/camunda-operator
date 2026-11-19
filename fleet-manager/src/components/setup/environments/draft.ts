@@ -10,6 +10,7 @@ import {
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
@@ -210,11 +211,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the environment ${name}`,
-    apply: [object],
-    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
-  };
+  return keepEmpty(
+    {
+      intent: `Change the environment ${name}`,
+      apply: [object],
+      ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */

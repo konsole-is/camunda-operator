@@ -17,6 +17,7 @@ import {
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { ReadError } from "@/lib/k8s/unread";
 import type { ContractRef } from "@/lib/usage";
+import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { type ContractActions, ConnectionDetail } from "./connection-detail";
 import { deleteChange, draftOf, updateChange } from "./draft";
@@ -410,6 +411,43 @@ describe("ConnectionDetail with changes", () => {
       takeOver: { "DatabaseServerConfig/team-a/postgres": ["spec.host"] },
     });
     expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
+  });
+
+  it("shows no row for an empty endpoint of another tool that the edit typed into and emptied again", async () => {
+    const sources = connectionFixtures();
+    const backups = sources.objectStorageConfigs.find(
+      (c) => c.metadata.name === "backups",
+    )!;
+    backups.metadata.resourceVersion = "41";
+    backups.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": { "f:s3": { "f:region": {}, "f:endpoint": {} } },
+        },
+      },
+    ];
+    backups.spec.s3!.endpoint = "";
+    const { actions, live } = edit(inTeamA("ObjectStorageConfig", "backups"), {
+      sources,
+    });
+    const endpoint = screen.getByLabelText("Endpoint");
+    fireEvent.change(endpoint, { target: { value: "h" } });
+    fireEvent.change(endpoint, { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Region"), {
+      target: { value: "eu-central-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const change = actions.previewChange.mock.calls.at(-1)![0];
+    const { changed, cleared } = foreignFields(
+      live as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["ObjectStorageConfig/team-a/backups"],
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.s3.region"]);
+    expect(cleared).toEqual([]);
   });
 
   it("names each user and what it does on the change in the review", async () => {

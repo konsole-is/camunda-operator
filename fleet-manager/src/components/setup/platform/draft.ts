@@ -4,6 +4,7 @@ import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 
@@ -164,11 +165,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the platform config ${name}`,
-    apply: [object],
-    ...preconditionOf(name, live.metadata.resourceVersion),
-  };
+  return keepEmpty(
+    {
+      intent: `Change the platform config ${name}`,
+      apply: [object],
+      ...preconditionOf(name, live.metadata.resourceVersion),
+    },
+    live,
+    { ...object, spec: draft },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */

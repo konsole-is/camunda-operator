@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { DESCRIPTION_ANNOTATION, LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { foreignFields } from "@/lib/write/ownership";
+import type { KubeObject } from "@/lib/write/types";
 import { refKey } from "@/lib/write/refs";
-import { presetChangeCount, presetDraftOf, presetUpdateChange } from "./draft";
+import {
+  type PresetDraft,
+  presetChangeCount,
+  presetDraftOf,
+  presetUpdateChange,
+} from "./draft";
 import { presetFixtures } from "./fixtures";
 
 const sources = presetFixtures();
@@ -114,5 +121,60 @@ describe("presetChangeCount", () => {
         description: ` ${draft.description} `,
       }),
     ).toBe(0);
+  });
+});
+
+describe("presetUpdateChange over the empty values of another tool", () => {
+  // presetWith is the preset standard with a description and an instance
+  // count that kubectl set.
+  const presetWith = (description: string) => ({
+    ...standardPg,
+    metadata: {
+      ...standardPg.metadata,
+      annotations: { [DESCRIPTION_ANNOTATION]: description },
+      managedFields: [
+        {
+          manager: "kubectl-client-side-apply",
+          operation: "Update",
+          fieldsV1: {
+            "f:metadata": {
+              "f:annotations": { [`f:${DESCRIPTION_ANNOTATION}`]: {} },
+            },
+            "f:spec": { "f:server": { "f:instances": {} } },
+          },
+        },
+      ],
+    },
+  });
+  const rows = (live: typeof standardPg, draft: PresetDraft) => {
+    const change = presetUpdateChange(live, draft);
+    const { changed, cleared } = foreignFields(
+      live as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.[refKey({ kind: "DatabaseServerPreset", name: "standard" })],
+    );
+    return {
+      changed: changed.map((f) => f.path),
+      cleared: cleared.map((f) => f.path),
+    };
+  };
+  const moreInstances = (live: typeof standardPg): PresetDraft => {
+    const draft = presetDraftOf(live);
+    return { ...draft, body: { ...draft.body, instances: 3 } };
+  };
+
+  it("shows only the changed field", () => {
+    const live = presetWith("");
+    expect(rows(live, moreInstances(live))).toEqual({
+      changed: ["spec.server.instances"],
+      cleared: [],
+    });
+  });
+
+  it("still shows a description that the edit cleared", () => {
+    const live = presetWith("Two replicas");
+    expect(
+      rows(live, { ...moreInstances(live), description: "" }).cleared,
+    ).toEqual([`metadata.annotations.${DESCRIPTION_ANNOTATION}`]);
   });
 });

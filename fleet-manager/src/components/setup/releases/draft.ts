@@ -7,6 +7,7 @@ import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ReleaseUsage } from "@/lib/usage";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { usedByText } from "./rows";
@@ -180,11 +181,15 @@ export function updateChange(
     },
     spec: specOf(draft),
   };
-  return {
-    intent: `Change the release ${name}`,
-    apply: [object],
-    ...preconditionsOf([live]),
-  };
+  return keepEmpty(
+    {
+      intent: `Change the release ${name}`,
+      apply: [object],
+      ...preconditionsOf([live]),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes each of releases while it still has its resourceVersion and its UID. */

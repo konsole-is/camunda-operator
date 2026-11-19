@@ -189,6 +189,103 @@ export function foreignFields(
   return { changed: byPath(changed), cleared: byPath(cleared) };
 }
 
+/** MAX_KEEP_PATHS is the most paths that the keep list of a change holds for one object. */
+export const MAX_KEEP_PATHS = 64;
+
+/**
+ * keepEmpty returns change with keep extended, for the applied object of
+ * live, by each cleared field of foreignFields whose live value is empty
+ * and whose value in edited, the object as the page edits it, is empty or
+ * absent. Empty is "", [], {}, or a map or list of only empty or undefined
+ * values. The apply leaves such a field as it is. A field in a list item
+ * is not kept, and keep holds at most MAX_KEEP_PATHS paths. It returns
+ * change itself when change has no precondition for live or there is no
+ * such field.
+ */
+export function keepEmpty(
+  change: Change,
+  live: {
+    kind: string;
+    metadata: {
+      name?: string;
+      namespace?: string;
+      managedFields?: readonly object[];
+    };
+    spec: unknown;
+  },
+  edited: KubeObject,
+): Change {
+  const { name = "", namespace } = live.metadata;
+  const key = refKey({ kind: live.kind, namespace, name });
+  const applied = change.apply.find((o) => refKey(refOf(o)) === key);
+  if (applied === undefined || change.preconditions?.[key] === undefined)
+    return change;
+  const object = live as unknown as KubeObject;
+  const { changed, cleared } = foreignFields(
+    object,
+    applied,
+    change.keep?.[key],
+  );
+  const candidates = cleared.filter(
+    (f) =>
+      // keep names paths through maps only.
+      f.steps.every((s) => "field" in s) &&
+      !f.path.includes("[") &&
+      isEmpty(fieldValue(object, f)) &&
+      emptyOrAbsent(fieldValue(edited, f)),
+  );
+  // A keep path is a dotted string, so a map key with a dot can cover
+  // another field. Such a field stays offered.
+  const others = [...changed, ...cleared.filter((f) => !candidates.includes(f))]
+    .map((f) => f.path)
+    .concat(setPaths(applied));
+  const empty = candidates
+    .map((f) => f.path)
+    .filter(
+      (path) =>
+        !others.some(
+          (other) =>
+            other === path ||
+            other.startsWith(`${path}.`) ||
+            path.startsWith(`${other}.`),
+        ),
+    );
+  if (empty.length === 0) return change;
+  const kept = [...new Set([...(change.keep?.[key] ?? []), ...empty])].slice(
+    0,
+    MAX_KEEP_PATHS,
+  );
+  return { ...change, keep: { ...change.keep, [key]: kept } };
+}
+
+// setPaths returns the path of each value that applied sets in spec,
+// metadata.labels, and metadata.annotations, through maps only.
+function setPaths(applied: KubeObject): FieldPath[] {
+  const paths: FieldPath[] = [];
+  const walk = (value: unknown, path: FieldPath) => {
+    if (!isRecord(value)) return;
+    for (const [field, inner] of Object.entries(value)) {
+      const below = stepPath(path, { field });
+      if (isRecord(inner) && Object.keys(inner).length > 0) walk(inner, below);
+      else paths.push(below);
+    }
+  };
+  walk(applied.spec, "spec");
+  for (const name of ["labels", "annotations"])
+    walk(applied.metadata[name], stepPath("metadata", { field: name }));
+  return paths;
+}
+
+function isEmpty(value: unknown): boolean {
+  if (value === "") return true;
+  if (Array.isArray(value)) return value.every(emptyOrAbsent);
+  return isRecord(value) && Object.values(value).every(emptyOrAbsent);
+}
+
+function emptyOrAbsent(value: unknown): boolean {
+  return value === undefined || isEmpty(value);
+}
+
 /** offered reports whether the review offers field for a take-over: no controller of the operator owns it. */
 export function offered(field: ForeignField): boolean {
   return field.managers.every((m) => m.kind !== "operator");

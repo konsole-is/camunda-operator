@@ -9,6 +9,7 @@ import { equalJSON, isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ContractKind } from "@/lib/usage";
 import { deleteChangeOf } from "@/lib/write/delete";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import type { ContractObject } from "./facts";
@@ -229,20 +230,24 @@ export function updateChange(
     spec: specOf(live.kind, draft),
   };
   const guarded = preconditionOf(live);
-  return {
-    intent: `Change the ${kindWords(live.kind)} contract ${name}`,
-    apply: [object],
-    ...guarded,
-    ...(live.kind === "DatabaseServerConfig" &&
-      guarded.preconditions && {
-        keep: Object.fromEntries(
-          Object.keys(guarded.preconditions).map((key) => [
-            key,
-            RECOVERY_PATHS,
-          ]),
-        ),
-      }),
-  };
+  return keepEmpty(
+    {
+      intent: `Change the ${kindWords(live.kind)} contract ${name}`,
+      apply: [object],
+      ...guarded,
+      ...(live.kind === "DatabaseServerConfig" &&
+        guarded.preconditions && {
+          keep: Object.fromEntries(
+            Object.keys(guarded.preconditions).map((key) => [
+              key,
+              RECOVERY_PATHS,
+            ]),
+          ),
+        }),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */

@@ -4,6 +4,7 @@ import {
   presetDescription,
 } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { type PresetObject, presetBody } from "./kinds";
@@ -43,6 +44,7 @@ export function presetUpdateChange(
     ),
   );
   const description = draft.description.trim();
+  const edited = { ...kept, [DESCRIPTION_ANNOTATION]: description };
   if (description !== "") kept[DESCRIPTION_ANNOTATION] = description;
   const object: KubeObject = {
     apiVersion: live.apiVersion,
@@ -56,15 +58,19 @@ export function presetUpdateChange(
       [live.kind === "DatabaseServerPreset" ? "server" : "cluster"]: draft.body,
     },
   };
-  return {
-    intent: `Change the preset ${name}`,
-    apply: [object],
-    ...(live.metadata.resourceVersion !== undefined && {
-      preconditions: {
-        [refKey({ kind: live.kind, name })]: live.metadata.resourceVersion,
-      },
-    }),
-  };
+  return keepEmpty(
+    {
+      intent: `Change the preset ${name}`,
+      apply: [object],
+      ...(live.metadata.resourceVersion !== undefined && {
+        preconditions: {
+          [refKey({ kind: live.kind, name })]: live.metadata.resourceVersion,
+        },
+      }),
+    },
+    live,
+    { ...object, metadata: { ...object.metadata, annotations: edited } },
+  );
 }
 
 /**

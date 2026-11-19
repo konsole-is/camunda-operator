@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { foreignFields } from "@/lib/write/ownership";
+import type { KubeObject } from "@/lib/write/types";
 import {
   deleteChange,
   draftErrors,
@@ -261,6 +263,96 @@ describe("updateChange", () => {
         },
       ],
       preconditions: { "CamundaPlatformConfig//oidc-prod": "21" },
+    });
+  });
+});
+
+describe("updateChange over the empty values of another tool", () => {
+  // live holds an OIDC block that kubectl set, with an empty audience, an
+  // empty map of management clients, and an empty map of images.
+  const live: CamundaPlatformConfig = {
+    ...configOf("basic-lab"),
+    spec: {
+      auth: {
+        method: "oidc",
+        oidc: {
+          issuerUrl: "https://login.example.com/realms/camunda",
+          clientId: "orchestration",
+          clientSecretRef: SECRET,
+          audience: "",
+          management: { clients: {} },
+        },
+      },
+      images: {},
+    },
+  };
+  live.metadata = {
+    ...live.metadata,
+    managedFields: [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: {
+          "f:spec": {
+            "f:auth": {
+              "f:method": {},
+              "f:oidc": {
+                "f:issuerUrl": {},
+                "f:clientId": {},
+                "f:clientSecretRef": {
+                  "f:namespace": {},
+                  "f:name": {},
+                  "f:key": {},
+                },
+                "f:audience": {},
+                "f:management": { "f:clients": {} },
+              },
+            },
+            "f:images": {},
+          },
+        },
+      },
+    ],
+  };
+  const rows = (draft: PlatformDraft) => {
+    const change = updateChange(live, draft);
+    const { changed, cleared } = foreignFields(
+      live as unknown as KubeObject,
+      change.apply[0],
+      change.keep?.["CamundaPlatformConfig//basic-lab"],
+    );
+    return {
+      changed: changed.map((f) => f.path),
+      cleared: cleared.map((f) => f.path),
+    };
+  };
+
+  it("shows only the changed field", () => {
+    const draft = draftOf(live);
+    draft.auth!.oidc!.issuerUrl = "https://login.example.com/realms/other";
+    expect(rows(draft)).toEqual({
+      changed: ["spec.auth.oidc.issuerUrl"],
+      cleared: [],
+    });
+  });
+
+  it("shows no row for an empty map that the edit typed into and emptied again", () => {
+    const draft = draftOf(live);
+    draft.images = { keycloak: "" };
+    draft.auth!.oidc!.management = { clients: { console: { clientId: "" } } };
+    draft.auth!.oidc!.issuerUrl = "https://login.example.com/realms/other";
+    expect(rows(draft)).toEqual({
+      changed: ["spec.auth.oidc.issuerUrl"],
+      cleared: [],
+    });
+  });
+
+  it("still shows the OIDC block on a switch to basic", () => {
+    const draft = draftOf(live);
+    draft.auth!.method = "basic";
+    expect(rows(draft)).toEqual({
+      changed: ["spec.auth.method"],
+      cleared: ["spec.auth.oidc"],
     });
   });
 });
