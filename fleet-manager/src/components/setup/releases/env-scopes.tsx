@@ -1,13 +1,12 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
-import { type ReactNode, useId, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
+import { DisclosureGroup } from "@/components/fleet/disclosure-group";
 import { EnvEditor } from "@/components/fleet/env-editor";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import { YamlEditor } from "@/components/fleet/yaml-editor";
 import { fullSchemaOf } from "@/lib/fields/schema";
 import type { ValidationError } from "@/lib/schema";
-import { cn } from "@/lib/utils";
 import {
   ENV_SCOPES,
   type EnvFromSource,
@@ -42,7 +41,6 @@ export function EnvScopes<S extends EnvSpec>({
   missingIn: (name: string, key: string) => readonly string[];
   onChange: (update: (spec: S) => S, errors: ValidationError[]) => void;
 }): ReactNode {
-  const id = useId();
   const [open, setOpen] = useState<ReadonlySet<EnvScope>>(
     () =>
       new Set(
@@ -85,69 +83,44 @@ export function EnvScopes<S extends EnvSpec>({
         const env = envOf(spec, scope);
         const count =
           (env.extraEnv?.length ?? 0) + (env.extraEnvFrom?.length ?? 0);
-        const isOpen = open.has(scope);
         return (
-          <div
+          <DisclosureGroup
             key={scope}
-            role="group"
-            aria-label={label}
-            className="rounded-md border border-border"
+            label={label}
+            counts={[{ text: String(count) }]}
+            open={open.has(scope)}
+            onToggle={() => toggle(scope)}
           >
-            <button
-              type="button"
-              aria-expanded={isOpen}
-              aria-controls={`${id}-${scope}`}
-              className="flex min-h-10 w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium"
-              onClick={() => toggle(scope)}
-            >
-              <ChevronRight
-                aria-hidden
-                className={cn(
-                  "size-4 shrink-0 text-muted transition-transform",
-                  isOpen && "rotate-90",
-                )}
-              />
-              <span>{label}</span>
-              <span className="rounded-full bg-panel-2 px-2 py-0.5 text-xs text-muted">
-                {count}
-              </span>
-            </button>
-            <div
-              id={`${id}-${scope}`}
-              hidden={!isOpen}
-              className="flex flex-col gap-4 border-t border-divider px-4 py-4"
-            >
-              <EnvEditor
-                label={`Variables of ${label}`}
-                secrets={secrets}
-                missingIn={missingIn}
-                defaultValue={env.extraEnv}
-                onChange={(extraEnv, listErrors) =>
-                  report(scope, "extraEnv", { extraEnv }, listErrors)
-                }
-              />
-              <YamlEditor
-                label={`extraEnvFrom of ${label}`}
-                rows={4}
-                schema={EXTRA_ENV_FROM}
-                defaultValue={env.extraEnvFrom}
-                onChange={(value, listErrors) =>
-                  report(
-                    scope,
-                    "extraEnvFrom",
-                    listErrors.length > 0
-                      ? {}
-                      : {
-                          extraEnvFrom: Array.isArray(value)
-                            ? (value as EnvFromSource[])
-                            : undefined,
-                        },
-                    listErrors,
-                  )
-                }
-              />
-            </div>
-          </div>
+            <EnvEditor
+              label={`Variables of ${label}`}
+              secrets={secrets}
+              missingIn={missingIn}
+              defaultValue={env.extraEnv}
+              onChange={(extraEnv, listErrors) =>
+                report(scope, "extraEnv", { extraEnv }, listErrors)
+              }
+            />
+            <YamlEditor
+              label={`extraEnvFrom of ${label}`}
+              rows={4}
+              schema={EXTRA_ENV_FROM}
+              defaultValue={env.extraEnvFrom}
+              onChange={(value, listErrors) =>
+                report(
+                  scope,
+                  "extraEnvFrom",
+                  listErrors.length > 0
+                    ? {}
+                    : {
+                        extraEnvFrom: Array.isArray(value)
+                          ? (value as EnvFromSource[])
+                          : undefined,
+                      },
+                  listErrors,
+                )
+              }
+            />
+          </DisclosureGroup>
         );
       })}
     </div>

@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  type DisclosureCount,
+  DisclosureGroup,
+} from "@/components/fleet/disclosure-group";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
 import { useErrorsReport } from "@/components/fleet/errors-report";
 import { FieldValue } from "@/components/fleet/field-state";
@@ -21,7 +25,6 @@ import {
 } from "@/components/fleet/secret-ref-picker";
 import { StorageSizeEditor } from "@/components/fleet/storage-size-editor";
 import { YamlEditor } from "@/components/fleet/yaml-editor";
-import { EditorSection } from "@/components/setup/form-parts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -56,9 +59,10 @@ import type { SettingsGroup } from "./settings";
  * passed on. errors are the field errors of the claim, such as a refusal of
  * the server, and each shows at the setting whose claim path holds it.
  * invalid gets the error that a setting shows, as SettingRow gives it. A
- * collapsed group starts closed, with settingsSummary and the number of
- * settings with an error on its heading, and opens each time that number
- * grows. It holds no session.
+ * collapsed group starts closed. Its heading counts the settings changed
+ * in the claim and, when there are any, the settings with an error. It
+ * opens each time that number of errors grows, and settingsSummary is the
+ * first line of its body. It holds no session.
  */
 export function SettingsEditor({
   group,
@@ -100,63 +104,69 @@ export function SettingsEditor({
       return next;
     });
   const title = group.embedded ? `${group.label} (embedded)` : group.label;
-  const body = (
-    <>
-      {group.embedded && (
-        <p className="text-sm text-muted">
-          Applies when {group.label} runs standalone. The exception is extraEnv
-          and extraEnvFrom: they apply to the host now.
-        </p>
-      )}
-      <div className="flex flex-col divide-y divide-divider">
-        {settings.map((setting) => (
-          <SettingRow
-            key={`${setting.key}:${resets}`}
-            setting={setting}
-            secrets={secrets}
-            errors={settingRowErrors(errors, setting)}
-            set={set}
-            reset={reset}
-            invalid={invalid}
-            onShows={collapsed ? report(setting.key) : undefined}
-            onReset={() => setResets((n) => n + 1)}
-          />
-        ))}
-      </div>
-    </>
+  const embeddedNote = group.embedded && (
+    <p className="text-sm text-muted">
+      Applies when {group.label} runs standalone. The exception is extraEnv and
+      extraEnvFrom: they apply to the host now.
+    </p>
   );
-  if (collapsed)
+  const rows = (
+    <div className="flex flex-col divide-y divide-divider">
+      {settings.map((setting) => (
+        <SettingRow
+          key={`${setting.key}:${resets}`}
+          setting={setting}
+          secrets={secrets}
+          errors={settingRowErrors(errors, setting)}
+          set={set}
+          reset={reset}
+          invalid={invalid}
+          onShows={collapsed ? report(setting.key) : undefined}
+          onReset={() => setResets((n) => n + 1)}
+        />
+      ))}
+    </div>
+  );
+  if (collapsed) {
+    const changed = settings.filter((s) => s.state?.kind === "claim").length;
+    const counts: DisclosureCount[] = [
+      { text: String(changed), label: `${changed} changed in the claim` },
+    ];
+    if (failing > 0)
+      counts.push({
+        text: failing === 1 ? "1 error" : `${failing} errors`,
+        label:
+          failing === 1
+            ? "1 setting has an error"
+            : `${failing} settings have an error`,
+        bad: true,
+      });
     return (
-      <section aria-label={`${group.label} settings`} className="min-w-0">
-        <EditorSection
-          title={title}
-          asHeading
+      <div className="min-w-0">
+        <DisclosureGroup
+          label={title}
+          role="region"
+          name={`${group.label} settings`}
+          heading
+          counts={counts}
           open={open}
           onToggle={setOpen}
-          summary={
-            <>
-              {settingsSummary(settings)}
-              {failing > 0 && (
-                <span className="block text-bad">
-                  {failing === 1
-                    ? "1 setting has an error"
-                    : `${failing} settings have an error`}
-                </span>
-              )}
-            </>
-          }
         >
-          {body}
-        </EditorSection>
-      </section>
+          <p className="text-sm text-muted">{settingsSummary(settings)}</p>
+          {embeddedNote}
+          {rows}
+        </DisclosureGroup>
+      </div>
     );
+  }
   return (
     <section
       aria-label={`${group.label} settings`}
       className="flex min-w-0 flex-col gap-1"
     >
       <h3 className="font-heading text-sm font-semibold">{title}</h3>
-      {body}
+      {embeddedNote}
+      {rows}
     </section>
   );
 }

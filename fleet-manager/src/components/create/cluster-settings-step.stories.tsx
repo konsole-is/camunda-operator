@@ -147,7 +147,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Defaults: Story = {};
+// brokers returns the settings group of the brokers and the button in its
+// heading, which opens and closes the group.
+function brokers(canvasElement: HTMLElement) {
+  const group = within(canvasElement).getByRole("region", {
+    name: "Brokers settings",
+  });
+  const row = within(
+    within(group).getByRole("heading", { level: 3, name: "Brokers" }),
+  ).getByRole("button");
+  return { group, row };
+}
+
+export const Defaults: Story = {
+  play: async ({ canvasElement }) => {
+    const { row } = brokers(canvasElement);
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await expect(row).toHaveAccessibleName("Brokers 0 changed in the claim");
+  },
+};
 
 export const Overridden: Story = {
   args: {
@@ -187,14 +205,6 @@ export const NewNamespace: Story = {
   },
 };
 
-// brokers returns the settings group of the brokers and its heading.
-function brokers(canvasElement: HTMLElement) {
-  const group = within(canvasElement).getByRole("region", {
-    name: "Brokers settings",
-  });
-  return { group, summary: group.querySelector("summary")! };
-}
-
 export const ChangedSetting: Story = {
   name: "Changed setting",
   args: {
@@ -207,8 +217,8 @@ export const ChangedSetting: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    await expect(brokers(canvasElement).summary).toHaveTextContent(
-      "1 changed in the claim",
+    await expect(brokers(canvasElement).row).toHaveAccessibleName(
+      "Brokers 1 changed in the claim",
     );
   },
 };
@@ -216,15 +226,17 @@ export const ChangedSetting: Story = {
 export const ErrorInSection: Story = {
   name: "Error in a section",
   play: async ({ canvasElement }) => {
-    const { group, summary } = brokers(canvasElement);
-    await userEvent.click(summary);
+    const { group, row } = brokers(canvasElement);
+    await userEvent.click(row);
     const replicas = within(
       within(group).getAllByRole("group", { name: "replicas" })[0],
     ).getByRole("spinbutton");
     await userEvent.clear(replicas);
     await userEvent.type(replicas, "-1");
-    await userEvent.click(summary);
-    await expect(summary).toHaveTextContent("1 setting has an error");
+    await userEvent.click(row);
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await expect(row).toHaveAccessibleName(/ 1 setting has an error$/);
+    await expect(within(row).getByText("1 error")).toBeVisible();
   },
 };
 

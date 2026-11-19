@@ -159,11 +159,17 @@ const select = (name: string) =>
 const section = (label: string) =>
   screen.getByRole("region", { name: `${label} settings` });
 
-const summaryOf = (label: string) => section(label).querySelector("summary")!;
+// rowOf is the button in the heading of the settings group of label, which
+// opens and closes the group.
+const rowOf = (label: string) =>
+  within(
+    within(section(label)).getByRole("heading", { level: 3, name: label }),
+  ).getByRole("button");
 
-// toggle opens or closes the settings group of label, as a click on its
-// heading does.
-const toggle = (label: string) => userEvent.click(summaryOf(label));
+const isOpen = (label: string) =>
+  rowOf(label).getAttribute("aria-expanded") === "true";
+
+const toggle = (label: string) => userEvent.click(rowOf(label));
 
 describe("ClusterSettingsStep", () => {
   it("preselects the default release and platform config of the environment", () => {
@@ -371,19 +377,28 @@ describe("ClusterSettingsStep", () => {
     const groups = screen.getAllByRole("region", { name: / settings$/ });
     expect(groups.length).toBeGreaterThan(1);
     for (const group of groups)
-      expect(group.querySelector("details")?.open).toBe(false);
+      expect(
+        within(group)
+          .getByRole("heading", { level: 3 })
+          .querySelector("button")
+          ?.getAttribute("aria-expanded"),
+      ).toBe("false");
     expect(select("Release")).toBeTruthy();
     expect(select("Platform config")).toBeTruthy();
   });
 
-  it("says on a closed group where the values of its settings come from", () => {
+  it("says first in the body of a group where the values of its settings come from", async () => {
     const large = {
       ...preset,
       spec: { cluster: { zeebe: { replicas: 3, partitions: 3 } } },
     } as unknown as Resource<"CamundaClusterPreset">;
     renderStep({}, prod(), [large]);
-    expect(summaryOf("Brokers").textContent).toMatch(
-      /^Brokers\d+ settings: 2 from the preset, /,
+    await toggle("Brokers");
+    const body = document.getElementById(
+      rowOf("Brokers").getAttribute("aria-controls")!,
+    );
+    expect(body?.firstElementChild?.textContent).toMatch(
+      /^\d+ settings: 2 from the preset, /,
     );
   });
 
@@ -417,8 +432,8 @@ describe("ClusterSettingsStep", () => {
 
   it("counts a changed setting on its group at once", async () => {
     render(<LiveStep initial={draftOf({}, false)} set={vi.fn()} />);
-    expect(summaryOf("Brokers").textContent).not.toContain(
-      "changed in the claim",
+    expect(rowOf("Brokers")).toBe(
+      screen.getByRole("button", { name: "Brokers 0 changed in the claim" }),
     );
     await toggle("Brokers");
     await userEvent.type(
@@ -429,8 +444,8 @@ describe("ClusterSettingsStep", () => {
       ).getByRole("spinbutton"),
       "5",
     );
-    expect(summaryOf("Brokers").textContent).toContain(
-      "1 changed in the claim",
+    expect(rowOf("Brokers")).toBe(
+      screen.getByRole("button", { name: "Brokers 1 changed in the claim" }),
     );
   });
 
@@ -444,7 +459,7 @@ describe("ClusterSettingsStep", () => {
     await toggle("Whole cluster");
     await userEvent.type(url(), "https://orders.example.com");
     await toggle("Whole cluster");
-    expect(section("Whole cluster").querySelector("details")?.open).toBe(false);
+    expect(isOpen("Whole cluster")).toBe(false);
     await toggle("Whole cluster");
     expect(url().value).toBe("https://orders.example.com");
     expect(set).toHaveBeenLastCalledWith(
@@ -461,12 +476,12 @@ describe("ClusterSettingsStep", () => {
       ],
     });
     const whole = section("Whole cluster");
-    expect(whole.querySelector("details")?.open).toBe(true);
+    expect(isOpen("Whole cluster")).toBe(true);
     expect(
       within(
         within(whole).getAllByRole("group", { name: "externalUrl" })[0],
       ).getByText("The URL is taken."),
     ).toBeTruthy();
-    expect(section("Brokers").querySelector("details")?.open).toBe(false);
+    expect(isOpen("Brokers")).toBe(false);
   });
 });
