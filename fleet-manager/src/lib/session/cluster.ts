@@ -26,6 +26,7 @@ import {
   generated,
   messagesOf,
   selectionsOf,
+  toOrphan,
 } from "./parameters";
 import { claimAfter, type Session } from "./session";
 import { valueAt } from "./steps";
@@ -131,7 +132,11 @@ export function validateClusterClaim(
         deletionPolicyOf(spec.deletionPolicy, policy),
         selections,
         generated<PluginRegistration[]>(ctx.registrations),
-        policy && ctx.registrationsRead ? "Refuses" : "Passes",
+        policy &&
+          ctx.registrationsRead &&
+          toOrphan(s.claim.spec?.deletionPolicy, spec.deletionPolicy, policy)
+          ? "Refuses"
+          : "Passes",
       ),
     ),
   );

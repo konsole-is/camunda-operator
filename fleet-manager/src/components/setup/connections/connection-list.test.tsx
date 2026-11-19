@@ -14,6 +14,7 @@ import {
 } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/owner-name";
 import { connectionFixtures } from "./fixtures";
+import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
 import { CONNECTION_TABS, type ConnectionTab } from "./tabs";
 
 const failing = vi.hoisted(() => ({ kind: "", fresh: [] as string[] }));
@@ -35,6 +36,8 @@ afterEach(() => {
   failing.kind = "";
   failing.fresh = [];
 });
+
+const ALL_KINDS = Object.values(CONNECTION_SOURCE_KINDS);
 
 function rowsOf(): Record<ConnectionTab, ContractRow[]> {
   const sources = connectionFixtures();
@@ -217,6 +220,7 @@ describe("contractRows", () => {
   });
 
   it("says in the Users column that the users are not known while a custom request has no outputs for its spec yet", () => {
+    failing.fresh = ALL_KINDS;
     const initial = connectionFixtures();
     initial.requests = [
       {
@@ -235,6 +239,7 @@ describe("contractRows", () => {
   });
 
   it("names a missing section as the cause in the Users column, as the page of the contract does", () => {
+    failing.fresh = ALL_KINDS;
     const initial = connectionFixtures();
     initial.requests = [
       {
@@ -275,6 +280,22 @@ describe("contractRows", () => {
     expect(within(row).queryByText(/not known/i)).toBeNull();
   });
 
+  it("does not say that the section of a request does not exist while the PluginSection list is not current", () => {
+    failing.fresh = ALL_KINDS.filter((k) => k !== "PluginSection");
+    const initial = connectionFixtures();
+    initial.sections = [];
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: { namespace: "team-a", name: "orders-archive" },
+        spec: { ...initial.requests[0].spec, registration: "acme-s3" },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    expect(within(rowOf("backups")).queryByText(/does not exist/)).toBeNull();
+  });
+
   it("does not wait for a request while PluginRequest cannot be read", () => {
     failing.kind = "PluginRequest";
     const initial = connectionFixtures();
@@ -293,6 +314,7 @@ describe("contractRows", () => {
   });
 
   it("does not wait for a custom request that is being deleted", () => {
+    failing.fresh = ALL_KINDS;
     const initial = connectionFixtures();
     initial.requests = [
       {

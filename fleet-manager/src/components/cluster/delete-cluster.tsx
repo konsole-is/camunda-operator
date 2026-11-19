@@ -48,6 +48,7 @@ export function DeleteCluster({
       clusterDeletionChoice(
         initial,
         initial.errors.map((e) => e.kind),
+        writeMode === "direct",
       ),
     ),
   );
@@ -136,6 +137,7 @@ export function DeleteCluster({
     },
     picked,
     unread,
+    writeMode === "direct",
   );
   const stage = useDeleteStage(
     run,

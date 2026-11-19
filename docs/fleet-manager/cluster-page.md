@@ -183,11 +183,11 @@ The choice starts at the deletion policy of the claim. A claim without a deletio
 
 Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. It names the registration of the option, for example `PluginRegistration "gateway" of section "access" cannot keep the resources. Choose Delete the resources.` Choose **Delete the resources** to delete the cluster.
 
-The operator refuses Keep also when the registration of a selected option does not exist. **Keep the resources** is then off, and the option shows with **Registration does not exist**. While Keep is picked, the page names the option:
+The registration of a selected option can be gone. In direct mode, the claim then still gives Keep to its options when it is deleted. In Git mode, an option that does not have Keep yet cannot get it. The operator refuses Keep for a claim with a missing registration. **Keep the resources** is then off, and the option shows with **Registration does not exist**. The page still opens on Keep, shows no review, and names the option:
 
-> PluginRegistration "gateway" of section "access" does not exist, so the claim cannot keep the resources. Choose Delete the resources.
+> PluginRegistration "gateway" of section "access" does not exist, so the operator cannot give Keep to the options. Bring the registration back, or choose Delete the resources.
 
-While the page cannot read `PluginRegistration`, it does not say that a registration does not exist.
+When each option has Keep already, the page offers Keep, and the delete keeps the resources. While the page cannot read `PluginRegistration`, it does not say that a registration does not exist.
 
 The page checks this again before it sends the delete, and again after the wait for the deletion policy. If a registration stops supporting Keep before that check, the page sends no delete and shows the same message. If a registration stops supporting Keep after the page sent the delete, the operator refuses the delete, and the claim stays. The page then says what to do. Set the deletion policy of the claim to Delete. Or add `Orphan`, the policy of Keep, back to the deletion policies of the registration.
 

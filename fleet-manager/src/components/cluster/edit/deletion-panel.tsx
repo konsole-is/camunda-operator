@@ -39,9 +39,12 @@ export function DeletionPanel({ context }: { context: ClusterSlotContext }) {
     sections: context.sections as unknown as PluginSection[],
     registrations: context.registrations as unknown as PluginRegistration[],
     registrationsRead: !context.unread.includes("PluginRegistration"),
+    // A saved policy reaches the requests only through a live pass of the
+    // claim controller.
+    livePass: true,
     kind: "CamundaClusterClaim",
   });
-  const refused = choice.policy === "Orphan" && !choice.keepAllowed;
+  const refused = choice.policy === "Orphan" && choice.alwaysDeleted.length > 0;
   const claimed = edit.session.claim.spec?.deletionPolicy;
   return (
     <div className="flex flex-col gap-3">

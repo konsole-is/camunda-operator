@@ -441,7 +441,9 @@ describe("deleteClusterModel", () => {
       ],
     });
     expect(deleteClusterModel(refused, "Delete").keepRefused).toBe(true);
-    expect(initialPolicy(clusterDeletionChoice(refused, []))).toBe("Delete");
+    expect(initialPolicy(clusterDeletionChoice(refused, [], false))).toBe(
+      "Delete",
+    );
     expect(deleteClusterModel(data(), "Delete").keepRefused).toBe(false);
   });
 });
@@ -453,34 +455,73 @@ describe("clusterDeletionChoice and initialPolicy", () => {
         clusterDeletionChoice(
           data({ claim: claim({ deletionPolicy: "Orphan" }) }),
           [],
+          false,
         ),
       ),
     ).toBe("Orphan");
-    expect(initialPolicy(clusterDeletionChoice(data(), []))).toBe("Delete");
+    expect(initialPolicy(clusterDeletionChoice(data(), [], false))).toBe(
+      "Delete",
+    );
   });
 });
 
 describe("the deletion choice of a claim whose registration does not exist", () => {
-  const gone = () =>
-    data({
-      claim: claim(
-        { deletionPolicy: "Orphan" },
-        { resolvedPolicy: { deletionPolicy: "Delete" } },
-      ),
+  // gone is a claim that holds Orphan, recorded its policy, and selects
+  // aws-s3, which does not exist. policy is the deletion policy of its
+  // request, and finalized gives the claim the cleanup finalizer.
+  const gone = (policy?: "Delete" | "Orphan", finalized = false) => {
+    const base = data();
+    const c = claim(
+      { deletionPolicy: "Orphan" },
+      { resolvedPolicy: { deletionPolicy: "Delete" } },
+    );
+    return data({
+      claim: {
+        ...c,
+        metadata: {
+          ...c.metadata,
+          ...(finalized && { finalizers: ["fleet.camunda.io/cleanup"] }),
+        },
+      },
       registrations: [],
+      requests: base.requests.map((r) => ({
+        ...r,
+        spec: { ...r.spec, ...(policy && { deletionPolicy: policy }) },
+      })),
     });
+  };
 
-  it("refuses Keep and names the selection", () => {
-    const model = deleteClusterModel(gone(), "Orphan");
+  it("refuses Keep in Git mode while a request does not hold Orphan, names the selection, and opens on Keep", () => {
+    const model = deleteClusterModel(gone("Delete"), "Orphan");
     expect(model.choice.keepAllowed).toBe(false);
     expect(model.choice.missing).toEqual([
       { section: "backup-storage", label: "aws-s3 (Backup storage)" },
     ]);
-    expect(initialPolicy(clusterDeletionChoice(gone(), []))).toBe("Delete");
+    expect(model.keepRefused).toBe(false);
+    expect(
+      initialPolicy(clusterDeletionChoice(gone("Delete"), [], false)),
+    ).toBe("Orphan");
+  });
+
+  it("offers Keep in Git mode when each request holds Orphan already", () => {
+    const model = deleteClusterModel(gone("Orphan"), "Orphan");
+    expect(model.choice.keepAllowed).toBe(true);
+    expect(model.choice.missing).toBeUndefined();
+    expect(
+      initialPolicy(clusterDeletionChoice(gone("Orphan"), [], false)),
+    ).toBe("Orphan");
+  });
+
+  it("offers Keep in direct mode when the claim has the cleanup finalizer", () => {
+    const model = deleteClusterModel(gone("Delete", true), "Orphan", [], true);
+    expect(model.choice.keepAllowed).toBe(true);
+    expect(model.choice.missing).toBeUndefined();
   });
 
   it("does not count the registration as missing while PluginRegistration is not read", () => {
-    const model = deleteClusterModel(gone(), "Orphan", ["PluginRegistration"]);
+    const model = deleteClusterModel(gone("Delete"), "Orphan", [
+      "PluginRegistration",
+    ]);
     expect(model.choice.keepAllowed).toBe(true);
     expect(model.choice.missing).toBeUndefined();
   });

@@ -384,6 +384,17 @@ describe("validateClusterClaim", () => {
       ).not.toContainEqual({ message: MISSING });
     });
 
+    it("passes a save that does not move the claim to Keep while a selected registration does not exist", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Orphan" }, {} as ResolvedPolicy)),
+        [...ACCESS, f("parameters"), f("hostnamePattern")],
+        "{name}.b.example.com",
+      );
+      expect(
+        validateClusterClaim(s, ctx({ registrations: [] })),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
     it("passes Keep of a claim that has not recorded its policy while a selected registration does not exist", () => {
       const s = set(
         open(claim({ deletionPolicy: "Delete" })),

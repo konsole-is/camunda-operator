@@ -295,7 +295,7 @@ const NO_LOCKS: LockProvider = () => undefined;
 export function planMove(
   release: Resource<"CamundaRelease">,
   picks: readonly MovePick[],
-  data: RolloutData & SourceReads,
+  data: RolloutData,
 ): MovePlan {
   const target = release.metadata?.name ?? "";
   const intent =
@@ -327,8 +327,9 @@ export function planMove(
       cluster: row.cluster,
       backups: [...data.elasticsearchBackups, ...data.rdbmsBackups],
       requests,
-      registrationsRead:
-        !unreadRolloutKinds(data).includes("PluginRegistration"),
+      // A move keeps the deletion policy, so a missing registration never
+      // refuses it.
+      registrationsRead: true,
     }))
       errors.push(named(error.message));
     impacts.push({

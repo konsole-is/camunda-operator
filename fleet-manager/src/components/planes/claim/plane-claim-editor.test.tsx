@@ -44,6 +44,7 @@ import {
   KEPT_FIELDS_NOTE,
   NOTHING_CHANGES,
   PlaneClaimEditProvider,
+  planeClaimContext,
 } from "./plane-claim-edit";
 import { PlaneClaimEditor } from "./plane-claim-editor";
 import { EXPRESSIONS_READ_ONLY, NO_SELECTOR } from "./served-panel";
@@ -808,6 +809,53 @@ describe("PlaneClaimEditor sections, deletion, and the platform config", () => {
         name: "When the management plane is deleted",
       }),
     ).toBeTruthy();
+  });
+
+  describe("a selected registration that does not exist", () => {
+    const recorded = () => {
+      const claim = claimOf({
+        plugins: [{ section: "databases", registration: "postgres" }],
+      });
+      (claim as { status?: unknown }).status = { resolvedPolicy: {} };
+      return claim;
+    };
+
+    it("the deletion panel turns Keep off and names the option", () => {
+      editor({ claim: recorded() });
+      open("When the plane is deleted");
+      expect(screen.getByText("Registration does not exist")).toBeTruthy();
+      expect(
+        screen.getByRole<HTMLInputElement>("radio", {
+          name: /Keep the resources/,
+        }).disabled,
+      ).toBe(true);
+    });
+
+    it("the deletion panel does not say so while PluginRegistration is not read", () => {
+      editor({
+        claim: recorded(),
+        data: dataOf({
+          readErrors: [{ kind: "PluginRegistration", message: "forbidden" }],
+        }),
+      });
+      open("When the plane is deleted");
+      expect(screen.queryByText("Registration does not exist")).toBeNull();
+    });
+
+    it("planeClaimContext does not count a registration as read while PluginRegistration is unread", () => {
+      const sources = {
+        unread: ["PluginRegistration"],
+        environments: [],
+        platformConfigs: [],
+        sections: [],
+        registrations: [],
+        requests: [],
+      } as unknown as Parameters<typeof planeClaimContext>[0];
+      expect(planeClaimContext(sources).registrationsRead).toBe(false);
+      expect(
+        planeClaimContext({ ...sources, unread: [] }).registrationsRead,
+      ).toBe(true);
+    });
   });
 
   it("a move of the platform config shows in the review with what restarts", () => {

@@ -4,6 +4,8 @@ import { requestSchemaErrors, type ControllerParameters } from "@/lib/drafts";
 import { pathFrom, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  type DeletionPolicy,
+  deletionPolicyOf,
   equalJSON,
   objectOrEmpty,
   resolve,
@@ -135,6 +137,20 @@ export function selectionsOf(claim: ClaimWithPlugins): PluginSelection[] {
       p !== null &&
       typeof p.section === "string" &&
       typeof p.registration === "string",
+  );
+}
+
+// toOrphan says that a save moves the deletion policy that a claim with the
+// resolved policy gets to Orphan from another policy. before and after are
+// spec.deletionPolicy of the live claim and of the save.
+export function toOrphan(
+  before: DeletionPolicy | "" | undefined,
+  after: DeletionPolicy | "" | undefined,
+  resolved: ResolvedPolicy | undefined,
+): boolean {
+  return (
+    deletionPolicyOf(after, resolved) === "Orphan" &&
+    deletionPolicyOf(before, resolved) !== "Orphan"
   );
 }
 

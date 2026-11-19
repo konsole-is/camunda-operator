@@ -48,6 +48,7 @@ export function DeletePlane({
       planeDeletionChoice(
         initial,
         initial.errors.map((e) => e.kind),
+        writeMode === "direct",
       ),
     ),
   );
@@ -106,6 +107,7 @@ export function DeletePlane({
     },
     picked,
     unread,
+    writeMode === "direct",
   );
   const stage = useDeleteStage(
     run,

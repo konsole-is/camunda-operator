@@ -490,6 +490,17 @@ describe("validatePlaneClaim", () => {
       ).not.toContainEqual({ message: MISSING });
     });
 
+    it("passes a save that does not move the claim to Orphan", () => {
+      const held = {
+        ...recorded,
+        spec: { ...recorded.spec, deletionPolicy: "Orphan" },
+      } as PlaneClaim;
+      const s = changed(held, [at("spec", "environments"), ["staging"]]);
+      expect(
+        validatePlaneClaim(s, ctx({ sections: [accessSection] })),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
     it("passes Orphan of a claim that has not recorded its policy", () => {
       const live = planeClaim({
         plugins: [{ section: "access", registration: "gateway" }],

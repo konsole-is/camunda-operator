@@ -934,21 +934,69 @@ describe("useClaimDelete", () => {
     expect(hook.result.current.keepRefused).toBeUndefined();
   });
 
-  it("refuses Keep without a write while a registration of the claim does not exist, and names it", async () => {
-    const missing =
-      'PluginRegistration "ebs-plain" of section "volume-encryption" does not exist, so the claim cannot keep the resources. Choose Delete the resources.';
-    const { hook } = mount(selecting(), {
-      policy: "Orphan",
-      registrations: [],
+  describe("a selected registration that does not exist", () => {
+    const MISSING =
+      'PluginRegistration "ebs-plain" of section "volume-encryption" does not exist, so the operator cannot give Keep to the options. Bring the registration back, or choose Delete the resources.';
+    // gone is a claim that holds Delete and selects the plain EBS option,
+    // whose registration does not exist.
+    const gone = () => selecting(read("41", "Delete"));
+
+    it("offers Keep in direct mode with the cleanup finalizer, which gives Orphan to the requests on delete", async () => {
+      const { hook } = mount(gone(), { policy: "Orphan", registrations: [] });
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      expect((await confirm(hook)).ok).toBe(true);
+      expect(fakeWriter.applied).toHaveLength(1);
     });
-    expect(hook.result.current.keepRefused).toBe(missing);
-    expect(await confirm(hook)).toEqual({
-      ok: false,
-      errors: [{ code: "Invalid", message: missing }],
+
+    it("offers Keep in Git mode when each request holds Orphan already", async () => {
+      fakeWriter.reset("git");
+      const kept = selecting(read("41"));
+      const { hook } = mount(kept, {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(kept, kept, [request("plane-a-db", "Orphan")]);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      // The same claim with a request that does not hold Orphan yet is
+      // refused, so the list of the requests was read.
+      await live(kept, kept, [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
     });
-    expect(fakeWriter.applied).toEqual([]);
-    hook.rerender({ policy: "Delete" });
-    expect(hook.result.current.keepRefused).toBeUndefined();
+
+    it("refuses Keep without a write in Git mode while a request does not hold Orphan, and says why", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+      expect(await confirm(hook)).toEqual({
+        ok: false,
+        errors: [{ code: "Invalid", message: MISSING }],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+      hook.rerender({ policy: "Delete" });
+      expect(hook.result.current.keepRefused).toBeUndefined();
+    });
+
+    it("does not refuse Keep while the list of the requests is not read", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), "unread");
+      expect(hook.result.current.keepRefused).toBeUndefined();
+    });
   });
 
   it("sends no delete when a registration drops Orphan during the wait for the policy", async () => {

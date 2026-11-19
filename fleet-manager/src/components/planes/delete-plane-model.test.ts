@@ -211,3 +211,35 @@ describe("deletePlaneModel", () => {
     ).toBe("Orphan");
   });
 });
+
+describe("the deletion choice of a plane claim whose registration does not exist", () => {
+  // gone holds Orphan, recorded its policy, and selects
+  // existing-database-configs, which registrations do not hold. Its request
+  // holds no deletion policy yet.
+  const gone = () =>
+    data({
+      claim: claim(
+        { deletionPolicy: "Orphan" },
+        { resolvedPolicy: { deletionPolicy: "Delete" } },
+      ),
+    });
+
+  it("refuses Keep while a request does not hold Orphan, and names the selection", () => {
+    const { choice } = deletePlaneModel(gone(), "Orphan");
+    expect(choice.keepAllowed).toBe(false);
+    expect(choice.missing).toEqual([
+      {
+        section: "management-database",
+        label: "existing-database-configs (management-database)",
+      },
+    ]);
+  });
+
+  it("does not count the registration as missing while PluginRegistration is not read", () => {
+    const { choice } = deletePlaneModel(gone(), "Orphan", [
+      "PluginRegistration",
+    ]);
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.missing).toBeUndefined();
+  });
+});

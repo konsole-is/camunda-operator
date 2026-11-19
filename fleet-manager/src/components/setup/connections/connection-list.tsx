@@ -59,18 +59,20 @@ export type ContractRow = {
  * contractRows returns a row for each contract of kind in sources, sorted
  * by namespace and name. While errors holds an error of PluginRequest, the
  * request list is not known, so a contract with the plugin labels stays
- * with its registration. Only errors count as unread, not stale lists.
- * usage must be contractUsage of sources.
+ * with its registration. Only errors count as unread for the writer and
+ * unread, not stale lists. waiting counts both. usage must be
+ * contractUsage of sources.
  */
 export function contractRows(
-  sources: ConnectionSources & { errors?: readonly ReadError[] },
+  sources: ConnectionSources & SourceReads,
   kind: ContractKind,
   usage = contractUsage(sources),
 ): ContractRow[] {
   const reads = { errors: sources.errors };
   const requests = requestsOf({ ...sources, ...reads, stale: [] });
-  const failed = unreadKinds(reads);
-  const unread = unreadUserKinds(kind, failed);
+  const unread = unreadUserKinds(kind, unreadKinds(reads));
+  // The page of a contract counts stale lists for waiting too.
+  const notRead = unreadKinds(sources);
   return contractsOf(sources, kind)
     .map((contract) => {
       const ref: ContractRef = {
@@ -87,7 +89,7 @@ export function contractRows(
         writer: contractWriter(contract, requests, sources.planes),
         users: usage.get(contractKey(ref))?.length ?? 0,
         unread,
-        waiting: waitingRequests(ref, sources, failed),
+        waiting: waitingRequests(ref, sources, notRead),
         ...(ready && { ready }),
       };
     })

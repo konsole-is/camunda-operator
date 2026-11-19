@@ -274,6 +274,28 @@ export function requestsWithout(
 }
 
 /**
+ * orphanNeedsLivePass says that a delete of claim gives Orphan to a request
+ * only through a pass of the claim controller on the live claim, which
+ * refuses Orphan for a selected registration that does not exist. That is
+ * so when the delete waits for the policy, because direct is false or the
+ * claim has no cleanup finalizer, and a request that claim controls does
+ * not hold Orphan yet. claim must have a UID.
+ */
+export function orphanNeedsLivePass(
+  claim: ClaimState,
+  requests: readonly RequestState[],
+  direct: boolean,
+): boolean {
+  const finalized = (claim.metadata.finalizers ?? []).includes(
+    CLEANUP_FINALIZER,
+  );
+  return (
+    (!direct || !finalized) &&
+    requestsWithout(claim, requests, "Orphan").length > 0
+  );
+}
+
+/**
  * requestsBehind returns a message that names the requests in names as
  * lacking the deletion policy of claim. It gives the message of the Ready
  * condition of claim only when its reason is NotAllowed. names must not be
@@ -304,10 +326,11 @@ export function requestsBehind(
  * else that default. Unlike deletionChoice, policy stays Orphan when the
  * claim keeps and an option cannot: keepAllowed is then false. A claim that
  * recorded its policy cannot keep either while a selected registration is
- * not in registrations, as its controller refuses, unless registrationsRead
- * is false: the page then does not know if the registration exists. The
- * labels of alwaysDeleted and missing come from the sections as a claim of
- * kind sees them.
+ * not in registrations and livePass says that Orphan reaches the requests
+ * through a live pass of its controller, which refuses it. A registration
+ * is never missing while registrationsRead is false. The labels of
+ * alwaysDeleted and missing come from the sections as a claim of kind sees
+ * them.
  */
 export function claimDeletionChoice(input: {
   claim: DeletableClaim & { spec?: { plugins?: PluginSelection[] } };
@@ -315,6 +338,7 @@ export function claimDeletionChoice(input: {
   sections: readonly PluginSection[];
   registrations: readonly PluginRegistration[];
   registrationsRead: boolean;
+  livePass: boolean;
   kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 }): DeletionChoice {
   const { claim, environment, sections, registrations, kind } = input;
@@ -332,7 +356,7 @@ export function claimDeletionChoice(input: {
     deletionPolicyOf(undefined, resolved),
   );
   const missing =
-    resolved !== undefined && input.registrationsRead
+    resolved !== undefined && input.registrationsRead && input.livePass
       ? selections
           .filter(
             (s) =>

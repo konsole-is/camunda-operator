@@ -9,10 +9,13 @@ import type { Resource } from "@/lib/k8s/kinds";
 import type { ReadError } from "@/lib/k8s/unread";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
+  type ClaimState,
   claimDeletionChoice,
   type DeletionChoice,
   type DeletionPolicy,
+  orphanNeedsLivePass,
   type PluginSelection,
+  type RequestState,
 } from "@/lib/policy";
 import { contractReaders } from "./plane-optimize";
 import { servedClusters } from "./served-clusters";
@@ -45,7 +48,7 @@ export type ObjectRef = { namespace: string; name: string };
  * DeletePlaneModel is what the delete page of a plane shows for a pick.
  * choice is the deletion choice of the claim with policy set to the pick.
  * keepRefused says that the claim keeps its resources and an option
- * cannot. targets are the objects that always go, in the order in which
+ * always deletes what it made. targets are the objects that always go, in the order in which
  * they go: the CamundaManagementCluster when the claim controls it, the
  * requests, and the claim. kept holds a CamundaManagementCluster of the
  * name that the claim does not control. served are the clusters that a
@@ -83,12 +86,14 @@ const FATE_KINDS: readonly string[] = [
 export const KEPT_PLANE = "Kept: the claim did not make it";
 
 /**
- * planeDeletionChoice is claimDeletionChoice of the claim of data, while the
- * kinds of unread are not read.
+ * planeDeletionChoice is claimDeletionChoice of the claim of data for a
+ * delete in direct mode when direct is true, while the kinds of unread are
+ * not read.
  */
 export function planeDeletionChoice(
   data: DeletePlaneData,
   unread: readonly string[],
+  direct: boolean,
 ): DeletionChoice {
   const { claim } = data;
   const name = data.namespace?.metadata?.labels?.[ENVIRONMENT_LABEL];
@@ -110,25 +115,31 @@ export function planeDeletionChoice(
     sections: data.sections as unknown as PluginSection[],
     registrations: data.registrations as unknown as PluginRegistration[],
     registrationsRead: !unread.includes("PluginRegistration"),
+    livePass: orphanNeedsLivePass(
+      claim as unknown as ClaimState,
+      data.requests as unknown as RequestState[],
+      direct,
+    ),
     kind: "CamundaManagementClusterClaim",
   });
 }
 
 /**
  * deletePlaneModel returns the model of the delete of the plane of data
- * under picked, while the kinds of unread are not read. The plane has the
- * name of its claim. The claim deletes the plane only when it controls it,
+ * under picked, while the kinds of unread are not read, for a delete in
+ * direct mode when direct is true. The plane has the name of its claim. The claim deletes the plane only when it controls it,
  * then the requests that it controls.
  */
 export function deletePlaneModel(
   data: DeletePlaneData,
   picked: DeletionPolicy,
   unread: readonly string[] = [],
+  direct = false,
 ): DeletePlaneModel {
   const { claim } = data;
   const name = claim.metadata?.name ?? "";
   const namespace = claim.metadata?.namespace ?? "";
-  const choice = planeDeletionChoice(data, unread);
+  const choice = planeDeletionChoice(data, unread, direct);
   const claimUid = claim.metadata?.uid;
   const controlled = (o: {
     metadata?: { ownerReferences?: { controller?: boolean; uid: string }[] };
@@ -182,7 +193,7 @@ export function deletePlaneModel(
     name,
     namespace,
     choice: { ...choice, policy: picked },
-    keepRefused: choice.policy === "Orphan" && !choice.keepAllowed,
+    keepRefused: choice.policy === "Orphan" && choice.alwaysDeleted.length > 0,
     targets,
     kept:
       data.plane && !planeGoes

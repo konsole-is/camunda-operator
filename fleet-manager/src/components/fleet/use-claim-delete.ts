@@ -18,6 +18,7 @@ import {
   type DeletionPolicy,
   equalJSON,
   missingRegistrations,
+  orphanNeedsLivePass,
   orphanRefusedBy,
   requestsBehind,
   type RequestState,
@@ -106,8 +107,9 @@ type Sent =
  * hook then sends the delete itself. It sends nothing for a claim with
  * another UID, and refuses with Stale when another spec change came in.
  * keepRefused names the registrations of the claim that cannot keep while
- * policy is Orphan, and for a claim that recorded its policy, the ones that
- * are not in registrations. apply then refuses with Invalid and writes
+ * policy is Orphan. For a claim that recorded its policy, it also names the
+ * ones that are not in registrations while orphanNeedsLivePass holds on a
+ * read PluginRequest list. apply then refuses with Invalid and writes
  * nothing, and the delete after the policy write does too. registrations
  * are the live PluginRegistrations: a page that could not read them must
  * not show keepRefused or send apply. reads holds the failed or stale watch
@@ -207,12 +209,29 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
 
-  const keepRefused = keepRefusal(live ?? initial, policy, registrations);
+  // While the list of the requests is not read, a missing registration does
+  // not refuse Keep: the page shows no review then.
+  const livePassOf = (claim: C) =>
+    requestsFresh &&
+    requests.error === undefined &&
+    orphanNeedsLivePass(
+      claim as unknown as ClaimState,
+      requests.items as unknown as RequestState[],
+      mode === "direct",
+    );
+  const livePass = livePassOf(live ?? initial);
+  const keepRefused = keepRefusal(
+    live ?? initial,
+    policy,
+    registrations,
+    livePass,
+  );
 
   const latest = useRef({
     live,
     policy,
     registrations,
+    livePass,
     intent,
     actions,
     show,
@@ -223,6 +242,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       live,
       policy,
       registrations,
+      livePass,
       intent,
       actions,
       show,
@@ -236,7 +256,8 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
 
   const send = useCallback(
     async (change: Change): Promise<WriteResult> => {
-      const { live, policy, registrations, intent, actions } = latest.current;
+      const { live, policy, registrations, livePass, intent, actions } =
+        latest.current;
       setSent((s) =>
         s.kind === "choose" && s.written
           ? { kind: "choose", written: s.written }
@@ -244,7 +265,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       );
       if (!live || !isOriginal(live))
         return { ok: false, errors: [gone(name)] };
-      const refused = keepRefusal(live, policy, registrations);
+      const refused = keepRefusal(live, policy, registrations, livePass);
       if (refused)
         return { ok: false, errors: [{ code: "Invalid", message: refused }] };
       const steps = deleteClaimSteps(live, policy, intent);
@@ -342,10 +363,17 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   useEffect(() => {
     if (!settled || sent.kind !== "waiting" || sentFor.current === sent) return;
     sentFor.current = sent;
-    const { live, registrations, intent, actions, show, pushedMessage } =
-      latest.current;
+    const {
+      live,
+      registrations,
+      livePass,
+      intent,
+      actions,
+      show,
+      pushedMessage,
+    } = latest.current;
     if (!live || !isOriginal(live)) return;
-    const refused = keepRefusal(live, sent.policy, registrations);
+    const refused = keepRefusal(live, sent.policy, registrations, livePass);
     if (refused) {
       setSent({
         kind: "choose",
@@ -428,31 +456,36 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   };
 }
 
-// keepRefusal says why claim cannot keep, as its controller refuses Orphan
-// for a claim that recorded its policy.
+// keepRefusal says why claim cannot keep. A missing registration refuses
+// Keep only when livePass says that Orphan reaches a request through a live
+// pass of the claim controller, which refuses it then.
 function keepRefusal(
   claim: DeletableClaim,
   policy: DeletionPolicy,
   registrations: readonly KeepRegistration[],
+  livePass: boolean,
 ): string | undefined {
   if (policy !== "Orphan") return undefined;
   const selections = claim.spec?.plugins ?? [];
   const unsupported = orphanRefusedBy(selections, registrations);
   const missing =
-    claim.status?.resolvedPolicy === undefined
-      ? []
-      : missingRegistrations(selections, registrations);
+    claim.status?.resolvedPolicy !== undefined && livePass
+      ? missingRegistrations(selections, registrations)
+      : [];
   if (unsupported.length === 0 && missing.length === 0) return undefined;
+  const one = missing.length === 1;
   return [
     ...(unsupported.length > 0
       ? [`${unsupported.join(", ")} cannot keep the resources.`]
       : []),
     ...(missing.length > 0
       ? [
-          `${missing.join(", ")} ${missing.length === 1 ? "does" : "do"} not exist, so the claim cannot keep the resources.`,
+          `${missing.join(", ")} ${one ? "does" : "do"} not exist, so the operator cannot give Keep to the options.`,
         ]
       : []),
-    "Choose Delete the resources.",
+    unsupported.length === 0
+      ? `Bring the ${one ? "registration" : "registrations"} back, or choose Delete the resources.`
+      : "Choose Delete the resources.",
   ].join(" ");
 }
 

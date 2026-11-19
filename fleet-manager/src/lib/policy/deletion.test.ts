@@ -7,6 +7,7 @@ import {
   claimDeletionChoice,
   deletionChoice,
   deletionPolicyOf,
+  orphanNeedsLivePass,
   requestsBehind,
 } from "./deletion";
 import type { ResolvedPolicy } from "./resolve";
@@ -151,6 +152,7 @@ describe("claimDeletionChoice", () => {
     c: ReturnType<typeof claim>,
     registrations: PluginRegistration[] = [keeps],
     registrationsRead = true,
+    livePass = true,
   ) =>
     claimDeletionChoice({
       claim: c,
@@ -158,6 +160,7 @@ describe("claimDeletionChoice", () => {
       sections,
       registrations,
       registrationsRead,
+      livePass,
       kind: "CamundaClusterClaim",
     });
 
@@ -176,6 +179,7 @@ describe("claimDeletionChoice", () => {
         sections,
         registrations: [keeps],
         registrationsRead: true,
+        livePass: true,
         kind: "CamundaClusterClaim",
       }),
     ).toMatchObject({ defaultPolicy: "Delete", policy: "Delete" });
@@ -226,6 +230,22 @@ describe("claimDeletionChoice", () => {
     expect(choiceOf(c, [keeps]).missing).toBeUndefined();
   });
 
+  it("passes Keep for a selection whose registration does not exist when Orphan needs no live pass", () => {
+    const c = claim(
+      {
+        deletionPolicy: "Orphan",
+        plugins: [{ section: "access", registration: "ingress" }],
+      },
+      "Delete",
+    );
+    expect(choiceOf(c, [keeps], true, false)).toEqual({
+      defaultPolicy: "Delete",
+      keepAllowed: true,
+      alwaysDeleted: [],
+      policy: "Orphan",
+    });
+  });
+
   it("does not count a registration as missing while the registrations are not read", () => {
     const c = claim(
       {
@@ -260,6 +280,7 @@ describe("claimDeletionChoice", () => {
         ],
         registrations: [identity],
         registrationsRead: true,
+        livePass: true,
         kind: "CamundaManagementClusterClaim",
       }),
     ).toEqual({
@@ -268,6 +289,52 @@ describe("claimDeletionChoice", () => {
       alwaysDeleted: [{ section: "identity", label: "Gateway (Identity)" }],
       policy: "Delete",
     });
+  });
+});
+
+describe("orphanNeedsLivePass", () => {
+  const claimOf = (finalized: boolean) => ({
+    metadata: {
+      uid: "uid-1",
+      ...(finalized && { finalizers: ["fleet.camunda.io/cleanup"] }),
+    },
+  });
+  const request = (policy?: string) => ({
+    metadata: {
+      name: "a",
+      ownerReferences: [{ controller: true, uid: "uid-1" }],
+    },
+    spec: { ...(policy && { deletionPolicy: policy }) },
+  });
+
+  it.each([
+    [
+      "Git mode, a request without Orphan",
+      false,
+      true,
+      [request("Delete")],
+      true,
+    ],
+    [
+      "Git mode, each request on Orphan",
+      false,
+      true,
+      [request("Orphan")],
+      false,
+    ],
+    ["direct mode with the cleanup finalizer", true, true, [request()], false],
+    [
+      "direct mode without the cleanup finalizer",
+      true,
+      false,
+      [request()],
+      true,
+    ],
+    ["no request", false, true, [], false],
+  ] as const)("%s", (_, direct, finalized, requests, want) => {
+    expect(orphanNeedsLivePass(claimOf(finalized), requests, direct)).toBe(
+      want,
+    );
   });
 });
 
