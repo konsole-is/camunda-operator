@@ -1393,6 +1393,12 @@ describe("waitingRequests", () => {
     ).toEqual([]);
   });
 
+  it("names no request whose outputs are ready for its generation and that has no outputs map", () => {
+    expect(
+      waitingOf(request("orders-backups", { ready: ["True", 2] })),
+    ).toEqual([]);
+  });
+
   it("names a request whose section does not exist, with the section", () => {
     expect(
       waitingOf(
