@@ -183,7 +183,7 @@ The choice starts at the deletion policy of the claim. A claim without a deletio
 
 Some options always delete what they made. When the claim selects such an option, **Keep the resources** is off, and the option shows with **Always deleted**. While **Keep the resources** is still picked, the page shows no review. It names the registration of the option, for example `PluginRegistration "gateway" of section "access" cannot keep the resources. Choose Delete the resources.` Choose **Delete the resources** to delete the cluster.
 
-The registration of a selected option can be gone. In direct mode, the claim then still gives Keep to its options when it is deleted. In Git mode, an option that does not have Keep yet cannot get it. The operator refuses Keep for a claim with a missing registration. **Keep the resources** is then off, and the option shows with **Registration does not exist**. The page still opens on Keep, shows no review, and names the option:
+The registration of a selected option can be gone. In direct mode, a claim with the finalizer `fleet.camunda.io/cleanup` still gives Keep to its options when you delete it. In Git mode, the options get a new policy before the delete. While a selected registration does not exist, the operator gives them no Keep. So when an option does not have Keep yet, **Keep the resources** is off, and the option shows with **Registration does not exist**. A claim that keeps its resources opens on Keep. The page then shows no review and names the option:
 
 > PluginRegistration "gateway" of section "access" does not exist, so the operator cannot give Keep to the options. Bring the registration back, or choose Delete the resources.
 

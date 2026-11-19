@@ -941,12 +941,44 @@ describe("useClaimDelete", () => {
     // whose registration does not exist.
     const gone = () => selecting(read("41", "Delete"));
 
-    it("offers Keep in direct mode with the cleanup finalizer, which gives Orphan to the requests on delete", async () => {
+    it("offers Keep in direct mode with the cleanup finalizer, which gives Orphan to the requests on delete, and deletes the claim", async () => {
       const { hook } = mount(gone(), { policy: "Orphan", registrations: [] });
       await live(gone(), gone(), [request("plane-a-db", "Delete")]);
       expect(hook.result.current.keepRefused).toBeUndefined();
       expect((await confirm(hook)).ok).toBe(true);
-      expect(fakeWriter.applied).toHaveLength(1);
+      const kept = selecting(read("42"));
+      await live(kept, kept, [request("plane-a-db", "Delete")]);
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+      expect(fakeWriter.applied[1].delete).toHaveLength(1);
+    });
+
+    it("refuses Keep in direct mode when the claim has no cleanup finalizer and a request does not hold Orphan", async () => {
+      const bare = {
+        ...gone(),
+        metadata: { ...gone().metadata, finalizers: [] },
+      } as Claim;
+      const { hook } = mount(bare, { policy: "Orphan", registrations: [] });
+      await live(bare, bare, [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
+    });
+
+    it("offers Keep in Git mode when the claim controls no request", async () => {
+      fakeWriter.reset("git");
+      const { hook } = mount(gone(), {
+        policy: "Orphan",
+        mode: "git",
+        registrations: [],
+      });
+      await live(gone(), gone(), []);
+      expect(hook.result.current.keepRefused).toBeUndefined();
+      // A request that does not hold Orphan is refused, so the list of the
+      // requests was read.
+      await live(gone(), gone(), [request("plane-a-db", "Delete")]);
+      await waitFor(() =>
+        expect(hook.result.current.keepRefused).toBe(MISSING),
+      );
     });
 
     it("offers Keep in Git mode when each request holds Orphan already", async () => {

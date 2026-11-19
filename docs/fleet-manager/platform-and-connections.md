@@ -220,7 +220,7 @@ spec:
   # ... the rest of your claim
 ```
 
-If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. A request gets its slot from its section. So `Environment`, `Namespace`, `PluginRegistration`, `PluginRequest`, and `PluginSection` count as kinds that can use a contract too.
+If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. Both pages also say this for a short time after they open or connect again. A claim gets its contract names from its Environment, its namespace, and the registrations. A request gets its slot from its section. So `Environment`, `Namespace`, `PluginRegistration`, `PluginRequest`, and `PluginSection` count as kinds that can use a contract too.
 
 ### Change a contract
 

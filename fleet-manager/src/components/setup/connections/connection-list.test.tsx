@@ -212,6 +212,7 @@ describe("ConnectionList", () => {
 
 describe("contractRows", () => {
   it("names the sections in the Users column of a contract that a slot output can name while they cannot be read", () => {
+    failing.fresh = ALL_KINDS;
     failing.kind = "PluginSection";
     render(<ConnectionListLive initial={connectionFixtures()} />);
     expect(
@@ -262,6 +263,7 @@ describe("contractRows", () => {
   });
 
   it("does not say that the section of a request does not exist while PluginSection cannot be read", () => {
+    failing.fresh = ALL_KINDS;
     failing.kind = "PluginSection";
     const initial = connectionFixtures();
     initial.sections = [];
@@ -280,7 +282,7 @@ describe("contractRows", () => {
     expect(within(row).queryByText(/not known/i)).toBeNull();
   });
 
-  it("does not say that the section of a request does not exist while the PluginSection list is not current", () => {
+  it("does not say that the section of a request does not exist while the PluginSection list is not current, and says that the users are not known", () => {
     failing.fresh = ALL_KINDS.filter((k) => k !== "PluginSection");
     const initial = connectionFixtures();
     initial.sections = [];
@@ -293,10 +295,13 @@ describe("contractRows", () => {
       },
     ];
     render(<ConnectionListLive initial={initial} />);
-    expect(within(rowOf("backups")).queryByText(/does not exist/)).toBeNull();
+    const row = rowOf("backups");
+    expect(within(row).queryByText(/does not exist/)).toBeNull();
+    expect(within(row).getByText("Could not read PluginSection")).toBeTruthy();
   });
 
   it("does not wait for a request while PluginRequest cannot be read", () => {
+    failing.fresh = ALL_KINDS;
     failing.kind = "PluginRequest";
     const initial = connectionFixtures();
     initial.requests = [

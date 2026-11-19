@@ -395,6 +395,21 @@ describe("validateClusterClaim", () => {
       ).not.toContainEqual({ message: MISSING });
     });
 
+    it("refuses a save that removes the policy of the claim, so that it takes the recorded Keep, while a selected registration does not exist", () => {
+      const result = resetValue(
+        open(
+          claim({ deletionPolicy: "Delete" }, {
+            deletionPolicy: "Orphan",
+          } as ResolvedPolicy),
+        ),
+        [f("spec"), f("deletionPolicy")],
+      );
+      if (!("session" in result)) throw new Error("refused");
+      expect(
+        validateClusterClaim(result.session, ctx({ registrations: [] })),
+      ).toContainEqual({ message: MISSING });
+    });
+
     it("passes Keep of a claim that has not recorded its policy while a selected registration does not exist", () => {
       const s = set(
         open(claim({ deletionPolicy: "Delete" })),

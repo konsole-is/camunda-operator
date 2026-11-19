@@ -123,13 +123,13 @@ function selectionName(s: { section: string; registration: string }): string {
 /**
  * DeletionChoice is the deletion choice of a create flow. defaultPolicy is
  * the default that deletionChoice took. keepAllowed is false when
- * checkDeletionPolicy refuses Orphan for the selections. alwaysDeleted lists
- * each selection whose registration does not list Orphan, as "<option
- * label> (<section label>)". missing lists each selection of a claim that
- * recorded its policy whose registration does not exist, as "<registration>
- * (<section label>)", and is set only when it is not empty. policy is the
- * policy that the claim gets: the pick, else the default, and Delete when
- * that is Orphan and keepAllowed is false.
+ * checkDeletionPolicy refuses Orphan for the selections, or while missing
+ * is set. alwaysDeleted lists each selection whose registration does not
+ * list Orphan, as "<option label> (<section label>)". missing lists each
+ * selection whose registration does not exist and that makes keepAllowed
+ * false, as "<registration> (<section label>)". It is set only when it is
+ * not empty. policy is the policy that the claim gets: the pick, else the
+ * default, and Delete when that is Orphan and keepAllowed is false.
  */
 export type DeletionChoice = {
   defaultPolicy: DeletionPolicy;
@@ -297,9 +297,7 @@ export function orphanNeedsLivePass(
 
 /**
  * requestsBehind returns a message that names the requests in names as
- * lacking the deletion policy of claim. It gives the message of the Ready
- * condition of claim only when its reason is NotAllowed. names must not be
- * empty.
+ * lacking the deletion policy of claim. names must not be empty.
  */
 export function requestsBehind(
   claim: ClaimState,
