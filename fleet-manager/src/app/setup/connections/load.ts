@@ -9,7 +9,8 @@ import { loadSnapshot } from "@/lib/k8s/snapshot";
  */
 export async function loadConnections(): Promise<ConnectionPageData> {
   // A Resource is plain JSON, so it differs from its model type only in its
-  // timestamps, which the Connections pages do not read.
+  // timestamps, which are strings, not Dates. The Connections pages only
+  // check whether one is set.
   return (await loadSnapshot(
     CONNECTION_SOURCE_KINDS,
   )) as unknown as ConnectionPageData;

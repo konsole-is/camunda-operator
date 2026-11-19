@@ -13,7 +13,10 @@ import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchc
 import type { Environment } from "@/generated/crds/environment";
 import type { LogicalBackupElasticsearch } from "@/generated/crds/logicalbackupelasticsearch";
 import type { LogicalBackupRDBMS } from "@/generated/crds/logicalbackuprdbms";
+import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { PointInTimeRestore } from "@/generated/crds/pointintimerestore";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import {
@@ -23,6 +26,7 @@ import {
   REQUEST_LABEL,
   REQUEST_NAMESPACE_LABEL,
 } from "@/lib/labels";
+import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ownerName } from "@/lib/labels/owner-name";
 import { mergeDatabaseServer, mergeElasticsearch } from "@/lib/merge";
 import {
@@ -34,6 +38,7 @@ import {
   nameOf,
   own,
   type PluginSelection,
+  readyOutputs,
   type ResolvedPolicy,
   resolve,
 } from "@/lib/policy";
@@ -194,6 +199,7 @@ export type ContractUserSources = {
   databases: readonly Database[];
   databaseConfigs: readonly DatabaseConfig[];
   secondaryStorageConfigs: readonly SecondaryStorageConfig[];
+  objectStorageConfigs: readonly ObjectStorageConfig[];
   optimizes: readonly CamundaOptimize[];
   planes: readonly CamundaManagementCluster[];
   elasticsearchBackups: readonly LogicalBackupElasticsearch[];
@@ -201,12 +207,17 @@ export type ContractUserSources = {
   pointInTimeRestores: readonly PointInTimeRestore[];
   planeClaims: readonly CamundaManagementClusterClaim[];
   registrations: readonly PluginRegistration[];
+  sections: readonly PluginSection[];
   requests: readonly SelectingRequest[];
 };
 
 type SelectingRequest = {
-  metadata: { namespace?: string; name?: string };
-  spec: { registration: string; parameters?: unknown };
+  metadata: { namespace?: string; name?: string; deletionTimestamp?: unknown };
+  spec: { section?: string; registration: string; parameters?: unknown };
+  status?: {
+    outputs?: Record<string, string>;
+    conditions?: readonly Condition[];
+  };
 };
 
 type SelectingClaim = {
@@ -255,8 +266,10 @@ type Condition = {
  * existing-object-storage: by the parameter that its request gets from the
  * claim policy, else, when the policy does not resolve, by the one of its
  * selection. It names the contract this way before its cluster or plane
- * exists. A request of such a registration names it by its parameter. Each
- * list is sorted by kind, namespace, and name.
+ * exists. A request of such a registration names it by its parameter. A
+ * request of any other registration names each contract that a status output
+ * of the slot of its section gives, unless the request wrote that contract.
+ * Each list is sorted by kind, namespace, and name.
  */
 export function contractUsage(
   sources: ContractUserSources,
@@ -509,10 +522,8 @@ export function contractUsage(
     );
   }
   for (const request of sources.requests) {
-    add(
-      "PluginRequest",
-      request,
-      contractParameters(
+    add("PluginRequest", request, [
+      ...contractParameters(
         request.spec.registration,
         request.spec.parameters,
       ).map(([kind, name, parameter]) => ({
@@ -520,7 +531,8 @@ export function contractUsage(
         name,
         field: `spec.parameters.${parameter}`,
       })),
-    );
+      ...outputContracts(request, sources),
+    ]);
   }
   for (const optimize of sources.optimizes) {
     add("CamundaOptimize", optimize, [
@@ -597,6 +609,155 @@ function contractParameters(
   });
 }
 
+// OUTPUT_CONTRACTS gives the contract kind of each output of SLOT_FIELDS
+// that fills a contract reference.
+const OUTPUT_CONTRACTS: Readonly<Record<string, ContractKind>> = {
+  objectStorageConfig: "ObjectStorageConfig",
+  secondaryStorageConfig: "SecondaryStorageConfig",
+  keycloakDatabaseConfig: "DatabaseConfig",
+  identityDatabaseConfig: "DatabaseConfig",
+  webModelerDatabaseConfig: "DatabaseConfig",
+};
+
+// outputContracts returns the contracts that the status outputs of request
+// name through the slot of its section. A built-in registration names its
+// contracts by its parameters instead.
+function outputContracts(
+  request: SelectingRequest,
+  sources: ContractUserSources,
+): Reference[] {
+  if (own(BUILTIN_OPTIONS, request.spec.registration)) return [];
+  const slot = sources.sections.find(
+    (s) => s.metadata?.name === request.spec.section,
+  )?.spec.slot;
+  const outputs = request.status?.outputs ?? {};
+  const outputKeys = new Set(
+    SLOT_FIELDS.filter((row) => slot && row.slot === slot).map(
+      (row) => row.output,
+    ),
+  );
+  return [...outputKeys].flatMap((output) => {
+    const kind = own(OUTPUT_CONTRACTS, output);
+    const name = own(outputs, output);
+    if (!kind || !name || writtenBy(request, kind, name, sources)) return [];
+    return [{ kind, name, field: `status.outputs.${output}` }];
+  });
+}
+
+type LabeledObject = {
+  metadata: {
+    namespace?: string;
+    name?: string;
+    labels?: Record<string, string>;
+  };
+};
+
+// writtenBy says whether the request wrote the contract kind/name in its
+// namespace.
+function writtenBy(
+  request: SelectingRequest,
+  kind: ContractKind,
+  name: string,
+  sources: ContractUserSources,
+): boolean {
+  const lists: Partial<Record<ContractKind, readonly LabeledObject[]>> = {
+    ObjectStorageConfig: sources.objectStorageConfigs,
+    SecondaryStorageConfig: sources.secondaryStorageConfigs,
+    DatabaseConfig: sources.databaseConfigs,
+  };
+  const namespace = request.metadata.namespace;
+  const contract = (lists[kind] ?? []).find(
+    (c) => c.metadata.name === name && c.metadata.namespace === namespace,
+  );
+  if (!contract) return false;
+  const writer = contractWriter(contract, sources.requests, sources.planes);
+  const labels = contract.metadata.labels ?? {};
+  return (
+    writer.by === "registration" &&
+    writer.registration === request.spec.registration &&
+    labels[REQUEST_LABEL] === request.metadata.name &&
+    (labels[REQUEST_NAMESPACE_LABEL] ?? namespace) === namespace
+  );
+}
+
+/**
+ * WaitingRequest is a request whose outputs can name a contract that the
+ * fleet manager does not know yet. request is "PluginRequest
+ * <namespace>/<name>". section is set when the section of the request does
+ * not exist.
+ */
+export type WaitingRequest = { request: string; section?: string };
+
+/**
+ * waitingRequests returns each request in the namespace of ref whose
+ * outputs can name a contract of its kind and that the fleet manager cannot
+ * check yet, sorted by request. The users of ref are not known while one
+ * exists. A request counts while its section has a slot output of that kind
+ * and readyOutputs does not give its outputs, whatever their values, and
+ * while its section is not in sources. A request of a built-in registration
+ * and a request that is being deleted do not count.
+ */
+export function waitingRequests(
+  ref: ContractRef,
+  sources: ContractUserSources,
+): WaitingRequest[] {
+  const slots = new Set(
+    SLOT_FIELDS.filter(
+      (row) => own(OUTPUT_CONTRACTS, row.output) === ref.kind,
+    ).map((row) => row.slot),
+  );
+  if (slots.size === 0) return [];
+  return sources.requests
+    .flatMap((request): WaitingRequest[] => {
+      if (
+        request.metadata.namespace !== ref.namespace ||
+        request.metadata.deletionTimestamp ||
+        own(BUILTIN_OPTIONS, request.spec.registration)
+      ) {
+        return [];
+      }
+      const name = `PluginRequest ${request.metadata.namespace}/${request.metadata.name}`;
+      const section = sources.sections.find(
+        (s) => s.metadata?.name === request.spec.section,
+      );
+      if (!section) {
+        return [{ request: name, section: request.spec.section ?? "" }];
+      }
+      const slot = section.spec.slot;
+      const ready = readyOutputs(
+        [request as PluginRequest],
+        request.spec.section ?? "",
+        request.spec.registration,
+      );
+      return slot && slots.has(slot) && !ready ? [{ request: name }] : [];
+    })
+    .sort((a, b) => byCodeUnit(a.request, b.request));
+}
+
+/**
+ * waitingDeleteText says why a delete is off while requests wait: for each
+ * request, that its outputs are not given for its current spec yet, or that
+ * its section does not exist.
+ */
+export function waitingDeleteText(waiting: readonly WaitingRequest[]): string {
+  return `Delete is possible when the fleet manager knows the users. ${waitingCauses(waiting)}`;
+}
+
+/** waitingUsersText says that the users of a contract are not known while requests wait, and why. */
+export function waitingUsersText(waiting: readonly WaitingRequest[]): string {
+  return `The users are not known. ${waitingCauses(waiting)}`;
+}
+
+function waitingCauses(waiting: readonly WaitingRequest[]): string {
+  return waiting
+    .map((w) =>
+      w.section === undefined
+        ? `${w.request} has not given its outputs for its current spec yet.`
+        : `The section ${w.section} of ${w.request} does not exist.`,
+    )
+    .join(" ");
+}
+
 function isContractKind(kind: string): kind is ContractKind {
   return (CONTRACT_KINDS as readonly string[]).includes(kind);
 }
@@ -626,12 +787,13 @@ function requestedParameters(
 // contractUsage reads for its users, the presets of those objects included,
 // and the lists that resolve the parameters of a claim.
 // SELECTION_KINDS are the lists that give the contracts that a claim
-// selects through a registration.
+// selects through a registration, and that a request names in its outputs.
 const SELECTION_KINDS = [
   "Environment",
   "Namespace",
   "PluginRegistration",
   "PluginRequest",
+  "PluginSection",
 ];
 
 const USER_KINDS: Record<ContractKind, readonly string[]> = {

@@ -574,6 +574,118 @@ describe("ConnectionDetail with changes", () => {
     ).toBeTruthy();
   });
 
+  it("counts the request of a custom registration whose output names the contract, and offers no Delete", () => {
+    const sources = connectionFixtures();
+    sources.sections = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "management-database" },
+        spec: { selection: "One", slot: "managementDatabases" },
+      } as ConnectionSources["sections"][number],
+    ];
+    sources.requests = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRequest",
+        metadata: { namespace: "team-a", name: "plane-a-databases" },
+        spec: {
+          section: "management-database",
+          registration: "acme-postgres",
+          parameters: {},
+        },
+        status: {
+          outputs: { identityDatabaseConfig: "orders-db" },
+          conditions: [
+            { type: "OutputsReady", status: "True", observedGeneration: 0 },
+          ],
+        },
+      } as unknown as ConnectionSources["requests"][number],
+    ];
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources });
+
+    expect(
+      within(panel("Used by")).getByText("team-a/plane-a-databases"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Delete is possible when no resource uses this contract.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type orders-db to confirm")).toBeNull();
+  });
+
+  // waitingSources has a custom request in team-a whose section has the
+  // slot managementDatabases, with the given metadata and no outputs yet.
+  function waitingSources(metadata: object = {}): ConnectionSources {
+    const sources = connectionFixtures();
+    sources.sections = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "management-database" },
+        spec: { selection: "One", slot: "managementDatabases" },
+      } as ConnectionSources["sections"][number],
+    ];
+    sources.requests = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRequest",
+        metadata: {
+          namespace: "team-a",
+          name: "plane-a-databases",
+          ...metadata,
+        },
+        spec: {
+          section: "management-database",
+          registration: "acme-postgres",
+          parameters: { identity: "orders-db" },
+        },
+      } as unknown as ConnectionSources["requests"][number],
+    ];
+    return sources;
+  }
+
+  it("refuses Delete and says why while a custom request has no outputs for its spec yet", () => {
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources: waitingSources() });
+
+    const cause =
+      "PluginRequest team-a/plane-a-databases has not given its outputs for its current spec yet.";
+    expect(
+      screen.getByText(
+        `Delete is possible when the fleet manager knows the users. ${cause}`,
+      ),
+    ).toBeTruthy();
+    const users = panel("Used by");
+    expect(
+      within(users).getByText(`The users are not known. ${cause}`),
+    ).toBeTruthy();
+    expect(
+      within(users).getByText("No known resource uses this contract."),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Type orders-db to confirm")).toBeNull();
+  });
+
+  it("offers a change while a custom request has no outputs for its spec yet", async () => {
+    edit(inTeamA("DatabaseConfig", "orders-db"), { sources: waitingSources() });
+
+    fireEvent.change(screen.getByLabelText("Database name"), {
+      target: { value: "orders-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(
+      await screen.findByRole("region", { name: "Review the contract" }),
+    ).toBeTruthy();
+  });
+
+  it("offers Delete while the custom request with no outputs is being deleted", () => {
+    edit(inTeamA("DatabaseConfig", "orders-db"), {
+      sources: waitingSources({ deletionTimestamp: "2026-11-18T10:00:00Z" }),
+    });
+    expect(screen.getByLabelText("Type orders-db to confirm")).toBeTruthy();
+  });
+
   it("counts a claim that selects the contract as a user", () => {
     const sources = connectionFixtures();
     sources.planeClaims = [

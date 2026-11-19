@@ -98,6 +98,7 @@ export function useConnectionSources(
     initial.planeClaims,
   );
   const registrations = useLive("PluginRegistration", initial.registrations);
+  const sections = useLive("PluginSection", initial.sections);
   const results = {
     namespaces,
     environments,
@@ -121,7 +122,8 @@ export function useConnectionSources(
     requests,
     planeClaims,
     registrations,
-  };
+    sections,
+  } satisfies Record<keyof ConnectionSources, { error?: string }>;
   const liveErrors = (
     Object.keys(results) as (keyof ConnectionSources)[]
   ).flatMap((key) => {
@@ -157,6 +159,7 @@ export function useConnectionSources(
     requests: requests.items,
     planeClaims: planeClaims.items,
     registrations: registrations.items,
+    sections: sections.items,
     errors,
     stale: kinds.filter((_, i) => !fresh[i]),
   };

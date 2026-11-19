@@ -10,6 +10,8 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
+  waitingDeleteText,
+  waitingRequests,
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
@@ -51,7 +53,8 @@ export async function previewContractChange(change: Change): Promise<Preview> {
  * server read, or whose precondition is not the resourceVersion of the copy
  * in that list. Of the other contracts, it refuses with Forbidden a change
  * of a contract that a registration, a management plane, or a controller
- * writes, and a delete of a contract that an object uses. While a list that
+ * writes, a delete of a contract that an object uses, and a delete while
+ * waitingRequests gives a request for the contract. While a list that
  * these checks read cannot be read, it refuses each change of a contract of
  * that kind or that it can use.
  */
@@ -141,20 +144,20 @@ function refusalsOf(
   const blind = unreadUserKinds(kind, unread);
   if (blind.length > 0)
     return refuse(deleting ? unreadDeleteText(blind) : unreadChangeText(blind));
+  const contract = {
+    kind,
+    ...(ref.namespace !== undefined && { namespace: ref.namespace }),
+    name: ref.name,
+  };
   if (!deleting) return [];
-  const users =
-    contractUsage(sources).get(
-      contractKey({
-        kind,
-        ...(ref.namespace !== undefined && { namespace: ref.namespace }),
-        name: ref.name,
-      }),
-    ) ?? [];
+  const users = contractUsage(sources).get(contractKey(contract)) ?? [];
   if (users.length > 0)
     return refuse(
       `Delete is possible when no resource uses ${named}. Used by ${users
         .map((u) => `${u.kind} ${u.namespace}/${u.name}`)
         .join(", ")}.`,
     );
+  const waiting = waitingRequests(contract, sources);
+  if (waiting.length > 0) return refuse(waitingDeleteText(waiting));
   return [];
 }

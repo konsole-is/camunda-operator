@@ -185,6 +185,11 @@ The panel **Used by** lists each object that names the contract, with the fields
 | Object storage, secondary storage | `CamundaClusterClaim` | `spec.plugins.<registration>.parameters.name`, for the registrations `existing-object-storage` and `existing-secondary-storage` |
 | Databases | `CamundaManagementClusterClaim` | `spec.plugins.existing-database-configs.parameters.<component>`, for example `parameters.keycloak` |
 | Object storage, secondary storage, databases | `PluginRequest` | `spec.parameters.name` or `spec.parameters.<component>` of a request of these registrations |
+| Object storage, secondary storage, databases | `PluginRequest` | `status.outputs.objectStorageConfig`, `status.outputs.secondaryStorageConfig`, or `status.outputs.<component>DatabaseConfig` of a request of any other registration, when the section of the request has the slot `backupStorage`, `secondaryStorage`, or `managementDatabases`. A request does not use a contract that its registration made for it. |
+
+A plugin of any other registration picks its contract from parameters that the fleet manager cannot read. So such a request keeps the delete off while its outputs are not ready for its current spec, also when they name a contract. The delete is off for each contract of the kind of its slot in its namespace. A request whose section does not exist keeps the delete off for each contract kind that a slot can name. A request whose outputs are ready, and a request that is being deleted, do not keep the delete off. A change of the contract stays possible. The page names the request and the cause:
+
+> Delete is possible when the fleet manager knows the users. PluginRequest my-cluster-ns/my-cluster-backup-storage has not given its outputs for its current spec yet.
 
 An `ElasticsearchCluster` or a `DatabaseServer` can take its reference from its preset. It is then a user of the contract too, and it shows `from preset <preset>` under its field.
 
@@ -209,7 +214,7 @@ spec:
   # ... the rest of your claim
 ```
 
-If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. So `Environment`, `Namespace`, `PluginRegistration`, and `PluginRequest` count as kinds that can use a contract too.
+If the fleet manager cannot read a kind that can use a contract, the column **Users** names that kind. The count can then be too low. On the page of the contract, **Used by** says that the users are not known, and it names the kind. The page of a contract also says this for a short time after it opens or connects again. A claim gets its contract names from its Environment, its namespace, and the registrations. A request gets its slot from its section. So `Environment`, `Namespace`, `PluginRegistration`, `PluginRequest`, and `PluginSection` count as kinds that can use a contract too.
 
 ### Change a contract
 

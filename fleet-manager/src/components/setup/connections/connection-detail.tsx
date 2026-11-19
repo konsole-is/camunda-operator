@@ -23,6 +23,8 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
+  waitingDeleteText,
+  waitingRequests,
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
@@ -105,6 +107,7 @@ export function ConnectionDetail({
   const [writing, setWriting] = useState(false);
   const { toast, show, dismiss } = useWriteToast();
   const unread = unreadUserKinds(target.kind, unreadKinds(sources));
+  const waiting = waitingRequests(target, sources);
   const users = contractUsage(sources).get(contractKey(target)) ?? [];
   const { base, draft, reviewing, locked } = editor;
   // After a delete, the page shows the last copy until it moves to the list.
@@ -119,7 +122,9 @@ export function ConnectionDetail({
   if (
     reviewing &&
     !writing &&
-    (!editable || unread.length > 0 || (deleting && users.length > 0))
+    (!editable ||
+      unread.length > 0 ||
+      (deleting && (users.length > 0 || waiting.length > 0)))
   )
     editor.cancel();
 
@@ -236,7 +241,7 @@ export function ConnectionDetail({
       {/* Used by stays out of the form, so its table keeps its controls
           while a review locks the form. */}
       <Panel label="Used by">
-        <UsersTable users={users} unread={unread} />
+        <UsersTable users={users} unread={unread} waiting={waiting} />
       </Panel>
       {editable && live && (
         <fieldset
@@ -251,6 +256,8 @@ export function ConnectionDetail({
               <p className="text-sm text-muted">
                 Delete is possible when no resource uses this contract.
               </p>
+            ) : waiting.length > 0 ? (
+              <p className="text-sm text-muted">{waitingDeleteText(waiting)}</p>
             ) : (
               <TypedConfirm
                 name={target.name}

@@ -47,7 +47,7 @@ export function resolveInputs(
 /**
  * readyOutputs returns the outputs of the request of section and
  * registration while it reports OutputsReady=True for its current
- * generation, else undefined.
+ * generation, an empty map when it has none, else undefined.
  */
 export function readyOutputs(
   requests: readonly PluginRequest[],
@@ -67,7 +67,7 @@ export function readyOutputs(
   ) {
     return undefined;
   }
-  return request.status?.outputs;
+  return request.status?.outputs ?? {};
 }
 
 /**
