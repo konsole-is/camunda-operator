@@ -106,7 +106,8 @@ export interface WatchStreamOptions {
  * change that a subscriber of the filter sees (see deltaType). A watch that
  * is not valid gets a frame "failure" with its error. A kind that does not
  * sync gets a frame "failure" with the message and tries again retryMs later.
- * A failure does not end the stream. The stream ends when signal aborts, and
+ * So does a kind whose cache stops being current: it gets a new frame
+ * "snapshot" once the cache answers again. A failure does not end the stream. The stream ends when signal aborts, and
  * when a client that does not read falls more than maxPendingBytes behind.
  */
 export function watchStream(
@@ -210,8 +211,15 @@ export function watchStream(
               o.metadata?.namespace === request.namespace) &&
             (!request.name || o.metadata?.name === request.name) &&
             matchesLabels(o.metadata?.labels);
+          // retryKind subscribes again every retryMs until it can.
+          const retryKind = async (kind: KindName) => {
+            do {
+              await pause(retryMs);
+              if (closed) return;
+            } while (!(await subscribeKind(kind)));
+          };
           // subscribeKind resolves false after it sent a failure frame.
-          const subscribeKind = async (kind: KindName) => {
+          const subscribeKind = async (kind: KindName): Promise<boolean> => {
             const seen = new Set<string>();
             // The shared informer does not wait for its listener.
             const queue: [CacheChange, KubernetesObject, number][] = [];
@@ -240,6 +248,21 @@ export function watchStream(
               }
               pumping = false;
             };
+            let release: (() => void) | undefined;
+            // The cache ended the subscription. The changes that wait were
+            // made before the cache lost the kind, and the snapshot after it
+            // holds them.
+            const lost = (error: Error) => {
+              if (closed) return;
+              const at = release ? unsubscribes.indexOf(release) : -1;
+              if (at >= 0) unsubscribes.splice(at, 1);
+              for (const [, , bytes] of queue.splice(0)) queuedBytes -= bytes;
+              void sendWhenRoom("failure", {
+                watch: id,
+                kind,
+                message: error.message,
+              }).then(() => retryKind(kind));
+            };
             try {
               const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
@@ -261,11 +284,13 @@ export function watchStream(
                   if (queuedBytes > maxPendingBytes) end();
                   else void pump();
                 },
+                lost,
               );
               if (closed) {
                 unsubscribe();
                 return true;
               }
+              release = unsubscribe;
               unsubscribes.push(unsubscribe);
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));
@@ -290,10 +315,7 @@ export function watchStream(
           // A kind that the API server does not serve stays in its own watch,
           // so the other watches of the page keep their data.
           for (const kind of request.kinds) {
-            while (!(await subscribeKind(kind))) {
-              await pause(retryMs);
-              if (closed) return;
-            }
+            if (!(await subscribeKind(kind))) await retryKind(kind);
           }
         };
 
