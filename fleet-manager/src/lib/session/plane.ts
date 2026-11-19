@@ -61,7 +61,9 @@ export type PlaneClaim = Resource<"CamundaManagementClusterClaim">;
  * environment is the Environment of the namespace of the claim, and
  * environments are all Environments. requests are the live PluginRequests
  * of the claim. plane is the live CamundaManagementCluster of the claim,
- * unset while the claim has made none.
+ * unset while the claim has made none. registrationsRead is false while the
+ * page has not read registrations: a selected registration that they lack
+ * is then not known, not missing.
  */
 export type PlaneClaimContext = {
   plane?: Resource<"CamundaManagementCluster">;
@@ -71,6 +73,7 @@ export type PlaneClaimContext = {
   sections: readonly Resource<"PluginSection">[];
   registrations: readonly Resource<"PluginRegistration">[];
   requests: readonly Resource<"PluginRequest">[];
+  registrationsRead: boolean;
 };
 
 type Spec = Partial<PlaneClaim["spec"]>;
@@ -168,6 +171,7 @@ export function validatePlaneClaim(
         deletionPolicyOf(spec.deletionPolicy, policy),
         selections,
         generated<PluginRegistration[]>(ctx.registrations),
+        policy && ctx.registrationsRead ? "Refuses" : "Passes",
       ),
     ),
   );

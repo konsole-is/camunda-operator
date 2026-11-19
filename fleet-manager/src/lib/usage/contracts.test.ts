@@ -1362,7 +1362,7 @@ describe("waitingRequests", () => {
   const archive = objectStorage("team-a", "archive");
   const backups = [section("backups", "backupStorage")];
   const waitingOf = (...requests: PluginRequest[]) =>
-    waitingRequests(archive, sourcesWith({ sections: backups, requests }));
+    waitingRequests(archive, sourcesWith({ sections: backups, requests }), []);
 
   it("names a request of a custom registration that has no outputs yet", () => {
     expect(waitingOf(request("orders-backups"))).toEqual([
@@ -1419,7 +1419,28 @@ describe("waitingRequests", () => {
         request("secondary", { section: "storage", registration: "acme-es" }),
       ],
     });
-    expect(waitingRequests(archive, sources)).toEqual([]);
+    expect(waitingRequests(archive, sources, [])).toEqual([]);
+  });
+
+  it.each(["PluginSection", "PluginRequest"])(
+    "names no request while %s is not read, also when a section is missing",
+    (kind) => {
+      const sources = sourcesWith({
+        sections: [],
+        requests: [request("orders-backups")],
+      });
+      expect(waitingRequests(archive, sources, [kind])).toEqual([]);
+    },
+  );
+
+  it("names a request while a kind that the rule does not read is not read", () => {
+    const sources = sourcesWith({
+      sections: backups,
+      requests: [request("orders-backups")],
+    });
+    expect(waitingRequests(archive, sources, ["CamundaCluster"])).toEqual([
+      { request: "PluginRequest team-a/orders-backups" },
+    ]);
   });
 
   it("counts the contract that a stale output names as used", () => {

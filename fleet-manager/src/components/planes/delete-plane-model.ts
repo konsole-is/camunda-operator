@@ -82,8 +82,14 @@ const FATE_KINDS: readonly string[] = [
 /** KEPT_PLANE is the note of a CamundaManagementCluster that the delete keeps. */
 export const KEPT_PLANE = "Kept: the claim did not make it";
 
-/** planeDeletionChoice is claimDeletionChoice of the claim of data. */
-export function planeDeletionChoice(data: DeletePlaneData): DeletionChoice {
+/**
+ * planeDeletionChoice is claimDeletionChoice of the claim of data, while the
+ * kinds of unread are not read.
+ */
+export function planeDeletionChoice(
+  data: DeletePlaneData,
+  unread: readonly string[],
+): DeletionChoice {
   const { claim } = data;
   const name = data.namespace?.metadata?.labels?.[ENVIRONMENT_LABEL];
   const environment =
@@ -103,6 +109,7 @@ export function planeDeletionChoice(data: DeletePlaneData): DeletionChoice {
     environment: environment as unknown as Environment | undefined,
     sections: data.sections as unknown as PluginSection[],
     registrations: data.registrations as unknown as PluginRegistration[],
+    registrationsRead: !unread.includes("PluginRegistration"),
     kind: "CamundaManagementClusterClaim",
   });
 }
@@ -121,7 +128,7 @@ export function deletePlaneModel(
   const { claim } = data;
   const name = claim.metadata?.name ?? "";
   const namespace = claim.metadata?.namespace ?? "";
-  const choice = planeDeletionChoice(data);
+  const choice = planeDeletionChoice(data, unread);
   const claimUid = claim.metadata?.uid;
   const controlled = (o: {
     metadata?: { ownerReferences?: { controller?: boolean; uid: string }[] };

@@ -20,7 +20,9 @@ import {
   contractUsage,
   contractWriter,
   unreadUserKinds,
+  type WaitingRequest,
   waitingRequests,
+  waitingUsersText,
   writerLabel,
 } from "@/lib/usage";
 import { KEY_FACT_LABELS, type KeyFacts, keyFacts } from "./facts";
@@ -49,7 +51,7 @@ export type ContractRow = {
   writer: ContractWriter;
   users: number;
   unread: string[];
-  waiting: string[];
+  waiting: WaitingRequest[];
   ready?: ConditionLike;
 };
 
@@ -67,7 +69,8 @@ export function contractRows(
 ): ContractRow[] {
   const reads = { errors: sources.errors };
   const requests = requestsOf({ ...sources, ...reads, stale: [] });
-  const unread = unreadUserKinds(kind, unreadKinds(reads));
+  const failed = unreadKinds(reads);
+  const unread = unreadUserKinds(kind, failed);
   return contractsOf(sources, kind)
     .map((contract) => {
       const ref: ContractRef = {
@@ -84,7 +87,7 @@ export function contractRows(
         writer: contractWriter(contract, requests, sources.planes),
         users: usage.get(contractKey(ref))?.length ?? 0,
         unread,
-        waiting: waitingRequests(ref, sources).map((w) => w.request),
+        waiting: waitingRequests(ref, sources, failed),
         ...(ready && { ready }),
       };
     })
@@ -261,7 +264,7 @@ function ContractTable({
                   )}
                   {row.waiting.length > 0 && (
                     <span className="text-xs text-bad [overflow-wrap:anywhere]">
-                      Not known: waiting for {row.waiting.join(", ")}
+                      {waitingUsersText(row.waiting)}
                     </span>
                   )}
                 </div>

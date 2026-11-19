@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that does not exist passes Delete also when the claim refuses a missing registration",
+  "input": {
+    "policy": "Delete",
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ],
+    "missing": "Refuses"
+  },
+  "result": {
+    "value": {}
+  }
+}

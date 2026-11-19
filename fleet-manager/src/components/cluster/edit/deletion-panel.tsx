@@ -38,6 +38,7 @@ export function DeletionPanel({ context }: { context: ClusterSlotContext }) {
     environment: context.environment as unknown as Environment | undefined,
     sections: context.sections as unknown as PluginSection[],
     registrations: context.registrations as unknown as PluginRegistration[],
+    registrationsRead: !context.unread.includes("PluginRegistration"),
     kind: "CamundaClusterClaim",
   });
   const refused = choice.policy === "Orphan" && !choice.keepAllowed;

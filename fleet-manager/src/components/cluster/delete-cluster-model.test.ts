@@ -441,7 +441,7 @@ describe("deleteClusterModel", () => {
       ],
     });
     expect(deleteClusterModel(refused, "Delete").keepRefused).toBe(true);
-    expect(initialPolicy(clusterDeletionChoice(refused))).toBe("Delete");
+    expect(initialPolicy(clusterDeletionChoice(refused, []))).toBe("Delete");
     expect(deleteClusterModel(data(), "Delete").keepRefused).toBe(false);
   });
 });
@@ -452,10 +452,37 @@ describe("clusterDeletionChoice and initialPolicy", () => {
       initialPolicy(
         clusterDeletionChoice(
           data({ claim: claim({ deletionPolicy: "Orphan" }) }),
+          [],
         ),
       ),
     ).toBe("Orphan");
-    expect(initialPolicy(clusterDeletionChoice(data()))).toBe("Delete");
+    expect(initialPolicy(clusterDeletionChoice(data(), []))).toBe("Delete");
+  });
+});
+
+describe("the deletion choice of a claim whose registration does not exist", () => {
+  const gone = () =>
+    data({
+      claim: claim(
+        { deletionPolicy: "Orphan" },
+        { resolvedPolicy: { deletionPolicy: "Delete" } },
+      ),
+      registrations: [],
+    });
+
+  it("refuses Keep and names the selection", () => {
+    const model = deleteClusterModel(gone(), "Orphan");
+    expect(model.choice.keepAllowed).toBe(false);
+    expect(model.choice.missing).toEqual([
+      { section: "backup-storage", label: "aws-s3 (Backup storage)" },
+    ]);
+    expect(initialPolicy(clusterDeletionChoice(gone(), []))).toBe("Delete");
+  });
+
+  it("does not count the registration as missing while PluginRegistration is not read", () => {
+    const model = deleteClusterModel(gone(), "Orphan", ["PluginRegistration"]);
+    expect(model.choice.keepAllowed).toBe(true);
+    expect(model.choice.missing).toBeUndefined();
   });
 });
 

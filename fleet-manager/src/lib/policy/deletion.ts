@@ -24,27 +24,51 @@ export function deletionPolicyOf(
 }
 
 /**
+ * Missing says how checkDeletionPolicy treats a selection whose registration
+ * is not in its list, as Missing of pkg/claimpolicy. "Passes" is the rule of
+ * a claim that has not recorded its policy, whose reference check refuses
+ * such a registration. "Refuses" is the rule of a claim that recorded its
+ * policy, whose controller writes the policy before that check.
+ */
+export type Missing = "Passes" | "Refuses";
+
+/**
  * checkDeletionPolicy refuses with NotAllowed the deletion policy Orphan when
  * the registration of a selection does not list Orphan in
  * spec.deletionPolicies, by the rule of CheckDeletionPolicy of
- * pkg/claimpolicy. Delete always passes, and so does a selection whose
- * registration is not in registrations. The value is an empty object when
- * the policy passes.
+ * pkg/claimpolicy. Delete always passes. A selection whose registration is
+ * not in registrations passes with Passes, and refuses Orphan with Refuses.
+ * The value is an empty object when the policy passes.
  */
 export function checkDeletionPolicy(
   policy: DeletionPolicy,
   selections: readonly PluginSelection[],
   registrations: readonly PluginRegistration[],
+  missing: Missing,
 ): PolicyResult<Record<string, never>> {
   if (policy !== "Orphan") return { value: {} };
 
   const unsupported = orphanRefusedBy(selections, registrations);
-  if (unsupported.length === 0) return { value: {} };
+  const unknown =
+    missing === "Refuses"
+      ? missingRegistrations(selections, registrations)
+      : [];
+  const parts = [
+    ...(unsupported.length > 0
+      ? [`these registrations do not support it: ${unsupported.join(", ")}`]
+      : []),
+    ...(unknown.length > 0
+      ? [
+          `the claim cannot tell that these registrations support it, because they do not exist: ${unknown.join(", ")}`,
+        ]
+      : []),
+  ];
+  if (parts.length === 0) return { value: {} };
 
   return {
     refusal: {
       reason: "NotAllowed",
-      message: `the deletion policy is Orphan, and these registrations do not support it: ${unsupported.join(", ")}`,
+      message: `the deletion policy is Orphan, and ${parts.join(", and ")}`,
     },
   };
 }
@@ -54,7 +78,7 @@ export function checkDeletionPolicy(
  * Orphan in spec.deletionPolicies, as PluginRegistration "<registration>"
  * of section "<section>", the names that CheckDeletionPolicy of
  * pkg/claimpolicy gives. A selection whose registration is not in
- * registrations passes. It is empty when the claim can keep.
+ * registrations is not in the result: missingRegistrations gives it.
  */
 export function orphanRefusedBy(
   selections: readonly { section: string; registration: string }[],
@@ -73,9 +97,27 @@ export function orphanRefusedBy(
         !registration.spec.deletionPolicies.includes("Orphan")
       );
     })
-    .map(
-      (s) => `PluginRegistration "${s.registration}" of section "${s.section}"`,
-    );
+    .map(selectionName);
+}
+
+/**
+ * missingRegistrations returns each selection whose registration is not in
+ * registrations, with the names of orphanRefusedBy. A claim that recorded
+ * its policy cannot keep while it is not empty.
+ */
+export function missingRegistrations(
+  selections: readonly { section: string; registration: string }[],
+  registrations: readonly { metadata?: { name?: string } }[],
+): string[] {
+  return selections
+    .filter(
+      (s) => !registrations.some((r) => r.metadata?.name === s.registration),
+    )
+    .map(selectionName);
+}
+
+function selectionName(s: { section: string; registration: string }): string {
+  return `PluginRegistration "${s.registration}" of section "${s.section}"`;
 }
 
 /**
@@ -83,14 +125,17 @@ export function orphanRefusedBy(
  * the default that deletionChoice took. keepAllowed is false when
  * checkDeletionPolicy refuses Orphan for the selections. alwaysDeleted lists
  * each selection whose registration does not list Orphan, as "<option
- * label> (<section label>)". policy is the policy that the claim gets: the
- * pick, else the default, and Delete when that is Orphan and keepAllowed is
- * false.
+ * label> (<section label>)". missing lists each selection of a claim that
+ * recorded its policy whose registration does not exist, as "<registration>
+ * (<section label>)", and is set only when it is not empty. policy is the
+ * policy that the claim gets: the pick, else the default, and Delete when
+ * that is Orphan and keepAllowed is false.
  */
 export type DeletionChoice = {
   defaultPolicy: DeletionPolicy;
   keepAllowed: boolean;
   alwaysDeleted: { section: string; label: string }[];
+  missing?: { section: string; label: string }[];
   policy: DeletionPolicy;
 };
 
@@ -111,7 +156,8 @@ export function deletionChoice(
   defaultPolicy: DeletionPolicy = environment?.spec.deletionPolicy || "Delete",
 ): DeletionChoice {
   const keepAllowed =
-    "value" in checkDeletionPolicy("Orphan", selections, registrations);
+    "value" in
+    checkDeletionPolicy("Orphan", selections, registrations, "Passes");
   const alwaysDeleted = selections.flatMap((s) => {
     const registration = registrations.find(
       (r) => r.metadata.name === s.registration,
@@ -229,8 +275,9 @@ export function requestsWithout(
 
 /**
  * requestsBehind returns a message that names the requests in names as
- * lacking the deletion policy of claim, with the reason and message of its
- * Ready condition when it has one. names must not be empty.
+ * lacking the deletion policy of claim. It gives the message of the Ready
+ * condition of claim only when its reason is NotAllowed. names must not be
+ * empty.
  */
 export function requestsBehind(
   claim: ClaimState,
@@ -241,10 +288,12 @@ export function requestsBehind(
     names.length === 1
       ? [`The request ${names[0]} does not have`, "it"]
       : [`The requests ${names.join(", ")} do not have`, "them"];
+  // The claim controller writes the policy before its other checks. Only
+  // its refusal of Orphan stops that write.
   return `${which} the deletion policy of the claim. ${
-    ready
-      ? `The operator does not update ${them} while the claim reports ${ready.reason}: ${ready.message}`
-      : `The operator has not updated ${them}.`
+    ready?.reason === "NotAllowed"
+      ? `The operator does not update ${them} while the claim reports NotAllowed: ${ready.message}`
+      : `The operator has not updated ${them} yet.`
   }`;
 }
 
@@ -253,14 +302,19 @@ export function requestsBehind(
  * defaultPolicy is the policy that the claim recorded, else Delete, never
  * the current default of environment. policy is the policy of the claim,
  * else that default. Unlike deletionChoice, policy stays Orphan when the
- * claim keeps and an option cannot: keepAllowed is then false. The labels
- * of alwaysDeleted come from the sections as a claim of kind sees them.
+ * claim keeps and an option cannot: keepAllowed is then false. A claim that
+ * recorded its policy cannot keep either while a selected registration is
+ * not in registrations, as its controller refuses, unless registrationsRead
+ * is false: the page then does not know if the registration exists. The
+ * labels of alwaysDeleted and missing come from the sections as a claim of
+ * kind sees them.
  */
 export function claimDeletionChoice(input: {
   claim: DeletableClaim & { spec?: { plugins?: PluginSelection[] } };
   environment: Environment | undefined;
   sections: readonly PluginSection[];
   registrations: readonly PluginRegistration[];
+  registrationsRead: boolean;
   kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
 }): DeletionChoice {
   const { claim, environment, sections, registrations, kind } = input;
@@ -268,16 +322,31 @@ export function claimDeletionChoice(input: {
     offeredSection(s, registrations, environment, kind),
   );
   const resolved = claim.status?.resolvedPolicy;
+  const selections = claim.spec?.plugins ?? [];
   const choice = deletionChoice(
     claim.spec?.deletionPolicy || undefined,
-    claim.spec?.plugins ?? [],
+    selections,
     environment,
     registrations,
     views,
     deletionPolicyOf(undefined, resolved),
   );
+  const missing =
+    resolved !== undefined && input.registrationsRead
+      ? selections
+          .filter(
+            (s) =>
+              !registrations.some((r) => r.metadata.name === s.registration),
+          )
+          .map((s) => ({
+            section: s.section,
+            label: `${s.registration} (${views.find((v) => v.name === s.section)?.label ?? s.section})`,
+          }))
+      : [];
   return {
     ...choice,
+    keepAllowed: choice.keepAllowed && missing.length === 0,
+    ...(missing.length > 0 && { missing }),
     policy: deletionPolicyOf(claim.spec?.deletionPolicy, resolved),
   };
 }

@@ -11,8 +11,9 @@ export const NOW = "2026-11-10T12:00:00Z";
  * cluster orders in team-a, which runs Camunda 8.9.1, its claim at
  * resourceVersion 41 with three brokers, the Environment prod, which allows
  * the preset medium and the releases camunda-8-9-0 and camunda-8-9-1, those
- * three objects, no other objects, and the write mode direct. over replaces
- * fields of the result, and merged follows the cluster and the lists of over.
+ * three objects, no other objects, no unread kind, and the write mode
+ * direct. over replaces fields of the result, and merged follows the
+ * cluster and the lists of over.
  */
 export function slotContext(
   over: Partial<ClusterSlotContext> = {},
@@ -36,6 +37,7 @@ export function slotContext(
     fields: [],
     writeMode: "direct",
     now: NOW,
+    unread: [],
     ...over,
   };
   const spec = base.cluster.spec;

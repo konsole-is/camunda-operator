@@ -295,7 +295,7 @@ const NO_LOCKS: LockProvider = () => undefined;
 export function planMove(
   release: Resource<"CamundaRelease">,
   picks: readonly MovePick[],
-  data: RolloutData,
+  data: RolloutData & SourceReads,
 ): MovePlan {
   const target = release.metadata?.name ?? "";
   const intent =
@@ -327,6 +327,8 @@ export function planMove(
       cluster: row.cluster,
       backups: [...data.elasticsearchBackups, ...data.rdbmsBackups],
       requests,
+      registrationsRead:
+        !unreadRolloutKinds(data).includes("PluginRegistration"),
     }))
       errors.push(named(error.message));
     impacts.push({

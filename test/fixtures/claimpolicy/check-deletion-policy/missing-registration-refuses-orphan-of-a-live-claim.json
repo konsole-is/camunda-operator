@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that does not exist refuses Orphan when the claim refuses a missing registration, as a live claim does",
+  "input": {
+    "policy": "Orphan",
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ],
+    "missing": "Refuses"
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "the deletion policy is Orphan, and the claim cannot tell that these registrations support it, because they do not exist: PluginRegistration \"ingress\" of section \"access\""
+    }
+  }
+}

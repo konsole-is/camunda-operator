@@ -191,6 +191,12 @@ A plugin of any other registration picks its contract from parameters that the f
 
 > Delete is possible when the fleet manager knows the users. PluginRequest my-cluster-ns/my-cluster-backup-storage has not given its outputs for its current spec yet.
 
+**Used by** and the column **Users** of the list say that the users are not known, with the same cause. A request whose section does not exist gives this cause:
+
+> The section my-backup-storage of PluginRequest my-cluster-ns/my-cluster-backup-storage does not exist.
+
+While the fleet manager cannot read `PluginRequest` or `PluginSection`, the page names the kind that it cannot read, and no request.
+
 An `ElasticsearchCluster` or a `DatabaseServer` can take its reference from its preset. It is then a user of the contract too, and it shows `from preset <preset>` under its field.
 
 A backup and the archive history of a database server keep their bucket in their status. They count as users, because a restore reads from that bucket. A database server that moved its archive to another bucket still uses the old bucket for as long as its history names it.

@@ -38,6 +38,7 @@ export function PlaneDeletionPanel() {
     environment: plane.environment as unknown as Environment | undefined,
     sections: plane.sections as unknown as PluginSection[],
     registrations: plane.registrations as unknown as PluginRegistration[],
+    registrationsRead: !plane.unread.includes("PluginRegistration"),
     kind: "CamundaManagementClusterClaim",
   });
   const refused = choice.policy === "Orphan" && !choice.keepAllowed;

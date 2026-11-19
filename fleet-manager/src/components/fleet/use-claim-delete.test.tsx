@@ -21,6 +21,8 @@ import { type ClaimDeleteActions, useClaimDelete } from "./use-claim-delete";
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
 const KIND = "CamundaManagementClusterClaim";
+const NOT_ALLOWED =
+  'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "ebs" of section "management-database"';
 const key = `${KIND}/platform/plane-a` as const;
 const ref = {
   apiVersion: "fleet.camunda.io/v1alpha1",
@@ -460,8 +462,8 @@ describe("useClaimDelete", () => {
         {
           type: "Ready",
           status: "False",
-          reason: "InvalidReference",
-          message: "CamundaRelease r1 does not exist",
+          reason: "NotAllowed",
+          message: NOT_ALLOWED,
         },
       ],
     } as Claim["status"];
@@ -472,8 +474,7 @@ describe("useClaimDelete", () => {
     await waitFor(() =>
       expect(hook.result.current.stage).toEqual({
         kind: "waiting",
-        blocked:
-          "The request plane-a-db does not have the deletion policy of the claim. The operator does not update it while the claim reports InvalidReference: CamundaRelease r1 does not exist",
+        blocked: `The request plane-a-db does not have the deletion policy of the claim. The operator does not update it while the claim reports NotAllowed: ${NOT_ALLOWED}`,
       }),
     );
     expect(fakeWriter.applied).toHaveLength(1);
@@ -485,6 +486,33 @@ describe("useClaimDelete", () => {
     ]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(reviewOf(2));
+  });
+
+  it("Git mode: while a request has the old policy and the claim reports another failed check, the wait does not blame the check", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await confirm(hook);
+    const stuck = pushed("42");
+    stuck.status = {
+      ...stuck.status,
+      conditions: [
+        {
+          type: "Ready",
+          status: "False",
+          reason: "InvalidReference",
+          message: "CamundaRelease r1 does not exist",
+        },
+      ],
+    } as Claim["status"];
+    await live(stuck, stuck, [request("plane-a-db", "Delete")]);
+    await waitFor(() =>
+      expect(hook.result.current.stage).toEqual({
+        kind: "waiting",
+        blocked:
+          "The request plane-a-db does not have the deletion policy of the claim. The operator has not updated it yet.",
+      }),
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
   });
 
   it.each([
@@ -901,6 +929,23 @@ describe("useClaimDelete", () => {
       errors: [{ code: "Invalid", message: KEEP_REFUSED_MESSAGE }],
     });
     expect(fakeWriter.previewed).toEqual([]);
+    expect(fakeWriter.applied).toEqual([]);
+    hook.rerender({ policy: "Delete" });
+    expect(hook.result.current.keepRefused).toBeUndefined();
+  });
+
+  it("refuses Keep without a write while a registration of the claim does not exist, and names it", async () => {
+    const missing =
+      'PluginRegistration "ebs-plain" of section "volume-encryption" does not exist, so the claim cannot keep the resources. Choose Delete the resources.';
+    const { hook } = mount(selecting(), {
+      policy: "Orphan",
+      registrations: [],
+    });
+    expect(hook.result.current.keepRefused).toBe(missing);
+    expect(await confirm(hook)).toEqual({
+      ok: false,
+      errors: [{ code: "Invalid", message: missing }],
+    });
     expect(fakeWriter.applied).toEqual([]);
     hook.rerender({ policy: "Delete" });
     expect(hook.result.current.keepRefused).toBeUndefined();

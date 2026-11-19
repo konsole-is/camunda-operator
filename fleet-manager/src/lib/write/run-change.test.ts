@@ -438,12 +438,18 @@ describe("runClaimDelete and previewClaimDelete", () => {
     ok: false as const,
     errors: [{ code: "Stale" as const, message: "Changed.", ref }],
   };
+  const NOT_ALLOWED =
+    'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "s3" of section "backup-storage"';
   // set is a live claim of generation 3 that the operator set up and read:
   // it has the cleanup finalizer, a recorded policy, its own policy, and
-  // a Ready condition.
+  // a Ready condition, NotAllowed unless over.ready gives another.
   const set = (
     policy: "Delete" | "Orphan",
-    over: { observedGeneration?: number; finalizers?: string[] } = {},
+    over: {
+      observedGeneration?: number;
+      finalizers?: string[];
+      ready?: { reason: string; message: string };
+    } = {},
   ): KubeObject => {
     const c = live("45");
     return {
@@ -464,8 +470,7 @@ describe("runClaimDelete and previewClaimDelete", () => {
           {
             type: "Ready",
             status: "False",
-            reason: "InvalidReference",
-            message: "CamundaRelease r1 does not exist",
+            ...(over.ready ?? { reason: "NotAllowed", message: NOT_ALLOWED }),
           },
         ],
       },
@@ -519,13 +524,38 @@ describe("runClaimDelete and previewClaimDelete", () => {
       errors: [
         {
           code: "Stale",
-          message:
-            "The request orders-backup-storage does not have the deletion policy of the claim. The operator does not update it while the claim reports InvalidReference: CamundaRelease r1 does not exist",
+          message: `The request orders-backup-storage does not have the deletion policy of the claim. The operator does not update it while the claim reports NotAllowed: ${NOT_ALLOWED}`,
           ref,
         },
       ],
     });
     expect(listObjects).toHaveBeenCalledWith("PluginRequest", "team-a");
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("Git mode refuses while a request lacks the policy of a claim that reports another failed check, without blaming the check", async () => {
+    fake.mode = "git";
+    reads = [
+      set("Orphan", {
+        ready: {
+          reason: "InvalidReference",
+          message: "CamundaRelease r1 does not exist",
+        },
+      }),
+    ];
+    listed = [request("orders-backup-storage", "Delete")];
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Stale",
+          message:
+            "The request orders-backup-storage does not have the deletion policy of the claim. The operator has not updated it yet.",
+          ref,
+        },
+      ],
+    });
     expect(fake.apply).not.toHaveBeenCalled();
   });
 

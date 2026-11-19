@@ -95,8 +95,14 @@ const VOLUME_KINDS: readonly string[] = [
 /** KEPT_ATTACHMENT is the note of each object in kept. */
 export const KEPT_ATTACHMENT = "Kept: the claim did not make it";
 
-/** clusterDeletionChoice is claimDeletionChoice of the claim of data. */
-export function clusterDeletionChoice(data: DeleteClusterData): DeletionChoice {
+/**
+ * clusterDeletionChoice is claimDeletionChoice of the claim of data, while
+ * the kinds of unread are not read.
+ */
+export function clusterDeletionChoice(
+  data: DeleteClusterData,
+  unread: readonly string[],
+): DeletionChoice {
   const { claim } = data;
   // The cache objects differ from the generated types only in their
   // timestamps, which claimDeletionChoice does not read.
@@ -111,6 +117,7 @@ export function clusterDeletionChoice(data: DeleteClusterData): DeletionChoice {
     environment: environmentOf(data) as unknown as Environment | undefined,
     sections: data.sections as unknown as PluginSection[],
     registrations: data.registrations as unknown as PluginRegistration[],
+    registrationsRead: !unread.includes("PluginRegistration"),
     kind: "CamundaClusterClaim",
   });
 }
@@ -137,7 +144,7 @@ export function deleteClusterModel(
   const { claim } = data;
   const name = claim.metadata?.name ?? "";
   const namespace = claim.metadata?.namespace ?? "";
-  const choice = clusterDeletionChoice(data);
+  const choice = clusterDeletionChoice(data, unread);
   const claimUid = claim.metadata?.uid;
   const controlled = (o: Owned) =>
     claimUid !== undefined &&

@@ -157,7 +157,7 @@ function refusalsOf(
         .map((u) => `${u.kind} ${u.namespace}/${u.name}`)
         .join(", ")}.`,
     );
-  const waiting = waitingRequests(contract, sources);
+  const waiting = waitingRequests(contract, sources, unread);
   if (waiting.length > 0) return refuse(waitingDeleteText(waiting));
   return [];
 }

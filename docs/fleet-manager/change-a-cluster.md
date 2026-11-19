@@ -167,7 +167,7 @@ Next to the empty map, **Use the inherited value** removes `{}` from the claim. 
 
 **Change schedule** on the **Backups** tab opens the **Attachments** panel.
 
-**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**.
+**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**. When the registration of an option does not exist, **Keep the resources** is disabled too. The option then shows with **Registration does not exist**.
 
 ## Save or discard the changes
 

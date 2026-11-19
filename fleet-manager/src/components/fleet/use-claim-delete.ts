@@ -17,6 +17,7 @@ import {
   deletionPolicyOf,
   type DeletionPolicy,
   equalJSON,
+  missingRegistrations,
   orphanRefusedBy,
   requestsBehind,
   type RequestState,
@@ -105,13 +106,15 @@ type Sent =
  * hook then sends the delete itself. It sends nothing for a claim with
  * another UID, and refuses with Stale when another spec change came in.
  * keepRefused names the registrations of the claim that cannot keep while
- * policy is Orphan. apply then refuses with Invalid and writes nothing, and
- * the delete after the policy write does too. registrations are the live
- * PluginRegistrations. reads holds the failed or stale watch of the claim:
- * the policy step needs a current claim. Unless mode is direct and the
- * claim has the cleanup finalizer, a failed or stale PluginRequest watch
- * keeps the delete after the policy write waiting, and reads does not show
- * it. It needs a QueryClientProvider above it.
+ * policy is Orphan, and for a claim that recorded its policy, the ones that
+ * are not in registrations. apply then refuses with Invalid and writes
+ * nothing, and the delete after the policy write does too. registrations
+ * are the live PluginRegistrations: a page that could not read them must
+ * not show keepRefused or send apply. reads holds the failed or stale watch
+ * of the claim: the policy step needs a current claim. Unless mode is direct
+ * and the claim has the cleanup finalizer, a failed or stale PluginRequest
+ * watch keeps the delete after the policy write waiting, and reads does not
+ * show it. It needs a QueryClientProvider above it.
  */
 export function useClaimDelete<C extends DeletableClaim>(input: {
   initial: C;
@@ -425,16 +428,32 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   };
 }
 
+// keepRefusal says why claim cannot keep, as its controller refuses Orphan
+// for a claim that recorded its policy.
 function keepRefusal(
   claim: DeletableClaim,
   policy: DeletionPolicy,
   registrations: readonly KeepRegistration[],
 ): string | undefined {
   if (policy !== "Orphan") return undefined;
-  const names = orphanRefusedBy(claim.spec?.plugins ?? [], registrations);
-  return names.length === 0
-    ? undefined
-    : `${names.join(", ")} cannot keep the resources. Choose Delete the resources.`;
+  const selections = claim.spec?.plugins ?? [];
+  const unsupported = orphanRefusedBy(selections, registrations);
+  const missing =
+    claim.status?.resolvedPolicy === undefined
+      ? []
+      : missingRegistrations(selections, registrations);
+  if (unsupported.length === 0 && missing.length === 0) return undefined;
+  return [
+    ...(unsupported.length > 0
+      ? [`${unsupported.join(", ")} cannot keep the resources.`]
+      : []),
+    ...(missing.length > 0
+      ? [
+          `${missing.join(", ")} ${missing.length === 1 ? "does" : "do"} not exist, so the claim cannot keep the resources.`,
+        ]
+      : []),
+    "Choose Delete the resources.",
+  ].join(" ");
 }
 
 // deleteRefusal says what to do when the claim finalizer refuses the

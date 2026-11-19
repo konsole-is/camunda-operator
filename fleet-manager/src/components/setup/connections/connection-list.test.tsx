@@ -229,9 +229,67 @@ describe("contractRows", () => {
     render(<ConnectionListLive initial={initial} />);
     expect(
       within(rowOf("backups")).getByText(
-        "Not known: waiting for PluginRequest team-a/orders-archive",
+        "The users are not known. PluginRequest team-a/orders-archive has not given its outputs for its current spec yet.",
       ),
     ).toBeTruthy();
+  });
+
+  it("names a missing section as the cause in the Users column, as the page of the contract does", () => {
+    const initial = connectionFixtures();
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: { namespace: "team-a", name: "orders-archive" },
+        spec: {
+          ...initial.requests[0].spec,
+          section: "archive",
+          registration: "acme-s3",
+        },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    expect(
+      within(rowOf("backups")).getByText(
+        "The users are not known. The section archive of PluginRequest team-a/orders-archive does not exist.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not say that the section of a request does not exist while PluginSection cannot be read", () => {
+    failing.kind = "PluginSection";
+    const initial = connectionFixtures();
+    initial.sections = [];
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: { namespace: "team-a", name: "orders-archive" },
+        spec: { ...initial.requests[0].spec, registration: "acme-s3" },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    const row = rowOf("backups");
+    expect(within(row).getByText("Could not read PluginSection")).toBeTruthy();
+    expect(within(row).queryByText(/does not exist/)).toBeNull();
+    expect(within(row).queryByText(/not known/i)).toBeNull();
+  });
+
+  it("does not wait for a request while PluginRequest cannot be read", () => {
+    failing.kind = "PluginRequest";
+    const initial = connectionFixtures();
+    initial.requests = [
+      {
+        ...initial.requests[0],
+        metadata: { namespace: "team-a", name: "orders-archive" },
+        spec: { ...initial.requests[0].spec, registration: "acme-s3" },
+        status: {},
+      },
+    ];
+    render(<ConnectionListLive initial={initial} />);
+    const row = rowOf("backups");
+    expect(within(row).getByText("Could not read PluginRequest")).toBeTruthy();
+    expect(within(row).queryByText(/has not given its outputs/)).toBeNull();
   });
 
   it("does not wait for a custom request that is being deleted", () => {
@@ -249,7 +307,7 @@ describe("contractRows", () => {
       },
     ];
     render(<ConnectionListLive initial={initial} />);
-    expect(within(rowOf("backups")).queryByText(/waiting for/)).toBeNull();
+    expect(within(rowOf("backups")).queryByText(/not known/i)).toBeNull();
   });
 
   it("treats a plugin output as managed while the requests are not known", () => {

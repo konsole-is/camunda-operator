@@ -44,7 +44,12 @@ export function DeletePlane({
   const { toast, show, dismiss } = useWriteToast();
   const all = {};
   const [picked, setPicked] = useState(() =>
-    initialPolicy(planeDeletionChoice(initial)),
+    initialPolicy(
+      planeDeletionChoice(
+        initial,
+        initial.errors.map((e) => e.kind),
+      ),
+    ),
   );
   const registrations = useResources(
     "PluginRegistration",
