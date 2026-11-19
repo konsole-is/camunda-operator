@@ -1730,9 +1730,7 @@ describe("ClusterCreateFlow write", () => {
     expect(settingsRow("Whole cluster").getAttribute("aria-expanded")).toBe(
       "true",
     );
-    expect(settingsRow("Whole cluster").textContent).toContain(
-      "1 setting has an error",
-    );
+    expect(settingsRow("Whole cluster").textContent).toContain("1 error");
     const setting = () =>
       within(whole).getAllByRole("group", { name: "auth.clientSecretRef" })[0];
     expect(within(setting()).getByText(message)).toBeTruthy();

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { type ComponentProps, useState } from "react";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import { DisclosureGroup } from "./disclosure-group";
 
 // Harness holds the open state that DisclosureGroup leaves to its caller.
@@ -30,22 +30,40 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+function rowAndBody(canvasElement: HTMLElement) {
+  const row = within(canvasElement).getByRole("button", { name: /^Brokers/ });
+  return {
+    row,
+    body: document.getElementById(row.getAttribute("aria-controls")!)!,
+  };
+}
+
 export const Closed: Story = {
   name: "Closed",
+  args: {
+    children: <input aria-label="replicas" defaultValue="3" />,
+  },
   play: async ({ canvasElement }) => {
-    const row = within(canvasElement).getByRole("button", {
-      name: "Brokers 0",
-    });
+    const { row, body: closed } = rowAndBody(canvasElement);
     await expect(row).toHaveAttribute("aria-expanded", "false");
-    await userEvent.click(row);
-    await expect(row).toHaveAttribute("aria-expanded", "true");
-    await expect(within(canvasElement).getByText(/^3 settings:/)).toBeVisible();
+    await expect(closed.getBoundingClientRect().height).toBe(0);
+    const field = closed.querySelector("input")!;
+    await expect(field.checkVisibility()).toBe(false);
+    field.focus();
+    await expect(document.activeElement).not.toBe(field);
   },
 };
 
 export const Open: Story = {
   name: "Open",
   args: { startsOpen: true },
+  play: async ({ canvasElement }) => {
+    await expect(rowAndBody(canvasElement).row).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await expect(within(canvasElement).getByText(/^3 settings:/)).toBeVisible();
+  },
 };
 
 export const ErrorCount: Story = {
@@ -54,7 +72,7 @@ export const ErrorCount: Story = {
     heading: true,
     counts: [
       { text: "1", label: "1 changed in the claim" },
-      { text: "2 errors", label: "2 settings have an error", bad: true },
+      { text: "2 errors", bad: true },
     ],
   },
   play: async ({ canvasElement }) => {
@@ -64,7 +82,7 @@ export const ErrorCount: Story = {
     ).toBeVisible();
     await expect(
       canvas.getByRole("button", {
-        name: "Brokers 1 changed in the claim 2 settings have an error",
+        name: "Brokers 1 changed in the claim 2 errors",
       }),
     ).toBeVisible();
     await expect(canvas.getByText("2 errors")).toBeVisible();

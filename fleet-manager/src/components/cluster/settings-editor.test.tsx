@@ -562,7 +562,7 @@ describe("SettingsEditor collapsed", () => {
       claim: { cluster: { zeebe: { partitions: 6 } } },
     });
     await userEvent.click(row());
-    expect(body().firstElementChild?.textContent).toBe(
+    expect(body().querySelector("p")?.textContent).toBe(
       settingsSummary(settings),
     );
     expect(settingsSummary(settings)).toContain("1 from the preset");
@@ -574,10 +574,10 @@ describe("SettingsEditor collapsed", () => {
     fireEvent.change(replicas(), { target: { value: "-1" } });
     expect(
       within(section()).getByRole("button", {
-        name: "Brokers 0 changed in the claim 1 setting has an error",
+        name: "Brokers 0 changed in the claim 1 error",
       }),
     ).toBe(row());
-    const pill = within(row()).getByText("1 error").parentElement!;
+    const pill = within(row()).getByText("1 error");
     expect(pill.className).toMatch(/text-bad/);
   });
 
@@ -623,7 +623,7 @@ describe("SettingsEditor collapsed", () => {
     fireEvent.change(replicas(), { target: { value: "-1" } });
     await userEvent.click(row());
     expect(isOpen()).toBe(false);
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     expect(invalid).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "zeebe", "replicas"),
       "replicas: Enter 0 or more",
@@ -676,7 +676,7 @@ describe("SettingsEditor collapsed", () => {
       // A value from below the claim is not the user's change to refuse.
       expect(invalid).not.toHaveBeenCalled();
       expect(set).not.toHaveBeenCalled();
-      expect(row().textContent).toContain("1 setting has an error");
+      expect(row().textContent).toContain("1 error");
       if (message) expect(within(section()).getByText(message)).toBeDefined();
     },
   );
@@ -702,7 +702,7 @@ describe("SettingsEditor collapsed", () => {
       </StrictMode>,
     );
     expect(isOpen()).toBe(true);
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     expect(invalid).not.toHaveBeenCalled();
   });
 
@@ -712,7 +712,7 @@ describe("SettingsEditor collapsed", () => {
         zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
       },
     });
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     const limit = within(settingRow("resources")).getByRole("group", {
       name: "CPU limit",
     });
@@ -733,7 +733,7 @@ describe("SettingsEditor collapsed", () => {
     expect(isOpen()).toBe(false);
     rerender([{ ...REFUSAL }]);
     expect(isOpen()).toBe(false);
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
   });
 
   it("counts a refusal at one field of a block that a layer sets once, at the row of that field", () => {
@@ -752,7 +752,7 @@ describe("SettingsEditor collapsed", () => {
         },
       ],
     );
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     expect(within(section()).getAllByText("too many tolerations")).toHaveLength(
       1,
     );
@@ -776,15 +776,13 @@ describe("SettingsEditor collapsed", () => {
     );
     const shown = within(section()).getAllByText("bad block");
     expect(shown.length).toBeGreaterThan(1);
-    expect(row().textContent).toContain(
-      `${shown.length} settings have an error`,
-    );
+    expect(row().textContent).toContain(`${shown.length} errors`);
     expect(within(row()).getByText(`${shown.length} errors`)).toBeDefined();
   });
 
   it("counts a refusal of the server on its row", () => {
     renderClosed({}, [REFUSAL]);
-    expect(row().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
   });
 
   it("is not a disclosure without collapsed", () => {

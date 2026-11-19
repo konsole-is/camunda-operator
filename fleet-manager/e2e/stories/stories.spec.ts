@@ -118,6 +118,21 @@ test("the Storybook opens a story under a sub-path", async ({
   expect(failed).toEqual([]);
 });
 
+// Playwright cannot use the find function of the browser. A text fragment
+// reveals the text of a closed DisclosureGroup the same way.
+test("a text fragment opens the closed group that holds the text", async ({
+  page,
+}) => {
+  await page.goto(
+    "iframe.html?viewMode=story&id=setup-releases-envscopes--no-entries#:~:text=Variables%20of%20Gateway",
+  );
+  // The row of each env scope reads its name and its count of entries.
+  const toggle = (name: string) =>
+    page.getByRole("button", { name: `${name} 0`, exact: true });
+  await expect(toggle("Gateway")).toHaveAttribute("aria-expanded", "true");
+  await expect(toggle("Operate")).toHaveAttribute("aria-expanded", "false");
+});
+
 // The dark run keeps the file names that it had before the light theme.
 const THEMES = [
   { theme: "dark", suffix: "", title: "" },

@@ -1,7 +1,14 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { Fragment, type ReactNode, useId } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,9 +24,11 @@ export type DisclosureCount = { text: string; label?: string; bad?: boolean };
  * DisclosureGroup is a bordered group with a row that opens and closes its
  * body: a chevron, label, and a pill for each of counts. The body stays in
  * the page while it is hidden. It holds no state: a click on the row calls
- * onToggle with the other state. role and name set the role and the
- * accessible name of the group, a group named label by default. With
- * heading, the row is in a heading of level 3 that label alone names.
+ * onToggle with the other state, and a match of the find function of the
+ * browser in the closed body calls it with true. role and name set the
+ * role and the accessible name of the group, a group named label by
+ * default. With heading, the row is in a heading of level 3 that label
+ * alone names.
  */
 export function DisclosureGroup({
   label,
@@ -41,6 +50,23 @@ export function DisclosureGroup({
   children: ReactNode;
 }) {
   const id = useId();
+  const body = useRef<HTMLDivElement>(null);
+  const toggle = useRef(onToggle);
+  useEffect(() => {
+    toggle.current = onToggle;
+  });
+  // React sets hidden only as a boolean. With "until-found", the find
+  // function of the browser matches text in the closed body and fires
+  // beforematch on it.
+  useLayoutEffect(() => {
+    if (!open) body.current?.setAttribute("hidden", "until-found");
+  }, [open]);
+  useEffect(() => {
+    const element = body.current;
+    const found = () => toggle.current(true);
+    element?.addEventListener("beforematch", found);
+    return () => element?.removeEventListener("beforematch", found);
+  }, []);
   const row = (
     <button
       type="button"
@@ -58,8 +84,6 @@ export function DisclosureGroup({
       />
       <span id={`${id}-label`}>{label}</span>
       {counts.map((count, i) => (
-        // The flex gap shows no space, and the accessible name of the row
-        // joins its parts without one.
         <Fragment key={i}>
           {" "}
           <span
@@ -89,12 +113,12 @@ export function DisclosureGroup({
       className="rounded-md border border-border"
     >
       {heading ? <h3 aria-labelledby={`${id}-label`}>{row}</h3> : row}
-      <div
-        id={`${id}-body`}
-        hidden={!open}
-        className="flex flex-col gap-4 border-t border-divider px-4 py-4"
-      >
-        {children}
+      {/* A closed body that the find function can open keeps its own box,
+          so the border and the padding are on the inner element. */}
+      <div ref={body} id={`${id}-body`} hidden={!open}>
+        <div className="flex flex-col gap-4 border-t border-divider px-4 py-4">
+          {children}
+        </div>
       </div>
     </div>
   );

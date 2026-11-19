@@ -235,7 +235,7 @@ export const ErrorInSection: Story = {
     await userEvent.type(replicas, "-1");
     await userEvent.click(row);
     await expect(row).toHaveAttribute("aria-expanded", "false");
-    await expect(row).toHaveAccessibleName(/ 1 setting has an error$/);
+    await expect(row).toHaveAccessibleName(/ 1 error$/);
     await expect(within(row).getByText("1 error")).toBeVisible();
   },
 };

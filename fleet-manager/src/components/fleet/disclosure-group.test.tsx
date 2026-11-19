@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -50,10 +50,35 @@ describe("DisclosureGroup", () => {
     const body = document.getElementById(
       toggle().getAttribute("aria-controls")!,
     );
-    expect(body?.hidden).toBe(true);
+    expect(body?.getAttribute("hidden")).toBe("until-found");
     expect(body?.contains(screen.getByRole("textbox", { hidden: true }))).toBe(
       true,
     );
+  });
+
+  it("opens when the find function of the browser matches text in its closed body", () => {
+    const onToggle = vi.fn();
+    render(<Live onToggle={onToggle} />);
+    const body = document.getElementById(
+      toggle().getAttribute("aria-controls")!,
+    )!;
+    act(() => {
+      body.dispatchEvent(new Event("beforematch"));
+    });
+    expect(onToggle).toHaveBeenLastCalledWith(true);
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(body.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("hides its body again for the find function once it closes", async () => {
+    render(<Live />);
+    await userEvent.click(toggle());
+    await userEvent.click(toggle());
+    expect(
+      document
+        .getElementById(toggle().getAttribute("aria-controls")!)
+        ?.getAttribute("hidden"),
+    ).toBe("until-found");
   });
 
   it("asks onToggle for the other state on a click on its row", async () => {
@@ -79,13 +104,13 @@ describe("DisclosureGroup", () => {
       <Live
         counts={[
           { text: "1", label: "1 changed in the claim" },
-          { text: "2 errors", label: "2 settings have an error", bad: true },
+          { text: "2 errors", bad: true },
         ]}
       />,
     );
     expect(
       screen.getByRole("button", {
-        name: "Brokers 1 changed in the claim 2 settings have an error",
+        name: "Brokers 1 changed in the claim 2 errors",
       }),
     ).toBeTruthy();
   });
@@ -95,7 +120,7 @@ describe("DisclosureGroup", () => {
       <Live
         counts={[
           { text: "1", label: "1 changed in the claim" },
-          { text: "1 error", label: "1 setting has an error", bad: true },
+          { text: "1 error", bad: true },
         ]}
       />,
     );

@@ -135,10 +135,6 @@ export function SettingsEditor({
     if (failing > 0)
       counts.push({
         text: failing === 1 ? "1 error" : `${failing} errors`,
-        label:
-          failing === 1
-            ? "1 setting has an error"
-            : `${failing} settings have an error`,
         bad: true,
       });
     return (

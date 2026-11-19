@@ -397,7 +397,7 @@ describe("ClusterSettingsStep", () => {
     const body = document.getElementById(
       rowOf("Brokers").getAttribute("aria-controls")!,
     );
-    expect(body?.firstElementChild?.textContent).toMatch(
+    expect(body?.querySelector("p")?.textContent).toMatch(
       /^\d+ settings: 2 from the preset, /,
     );
   });
