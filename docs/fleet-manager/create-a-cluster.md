@@ -32,9 +32,11 @@ Pick the **Release** and the **Platform config**. Both start at the default of t
 
 Under them, a note names the preset that you picked in **Environment and name**. Your admin made this preset. It sets each value that shows **From preset**. You can change such a value here. The change applies to this cluster only and does not change the preset.
 
-The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. Under the name, a line says how many settings the group has and where their values come from, for example `14 settings: 3 from the preset, 11 not set`. A setting is `not set` when the preset, the release, and the claim give it no value. A setting that you change counts as `changed in the claim` as soon as you change it. A value that you typed stays when you close the group.
+The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. The number next to the name is the count of settings that you changed in the claim. A setting counts as soon as you change it. A value that you typed stays when you close the group.
 
-When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. The line under its name then also says how many settings have an error, for example `1 setting has an error`. This line stays when you close the group.
+The first line of an open group says how many settings the group has and where their values come from, for example `14 settings: 3 from the preset, 11 not set`. A setting is `not set` when the preset, the release, and the claim give it no value.
+
+When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. A red count next to the name then says how many settings have an error, for example `1 error`. This count stays when you close the group.
 
 A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 

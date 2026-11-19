@@ -499,8 +499,14 @@ describe("SettingsEditor collapsed", () => {
   }
   const section = () =>
     screen.getByRole("region", { name: "Brokers settings" });
-  const details = () => section().querySelector("details")!;
-  const summary = () => section().querySelector("summary")!;
+  // row is the button that opens and closes the group.
+  const row = () =>
+    within(
+      screen.getByRole("heading", { level: 3, name: "Brokers" }),
+    ).getByRole("button");
+  const isOpen = () => row().getAttribute("aria-expanded") === "true";
+  const body = () =>
+    document.getElementById(row().getAttribute("aria-controls")!)!;
   const replicas = () =>
     within(settingRow("replicas")).getByRole<HTMLInputElement>("spinbutton");
   const REFUSAL: FieldError = {
@@ -510,35 +516,77 @@ describe("SettingsEditor collapsed", () => {
 
   it("starts closed with its rows in the page", () => {
     renderClosed();
-    expect(details().open).toBe(false);
-    expect(details().contains(replicas())).toBe(true);
+    expect(isOpen()).toBe(false);
+    expect(body().hidden).toBe(true);
+    expect(
+      within(body()).getByRole("spinbutton", {
+        name: "replicas",
+        hidden: true,
+      }),
+    ).toBeDefined();
   });
 
-  it("opens and closes on a click on its summary", async () => {
+  it("opens and closes on a click on its row", async () => {
     renderClosed();
-    await userEvent.click(summary());
-    expect(details().open).toBe(true);
-    await userEvent.click(summary());
-    expect(details().open).toBe(false);
+    await userEvent.click(row());
+    expect(isOpen()).toBe(true);
+    await userEvent.click(row());
+    expect(isOpen()).toBe(false);
   });
 
-  it("names the group, its settings, and where their values come from on the summary", () => {
+  it("counts the settings changed in the claim on its row", () => {
+    renderClosed({
+      preset: { zeebe: { replicas: 3 } },
+      claim: { cluster: { zeebe: { partitions: 6, storageSize: "10Gi" } } },
+    });
+    expect(
+      within(section()).getByRole("button", {
+        name: "Brokers 2 changed in the claim",
+      }),
+    ).toBe(row());
+    expect(within(row()).getByText("2")).toBeDefined();
+  });
+
+  it("counts 0 on its row without a setting changed in the claim", () => {
+    renderClosed({ preset: { zeebe: { replicas: 3 } } });
+    expect(
+      within(section()).getByRole("button", {
+        name: "Brokers 0 changed in the claim",
+      }),
+    ).toBe(row());
+  });
+
+  it("says first in its body where the values of its settings come from", async () => {
     const { settings } = renderClosed({
       preset: { zeebe: { replicas: 3 } },
       claim: { cluster: { zeebe: { partitions: 6 } } },
     });
-    expect(summary().textContent).toContain("Brokers");
-    expect(summary().textContent).toContain(settingsSummary(settings));
+    await userEvent.click(row());
+    expect(body().querySelector("p")?.textContent).toBe(
+      settingsSummary(settings),
+    );
     expect(settingsSummary(settings)).toContain("1 from the preset");
-    expect(settingsSummary(settings)).toContain("1 changed in the claim");
+  });
+
+  it("shows the number of settings with an error on its row in words and in the color of an error", async () => {
+    renderClosed();
+    await userEvent.click(row());
+    fireEvent.change(replicas(), { target: { value: "-1" } });
+    expect(
+      within(section()).getByRole("button", {
+        name: "Brokers 0 changed in the claim 1 error",
+      }),
+    ).toBe(row());
+    const pill = within(row()).getByText("1 error");
+    expect(pill.className).toMatch(/text-bad/);
   });
 
   it("keeps a typed value while it is closed", async () => {
     const { set } = renderClosed();
-    await userEvent.click(summary());
+    await userEvent.click(row());
     await userEvent.type(replicas(), "2");
-    await userEvent.click(summary());
-    await userEvent.click(summary());
+    await userEvent.click(row());
+    await userEvent.click(row());
     expect(replicas().value).toBe("2");
     expect(set).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "zeebe", "replicas"),
@@ -548,9 +596,9 @@ describe("SettingsEditor collapsed", () => {
 
   it("opens when a refusal of the server arrives at one of its settings", () => {
     const { rerender } = renderClosed();
-    expect(details().open).toBe(false);
+    expect(isOpen()).toBe(false);
     rerender([REFUSAL]);
-    expect(details().open).toBe(true);
+    expect(isOpen()).toBe(true);
     expect(
       within(settingRow("replicas")).getByText("replicas must be odd"),
     ).toBeDefined();
@@ -558,36 +606,36 @@ describe("SettingsEditor collapsed", () => {
 
   it("starts open with a refusal of the server at one of its settings", () => {
     renderClosed({}, [REFUSAL]);
-    expect(details().open).toBe(true);
+    expect(isOpen()).toBe(true);
   });
 
   it("stays closed for a refusal of the server at a field of another group", () => {
     renderClosed({}, [
       { path: "spec.cluster.gateway.replicas", message: "too few" },
     ]);
-    expect(details().open).toBe(false);
-    expect(summary().textContent).not.toMatch(/error/);
+    expect(isOpen()).toBe(false);
+    expect(row().textContent).not.toMatch(/error/);
   });
 
-  it("says on the summary that a setting has an error after the user closes it", async () => {
+  it("says on its row that a setting has an error after the user closes it", async () => {
     const { invalid } = renderClosed();
-    await userEvent.click(summary());
+    await userEvent.click(row());
     fireEvent.change(replicas(), { target: { value: "-1" } });
-    await userEvent.click(summary());
-    expect(details().open).toBe(false);
-    expect(summary().textContent).toContain("1 setting has an error");
+    await userEvent.click(row());
+    expect(isOpen()).toBe(false);
+    expect(row().textContent).toContain("1 error");
     expect(invalid).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "zeebe", "replicas"),
       "replicas: Enter 0 or more",
     );
   });
 
-  it("drops the error from the summary once the value is valid", async () => {
+  it("drops the error from its row once the value is valid", async () => {
     renderClosed();
-    await userEvent.click(summary());
+    await userEvent.click(row());
     fireEvent.change(replicas(), { target: { value: "-1" } });
     fireEvent.change(replicas(), { target: { value: "1" } });
-    expect(summary().textContent).not.toMatch(/error/);
+    expect(row().textContent).not.toMatch(/error/);
   });
 
   it.each([
@@ -624,11 +672,11 @@ describe("SettingsEditor collapsed", () => {
       const { invalid, set } = renderClosed({
         preset: { zeebe } as SettingsPage["preset"],
       });
-      expect(details().open).toBe(true);
+      expect(isOpen()).toBe(true);
       // A value from below the claim is not the user's change to refuse.
       expect(invalid).not.toHaveBeenCalled();
       expect(set).not.toHaveBeenCalled();
-      expect(summary().textContent).toContain("1 setting has an error");
+      expect(row().textContent).toContain("1 error");
       if (message) expect(within(section()).getByText(message)).toBeDefined();
     },
   );
@@ -653,8 +701,8 @@ describe("SettingsEditor collapsed", () => {
         />
       </StrictMode>,
     );
-    expect(details().open).toBe(true);
-    expect(summary().textContent).toContain("1 setting has an error");
+    expect(isOpen()).toBe(true);
+    expect(row().textContent).toContain("1 error");
     expect(invalid).not.toHaveBeenCalled();
   });
 
@@ -664,7 +712,7 @@ describe("SettingsEditor collapsed", () => {
         zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
       },
     });
-    expect(summary().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     const limit = within(settingRow("resources")).getByRole("group", {
       name: "CPU limit",
     });
@@ -675,17 +723,17 @@ describe("SettingsEditor collapsed", () => {
       within(section()).queryByText("The limit is below the request"),
     ).toBeNull();
     expect(set).toHaveBeenCalled();
-    expect(summary().textContent).not.toMatch(/error/);
+    expect(row().textContent).not.toMatch(/error/);
   });
 
   it("stays closed after the user closes it while its count of errors stays the same", async () => {
     const { rerender } = renderClosed({}, [REFUSAL]);
-    expect(details().open).toBe(true);
-    await userEvent.click(summary());
-    expect(details().open).toBe(false);
+    expect(isOpen()).toBe(true);
+    await userEvent.click(row());
+    expect(isOpen()).toBe(false);
     rerender([{ ...REFUSAL }]);
-    expect(details().open).toBe(false);
-    expect(summary().textContent).toContain("1 setting has an error");
+    expect(isOpen()).toBe(false);
+    expect(row().textContent).toContain("1 error");
   });
 
   it("counts a refusal at one field of a block that a layer sets once, at the row of that field", () => {
@@ -704,7 +752,7 @@ describe("SettingsEditor collapsed", () => {
         },
       ],
     );
-    expect(summary().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
     expect(within(section()).getAllByText("too many tolerations")).toHaveLength(
       1,
     );
@@ -728,18 +776,24 @@ describe("SettingsEditor collapsed", () => {
     );
     const shown = within(section()).getAllByText("bad block");
     expect(shown.length).toBeGreaterThan(1);
-    expect(summary().textContent).toContain(
-      `${shown.length} settings have an error`,
-    );
+    expect(row().textContent).toContain(`${shown.length} errors`);
+    expect(within(row()).getByText(`${shown.length} errors`)).toBeDefined();
   });
 
-  it("counts a refusal of the server on the summary", () => {
+  it("counts a refusal of the server on its row", () => {
     renderClosed({}, [REFUSAL]);
-    expect(summary().textContent).toContain("1 setting has an error");
+    expect(row().textContent).toContain("1 error");
   });
 
   it("is not a disclosure without collapsed", () => {
     renderEditor("zeebe", "zeebe");
-    expect(section().querySelector("details")).toBeNull();
+    expect(
+      screen
+        .getByRole("heading", { level: 3, name: "Brokers" })
+        .querySelector("button"),
+    ).toBeNull();
+    expect(
+      within(section()).queryByRole("button", { expanded: false }),
+    ).toBeNull();
   });
 });

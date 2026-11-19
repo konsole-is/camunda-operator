@@ -299,14 +299,21 @@ async function toStep(label: string, name = "search") {
 const stepButton = (label: string) =>
   screen.getByRole("button", { name: new RegExp(label) });
 
+// settingsRow is the button in the heading of the settings group of label
+// on step 3, which opens and closes the group.
+const settingsRow = (label: string) =>
+  within(
+    within(screen.getByRole("region", { name: `${label} settings` })).getByRole(
+      "heading",
+      { level: 3, name: label },
+    ),
+  ).getByRole("button");
+
 // openSettings opens the settings group of label on step 3, which starts
-// closed, as a click on its heading does.
+// closed.
 async function openSettings(label: string) {
-  const details = screen
-    .getByRole("region", { name: `${label} settings` })
-    .querySelector("details")!;
-  expect(details.open).toBe(false);
-  await userEvent.click(details.querySelector("summary")!);
+  expect(settingsRow(label).getAttribute("aria-expanded")).toBe("false");
+  await userEvent.click(settingsRow(label));
 }
 
 const footer = () =>
@@ -1720,10 +1727,10 @@ describe("ClusterCreateFlow write", () => {
     });
     const message =
       "The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.";
-    expect(whole.querySelector("details")?.open).toBe(true);
-    expect(whole.querySelector("summary")?.textContent).toContain(
-      "1 setting has an error",
+    expect(settingsRow("Whole cluster").getAttribute("aria-expanded")).toBe(
+      "true",
     );
+    expect(settingsRow("Whole cluster").textContent).toContain("1 error");
     const setting = () =>
       within(whole).getAllByRole("group", { name: "auth.clientSecretRef" })[0];
     expect(within(setting()).getByText(message)).toBeTruthy();
@@ -1738,7 +1745,7 @@ describe("ClusterCreateFlow write", () => {
     await waitFor(() =>
       expect(within(setting()).queryByText(message)).toBeNull(),
     );
-    expect(whole.querySelector("summary")?.textContent).not.toMatch(/error/);
+    expect(settingsRow("Whole cluster").textContent).not.toMatch(/error/);
   });
 
   it("accepts the reference once the namespace holds the Secret and its key", async () => {
