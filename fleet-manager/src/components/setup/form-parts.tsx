@@ -9,21 +9,41 @@ import {
 import { byCodeUnit } from "@/lib/policy";
 import { Checkbox } from "@/components/ui/checkbox";
 
-/** EditorSection is one open part of the editor with its heading. */
+/**
+ * EditorSection is one part of the editor with its heading, which opens
+ * and closes it. It is open unless open is false, and its children stay in
+ * the page while it is closed. summary shows under the heading also while
+ * the part is closed. onToggle gets the state after each open or close.
+ * With asHeading, the title is a heading of level 3.
+ */
 export function EditorSection({
   title,
+  asHeading = false,
+  summary,
+  open = true,
+  onToggle,
   children,
 }: {
   title: string;
+  asHeading?: boolean;
+  summary?: ReactNode;
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
   children: ReactNode;
 }) {
   return (
     <details
-      open
+      open={open}
+      onToggle={onToggle && ((event) => onToggle(event.currentTarget.open))}
       className="group rounded-md border border-border bg-panel open:pb-5"
     >
       <summary className="cursor-pointer px-5 py-3.5 font-heading text-base font-semibold select-none">
-        {title}
+        {asHeading ? <h3 className="inline">{title}</h3> : title}
+        {summary && (
+          <span className="mt-0.5 block font-sans text-sm font-normal text-muted">
+            {summary}
+          </span>
+        )}
       </summary>
       <div className="flex flex-col gap-4 px-5">{children}</div>
     </details>

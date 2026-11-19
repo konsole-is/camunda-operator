@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import { createReleaseChoices } from "@/components/cluster/edit/release-options";
-import { type ClusterDraft, draftCluster } from "@/lib/clusters/draft";
+import {
+  type ClusterDraft,
+  draftCluster,
+  withClaimValue,
+} from "@/lib/clusters/draft";
 import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { ClusterSettingsStep } from "./cluster-settings-step";
@@ -96,6 +100,7 @@ function renderStep(
     environment,
     releases: createReleaseChoices(releases, environment),
     platformConfigs: ["basic", "oidc"],
+    presets: presets.map((p) => p.metadata?.name ?? ""),
     fields,
     merged: drafted.merged,
     secrets: [],
@@ -109,8 +114,56 @@ function renderStep(
   return props;
 }
 
+// LiveStep holds the draft as the create flow does, so that a change
+// reaches the fields of the step.
+function LiveStep({
+  initial,
+  set,
+}: {
+  initial: ClusterDraft;
+  set: ComponentProps<typeof ClusterSettingsStep>["set"];
+}) {
+  const [draft, setDraft] = useState(initial);
+  const drafted = draftCluster(draft, [preset], releases, prod());
+  const fields = clusterFields({
+    cluster: drafted.cluster,
+    merged: drafted.merged,
+    claim: drafted.claim as unknown as Resource<"CamundaClusterClaim">,
+    sections: [accessSection],
+    registrations: [],
+  });
+  return (
+    <ClusterSettingsStep
+      draft={draft}
+      environment={prod()}
+      releases={createReleaseChoices(releases, prod())}
+      platformConfigs={["basic"]}
+      presets={["small"]}
+      fields={fields}
+      merged={drafted.merged}
+      secrets={[]}
+      pick={vi.fn()}
+      set={(steps, value) => {
+        set(steps, value);
+        setDraft((d) => withClaimValue(d, steps, value));
+      }}
+      reset={vi.fn()}
+      invalid={vi.fn()}
+    />
+  );
+}
+
 const select = (name: string) =>
   screen.getByRole<HTMLSelectElement>("combobox", { name });
+
+const section = (label: string) =>
+  screen.getByRole("region", { name: `${label} settings` });
+
+const summaryOf = (label: string) => section(label).querySelector("summary")!;
+
+// toggle opens or closes the settings group of label, as a click on its
+// heading does.
+const toggle = (label: string) => userEvent.click(summaryOf(label));
 
 describe("ClusterSettingsStep", () => {
   it("preselects the default release and platform config of the environment", () => {
@@ -201,6 +254,7 @@ describe("ClusterSettingsStep", () => {
       spec: { cluster: { zeebe: { storageSize: "32Gi" } } },
     } as unknown as Resource<"CamundaClusterPreset">;
     renderStep({}, prod(), [large]);
+    await toggle("Brokers");
     const brokers = screen.getByRole("region", { name: "Brokers settings" });
     const amount = within(
       within(brokers).getAllByRole("group", { name: "storageSize" })[0],
@@ -216,6 +270,7 @@ describe("ClusterSettingsStep", () => {
       spec: { cluster: { zeebe: { storageSize: 10737418240 } } },
     } as unknown as Resource<"CamundaClusterPreset">;
     const { set } = renderStep({}, prod(), [numeric]);
+    await toggle("Brokers");
     const brokers = screen.getByRole("region", { name: "Brokers settings" });
     const amount = within(
       within(brokers).getAllByRole("group", { name: "storageSize" })[0],
@@ -235,6 +290,7 @@ describe("ClusterSettingsStep", () => {
 
   it("turns on Connectors that the preset leaves off", async () => {
     const { set } = renderStep();
+    await toggle("Connectors");
     const connectors = screen.getByRole("region", {
       name: "Connectors settings",
     });
@@ -295,6 +351,7 @@ describe("ClusterSettingsStep", () => {
   it("sends a settings change with steps from the root of the claim", async () => {
     const set = vi.fn();
     renderStep({ draft: draftOf({}, false), set });
+    await toggle("Whole cluster");
     const whole = screen.getByRole("region", {
       name: "Whole cluster settings",
     });
@@ -307,5 +364,109 @@ describe("ClusterSettingsStep", () => {
       { field: "spec" },
       { field: "cluster" },
     ]);
+  });
+
+  it("starts each settings group closed under the release and platform config", () => {
+    renderStep();
+    const groups = screen.getAllByRole("region", { name: / settings$/ });
+    expect(groups.length).toBeGreaterThan(1);
+    for (const group of groups)
+      expect(group.querySelector("details")?.open).toBe(false);
+    expect(select("Release")).toBeTruthy();
+    expect(select("Platform config")).toBeTruthy();
+  });
+
+  it("says on a closed group where the values of its settings come from", () => {
+    const large = {
+      ...preset,
+      spec: { cluster: { zeebe: { replicas: 3, partitions: 3 } } },
+    } as unknown as Resource<"CamundaClusterPreset">;
+    renderStep({}, prod(), [large]);
+    expect(summaryOf("Brokers").textContent).toMatch(
+      /^Brokers\d+ settings: 2 from the preset, /,
+    );
+  });
+
+  it("names the preset that sets the values and says that a change stays with this cluster", () => {
+    renderStep();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent ===
+            "Your admin made the preset small. It sets each value that shows “From preset”. A change here applies to this cluster only. It does not change the preset.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no preset note without a preset", () => {
+    renderStep({ draft: draftOf({ presetRef: undefined }) });
+    expect(screen.queryByText(/Your admin made the preset/)).toBeNull();
+  });
+
+  it("shows no preset note for a preset that the live list does not hold", () => {
+    renderStep({}, prod(), []);
+    expect(screen.queryByText(/Your admin made the preset/)).toBeNull();
+  });
+
+  it("names each settings group as a heading", () => {
+    renderStep();
+    for (const name of ["Whole cluster", "Brokers", "Gateway", "Connectors"])
+      expect(screen.getByRole("heading", { level: 3, name })).toBeTruthy();
+  });
+
+  it("counts a changed setting on its group at once", async () => {
+    render(<LiveStep initial={draftOf({}, false)} set={vi.fn()} />);
+    expect(summaryOf("Brokers").textContent).not.toContain(
+      "changed in the claim",
+    );
+    await toggle("Brokers");
+    await userEvent.type(
+      within(
+        within(section("Brokers")).getAllByRole("group", {
+          name: "replicas",
+        })[0],
+      ).getByRole("spinbutton"),
+      "5",
+    );
+    expect(summaryOf("Brokers").textContent).toContain(
+      "1 changed in the claim",
+    );
+  });
+
+  it("keeps a typed value through a close and an open, and sends it to the claim", async () => {
+    const set = vi.fn();
+    render(<LiveStep initial={draftOf({}, false)} set={set} />);
+    const url = () =>
+      within(section("Whole cluster")).getByRole<HTMLInputElement>("textbox", {
+        name: "externalUrl",
+      });
+    await toggle("Whole cluster");
+    await userEvent.type(url(), "https://orders.example.com");
+    await toggle("Whole cluster");
+    expect(section("Whole cluster").querySelector("details")?.open).toBe(false);
+    await toggle("Whole cluster");
+    expect(url().value).toBe("https://orders.example.com");
+    expect(set).toHaveBeenLastCalledWith(
+      [{ field: "spec" }, { field: "cluster" }, { field: "externalUrl" }],
+      "https://orders.example.com",
+    );
+  });
+
+  it("opens the group of a setting with a field error and shows the error at its row", () => {
+    renderStep({
+      draft: draftOf({}, false),
+      errors: [
+        { path: "spec.cluster.externalUrl", message: "The URL is taken." },
+      ],
+    });
+    const whole = section("Whole cluster");
+    expect(whole.querySelector("details")?.open).toBe(true);
+    expect(
+      within(
+        within(whole).getAllByRole("group", { name: "externalUrl" })[0],
+      ).getByText("The URL is taken."),
+    ).toBeTruthy();
+    expect(section("Brokers").querySelector("details")?.open).toBe(false);
   });
 });

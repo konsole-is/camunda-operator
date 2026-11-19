@@ -299,6 +299,16 @@ async function toStep(label: string, name = "search") {
 const stepButton = (label: string) =>
   screen.getByRole("button", { name: new RegExp(label) });
 
+// openSettings opens the settings group of label on step 3, which starts
+// closed, as a click on its heading does.
+async function openSettings(label: string) {
+  const details = screen
+    .getByRole("region", { name: `${label} settings` })
+    .querySelector("details")!;
+  expect(details.open).toBe(false);
+  await userEvent.click(details.querySelector("summary")!);
+}
+
 const footer = () =>
   document.getElementById(next().getAttribute("aria-describedby") ?? "")
     ?.textContent ?? "";
@@ -945,6 +955,7 @@ describe("ClusterCreateFlow", () => {
     await toStep("Storage and access");
     await userEvent.click(radio(/No access from outside/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     await userEvent.type(
       screen.getByRole("textbox", { name: "externalUrl" }),
       "https://orders.example.com",
@@ -953,6 +964,7 @@ describe("ClusterCreateFlow", () => {
     await userEvent.click(stepButton("Storage and access"));
     await userEvent.click(radio(/^Gateway/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     const url = screen.getAllByRole("group", { name: "externalUrl" })[0];
     expect(within(url).getByText("Filled by Access")).toBeTruthy();
     expect(next().disabled).toBe(false);
@@ -960,6 +972,7 @@ describe("ClusterCreateFlow", () => {
     await userEvent.click(stepButton("Storage and access"));
     await userEvent.click(radio(/No access from outside/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     expect(
       (screen.getByRole("textbox", { name: "externalUrl" }) as HTMLInputElement)
         .value,
@@ -971,6 +984,7 @@ describe("ClusterCreateFlow", () => {
     await toStep("Storage and access");
     await userEvent.click(radio(/No identity/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     const row = () =>
       screen.getAllByRole("group", { name: "serviceAccount.annotations" })[0];
     await userEvent.click(
@@ -988,12 +1002,14 @@ describe("ClusterCreateFlow", () => {
     await userEvent.click(stepButton("Storage and access"));
     await userEvent.click(radio(/^IRSA/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     expect(within(row()).getByText("Filled by Identity")).toBeTruthy();
     expect(next().disabled).toBe(false);
 
     await userEvent.click(stepButton("Storage and access"));
     await userEvent.click(radio(/No identity/));
     await userEvent.click(next());
+    await openSettings("Whole cluster");
     expect(within(row()).queryByRole("textbox", { name: "Key" })).toBeNull();
   });
 
@@ -1655,6 +1671,7 @@ describe("ClusterCreateFlow write", () => {
     });
     const view = show(initial);
     await toStep("Cluster settings", "orders");
+    await openSettings("Whole cluster");
     // The setting and its picker are both groups of that name.
     const picker = screen.getAllByRole("group", {
       name: "auth.clientSecretRef",
@@ -1694,6 +1711,34 @@ describe("ClusterCreateFlow write", () => {
     );
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(footer()).not.toContain("auth.clientSecretRef");
+  });
+
+  it("opens the group of a Secret reference that the namespace does not hold and shows the error at its row", async () => {
+    const { view, initial } = await pickInTeamA();
+    const whole = screen.getByRole("region", {
+      name: "Whole cluster settings",
+    });
+    const message =
+      "The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.";
+    expect(whole.querySelector("details")?.open).toBe(true);
+    expect(whole.querySelector("summary")?.textContent).toContain(
+      "1 setting has an error",
+    );
+    const setting = () =>
+      within(whole).getAllByRole("group", { name: "auth.clientSecretRef" })[0];
+    expect(within(setting()).getByText(message)).toBeTruthy();
+
+    live.objects.Secret = [
+      {
+        metadata: { namespace: "team-b", name: "orders-oidc" },
+        keys: ["secret"],
+      },
+    ];
+    view.rerender(flowOf(initial));
+    await waitFor(() =>
+      expect(within(setting()).queryByText(message)).toBeNull(),
+    );
+    expect(whole.querySelector("summary")?.textContent).not.toMatch(/error/);
   });
 
   it("accepts the reference once the namespace holds the Secret and its key", async () => {

@@ -149,3 +149,11 @@ export const Optimize: Story = {
     },
   }),
 };
+
+export const Collapsed: Story = {
+  name: "Collapsed",
+  args: {
+    ...BrokersFromThePreset.args,
+    collapsed: true,
+  },
+};

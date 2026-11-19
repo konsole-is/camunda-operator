@@ -19,6 +19,7 @@ import { type ClusterDraft, releaseOf } from "@/lib/clusters/draft";
 import type { ClusterField, Step } from "@/lib/fields";
 import type { KindName } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
+import type { FieldError } from "@/lib/session";
 
 // The selects of this step and the preset of step 1 set these.
 const PICKED = new Set([
@@ -30,7 +31,10 @@ const PICKED = new Set([
 /**
  * ClusterSettingsStep is step 3 of the cluster create flow: the release,
  * the platform config, then the settings editors over fields, without the
- * fields at presetRef, releaseRef, and platformConfigRef. fields are
+ * fields at presetRef, releaseRef, and platformConfigRef. A note names the
+ * preset of the draft when presets, the names of the live presets, hold
+ * it. errors are field errors at paths from the root of the claim, and
+ * each one shows only at a setting whose claim path holds it. fields are
  * clusterFields of the draft cluster. A field that a step 2 option fills
  * shows locked with its section. unread are the kinds that could not be
  * read. It holds no draft: pick sets releaseRef or platformConfigRef, an
@@ -42,6 +46,7 @@ export function ClusterSettingsStep({
   environment,
   releases,
   platformConfigs,
+  presets,
   fields,
   merged,
   secrets,
@@ -49,12 +54,14 @@ export function ClusterSettingsStep({
   set,
   reset,
   invalid,
+  errors = [],
   unread = [],
 }: {
   draft: ClusterDraft;
   environment: Environment | undefined;
   releases: readonly ReleaseOption[];
   platformConfigs: readonly string[];
+  presets: readonly string[];
   fields: readonly ClusterField[];
   merged: Merged<CamundaClusterSpec>;
   secrets: SecretRefs;
@@ -65,6 +72,7 @@ export function ClusterSettingsStep({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid: (steps: Step[], message: string | undefined) => void;
+  errors?: readonly FieldError[];
   unread?: readonly KindName[];
 }) {
   const id = useId();
@@ -75,6 +83,9 @@ export function ClusterSettingsStep({
   const environmentName =
     environment?.spec.displayName || environment?.metadata.name;
   const claim = draft.claim.spec.cluster ?? {};
+  const preset = draft.claim.spec.presetRef;
+  // Only a preset that the live list holds gives values to the settings.
+  const presetNote = preset !== undefined && presets.includes(preset);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -142,21 +153,33 @@ export function ClusterSettingsStep({
           )}
         </div>
       </div>
-      {settingsGroupsOf(
-        fields.filter((f) => !PICKED.has(f.claimPath ?? "")),
-        merged.spec,
-      ).map((group) => (
-        <SettingsEditor
-          key={group.component}
-          group={group}
-          // A new cluster has no volume yet, so no size is current.
-          settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
-          secrets={secrets}
-          set={set}
-          reset={reset}
-          invalid={invalid}
-        />
-      ))}
+      <div className="flex flex-col gap-3">
+        {presetNote && (
+          <p className="max-w-prose text-sm text-muted">
+            Your admin made the preset{" "}
+            <span className="font-medium text-text">{preset}</span>. It sets
+            each value that shows “From preset”. A change here applies to this
+            cluster only. It does not change the preset.
+          </p>
+        )}
+        {settingsGroupsOf(
+          fields.filter((f) => !PICKED.has(f.claimPath ?? "")),
+          merged.spec,
+        ).map((group) => (
+          <SettingsEditor
+            key={group.component}
+            collapsed
+            group={group}
+            // A new cluster has no volume yet, so no size is current.
+            settings={settingsOf({ group, spec: merged.spec, live: {}, claim })}
+            secrets={secrets}
+            errors={errors}
+            set={set}
+            reset={reset}
+            invalid={invalid}
+          />
+        ))}
+      </div>
     </div>
   );
 }

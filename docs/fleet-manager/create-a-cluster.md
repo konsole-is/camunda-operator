@@ -28,7 +28,15 @@ When another cluster or plane already uses a host of the access option, the step
 
 ## Cluster settings
 
-Pick the **Release** and the **Platform config**. Both start at the default of the environment. Under them, the step shows the settings of the cluster, one group for the whole cluster and one group for each process. A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
+Pick the **Release** and the **Platform config**. Both start at the default of the environment.
+
+Under them, a note names the preset that you picked in **Environment and name**. Your admin made this preset. It sets each value that shows **From preset**. You can change such a value here. The change applies to this cluster only and does not change the preset.
+
+The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. Under the name, a line says how many settings the group has and where their values come from, for example `14 settings: 3 from the preset, 11 not set`. A setting is `not set` when the preset, the release, and the claim give it no value. A setting that you change counts as `changed in the claim` as soon as you change it. A value that you typed stays when you close the group.
+
+When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. The line under its name then also says how many settings have an error, for example `1 setting has an error`. This line stays when you close the group.
+
+A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 
 A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. A new namespace holds no Secret yet. [A Secret that the namespace does not hold](#a-secret-that-the-namespace-does-not-hold) says what the step shows then.
 
@@ -92,13 +100,13 @@ The error goes away when the fleet manager can read the list again. If it stays,
 
 ## A Secret that the namespace does not hold
 
-A setting that names a Secret needs that Secret, with its key, in the namespace of the cluster. When it is not there, the step of the setting shows an error with the path of the setting, for example:
+A setting that names a Secret needs that Secret, with its key, in the namespace of the cluster. When it is not there, the errors at the bottom of the form show an error with the path of the setting, for example:
 
 ```text
 auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.
 ```
 
-This happens when you pick another namespace after you picked the Secret. Pick a Secret of the new namespace, or reset the field. A new namespace holds no Secret, so the step asks you to reset the field. A reference that sets `optional: true` gets no error.
+A setting of **Cluster settings** also shows the error under its editor, without the path, and its group opens. This happens when you pick another namespace after you picked the Secret. Pick a Secret of the new namespace, or reset the field. A new namespace holds no Secret, so the step asks you to reset the field. A reference that sets `optional: true` gets no error.
 
 ## When the write is refused
 

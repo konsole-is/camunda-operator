@@ -6,7 +6,13 @@ import {
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
-import { type Setting, settingChange, settingsOf } from "./editable-settings";
+import type { FieldState } from "@/lib/fields";
+import {
+  type Setting,
+  settingChange,
+  settingsOf,
+  settingsSummary,
+} from "./editable-settings";
 import { componentSettings } from "./settings";
 import type { Process } from "./topology";
 
@@ -290,5 +296,69 @@ describe("settingChange", () => {
       steps: steps("spec", "cluster", "zeebe", "podLabels"),
       value: {},
     });
+  });
+});
+
+describe("settingsSummary", () => {
+  const of = (...states: (FieldState | undefined)[]): Setting[] =>
+    states.map((state, i) => ({
+      key: `k${i}`,
+      label: `s${i}`,
+      value: undefined,
+      ...(state && { state }),
+      claimSet: state?.kind === "claim",
+      resetLabel: "Reset to preset",
+    }));
+
+  it("counts the settings by where their values come from, the changes last", () => {
+    expect(
+      settingsSummary(
+        of(
+          { kind: "claim" },
+          { kind: "preset" },
+          { kind: "default" },
+          { kind: "preset" },
+          { kind: "release" },
+          { kind: "environment" },
+          { kind: "admin" },
+          undefined,
+          { kind: "default" },
+        ),
+      ),
+    ).toBe(
+      "9 settings: 2 from the preset, 1 from the release, 1 from the environment, 1 set by your admin, 2 default values, 1 not set, 1 changed in the claim",
+    );
+  });
+
+  it("leaves out a source that no setting has", () => {
+    expect(settingsSummary(of({ kind: "preset" }, { kind: "preset" }))).toBe(
+      "2 settings: 2 from the preset",
+    );
+  });
+
+  it("uses the singular for one", () => {
+    expect(settingsSummary(of({ kind: "default" }))).toBe(
+      "1 setting: 1 default value",
+    );
+  });
+
+  it("names the section of each filled setting and each writer", () => {
+    expect(
+      settingsSummary(
+        of(
+          { kind: "filled", section: "access", sectionLabel: "Access" },
+          { kind: "filled", section: "identity", sectionLabel: "Identity" },
+          { kind: "filled", section: "access", sectionLabel: "Access" },
+          { kind: "setBy", manager: "kubectl", takeOver: true },
+          { kind: "setBy", takeOver: false },
+        ),
+      ),
+    ).toBe(
+      "5 settings: 2 filled by Access, 1 filled by Identity, 1 set by kubectl, 1 set by an unknown writer",
+    );
+  });
+
+  it("says that a group without settings has none", () => {
+    expect(settingsSummary([])).toBe("No settings");
   });
 });

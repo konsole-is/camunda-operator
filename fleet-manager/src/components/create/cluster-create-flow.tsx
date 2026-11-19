@@ -58,6 +58,7 @@ import {
   releaseOf,
   type SecretsRead,
   secretErrors,
+  secretFieldErrors,
   settingsErrors,
   withClaimValue,
   withoutClaimValue,
@@ -674,6 +675,7 @@ export function ClusterCreateFlow({
             platformConfigs={platformConfigs
               .map((p) => p.metadata?.name ?? "")
               .sort(byCodeUnit)}
+            presets={live.presets.items.map((p) => p.metadata?.name ?? "")}
             fields={fields}
             merged={drafted.merged}
             // A Secret that cannot be read cannot be picked, and the alert
@@ -687,6 +689,7 @@ export function ClusterCreateFlow({
             set={setClaim}
             reset={resetClaim}
             invalid={editor.invalid}
+            errors={secretFieldErrors(flow.draft, secretsRead)}
             unread={unread}
           />
         ) : flow.current === "attachments" ? (

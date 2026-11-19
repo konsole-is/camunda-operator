@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/native-select";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { ValidationError } from "@/lib/schema";
+import { useErrorsReport } from "./errors-report";
 
 /** Resources are the requests and limits of a container, as the CRDs define them. */
 export type Resources = NonNullable<
@@ -64,28 +65,25 @@ const FIELDS: [Side, Resource, string][] = [
  * unit. onChange gets the resources and the errors after each edit: an
  * amount that is not a number, and a limit below its request. describedBy
  * names the hint and error elements of the field for each amount and unit.
+ * onErrors gets the errors that it shows, also at mount.
  */
 export function ResourcesEditor({
   label,
   defaultValue = {},
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   defaultValue?: Resources;
   describedBy?: string;
   onChange?: (value: Resources, errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
-  const [amounts, setAmounts] = useState<Record<string, Amount>>(() =>
-    Object.fromEntries(
-      FIELDS.map(([side, resource]) => [
-        `${side}.${resource}`,
-        parse(defaultValue[side]?.[resource], resource),
-      ]),
-    ),
-  );
+  const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
   const errors = amountErrors(amounts);
+  useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
     const next = { ...amounts, [path]: amount };
@@ -156,6 +154,15 @@ export function ResourcesEditor({
         );
       })}
     </fieldset>
+  );
+}
+
+function amountsOf(value: Resources): Record<string, Amount> {
+  return Object.fromEntries(
+    FIELDS.map(([side, resource]) => [
+      `${side}.${resource}`,
+      parse(value[side]?.[resource], resource),
+    ]),
   );
 }
 

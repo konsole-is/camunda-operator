@@ -12,6 +12,7 @@ import {
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { ValidationError } from "@/lib/schema";
 import { cn } from "@/lib/utils";
+import { useErrorsReport } from "./errors-report";
 
 /** Toleration is one toleration of the pods, as the CRDs define it. */
 export type Toleration = NonNullable<
@@ -34,18 +35,21 @@ type Row = {
  * operator, value, effect, and seconds. A field that the row does not use
  * is not written. onChange gets the tolerations and the errors after each
  * edit. describedBy names the hint and error elements of the field for
- * each control of a row.
+ * each control of a row. onErrors gets the errors that it shows, also at
+ * mount.
  */
 export function SchedulingEditor({
   label,
   defaultValue = [],
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   defaultValue?: Toleration[];
   describedBy?: string;
   onChange?: (value: Toleration[], errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const next = useRef(defaultValue.length);
@@ -67,6 +71,7 @@ export function SchedulingEditor({
   const replace = (row: Row) =>
     update(rows.map((r) => (r.id === row.id ? row : r)));
   const errors = rowErrors(rows);
+  useErrorsReport(errors, onErrors);
 
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">

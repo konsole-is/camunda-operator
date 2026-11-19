@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type { FieldError } from "@/lib/session";
@@ -16,6 +17,7 @@ import {
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
+import { settingsSummary } from "./editable-settings";
 import { SettingsEditor } from "./settings-editor";
 import type { Process } from "./topology";
 
@@ -467,5 +469,277 @@ describe("SettingsEditor", () => {
         description: "too many labels",
       }),
     ).toBeDefined();
+  });
+});
+
+describe("SettingsEditor collapsed", () => {
+  function renderClosed(page: SettingsPage = {}, errors?: FieldError[]) {
+    const set = vi.fn();
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", page);
+    const ui = (shown?: FieldError[]) => (
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        errors={shown}
+        set={set}
+        reset={vi.fn()}
+        invalid={invalid}
+      />
+    );
+    const view = render(ui(errors));
+    return {
+      set,
+      invalid,
+      settings,
+      rerender: (shown?: FieldError[]) => view.rerender(ui(shown)),
+    };
+  }
+  const section = () =>
+    screen.getByRole("region", { name: "Brokers settings" });
+  const details = () => section().querySelector("details")!;
+  const summary = () => section().querySelector("summary")!;
+  const replicas = () =>
+    within(settingRow("replicas")).getByRole<HTMLInputElement>("spinbutton");
+  const REFUSAL: FieldError = {
+    path: "spec.cluster.zeebe.replicas",
+    message: "replicas must be odd",
+  };
+
+  it("starts closed with its rows in the page", () => {
+    renderClosed();
+    expect(details().open).toBe(false);
+    expect(details().contains(replicas())).toBe(true);
+  });
+
+  it("opens and closes on a click on its summary", async () => {
+    renderClosed();
+    await userEvent.click(summary());
+    expect(details().open).toBe(true);
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+  });
+
+  it("names the group, its settings, and where their values come from on the summary", () => {
+    const { settings } = renderClosed({
+      preset: { zeebe: { replicas: 3 } },
+      claim: { cluster: { zeebe: { partitions: 6 } } },
+    });
+    expect(summary().textContent).toContain("Brokers");
+    expect(summary().textContent).toContain(settingsSummary(settings));
+    expect(settingsSummary(settings)).toContain("1 from the preset");
+    expect(settingsSummary(settings)).toContain("1 changed in the claim");
+  });
+
+  it("keeps a typed value while it is closed", async () => {
+    const { set } = renderClosed();
+    await userEvent.click(summary());
+    await userEvent.type(replicas(), "2");
+    await userEvent.click(summary());
+    await userEvent.click(summary());
+    expect(replicas().value).toBe("2");
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "replicas"),
+      2,
+    );
+  });
+
+  it("opens when a refusal of the server arrives at one of its settings", () => {
+    const { rerender } = renderClosed();
+    expect(details().open).toBe(false);
+    rerender([REFUSAL]);
+    expect(details().open).toBe(true);
+    expect(
+      within(settingRow("replicas")).getByText("replicas must be odd"),
+    ).toBeDefined();
+  });
+
+  it("starts open with a refusal of the server at one of its settings", () => {
+    renderClosed({}, [REFUSAL]);
+    expect(details().open).toBe(true);
+  });
+
+  it("stays closed for a refusal of the server at a field of another group", () => {
+    renderClosed({}, [
+      { path: "spec.cluster.gateway.replicas", message: "too few" },
+    ]);
+    expect(details().open).toBe(false);
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it("says on the summary that a setting has an error after the user closes it", async () => {
+    const { invalid } = renderClosed();
+    await userEvent.click(summary());
+    fireEvent.change(replicas(), { target: { value: "-1" } });
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "replicas"),
+      "replicas: Enter 0 or more",
+    );
+  });
+
+  it("drops the error from the summary once the value is valid", async () => {
+    renderClosed();
+    await userEvent.click(summary());
+    fireEvent.change(replicas(), { target: { value: "-1" } });
+    fireEvent.change(replicas(), { target: { value: "1" } });
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it.each([
+    [
+      "resources",
+      { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      "The limit is below the request",
+    ],
+    [
+      "tolerations",
+      { scheduling: { tolerations: [{ effect: "NoSchedule" }] } },
+      "Enter a key, or use the operator Exists",
+    ],
+    ["a map of labels", { podLabels: { "bad key!": "a" } }, undefined],
+    [
+      "environment variables",
+      { extraEnv: [{ name: "", value: "a" }] },
+      "Enter a name",
+    ],
+    ["a storage size", { storageSize: "0Gi" }, "Enter a size above 0"],
+    ["a number", { replicas: -1 }, "Enter 0 or more"],
+    [
+      "YAML",
+      {
+        scheduling: {
+          nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: 3 },
+        },
+      },
+      undefined,
+    ],
+  ])(
+    "opens at once with an error that the editor of %s shows for a value from below the claim",
+    (_, zeebe, message) => {
+      const { invalid, set } = renderClosed({
+        preset: { zeebe } as SettingsPage["preset"],
+      });
+      expect(details().open).toBe(true);
+      // A value from below the claim is not the user's change to refuse.
+      expect(invalid).not.toHaveBeenCalled();
+      expect(set).not.toHaveBeenCalled();
+      expect(summary().textContent).toContain("1 setting has an error");
+      if (message) expect(within(section()).getByText(message)).toBeDefined();
+    },
+  );
+
+  it("counts an error that an editor shows at mount also in strict mode", () => {
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    render(
+      <StrictMode>
+        <SettingsEditor
+          collapsed
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={vi.fn()}
+          reset={vi.fn()}
+          invalid={invalid}
+        />
+      </StrictMode>,
+    );
+    expect(details().open).toBe(true);
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("drops the error from the heading once the editor shows none, though the value below the claim still fails", async () => {
+    const { set } = renderClosed({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(summary().textContent).toContain("1 setting has an error");
+    const limit = within(settingRow("resources")).getByRole("group", {
+      name: "CPU limit",
+    });
+    await userEvent.clear(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+    );
+    expect(
+      within(section()).queryByText("The limit is below the request"),
+    ).toBeNull();
+    expect(set).toHaveBeenCalled();
+    expect(summary().textContent).not.toMatch(/error/);
+  });
+
+  it("stays closed after the user closes it while its count of errors stays the same", async () => {
+    const { rerender } = renderClosed({}, [REFUSAL]);
+    expect(details().open).toBe(true);
+    await userEvent.click(summary());
+    expect(details().open).toBe(false);
+    rerender([{ ...REFUSAL }]);
+    expect(details().open).toBe(false);
+    expect(summary().textContent).toContain("1 setting has an error");
+  });
+
+  it("counts a refusal at one field of a block that a layer sets once, at the row of that field", () => {
+    renderClosed(
+      {
+        preset: {
+          zeebe: {
+            scheduling: { tolerations: [{ key: "a", operator: "Exists" }] },
+          },
+        },
+      },
+      [
+        {
+          path: "spec.cluster.zeebe.scheduling.tolerations",
+          message: "too many tolerations",
+        },
+      ],
+    );
+    expect(summary().textContent).toContain("1 setting has an error");
+    expect(within(section()).getAllByText("too many tolerations")).toHaveLength(
+      1,
+    );
+    expect(
+      within(settingRow("scheduling.tolerations")).getByText(
+        "too many tolerations",
+      ),
+    ).toBeDefined();
+  });
+
+  it("shows a refusal at a block that a layer sets at each row of the block", () => {
+    renderClosed(
+      {
+        preset: {
+          zeebe: {
+            scheduling: { tolerations: [{ key: "a", operator: "Exists" }] },
+          },
+        },
+      },
+      [{ path: "spec.cluster.zeebe.scheduling", message: "bad block" }],
+    );
+    const shown = within(section()).getAllByText("bad block");
+    expect(shown.length).toBeGreaterThan(1);
+    expect(summary().textContent).toContain(
+      `${shown.length} settings have an error`,
+    );
+  });
+
+  it("counts a refusal of the server on the summary", () => {
+    renderClosed({}, [REFUSAL]);
+    expect(summary().textContent).toContain("1 setting has an error");
+  });
+
+  it("is not a disclosure without collapsed", () => {
+    renderEditor("zeebe", "zeebe");
+    expect(section().querySelector("details")).toBeNull();
   });
 });
