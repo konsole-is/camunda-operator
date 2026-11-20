@@ -7,7 +7,7 @@ import {
   environmentFixtures,
   sectionFixtures,
 } from "@/components/setup/environments/fixtures";
-import { grantPreviews, templateData } from "./templates";
+import { grantPreviews, type TemplateClaim, templateData } from "./templates";
 
 const sources = sectionFixtures();
 const production = sources.environments[0];
@@ -125,6 +125,72 @@ describe("templateData", () => {
       }).parameters,
     ).toMatchObject({
       extraPolicyArns: ["arn:aws:iam::aws:policy/AmazonSQSFullAccess"],
+    });
+  });
+
+  describe("the release of the claim", () => {
+    const released: PluginRegistration = {
+      ...input.registration,
+      spec: {
+        ...input.registration.spec,
+        parameters: {
+          type: "object",
+          properties: { releaseRef: { type: "string" } },
+        },
+      },
+    };
+    const releaseOf = (
+      claim: TemplateClaim,
+      environment: Environment | undefined,
+      registration = released,
+    ) =>
+      templateData({ ...input, claim, environment, registration }).parameters
+        .releaseRef;
+
+    it("gives a cluster claim its own release", () => {
+      expect(releaseOf({ ...orders, releaseRef: "8.9.22" }, production)).toBe(
+        "8.9.22",
+      );
+    });
+
+    it("gives a cluster claim without a release the default release of the environment", () => {
+      expect(releaseOf(orders, production)).toBe("8.9.23");
+      expect(releaseOf({ ...orders, releaseRef: "" }, production)).toBe(
+        "8.9.23",
+      );
+    });
+
+    it("gives no release when neither the claim nor the environment names one", () => {
+      expect(
+        releaseOf(orders, {
+          ...production,
+          spec: { ...production.spec, releases: undefined },
+        }),
+      ).toBeUndefined();
+      expect(releaseOf(orders, undefined)).toBeUndefined();
+    });
+
+    it("gives no release to a plane claim", () => {
+      expect(
+        releaseOf(
+          {
+            ...orders,
+            kind: "CamundaManagementClusterClaim",
+            releaseRef: "8.9.22",
+          },
+          production,
+        ),
+      ).toBeUndefined();
+    });
+
+    it("gives no release to a registration that does not declare releaseRef", () => {
+      expect(
+        releaseOf(
+          { ...orders, releaseRef: "8.9.22" },
+          production,
+          input.registration,
+        ),
+      ).toBeUndefined();
     });
   });
 });

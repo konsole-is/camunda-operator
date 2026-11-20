@@ -50,6 +50,8 @@ export function previewClaims(
       namespace: c.metadata.namespace ?? "",
       name: c.metadata.name ?? "",
       plugins: (c.spec.plugins ?? []) as PluginSelection[],
+      ...(c.kind === "CamundaClusterClaim" &&
+        c.spec.releaseRef && { releaseRef: c.spec.releaseRef }),
     }))
     .sort(
       (a, b) =>

@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Environment } from "@/generated/crds/environment";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   EnvironmentEditor,
   type EnvironmentActions,
@@ -726,5 +727,106 @@ describe("OptionSettings", () => {
     fireEvent.click(within(note).getByRole("button", { name: "Remove gone" }));
     const spec = await save(actions);
     expect(Object.keys(spec.parameters ?? {})).toEqual(["aws-connectors-role"]);
+  });
+
+  describe("the preview of a template parameter that reads the release", () => {
+    // withReleaseTemplate gives registration the template parameter
+    // roleName, with the value {{ .claim }}-{{ .parameters.releaseRef }} in
+    // the environment production, and a parameter releaseRef when declared.
+    function withReleaseTemplate(registration: string, declared: boolean) {
+      const sources = sectionFixtures();
+      const target = sources.registrations.find(
+        (r) => r.metadata.name === registration,
+      )!;
+      target.spec.parameters = {
+        type: "object",
+        properties: {
+          ...(declared && { releaseRef: { type: "string" } }),
+          roleName: { type: "string", "x-fleet-template": true },
+        },
+      };
+      const spec = sources.environments[0].spec;
+      spec.parameters = {
+        ...spec.parameters,
+        [registration]: {
+          roleName: { value: "{{ .claim }}-{{ .parameters.releaseRef }}" },
+        },
+      };
+      return sources;
+    }
+
+    const preview = (option: string) => group(option, "roleName");
+
+    it("renders the release of a cluster claim that names one", () => {
+      renderEditor(
+        "production",
+        withReleaseTemplate("aws-connectors-role", true),
+      );
+      fireEvent.change(
+        within(preview("Role for each cluster")).getByLabelText("Preview for"),
+        { target: { value: "1" } },
+      );
+      expect(
+        preview("Role for each cluster").querySelector("pre")?.textContent,
+      ).toBe("orders-8.9.22");
+    });
+
+    it("renders the default release of the environment for a cluster claim without one", () => {
+      const sources = withReleaseTemplate("aws-connectors-role", true);
+      sources.clusterClaims[1].spec.releaseRef = undefined;
+      sources.environments[0].spec.releases!.default = "8.9.22";
+      renderEditor("production", sources);
+      expect(
+        preview("Role for each cluster").querySelector("pre")?.textContent,
+      ).toBe("billing-8.9.22");
+    });
+
+    it("renders the default release of the environment for the example claim", () => {
+      const sources = withReleaseTemplate("aws-connectors-role", true);
+      sources.clusterClaims = [];
+      renderEditor("production", sources);
+      expect(
+        preview("Role for each cluster").querySelector("pre")?.textContent,
+      ).toBe("example-8.9.23");
+    });
+
+    it("gives no release to a claim of an environment without a default release", () => {
+      const sources = withReleaseTemplate("aws-connectors-role", true);
+      sources.clusterClaims = [];
+      sources.environments[0].spec.releases = undefined;
+      renderEditor("production", sources);
+      expect(
+        within(preview("Role for each cluster")).getByRole("alert").textContent,
+      ).toBe('parameter "releaseRef" has no value');
+    });
+
+    it("gives no release to a registration that does not declare releaseRef", () => {
+      renderEditor(
+        "production",
+        withReleaseTemplate("aws-connectors-role", false),
+      );
+      expect(
+        within(preview("Role for each cluster")).getByRole("alert").textContent,
+      ).toBe('parameter "releaseRef" has no value');
+    });
+
+    it("gives no release to a management plane claim", () => {
+      const sources = withReleaseTemplate("gateway-public", true);
+      sources.environments[0].spec.sections!.access = {
+        allowed: ["gateway-public"],
+      };
+      sources.namespaces.find(
+        (n) => n.metadata?.name === "platform",
+      )!.metadata!.labels = { [ENVIRONMENT_LABEL]: "production" };
+      renderEditor("production", sources);
+      expect(
+        within(preview("Public gateway")).getByRole("option", {
+          selected: true,
+        }).textContent,
+      ).toBe("plane-a in platform");
+      expect(
+        within(preview("Public gateway")).getByRole("alert").textContent,
+      ).toBe('parameter "releaseRef" has no value');
+    });
   });
 });
