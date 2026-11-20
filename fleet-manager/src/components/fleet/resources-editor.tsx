@@ -30,11 +30,12 @@ export type LimitBelowRequest = {
  * ResourceEdit is the field of one edit of ResourcesEditor. quantity is
  * undefined for an empty field. reopened says that the field holds again
  * the amount and the unit that it showed when the editor opened. refused
- * says that the field has an error of its own.
+ * says that the edit has an error that the editor shows: with
+ * limitsChecked, an error of this field, else any error.
  */
 export type ResourceEdit = {
-  side: "requests" | "limits";
-  resource: "cpu" | "memory";
+  side: Side;
+  resource: Resource;
   quantity?: string;
   reopened: boolean;
   refused: boolean;
@@ -92,8 +93,8 @@ const FIELDS: [Side, Resource, string][] = [
  * unchanged, and a value in a unit that the list does not hold keeps its
  * unit. onChange gets the resources, the errors, and the field of each
  * edit. The errors are an amount that is not a number, a negative amount,
- * and a limit below its request. describedBy names the hint and error elements of the field for
- * each amount and unit. With limitsChecked, the caller checks each limit
+ * and a limit below its request. describedBy names the hint and error
+ * elements of the field for each amount and unit. With limitsChecked, the caller checks each limit
  * against its request in the value that the cluster gets: the editor then
  * neither shows nor reports a limit below its request, and passes such an
  * edit on. onErrors gets the errors that it shows, also at mount.
@@ -136,7 +137,9 @@ export function ResourcesEditor({
       reopened:
         amount.amount === was.amount &&
         (amount.amount === "" || amount.unit === was.unit),
-      refused: nextErrors.some((e) => e.path === path),
+      refused: limitsChecked
+        ? nextErrors.some((e) => e.path === path)
+        : nextErrors.length > 0,
     });
   };
 
@@ -291,7 +294,7 @@ export function limitsBelowRequests(value: Resources): LimitBelowRequest[] {
 }
 
 function rank(resource: string): number {
-  const at = ["cpu", "memory"].indexOf(resource);
+  const at = EDITED_RESOURCES.indexOf(resource);
   return at < 0 ? 2 : at;
 }
 

@@ -18,13 +18,12 @@ import {
   optimizeClaimNames,
   overrideEditorOf,
   parameterEditorOf,
-  pathFrom,
   type SchemaRoot,
   type SettingEditor,
   type Step,
 } from "@/lib/fields";
 import type { OpenAPISchema } from "@/lib/schema";
-import { type FieldError, valueAt, without, withValue } from "@/lib/session";
+import { valueAt, without, withValue } from "@/lib/session";
 import { type SettingsGroup, settingsGroupsOf } from "./settings";
 import { type Process, runsOwnWorkload } from "./topology";
 
@@ -40,8 +39,8 @@ import { type Process, runsOwnWorkload } from "./topology";
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the limits of the merged value that are
  * below their request, and undefined when no check of the merged value
- * runs. claimed is the value of the claim at the path of the setting, for a
- * resources setting when settingsOf gets a claim.
+ * runs. When mergedErrors is defined, claimed is the value of the claim at
+ * the path of the setting, also when that is undefined.
  */
 export type Setting = {
   key: string;
@@ -69,7 +68,6 @@ export type Setting = {
  */
 export type MergedError = {
   message: string;
-  belowRequest: LimitBelowRequest;
   blocks: boolean;
 };
 
@@ -158,25 +156,33 @@ export function settingsOf(input: {
     // The operator gives the resources of a process only to its own
     // workload.
     const applies =
-      !COMPONENTS.includes(group.component) ||
-      runsOwnWorkload(spec as CamundaClusterSpec, group.component as Process);
-    const merged: MergedError[] = keyed
-      ? limitsBelowRequests((value ?? {}) as Resources).map((below) => ({
-          message: mergedLimitError(below, group, applies, (side) => {
-            const part = [...names, side, below.resource];
-            return mine.find(({ names: f }) => sameNames(f, part))?.field.state;
-          }),
-          belowRequest: below,
-          blocks: applies,
-        }))
-      : [];
-    const checked: Setting = {
-      ...setting,
-      ...(keyed && {
-        mergedErrors: merged,
-        claimed: valueAt(claim, steps(names)),
-      }),
-    };
+      keyed &&
+      (!COMPONENTS.includes(group.component) ||
+        runsOwnWorkload(
+          spec as CamundaClusterSpec,
+          group.component as Process,
+        ));
+    const stateAt = (part: string[]) =>
+      mine.find(({ names: f }) => sameNames(f, [...names, ...part]))?.field
+        .state;
+    const checked: Setting = keyed
+      ? {
+          ...setting,
+          mergedErrors: limitsBelowRequests((value ?? {}) as Resources).map(
+            (below) => ({
+              message: mergedLimitError(
+                below,
+                group,
+                applies,
+                stateAt(["limits", below.resource]),
+                stateAt(["requests", below.resource]),
+              ),
+              blocks: applies,
+            }),
+          ),
+          claimed: valueAt(claim, steps(names)),
+        }
+      : setting;
     if (holder?.field.claimSteps)
       return {
         ...checked,
@@ -208,15 +214,15 @@ export function settingsOf(input: {
 }
 
 // mergedLimitError returns the message of a limit below its request in
-// group, whose resources apply now or not. stateOf gives the state of the requests or the limits of the
-// resource.
+// group. applies says whether the resources of group apply now.
 function mergedLimitError(
   below: LimitBelowRequest,
   group: SettingsGroup,
   applies: boolean,
-  stateOf: (side: "requests" | "limits") => FieldState | undefined,
+  limitState: FieldState | undefined,
+  requestState: FieldState | undefined,
 ): string {
-  const states = [stateOf("limits"), stateOf("requests")];
+  const states = [limitState, requestState];
   // The editor has no field for this resource, so only the preset can
   // change a value that it gives.
   const fixed =
@@ -228,8 +234,8 @@ function mergedLimitError(
     ? ""
     : group.embedded
       ? ` Correct it before ${group.label} runs standalone.`
-      : ` Correct it before ${group.label} is turned on.`;
-  return faultOf(below, states[0], states[1]) + fixed + later;
+      : ` Correct it before ${group.label} are turned on.`;
+  return faultOf(below, limitState, requestState) + fixed + later;
 }
 
 // faultOf returns the sentence of a limit below its request. It names
@@ -305,29 +311,24 @@ function originOf(
 }
 
 /**
- * blockingMergedErrors returns a field error at the claim path of each
- * setting of a cluster with a merged error that blocks. label names the
- * setting by its path in spec.cluster of the claim, such as
- * zeebe.resources. fields are clusterFields of the cluster, spec the merged
- * spec, and claim spec.cluster of the claim.
+ * blockingMergedErrors returns each merged error that blocks of a cluster,
+ * as "<path>: <message>", where path names the setting in spec.cluster of
+ * the claim, such as zeebe.resources. fields are clusterFields of the
+ * cluster, spec the merged spec, and claim spec.cluster of the claim.
  */
 export function blockingMergedErrors(
   fields: readonly ClusterField[],
   spec: CamundaClusterSpec,
   claim: unknown,
-): (FieldError & { label: string })[] {
+): string[] {
   return settingsGroupsOf(fields, spec).flatMap((group) =>
     settingsOf({ group, spec, claim }).flatMap((setting) =>
       (setting.mergedErrors ?? [])
-        .filter((e) => e.blocks && setting.steps)
-        .map((e) => ({
-          path: pathFrom("", setting.steps!),
-          message: e.message,
-          label:
-            group.component === "cluster"
-              ? setting.label
-              : `${group.component}.${setting.label}`,
-        })),
+        .filter((e) => e.blocks)
+        .map(
+          (e) =>
+            `${group.component === "cluster" ? "" : `${group.component}.`}${setting.label}: ${e.message}`,
+        ),
     ),
   );
 }

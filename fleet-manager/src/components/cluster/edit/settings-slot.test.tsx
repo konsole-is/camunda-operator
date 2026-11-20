@@ -193,6 +193,36 @@ describe("ComponentSettingsEditor", () => {
     });
   });
 
+  it("refuses an Optimize request typed above its limit", async () => {
+    const optimize = {
+      managementAuthConfigRef: "keycloak",
+      importer: {
+        replicas: 1,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+    };
+    const spec = { zeebe: { replicas: 3 }, gateway: { mode: "Standalone" } };
+    renderSlot(
+      contextOf({
+        openId: "optimize",
+        claim: claim("41", {
+          cluster: spec,
+          attachments: { optimize },
+        }),
+      }),
+    );
+    await openEditors();
+    const request = within(
+      within(settingRow(group("Optimize"), "importer.resources")).getByRole(
+        "group",
+        { name: "CPU request" },
+      ),
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.type(request, "4");
+    expect(screen.getByText("The limit is below the request")).toBeTruthy();
+    expect(claimSpec().attachments.optimize).toEqual(optimize);
+  });
+
   it("a new Optimize field shows that the claim sets it", async () => {
     renderSlot(contextOf({ openId: "optimize" }));
     await openEditors();
@@ -416,6 +446,24 @@ describe("ComponentSettingsEditor", () => {
       screen.getByRole("region", { name: "Unsaved changes" }).textContent,
     ).toContain("1 unsaved change");
     await userEvent.type(brokerAmount("CPU request"), "1");
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+  });
+
+  it("keeps the value of another writer when a field is back at its value at open", async () => {
+    const { view, of, spec } = brokerSlot({ requests: { cpu: "2" } }, {});
+    await openEditors();
+    await userEvent.clear(brokerAmount("CPU request"));
+    const changed = {
+      ...spec,
+      zeebe: { ...spec.zeebe, resources: { requests: { cpu: "5" } } },
+    };
+    view.update({ ...of(changed), claim: claim("42", { cluster: changed }) });
+    await userEvent.type(brokerAmount("CPU request"), "2");
+    expect(claimSpec().cluster.zeebe.resources).toEqual({
+      requests: { cpu: "5" },
+    });
     expect(
       screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();

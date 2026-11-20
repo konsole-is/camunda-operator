@@ -156,7 +156,7 @@ function mergedErrorsAfter(
   // Without a path, the change bar shows the message also while the
   // editors of the setting are closed.
   return blockingMergedErrors(fields, after.spec, claim.spec.cluster ?? {}).map(
-    ({ label, message }) => ({ message: `${label}: ${message}` }),
+    (message) => ({ message }),
   );
 }
 

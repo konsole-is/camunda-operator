@@ -419,7 +419,7 @@ export function ClusterCreateFlow({
           fields,
           drafted.merged.spec,
           draft.claim.spec.cluster ?? {},
-        ).map((e) => `${e.label}: ${e.message}`),
+        ),
         ...editor.shown("spec.cluster"),
       ];
     },

@@ -24,6 +24,7 @@ import type { FieldPath } from "@/lib/merge";
 import { equalJSON } from "@/lib/policy";
 import {
   claimAfter,
+  discard as discardAt,
   openSession,
   rebase,
   resetValue,
@@ -90,10 +91,11 @@ export type ClaimEditHost<C extends ClaimObject> = {
  * not pass on, so that the session can still hold an older value there; an
  * undefined message clears it. An editor clears its error when it
  * unmounts. While an editor shows an error, the change bar blocks Review
- * with the message. discard drops every pending change. review opens the
- * review on the next render when a change is pending, errors is empty, and
- * no editor shows an error, and returns whether it opens it. review first
- * applies prepare of the host. pending is the count of pending changes.
+ * with the message. discard drops every pending change, or with steps only
+ * the pending change at steps. review opens the review on the next render
+ * when a change is pending, errors is empty, and no editor shows an error,
+ * and returns whether it opens it. review first applies prepare of the
+ * host. pending is the count of pending changes.
  * show is the show function of useWriteToast of the page: a write that is
  * not a claim change reports its result through it, so that the page has
  * one toast. errors are the errors of the session before review, then the
@@ -104,7 +106,7 @@ export type ClaimEdit<C extends ClaimObject = ClaimObject> = {
   set(steps: Step[], value: unknown): FieldLock | undefined;
   reset(steps: Step[]): FieldLock | undefined;
   invalid(steps: Step[], message: string | undefined): void;
-  discard(): void;
+  discard(steps?: Step[]): void;
   review(): boolean;
   pending: number;
   show(result: WriteResult, message: string): void;
@@ -325,15 +327,25 @@ export function ClaimEditProvider<C extends ClaimObject>({
     shownRef.current = next;
     setShown(next);
   }, []);
-  const discard = useCallback(() => {
-    const current = stateRef.current;
-    if (!current.session) return;
-    update({
-      ...current,
-      session: { ...current.session, pending: new Map() },
-      reviewing: false,
-    });
-  }, [update]);
+  const discard = useCallback(
+    (steps?: Step[]) => {
+      const current = stateRef.current;
+      if (!current.session) return;
+      if (steps) {
+        update({
+          ...current,
+          session: discardAt(current.session, pathFrom("", steps)),
+        });
+        return;
+      }
+      update({
+        ...current,
+        session: { ...current.session, pending: new Map() },
+        reviewing: false,
+      });
+    },
+    [update],
+  );
   const review = useCallback(() => {
     const current = stateRef.current;
     const host = hostRef.current;

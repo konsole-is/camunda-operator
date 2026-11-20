@@ -328,7 +328,6 @@ describe("settingsOf merged errors", () => {
     expect(setting.mergedErrors).toEqual([
       {
         message: "The CPU limit of 1 is below the CPU request of 2.",
-        belowRequest: { resource: "cpu", request: "2", limit: "1" },
         blocks: true,
       },
     ]);
@@ -408,7 +407,7 @@ describe("settingsOf merged errors", () => {
       "connectors",
       {},
       false,
-      " Correct it before Connectors is turned on.",
+      " Correct it before Connectors are turned on.",
     ],
   ] as const)(
     "blocks on the resources of %s only when its workload runs",
@@ -543,7 +542,7 @@ describe("settingsOf merged errors", () => {
 });
 
 describe("blockingMergedErrors", () => {
-  it("gives each merged error that blocks at the claim path of its setting", () => {
+  it("gives each merged error that blocks with the path of its setting", () => {
     const page = {
       cluster: { gateway: { mode: "Standalone" } },
       preset: {
@@ -555,12 +554,7 @@ describe("blockingMergedErrors", () => {
     } as const;
     const { fields, merged } = settingsFieldsOf(page as SettingsPage);
     expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([
-      {
-        path: "spec.cluster.zeebe.resources",
-        message:
-          "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
-        label: "zeebe.resources",
-      },
+      "zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     ]);
   });
 

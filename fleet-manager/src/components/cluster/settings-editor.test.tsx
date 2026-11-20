@@ -18,7 +18,7 @@ import {
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
-import { settingsSummary } from "./editable-settings";
+import { settingsOf, settingsSummary } from "./editable-settings";
 import { SettingsEditor } from "./settings-editor";
 import type { Process } from "./topology";
 
@@ -980,6 +980,55 @@ describe("SettingsEditor collapsed", () => {
           ? { zeebe: { resources: claimed } }
           : {},
       );
+    },
+  );
+
+  it("writes a valid edit of one field while another field shows an amount that is not a number", async () => {
+    const onClaim = vi.fn();
+    const invalid = vi.fn();
+    render(<MergedHost preset={{}} invalid={invalid} onClaim={onClaim} />);
+    await userEvent.click(row());
+    await userEvent.type(amount("CPU limit"), "x");
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { memory: "2Gi" } } },
+    });
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "resources"),
+      "resources: Enter a number",
+    );
+  });
+
+  it.each([
+    ["a request typed above the limit", "CPU request", "4", false],
+    ["a limit typed below the request", "CPU limit", "1", true],
+  ])(
+    "refuses %s where no claim merges, as on the preset page",
+    async (_, label, typed, clear) => {
+      const set = vi.fn();
+      const { group } = settingsGroupOf("zeebe", "zeebe", {});
+      const settings = settingsOf({
+        group,
+        spec: {
+          zeebe: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+          },
+        },
+      });
+      render(
+        <SettingsEditor
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={set}
+          reset={vi.fn()}
+        />,
+      );
+      if (clear) await userEvent.clear(amount(label));
+      set.mockClear();
+      await userEvent.type(amount(label), typed);
+      expect(set).not.toHaveBeenCalled();
+      expect(screen.getByText("The limit is below the request")).toBeDefined();
     },
   );
 

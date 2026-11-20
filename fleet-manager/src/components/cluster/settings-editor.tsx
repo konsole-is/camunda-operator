@@ -58,7 +58,8 @@ import type { SettingsGroup } from "./settings";
  * settings apply when the app runs standalone. A change with errors is not
  * passed on. errors are the field errors of the claim, such as a refusal of
  * the server, and each shows at the setting whose claim path holds it.
- * invalid gets the error that a setting shows, as SettingRow gives it. A
+ * invalid gets the error that a setting shows, as SettingRow gives it.
+ * discard drops the pending change at steps, as SettingRow takes it. A
  * collapsed group starts closed. Its heading counts the settings changed
  * in the claim and, when there are any, the settings with an error or a
  * merged error that blocks. It opens each time that number of errors
@@ -74,6 +75,7 @@ export function SettingsEditor({
   set,
   reset,
   invalid,
+  discard,
 }: {
   group: SettingsGroup;
   settings: readonly Setting[];
@@ -83,6 +85,7 @@ export function SettingsEditor({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
+  discard?: (steps: Step[]) => void;
 }) {
   const [resets, setResets] = useState(0);
   // The keys of the settings whose row shows an error.
@@ -125,6 +128,7 @@ export function SettingsEditor({
           set={set}
           reset={reset}
           invalid={invalid}
+          discard={discard}
           onShows={collapsed ? report(setting.key) : undefined}
           onReset={() => setResets((n) => n + 1)}
         />
@@ -183,7 +187,9 @@ export function SettingsEditor({
  * "<label>: <error>" while the editor shows an error, also before any
  * edit, and undefined once the error goes or the row unmounts. onShows
  * gets whether the editor shows an error. A merged error reaches neither:
- * the host checks the merged value itself.
+ * the host checks the merged value itself. With discard, a resources field
+ * that holds again what it showed at open drops its pending change;
+ * without, it writes back the claim value of then.
  */
 export function SettingRow({
   setting,
@@ -192,6 +198,7 @@ export function SettingRow({
   set,
   reset,
   invalid,
+  discard,
   onShows,
   onReset,
 }: {
@@ -201,6 +208,7 @@ export function SettingRow({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
+  discard?: (steps: Step[]) => void;
   onShows?: (shows: boolean) => void;
   onReset: () => void;
 }) {
@@ -263,6 +271,8 @@ export function SettingRow({
     if (value === undefined) reset([...steps, ...rest]);
     else set([...steps, ...rest], value);
   });
+  const discardAt =
+    discard && own((rest: Step[]) => discard([...steps, ...rest]));
   const note = setting.state && stateNote(setting.state);
   const messages = [
     ...errors.map((e) => ({ text: e.message, blocks: true })),
@@ -287,9 +297,12 @@ export function SettingRow({
         }
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
-        claimed={"claimed" in setting ? setting.claimed : setting.value}
+        claimed={
+          setting.mergedErrors !== undefined ? setting.claimed : setting.value
+        }
         onChange={change}
         onChangeAt={setting.holder ? undefined : changeAt}
+        onDiscardAt={discardAt}
         onRefused={own(() => {})}
         onShown={setEditorError}
       />
@@ -357,7 +370,7 @@ function useShownError(
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
 // size, environment, maps of strings, and tolerations. limitsChecked,
-// claimed, and onChangeAt reach only the editor of resources.
+// claimed, onChangeAt, and onDiscardAt reach only the editor of resources.
 function Editor({
   label,
   editor,
@@ -370,6 +383,7 @@ function Editor({
   secrets,
   onChange,
   onChangeAt,
+  onDiscardAt,
   onRefused,
   onShown,
 }: {
@@ -384,6 +398,7 @@ function Editor({
   claimed: unknown;
   onChange: (value: unknown) => void;
   onChangeAt?: (rest: Step[], value: unknown) => void;
+  onDiscardAt?: (rest: Step[]) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
@@ -451,6 +466,7 @@ function Editor({
           claimed={claimed}
           onChange={valid}
           onChangeAt={onChangeAt}
+          onDiscardAt={onDiscardAt}
           onRefused={onRefused}
           onErrors={onErrors}
         />
@@ -557,8 +573,9 @@ function useUserEdit(secrets: SecretRefs) {
 
 // ResourcesSetting writes each edit of one field at its own path with
 // onChangeAt, so the claim keeps every other key as it is. A field that
-// holds again what it showed at open gets back the value of claimed at
-// open. Without onChangeAt, onChange gets the whole value.
+// holds again what it showed at open drops its change with onDiscardAt,
+// else gets back the value of claimed at open. Without onChangeAt,
+// onChange gets the whole value.
 function ResourcesSetting({
   label,
   defaultValue,
@@ -567,6 +584,7 @@ function ResourcesSetting({
   claimed,
   onChange,
   onChangeAt,
+  onDiscardAt,
   onRefused,
   onErrors,
 }: {
@@ -577,6 +595,7 @@ function ResourcesSetting({
   claimed: unknown;
   onChange: (value: Resources, errors: ValidationError[]) => void;
   onChangeAt?: (rest: Step[], value: unknown) => void;
+  onDiscardAt?: (rest: Step[]) => void;
   onRefused: () => void;
   onErrors: (errors: ValidationError[]) => void;
 }) {
@@ -591,7 +610,12 @@ function ResourcesSetting({
         if (!onChangeAt) return onChange(value, errors);
         if (edit.refused) return onRefused();
         const rest = [{ field: edit.side }, { field: edit.resource }];
-        onChangeAt(rest, edit.reopened ? valueAt(opened, rest) : edit.quantity);
+        if (edit.reopened && onDiscardAt) onDiscardAt(rest);
+        else
+          onChangeAt(
+            rest,
+            edit.reopened ? valueAt(opened, rest) : edit.quantity,
+          );
       }}
       onErrors={onErrors}
     />
