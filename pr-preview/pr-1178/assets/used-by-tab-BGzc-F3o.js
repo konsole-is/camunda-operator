@@ -1,0 +1,59 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";import{x as n}from"./labels-Be1Q9KU6.js";import{a as r,n as i}from"./json-Ch039IR8.js";import{M as a,c as o,s}from"./policy-C-971q0L.js";import{n as c,t as l}from"./link-DOLMGIR2.js";import{n as u,t as d}from"./not-read-RuqQXk-B.js";import{n as f,t as p}from"./condition-badge-CRELLIan.js";import{a as m,i as h,n as g,o as _}from"./claim-tab-DUn9f3vu.js";import{a as v,i as y,r as b,t as x}from"./values-B2NDHvSx.js";import{c as S,s as C}from"./grants-bYJWub80.js";import{n as w}from"./resources-DPohtAQI.js";import{o as T}from"./unread-Do34-4tt.js";import{n as E,r as D,t as O}from"./tab-parts-CL47Dl9H.js";import{r as k,t as A}from"./groups-CUbu843n.js";function j(e,t,n){let r=T(t),o=r.includes(`PluginRequest`),s=r.includes(`Grant`),c=r.includes(`Namespace`)||r.includes(`Environment`);return t.requests.filter(t=>t.spec.registration===e).sort((e,t)=>i(e.metadata.namespace??``,t.metadata.namespace??``)||i(e.metadata.name??``,t.metadata.name??``)).map(e=>{let r=e.metadata.namespace??``,i=e.metadata.name??``,l=a(e.status?.conditions),u=`conditions`in l?l.conditions:[],d=u.find(e=>e.type===`Ready`),f=u.find(e=>e.type===`OutputsReady`),p=n.filter(e=>e.metadata.namespace===r&&e.metadata.labels?.[`plugins.camunda.io/request`]===i).map(C),[m]=v(e.status?.summary,P,`Summary item`,`summary items`),h=e.spec.claimRef,g=e.spec.target;return{namespace:r,name:i,...N(h)&&N(g)?{claim:h,target:{kind:g.kind,name:g.name}}:{refError:`The claim or the target of the request is not valid.`},...!c&&{environment:M(r,t)},...o&&{healthUnknown:!0},...!o&&f&&{outputsReady:f},...!o&&d&&{ready:d},...`error`in l&&{error:l.error},...!s&&{grantsNotReady:d?.reason===`GrantRejected`?p.filter(e=>e.ready?.status===`False`).map(e=>e.name):[],grants:p},...m&&{headline:m},resources:v(e.status?.resources,F,`Resource`,`resources`),deletionPolicy:e.spec.deletionPolicy}})}function M(e,t){let n=t.namespaces.find(t=>t.metadata?.name===e),r=n?s(n,t.environments).environment:void 0;return r?r.spec.displayName||(r.metadata.name??``):A}function N(e){return b(e)&&y(e.kind)&&y(e.name)}function P(e){return b(e)&&y(e.label)&&y(e.value)&&I.includes(e.severity)}function F(e){return b(e)&&y(e.kind)&&y(e.name)&&(e.onOrphan===`Kept`||e.onOrphan===`Deleted`)&&y(e.id,!0)&&y(e.location,!0)&&y(e.role,!0)}var I;function L(){return(L=e((()=>{n(),r(),o(),S(),k(),x(),I=[void 0,`Info`,`Warning`,`Error`]})))()}function R({rows:e,unread:t}){let n=t.includes(`PluginRequest`);if(e.length===0)return n?(0,V.jsx)(d,{kinds:[`PluginRequest`]}):(0,V.jsx)(`p`,{className:`text-sm text-muted`,children:`No claim uses this option.`});let r=[`Namespace`,`Environment`].filter(e=>t.includes(e));return(0,V.jsxs)(`div`,{className:`flex flex-col gap-4`,children:[n&&(0,V.jsx)(`p`,{className:`text-sm text-muted`,children:`The list can miss requests: PluginRequest is not read.`}),(0,V.jsx)(`div`,{className:`grid grid-cols-1 gap-4 xl:grid-cols-2`,children:e.map(e=>(0,V.jsx)(g,{label:`${e.namespace}/${e.name}`,children:(0,V.jsxs)(m,{children:[e.claim&&e.target?(0,V.jsx)(z,{namespace:e.namespace,claim:e.claim,target:e.target}):(0,V.jsx)(h,{label:`Claim`,children:(0,V.jsx)(E,{text:e.refError??``})}),(0,V.jsx)(h,{label:`Environment`,children:e.environment??(0,V.jsx)(d,{kinds:r})}),e.error?(0,V.jsx)(h,{label:`Conditions`,children:(0,V.jsx)(E,{text:e.error})}):(0,V.jsxs)(V.Fragment,{children:[(0,V.jsx)(h,{label:`Outputs`,children:(0,V.jsx)(B,{type:`OutputsReady`,condition:e.outputsReady,unknown:e.healthUnknown})}),(0,V.jsxs)(h,{label:`Ready`,children:[(0,V.jsx)(B,{type:`Ready`,condition:e.ready,unknown:e.healthUnknown}),e.ready?.reason===`GrantRejected`&&(e.grantsNotReady?e.grantsNotReady.length>0&&(0,V.jsx)(`span`,{className:`block text-xs text-warn`,children:`Grants with Ready False: ${e.grantsNotReady.join(`, `)}`}):(0,V.jsx)(d,{kinds:[`Grant`]}))]})]}),(0,V.jsx)(h,{label:`Headline`,children:e.healthUnknown?(0,V.jsx)(d,{kinds:[`PluginRequest`]}):e.headline?`error`in e.headline?(0,V.jsx)(E,{text:e.headline.error}):`${e.headline.label}: ${e.headline.value}`:(0,V.jsx)(`span`,{className:`text-muted`,children:`None`})}),(0,V.jsx)(h,{label:`Resources`,children:e.healthUnknown?(0,V.jsx)(d,{kinds:[`PluginRequest`]}):e.resources.length===0?(0,V.jsx)(`span`,{className:`text-muted`,children:`None reported`}):(0,V.jsx)(`ul`,{className:`flex flex-col gap-1.5`,children:e.resources.map((t,n)=>`error`in t?(0,V.jsx)(`li`,{children:(0,V.jsx)(E,{text:t.error})},n):(0,V.jsxs)(`li`,{children:[(0,V.jsx)(`span`,{className:`block font-mono break-all`,children:`${t.kind} ${t.name}`}),(t.role||t.location)&&(0,V.jsx)(`span`,{className:H,children:[t.role,t.location].filter(Boolean).join(`, `)}),(0,V.jsx)(`span`,{className:H,children:`On delete: ${w(t,e.deletionPolicy)}`})]},`${t.kind} ${t.name} ${n}`))})}),(0,V.jsx)(h,{label:`Grants`,children:e.grants?e.grants.length===0?(0,V.jsx)(`span`,{className:`text-muted`,children:`None`}):(0,V.jsx)(`ul`,{className:`flex flex-col gap-1.5`,children:e.grants.map(e=>(0,V.jsxs)(`li`,{className:`flex flex-col gap-0.5`,children:[(0,V.jsx)(`span`,{className:`font-mono break-all`,children:e.name}),e.error?(0,V.jsx)(E,{text:e.error}):(0,V.jsx)(p,{type:`Ready`,condition:e.ready})]},e.name))}):(0,V.jsx)(d,{kinds:[`Grant`]})}),(0,V.jsx)(h,{label:`Deletion policy`,children:e.deletionPolicy})]})},`${e.namespace}/${e.name}`))})]})}function z({namespace:e,claim:t,target:n}){let r=t.kind===`CamundaManagementClusterClaim`,i=`/fleet/${r?`planes`:`clusters`}/${encodeURIComponent(e)}/${encodeURIComponent(n.name)}`;return(0,V.jsx)(h,{label:r?`Management plane`:`Cluster`,children:(0,V.jsx)(c,{href:i,className:`${O} font-mono`,children:t.name})})}function B({type:e,condition:t,unknown:n}){return(0,V.jsxs)(V.Fragment,{children:[(0,V.jsx)(p,{type:e,condition:t,unknown:n}),!n&&t?.status!==`True`&&t?.message&&(0,V.jsx)(`span`,{className:`mt-1 block text-xs break-words text-text-2`,children:t.message})]})}var V,H;function U(){return(U=e((()=>{V=t(),l(),_(),u(),f(),D(),H=`block text-xs text-muted`,R.__docgenInfo={description:`UsedByTab shows each request of rows in its own panel: its claim, its
+environment, OutputsReady and Ready, its headline, its resources, its
+Grants, and its deletion policy. unread holds the kinds that are not
+read: with PluginRequest in it, the tab never says that no claim uses the
+option, and shows no condition, headline, or resources of a request.`,methods:[],displayName:`UsedByTab`,props:{rows:{required:!0,tsType:{name:`Array`,elements:[{name:`signature`,type:`object`,raw:`{
+  namespace: string;
+  name: string;
+  /** claim and target are unset, with refError, when the request names no valid claim or target. */
+  claim?: {
+    kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
+    name: string;
+  };
+  target?: { kind: string; name: string };
+  refError?: string;
+  /**
+   * environment is the display name, else the name, of the Environment of
+   * the namespace, or "No environment". It is unset while Namespace or
+   * Environment is not read.
+   */
+  environment?: string;
+  /** healthUnknown is true while PluginRequest is not read. outputsReady and ready are then unset. */
+  healthUnknown?: true;
+  outputsReady?: ConditionRow;
+  ready?: ConditionRow;
+  /** error says why the conditions cannot be read. */
+  error?: string;
+  /**
+   * grantsNotReady names the Grants of the request whose Ready is False,
+   * while the Ready of the request has the reason GrantRejected. It is unset
+   * while Grant is not read.
+   */
+  grantsNotReady?: string[];
+  /** headline is the first item of status.summary. */
+  headline?: SummaryItem | Invalid;
+  resources: (ResourceRef | Invalid)[];
+  /** grants is unset while Grant is not read. */
+  grants?: GrantView[];
+  deletionPolicy: "Delete" | "Orphan";
+}`,signature:{properties:[{key:`namespace`,value:{name:`string`,required:!0}},{key:`name`,value:{name:`string`,required:!0}},{key:`claim`,value:{name:`signature`,type:`object`,raw:`{
+  kind: "CamundaClusterClaim" | "CamundaManagementClusterClaim";
+  name: string;
+}`,signature:{properties:[{key:`kind`,value:{name:`union`,raw:`"CamundaClusterClaim" | "CamundaManagementClusterClaim"`,elements:[{name:`literal`,value:`"CamundaClusterClaim"`},{name:`literal`,value:`"CamundaManagementClusterClaim"`}],required:!0}},{key:`name`,value:{name:`string`,required:!0}}]},required:!1},description:`claim and target are unset, with refError, when the request names no valid claim or target.`},{key:`target`,value:{name:`signature`,type:`object`,raw:`{ kind: string; name: string }`,signature:{properties:[{key:`kind`,value:{name:`string`,required:!0}},{key:`name`,value:{name:`string`,required:!0}}]},required:!1}},{key:`refError`,value:{name:`string`,required:!1}},{key:`environment`,value:{name:`string`,required:!1},description:`environment is the display name, else the name, of the Environment of
+the namespace, or "No environment". It is unset while Namespace or
+Environment is not read.`},{key:`healthUnknown`,value:{name:`literal`,value:`true`,required:!1},description:`healthUnknown is true while PluginRequest is not read. outputsReady and ready are then unset.`},{key:`outputsReady`,value:{name:`ConditionRow`,required:!1}},{key:`ready`,value:{name:`ConditionRow`,required:!1}},{key:`error`,value:{name:`string`,required:!1},description:`error says why the conditions cannot be read.`},{key:`grantsNotReady`,value:{name:`Array`,elements:[{name:`string`}],raw:`string[]`,required:!1},description:`grantsNotReady names the Grants of the request whose Ready is False,
+while the Ready of the request has the reason GrantRejected. It is unset
+while Grant is not read.`},{key:`headline`,value:{name:`union`,raw:`SummaryItem | Invalid`,elements:[{name:`NonNullable[number]`,raw:`NonNullable<
+  NonNullable<PluginRequest["status"]>["summary"]
+>[number]`},{name:`signature`,type:`object`,raw:`{ error: string }`,signature:{properties:[{key:`error`,value:{name:`string`,required:!0}}]}}],required:!1},description:`headline is the first item of status.summary.`},{key:`resources`,value:{name:`Array`,elements:[{name:`unknown`}],raw:`(ResourceRef | Invalid)[]`,required:!0}},{key:`grants`,value:{name:`Array`,elements:[{name:`signature`,type:`object`,raw:`{
+  namespace: string;
+  name: string;
+  cluster?: string;
+  /** request is the value of REQUEST_LABEL. */
+  request?: string;
+  applied?: ConditionRow;
+  matchesTemplate?: ConditionRow;
+  ready?: ConditionRow;
+  state: "ready" | "oldTemplate" | "refused" | "waiting";
+  error?: string;
+}`,signature:{properties:[{key:`namespace`,value:{name:`string`,required:!0}},{key:`name`,value:{name:`string`,required:!0}},{key:`cluster`,value:{name:`string`,required:!1}},{key:`request`,value:{name:`string`,required:!1},description:`request is the value of REQUEST_LABEL.`},{key:`applied`,value:{name:`ConditionRow`,required:!1}},{key:`matchesTemplate`,value:{name:`ConditionRow`,required:!1}},{key:`ready`,value:{name:`ConditionRow`,required:!1}},{key:`state`,value:{name:`union`,raw:`"ready" | "oldTemplate" | "refused" | "waiting"`,elements:[{name:`literal`,value:`"ready"`},{name:`literal`,value:`"oldTemplate"`},{name:`literal`,value:`"refused"`},{name:`literal`,value:`"waiting"`}],required:!0}},{key:`error`,value:{name:`string`,required:!1}}]}}],raw:`GrantView[]`,required:!1},description:`grants is unset while Grant is not read.`},{key:`deletionPolicy`,value:{name:`union`,raw:`"Delete" | "Orphan"`,elements:[{name:`literal`,value:`"Delete"`},{name:`literal`,value:`"Orphan"`}],required:!0}}]}}],raw:`UsedByRow[]`},description:``},unread:{required:!0,tsType:{name:`unknown`},description:``}}}})))()}export{j as i,U as n,L as r,R as t};
