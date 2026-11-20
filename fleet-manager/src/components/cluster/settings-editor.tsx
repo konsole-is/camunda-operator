@@ -578,7 +578,7 @@ function SecretRefEditor({
   const { mark, only } = useUserEdit(secrets);
   return (
     <div className="flex min-w-0 flex-col gap-1" onChange={mark}>
-      <span className="text-sm font-medium text-muted">{label}</span>
+      <span className="text-sm font-medium break-all text-muted">{label}</span>
       <SecretRefPicker
         label={label}
         secrets={secrets}
@@ -614,7 +614,7 @@ function NumberEditor({
   );
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-muted">
+      <label htmlFor={id} className="text-sm font-medium break-all text-muted">
         {label}
       </label>
       <Input
@@ -670,7 +670,7 @@ function TextEditor({
   const id = useId();
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-muted">
+      <label htmlFor={id} className="text-sm font-medium break-all text-muted">
         {label}
       </label>
       <Input
@@ -699,7 +699,7 @@ function ToggleEditor({
         defaultChecked={defaultValue}
         onCheckedChange={(checked) => onChange(checked === true)}
       />
-      <label htmlFor={id} className="text-sm font-medium text-muted">
+      <label htmlFor={id} className="text-sm font-medium break-all text-muted">
         {label}
       </label>
     </div>
@@ -720,7 +720,7 @@ function SelectEditor({
   const id = useId();
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-muted">
+      <label htmlFor={id} className="text-sm font-medium break-all text-muted">
         {label}
       </label>
       <NativeSelect
@@ -757,7 +757,9 @@ function ChoicesEditor({
   const [picked, setPicked] = useState(defaultValue);
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      <legend className="mb-1 text-sm font-medium text-muted">{label}</legend>
+      <legend className="mb-1 text-sm font-medium break-all text-muted">
+        {label}
+      </legend>
       {options.map((option, i) => (
         <div key={option} className="flex items-center gap-2">
           <Checkbox
