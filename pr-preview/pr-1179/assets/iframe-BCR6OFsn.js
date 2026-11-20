@@ -1,1 +1,0 @@
-import{t as e}from"./iframe-rtcC5fch.js";e();
