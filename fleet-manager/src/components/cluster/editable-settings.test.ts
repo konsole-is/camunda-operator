@@ -451,26 +451,6 @@ describe("settingsOf merged errors", () => {
     ]);
   });
 
-  it("gives the value of the claim to settingChange, which writes only the changed keys", () => {
-    const resources = brokers(
-      { requests: { cpu: "2", memory: "2Gi" }, limits: { cpu: "1" } },
-      { limits: { memory: "4Gi" } },
-    );
-    expect(resources.claimed).toEqual({ limits: { memory: "4Gi" } });
-    expect(
-      settingChange(resources, {
-        requests: { cpu: "2", memory: "2Gi" },
-        limits: { cpu: "3", memory: "4Gi" },
-      }).value,
-    ).toEqual({ limits: { cpu: "3", memory: "4Gi" } });
-    expect(
-      settingChange(resources, {
-        requests: { cpu: "2", memory: "2Gi" },
-        limits: { cpu: "1" },
-      }).value,
-    ).toBeUndefined();
-  });
-
   it("has no merged errors without the claim, as on the preset page", () => {
     const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
       preset: {
@@ -507,7 +487,7 @@ describe("blockingMergedErrors", () => {
         path: "spec.cluster.zeebe.resources",
         message:
           "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
-        label: "resources",
+        label: "zeebe.resources",
       },
     ]);
   });

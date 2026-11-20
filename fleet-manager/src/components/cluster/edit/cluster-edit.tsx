@@ -39,9 +39,10 @@ export type ClusterEdit = ClaimEdit<ClusterClaim>;
 /**
  * ClusterEditProvider is the claim edit host of the cluster page, over the
  * live claim of context, with clusterLocks of context.fields, and with
- * validateClusterClaim and the merged errors that block as its validation. Review adds the reset of allowVersionDowngrade once
- * the downgrade is done, and shows the impacts, cautions, confirm, and
- * merged diff of the cluster. It needs a GitPushesProvider above it.
+ * validateClusterClaim and the merged errors that block as its
+ * validation. Review adds the reset of allowVersionDowngrade once the
+ * downgrade is done, and shows the impacts, cautions, confirm, and merged
+ * diff of the cluster. It needs a GitPushesProvider above it.
  */
 export function ClusterEditProvider({
   context,
@@ -61,6 +62,11 @@ export function ClusterEditProvider({
     cluster,
     backups,
     requests,
+    presets,
+    platformConfigs,
+    storage,
+    optimize,
+    schedules,
   } = context;
   const registrationsRead = !context.unread.includes("PluginRegistration");
   const locks = useMemo(() => clusterLocks(fields), [fields]);
@@ -76,10 +82,25 @@ export function ClusterEditProvider({
         requests,
         registrationsRead,
       }),
-      ...mergedErrorsAfter(context, s),
+      ...mergedErrorsAfter(
+        {
+          cluster,
+          presets,
+          releases,
+          sections,
+          environment,
+          platformConfigs,
+          storage,
+          registrations,
+          optimize,
+          schedules,
+        },
+        s,
+      ),
     ],
+    // The page builds a new context on each render, as each second for its
+    // clock, so the check depends on the lists that it reads.
     [
-      context,
       environment,
       sections,
       registrations,
@@ -88,6 +109,11 @@ export function ClusterEditProvider({
       backups,
       requests,
       registrationsRead,
+      presets,
+      platformConfigs,
+      storage,
+      optimize,
+      schedules,
     ],
   );
   const host: ClaimEditHost<ClusterClaim> = {
@@ -110,7 +136,8 @@ export function ClusterEditProvider({
 // changes of session. The editors that show them can be closed, and the
 // preset can change while they are.
 function mergedErrorsAfter(
-  context: ClusterSlotContext,
+  context: Parameters<typeof changeInputOf>[0] &
+    Pick<ClusterSlotContext, "registrations" | "optimize" | "schedules">,
   session: Session<ClusterClaim>,
 ): FieldError[] {
   const { after } = mergedSpecs(changeInputOf(context, session));
@@ -126,8 +153,10 @@ function mergedErrorsAfter(
       schedules: context.schedules,
     }),
   );
+  // Without a path, the change bar shows the message also while the
+  // editors of the setting are closed.
   return blockingMergedErrors(fields, after.spec, claim.spec.cluster ?? {}).map(
-    ({ path, message }) => ({ path, message }),
+    ({ label, message }) => ({ message: `${label}: ${message}` }),
   );
 }
 

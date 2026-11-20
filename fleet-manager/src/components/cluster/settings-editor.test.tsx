@@ -526,19 +526,20 @@ describe("SettingsEditor collapsed", () => {
   // MergedHost holds a claim: each change goes to the claim, and the
   // settings come from the claim merged over a preset that sets the
   // resources of process. Tasklist runs embedded in a standalone gateway.
-  // onClaim gets spec.cluster of the held claim at each render.
   function MergedHost({
     preset,
     invalid,
     process = "zeebe",
     onClaim,
+    initial = {},
   }: {
     preset: object;
     invalid: (at: Step[], message: string | undefined) => void;
     process?: "zeebe" | "tasklist";
     onClaim?: (cluster: object) => void;
+    initial?: object;
   }) {
-    const [cluster, setCluster] = useState<object>({});
+    const [cluster, setCluster] = useState<object>(initial);
     onClaim?.(cluster);
     const tasklist = process === "tasklist";
     const { group, settings } = settingsGroupOf(
@@ -910,6 +911,77 @@ describe("SettingsEditor collapsed", () => {
       zeebe: { resources: { limits: { cpu: "3" } } },
     });
   });
+
+  it("writes no copy of an integer quantity of the preset beside an edit", async () => {
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ requests: { cpu: 1 } }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.click(row());
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { memory: "2Gi" } } },
+    });
+  });
+
+  it("keeps an integer quantity of the claim beside an edit", async () => {
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{}}
+        initial={{ zeebe: { resources: { requests: { cpu: 2 } } } }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.click(row());
+    await userEvent.type(amount("Memory limit"), "4");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { cpu: 2 }, limits: { memory: "4Gi" } } },
+    });
+  });
+
+  it.each([
+    ["a key that the claim holds", { requests: { cpu: "1" } }],
+    ["a key that only the preset gives", {}],
+  ])(
+    "writes a set, a clear, and a clear then another value of %s",
+    async (_, claimed) => {
+      const onClaim = vi.fn();
+      render(
+        <MergedHost
+          preset={{ requests: { cpu: "1" }, limits: { memory: "8Gi" } }}
+          initial={{ zeebe: { resources: claimed } }}
+          invalid={vi.fn()}
+          onClaim={onClaim}
+        />,
+      );
+      await userEvent.click(row());
+      const request = () => amount("CPU request");
+      await userEvent.type(request(), "5");
+      expect(onClaim).toHaveBeenLastCalledWith({
+        zeebe: { resources: { requests: { cpu: "15" } } },
+      });
+      await userEvent.clear(request());
+      expect(onClaim).toHaveBeenLastCalledWith({});
+      await userEvent.type(request(), "3");
+      expect(onClaim).toHaveBeenLastCalledWith({
+        zeebe: { resources: { requests: { cpu: "3" } } },
+      });
+      // The amount that the field showed at open gives back the claim of then.
+      await userEvent.clear(request());
+      await userEvent.type(request(), "1");
+      expect(onClaim).toHaveBeenLastCalledWith(
+        Object.keys(claimed).length > 0
+          ? { zeebe: { resources: claimed } }
+          : {},
+      );
+    },
+  );
 
   it("lets a fix of one of two faults of the preset through, and drops its message", async () => {
     const invalid = vi.fn();

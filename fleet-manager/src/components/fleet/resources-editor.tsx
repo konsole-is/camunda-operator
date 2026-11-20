@@ -26,6 +26,20 @@ export type LimitBelowRequest = {
   limit: string;
 };
 
+/**
+ * ResourceEdit is the field of one edit of ResourcesEditor. quantity is
+ * undefined for an empty field. reopened says that the field holds again
+ * the amount and the unit that it showed when the editor opened. refused
+ * says that the field has an error of its own.
+ */
+export type ResourceEdit = {
+  side: "requests" | "limits";
+  resource: "cpu" | "memory";
+  quantity?: string;
+  reopened: boolean;
+  refused: boolean;
+};
+
 /** EDITED_RESOURCES are the resources that ResourcesEditor has fields for. */
 export const EDITED_RESOURCES: readonly string[] = ["cpu", "memory"];
 
@@ -76,9 +90,9 @@ const FIELDS: [Side, Resource, string][] = [
  * container, each as an amount and a unit. A field left empty is not set.
  * Every other resource, such as ephemeral-storage, and every other key stay
  * unchanged, and a value in a unit that the list does not hold keeps its
- * unit. onChange gets the resources and the errors after each edit: an
- * amount that is not a number, a negative amount, and a limit below its
- * request. describedBy names the hint and error elements of the field for
+ * unit. onChange gets the resources, the errors, and the field of each
+ * edit. The errors are an amount that is not a number, a negative amount,
+ * and a limit below its request. describedBy names the hint and error elements of the field for
  * each amount and unit. With limitsChecked, the caller checks each limit
  * against its request in the value that the cluster gets: the editor then
  * neither shows nor reports a limit below its request, and passes such an
@@ -96,21 +110,34 @@ export function ResourcesEditor({
   defaultValue?: Resources;
   describedBy?: string;
   limitsChecked?: boolean;
-  onChange?: (value: Resources, errors: ValidationError[]) => void;
+  onChange?: (
+    value: Resources,
+    errors: ValidationError[],
+    edit: ResourceEdit,
+  ) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
-  const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
+  const [opened] = useState(() => amountsOf(defaultValue));
+  const [amounts, setAmounts] = useState(opened);
   const errors = amountErrors(amounts, limitsChecked);
   useErrorsReport(errors, onErrors);
 
-  const update = (path: string, amount: Amount) => {
+  const update = (side: Side, resource: Resource, amount: Amount) => {
+    const path = `${side}.${resource}`;
     const next = { ...amounts, [path]: amount };
     setAmounts(next);
-    onChange?.(
-      toResources(defaultValue, next),
-      amountErrors(next, limitsChecked),
-    );
+    const nextErrors = amountErrors(next, limitsChecked);
+    const was = opened[path];
+    onChange?.(toResources(defaultValue, next), nextErrors, {
+      side,
+      resource,
+      ...(amount.amount !== "" && { quantity: quantityOf(amount) }),
+      reopened:
+        amount.amount === was.amount &&
+        (amount.amount === "" || amount.unit === was.unit),
+      refused: nextErrors.some((e) => e.path === path),
+    });
   };
 
   return (
@@ -145,7 +172,10 @@ export function ResourcesEditor({
                 aria-invalid={error ? true : undefined}
                 aria-describedby={described}
                 onChange={(event) =>
-                  update(path, { ...value, amount: event.target.value })
+                  update(side, resource, {
+                    ...value,
+                    amount: event.target.value,
+                  })
                 }
               />
               <label className="sr-only" htmlFor={`${id}-${path}-unit`}>
@@ -157,7 +187,7 @@ export function ResourcesEditor({
                 value={value.unit}
                 aria-describedby={described}
                 onChange={(event) =>
-                  update(path, { ...value, unit: event.target.value })
+                  update(side, resource, { ...value, unit: event.target.value })
                 }
               >
                 {units.map((u) => (

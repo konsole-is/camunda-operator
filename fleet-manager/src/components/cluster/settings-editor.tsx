@@ -42,7 +42,7 @@ import {
   type Step,
 } from "@/lib/fields";
 import type { ValidationError } from "@/lib/schema";
-import type { FieldError } from "@/lib/session";
+import { type FieldError, valueAt } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
 import {
   type Setting,
@@ -259,12 +259,13 @@ export function SettingRow({
     if (next.value === undefined) reset(next.steps);
     else set(next.steps, next.value);
   });
+  const changeAt = own((rest: Step[], value: unknown) => {
+    if (value === undefined) reset([...steps, ...rest]);
+    else set([...steps, ...rest], value);
+  });
   const note = setting.state && stateNote(setting.state);
-  // A host can also give a merged error of the setting as a field error.
   const messages = [
-    ...errors
-      .filter((e) => !merged.some((m) => m.message === e.message))
-      .map((e) => ({ text: e.message, blocks: true })),
+    ...errors.map((e) => ({ text: e.message, blocks: true })),
     ...merged.map((e) => ({ text: e.message, blocks: e.blocks })),
   ];
   return (
@@ -286,7 +287,9 @@ export function SettingRow({
         }
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
+        claimed={"claimed" in setting ? setting.claimed : setting.value}
         onChange={change}
+        onChangeAt={setting.holder ? undefined : changeAt}
         onRefused={own(() => {})}
         onShown={setEditorError}
       />
@@ -353,7 +356,8 @@ function useShownError(
 // after each change. current is the value before
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
-// size, environment, maps of strings, and tolerations.
+// size, environment, maps of strings, and tolerations. limitsChecked,
+// claimed, and onChangeAt reach only the editor of resources.
 function Editor({
   label,
   editor,
@@ -362,8 +366,10 @@ function Editor({
   replaces,
   describedBy,
   limitsChecked,
+  claimed,
   secrets,
   onChange,
+  onChangeAt,
   onRefused,
   onShown,
 }: {
@@ -375,7 +381,9 @@ function Editor({
   describedBy?: string;
   secrets: SecretRefs;
   limitsChecked: boolean;
+  claimed: unknown;
   onChange: (value: unknown) => void;
+  onChangeAt?: (rest: Step[], value: unknown) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
@@ -435,12 +443,15 @@ function Editor({
       );
     case "resources":
       return (
-        <ResourcesEditor
+        <ResourcesSetting
           label={label}
           defaultValue={initial as Resources}
           describedBy={describedBy}
           limitsChecked={limitsChecked}
+          claimed={claimed}
           onChange={valid}
+          onChangeAt={onChangeAt}
+          onRefused={onRefused}
           onErrors={onErrors}
         />
       );
@@ -542,6 +553,49 @@ function useUserEdit(secrets: SecretRefs) {
       f(...args);
     };
   return { mark, only };
+}
+
+// ResourcesSetting writes each edit of one field at its own path with
+// onChangeAt, so the claim keeps every other key as it is. A field that
+// holds again what it showed at open gets back the value of claimed at
+// open. Without onChangeAt, onChange gets the whole value.
+function ResourcesSetting({
+  label,
+  defaultValue,
+  describedBy,
+  limitsChecked,
+  claimed,
+  onChange,
+  onChangeAt,
+  onRefused,
+  onErrors,
+}: {
+  label: string;
+  defaultValue: Resources;
+  describedBy?: string;
+  limitsChecked: boolean;
+  claimed: unknown;
+  onChange: (value: Resources, errors: ValidationError[]) => void;
+  onChangeAt?: (rest: Step[], value: unknown) => void;
+  onRefused: () => void;
+  onErrors: (errors: ValidationError[]) => void;
+}) {
+  const [opened] = useState(claimed);
+  return (
+    <ResourcesEditor
+      label={label}
+      defaultValue={defaultValue}
+      describedBy={describedBy}
+      limitsChecked={limitsChecked}
+      onChange={(value, errors, edit) => {
+        if (!onChangeAt) return onChange(value, errors);
+        if (edit.refused) return onRefused();
+        const rest = [{ field: edit.side }, { field: edit.resource }];
+        onChangeAt(rest, edit.reopened ? valueAt(opened, rest) : edit.quantity);
+      }}
+      onErrors={onErrors}
+    />
+  );
 }
 
 function EnvSetting({

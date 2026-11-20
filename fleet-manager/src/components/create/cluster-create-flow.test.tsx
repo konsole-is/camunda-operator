@@ -1790,7 +1790,7 @@ describe("ClusterCreateFlow write", () => {
     expect(settingsRow("Brokers").getAttribute("aria-expanded")).toBe("true");
     expect(settingsRow("Brokers").textContent).toContain("1 error");
     expect(footer()).toContain(
-      "Cluster settings: resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+      "Cluster settings: zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     );
   });
 
@@ -1807,7 +1807,7 @@ describe("ClusterCreateFlow write", () => {
     );
     expect(settingsRow("Brokers").textContent).toContain("1 error");
     expect(next().disabled).toBe(true);
-    expect(footer()).toContain(`Cluster settings: resources: ${message}`);
+    expect(footer()).toContain(`Cluster settings: zeebe.resources: ${message}`);
 
     await userEvent.type(cpuLimit(), "2");
     await waitFor(() => expect(next().disabled).toBe(false));
@@ -1819,8 +1819,6 @@ describe("ClusterCreateFlow write", () => {
     await toStep("Cluster settings");
     expect(next().disabled).toBe(false);
     await openSettings("Brokers");
-    // The editor itself refuses a request above the limit that it shows.
-    await userEvent.clear(cpuLimit());
     const request = within(brokerResources()).getByRole("group", {
       name: "CPU request",
     });
@@ -1849,7 +1847,7 @@ describe("ClusterCreateFlow write", () => {
       document.getElementById(create().getAttribute("aria-describedby")!)
         ?.textContent,
     ).toBe(
-      "Cluster settings: resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+      "Cluster settings: zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     );
   });
 

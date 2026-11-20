@@ -23,7 +23,6 @@ import {
   type SettingEditor,
   type Step,
 } from "@/lib/fields";
-import { equalJSON } from "@/lib/policy";
 import type { OpenAPISchema } from "@/lib/schema";
 import { type FieldError, valueAt, without, withValue } from "@/lib/session";
 import { type SettingsGroup, settingsGroupsOf } from "./settings";
@@ -298,9 +297,10 @@ function originOf(
 
 /**
  * blockingMergedErrors returns a field error at the claim path of each
- * setting of a cluster with a merged error that blocks, with the label of
- * the setting. fields are clusterFields of the cluster, spec the merged
- * spec, and claim spec.cluster of the claim, as settingsOf takes them.
+ * setting of a cluster with a merged error that blocks. label names the
+ * setting by its path in spec.cluster of the claim, such as
+ * zeebe.resources. fields are clusterFields of the cluster, spec the merged
+ * spec, and claim spec.cluster of the claim.
  */
 export function blockingMergedErrors(
   fields: readonly ClusterField[],
@@ -314,7 +314,10 @@ export function blockingMergedErrors(
         .map((e) => ({
           path: pathFrom("", setting.steps!),
           message: e.message,
-          label: setting.label,
+          label:
+            group.component === "cluster"
+              ? setting.label
+              : `${group.component}.${setting.label}`,
         })),
     ),
   );
@@ -387,21 +390,13 @@ function plural(source: string): string {
  * settingChange returns where an editor value goes and its claim value. A
  * value of undefined resets the field at steps. A setting with a holder
  * writes the whole held field with the setting changed, and resets it when
- * that leaves it empty. A setting with claimed and no holder writes claimed
- * with each key that differs between value and editorValue, so that the
- * claim gets no copy of a value of the preset. The setting must have an
- * editor and steps.
+ * that leaves it empty. The setting must have an editor and steps.
  */
 export function settingChange(
   setting: Setting,
   editorValue: unknown,
 ): { steps: Step[]; value: unknown } {
-  const claim = claimValueOf(
-    setting.editor!,
-    "claimed" in setting
-      ? changedOver(setting.claimed, setting.value, editorValue)
-      : editorValue,
-  );
+  const claim = claimValueOf(setting.editor!, editorValue);
   const at = setting.steps!;
   const { holder } = setting;
   if (!holder) return { steps: at, value: claim };
@@ -410,41 +405,6 @@ export function settingChange(
       ? without(holder.value ?? {}, holder.rest)
       : withValue(holder.value ?? {}, holder.rest, claim);
   return { steps: at, value: isEmpty(value) ? undefined : value };
-}
-
-function changedOver(
-  claimed: unknown,
-  merged: unknown,
-  edited: unknown,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = structuredClone(
-    isObject(claimed) ? claimed : {},
-  );
-  const before = isObject(merged) ? merged : {};
-  const after = isObject(edited) ? edited : {};
-  for (const field of new Set([
-    ...Object.keys(before),
-    ...Object.keys(after),
-  ])) {
-    const was = before[field];
-    const now = after[field];
-    if (isObject(was) || isObject(now)) {
-      const map = isObject(result[field]) ? result[field] : {};
-      const from = isObject(was) ? was : {};
-      const to = isObject(now) ? now : {};
-      for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
-        if (equalJSON(from[key], to[key])) continue;
-        if (to[key] === undefined) delete map[key];
-        else map[key] = to[key];
-      }
-      if (Object.keys(map).length > 0) result[field] = map;
-      else delete result[field];
-    } else if (!equalJSON(was, now)) {
-      if (now === undefined) delete result[field];
-      else result[field] = now;
-    }
-  }
-  return result;
 }
 
 /**

@@ -11,7 +11,16 @@ import type { ClusterClaim } from "./cluster-edit";
  * platform, and context.storage as storage.
  */
 export function changeInputOf(
-  context: ClusterSlotContext,
+  context: Pick<
+    ClusterSlotContext,
+    | "cluster"
+    | "presets"
+    | "releases"
+    | "sections"
+    | "environment"
+    | "platformConfigs"
+    | "storage"
+  >,
   session: Session<ClusterClaim>,
 ): ClusterChangeInput {
   const ref = context.cluster.spec.platformConfigRef;
