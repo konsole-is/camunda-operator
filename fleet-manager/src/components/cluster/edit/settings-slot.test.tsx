@@ -290,6 +290,48 @@ describe("ComponentSettingsEditor", () => {
     expect(within(bar()).queryByText(/Enter a whole number/)).toBeNull();
   });
 
+  it("a cleared limit that leaves the limit of the preset below the request blocks Review and names the preset", async () => {
+    const spec = {
+      zeebe: {
+        replicas: 3,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { limits: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      }),
+    );
+    await openEditors();
+    const resources = () => settingRow(group("Brokers"), "resources");
+    await userEvent.clear(
+      within(
+        within(resources()).getByRole("group", { name: "CPU limit" }),
+      ).getByRole("textbox", { name: "Amount" }),
+    );
+    const message =
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
+    expect(within(resources()).getByRole("alert").textContent).toBe(message);
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(within(bar).getByText(`resources: ${message}`)).toBeTruthy();
+  });
+
   it("closing the editors clears the error that one of them shows", async () => {
     renderSlot(contextOf({ openId: "gateway" }));
     await openEditors();

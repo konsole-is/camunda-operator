@@ -1,3 +1,8 @@
+import {
+  type LimitBelowRequest,
+  limitsBelowRequests,
+  type Resources,
+} from "@/components/fleet/resources-editor";
 import { fieldSchemas } from "@/generated/fieldschema";
 import {
   type ClusterField,
@@ -29,7 +34,9 @@ import type { SettingsGroup } from "./settings";
  * counts the entries that the preset and the release put before value.
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key.
+ * map key by key. mergedErrors are the errors of value that the editor
+ * cannot show, because a layer below the claim gives a part of value that
+ * the editor leaves empty. Each one names that layer.
  */
 export type Setting = {
   key: string;
@@ -46,6 +53,7 @@ export type Setting = {
   resetLabel: string;
   resetNote?: string;
   replaces?: true;
+  mergedErrors?: string[];
 };
 
 /**
@@ -65,6 +73,10 @@ export type Setting = {
  * state of its fields, a claim state first, and the lock of any of them. A
  * locked setting has no editor and no steps. A field that belongs to no
  * setting is a read-only setting of its own, after the others.
+ *
+ * With claim, spec is a merge of layers, and a resources setting gets
+ * mergedErrors: a limit of spec below its request where a layer other than
+ * the claim gives the limit or the request.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -126,9 +138,21 @@ export function settingsOf(input: {
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
+    const merged =
+      "claim" in input && editor.kind === "resources"
+        ? limitsBelowRequests((value ?? {}) as Resources).flatMap((below) =>
+            mergedLimitError(below, (side) => {
+              const part = [...names, side, below.resource];
+              return mine.find(({ names: f }) => sameNames(f, part))?.field
+                .state;
+            }),
+          )
+        : [];
+    const checked: Setting =
+      merged.length > 0 ? { ...setting, mergedErrors: merged } : setting;
     if (holder?.field.claimSteps)
       return {
-        ...setting,
+        ...checked,
         ...blockReset(
           names.slice(prefix, holder.names.length).join(".") || group.label,
           "preset",
@@ -140,7 +164,7 @@ export function settingsOf(input: {
           rest: steps(names.slice(holder.names.length)),
         },
       };
-    return { ...setting, editor, steps: [...base, ...steps(names)] };
+    return { ...checked, editor, steps: [...base, ...steps(names)] };
   });
   const rest = group.fields
     .filter((field) => !used.has(field.key))
@@ -154,6 +178,61 @@ export function settingsOf(input: {
       resetLabel: "Reset to preset",
     }));
   return [...settings, ...rest];
+}
+
+// mergedLimitError returns the error of a limit below its request when a
+// layer other than the claim gives one of the two, else nothing: the
+// editor shows the error of two values of the claim. stateOf gives the
+// state of the requests or the limits of the resource.
+function mergedLimitError(
+  below: LimitBelowRequest,
+  stateOf: (side: "requests" | "limits") => FieldState | undefined,
+): string[] {
+  const name = below.resource === "cpu" ? "CPU" : "memory";
+  const limit = `${name} limit of ${below.limit}`;
+  const request = `${name} request of ${below.request}`;
+  const limitFrom = layerOf(stateOf("limits"));
+  const requestFrom = layerOf(stateOf("requests"));
+  if (limitFrom === undefined && requestFrom === undefined) return [];
+  if (requestFrom === undefined)
+    return [
+      `The ${limit} comes from ${limitFrom} and is below the ${request}.`,
+    ];
+  if (limitFrom === undefined)
+    return [
+      `The ${request} comes from ${requestFrom} and is above the ${limit}.`,
+    ];
+  if (limitFrom === requestFrom)
+    return [
+      `The ${limit} and the ${request} come from ${limitFrom}. The limit is below the request.`,
+    ];
+  return [
+    `The ${limit} comes from ${limitFrom}. It is below the ${request} from ${requestFrom}.`,
+  ];
+}
+
+// layerOf names where a value of state comes from, or gives undefined for
+// a value of the claim.
+function layerOf(state: FieldState | undefined): string | undefined {
+  switch (state?.kind) {
+    case undefined:
+    case "claim":
+      return undefined;
+    case "preset":
+      return "the preset";
+    case "release":
+      return "the release";
+    case "environment":
+      return "the environment";
+    case "admin":
+      return "your admin";
+    case "filled":
+      return state.sectionLabel;
+    case "setBy":
+      return state.manager ?? "an unknown writer";
+    case "default":
+      return "a default";
+  }
 }
 
 /**
@@ -360,6 +439,10 @@ function isSecretRef(root: SchemaRoot, path: string): boolean {
 
 function steps(names: readonly string[]): Step[] {
   return names.map((field) => ({ field }));
+}
+
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && startsWith(a, b);
 }
 
 function startsWith(names: readonly string[], prefix: readonly string[]) {

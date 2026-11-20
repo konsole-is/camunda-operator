@@ -15,6 +15,16 @@ export type Resources = NonNullable<
   NonNullable<CamundaClusterSpec["gateway"]>["resources"]
 >;
 
+/**
+ * LimitBelowRequest is a resource whose limit is below its request. request
+ * and limit are the quantities as the value writes them.
+ */
+export type LimitBelowRequest = {
+  resource: Resource;
+  request: string;
+  limit: string;
+};
+
 type Side = "requests" | "limits";
 type Resource = "cpu" | "memory";
 type Amount = { amount: string; unit: string };
@@ -190,7 +200,7 @@ function toResources(
     for (const resource of ["cpu", "memory"] as const) {
       const value = amounts[`${side}.${resource}`];
       if (value.amount === "") delete map[resource];
-      else map[resource] = `${value.amount}${value.unit}`;
+      else map[resource] = quantityOf(value);
     }
     if (Object.keys(map).length) result[side] = map;
     else delete result[side];
@@ -204,22 +214,44 @@ function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
     if (value.amount !== "" && !NUMBER.test(value.amount))
       errors.push({ path, message: "Enter a number" });
   }
-  for (const resource of ["cpu", "memory"] as const) {
+  for (const resource of belowRequests(amounts))
+    errors.push({
+      path: `limits.${resource}`,
+      message: "The limit is below the request",
+    });
+  return errors;
+}
+
+/**
+ * limitsBelowRequests returns the CPU and the memory of value whose limit is
+ * below the request, with the rule that the editor shows, CPU first. A
+ * quantity that is not a number in a unit of Kubernetes is below nothing.
+ */
+export function limitsBelowRequests(value: Resources): LimitBelowRequest[] {
+  const amounts = amountsOf(value);
+  return belowRequests(amounts).map((resource) => ({
+    resource,
+    request: quantityOf(amounts[`requests.${resource}`]),
+    limit: quantityOf(amounts[`limits.${resource}`]),
+  }));
+}
+
+function belowRequests(amounts: Record<string, Amount>): Resource[] {
+  return (["cpu", "memory"] as const).filter((resource) => {
     const request = base(amounts[`requests.${resource}`]);
     const limit = base(amounts[`limits.${resource}`]);
     // Float scales make equal quantities differ in the last digit, such as
     // 700m and 0.7.
-    if (
+    return (
       request !== undefined &&
       limit !== undefined &&
       limit < request * (1 - 1e-12)
-    )
-      errors.push({
-        path: `limits.${resource}`,
-        message: "The limit is below the request",
-      });
-  }
-  return errors;
+    );
+  });
+}
+
+function quantityOf(value: Amount): string {
+  return `${value.amount}${value.unit}`;
 }
 
 function base(value: Amount): number | undefined {

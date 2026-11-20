@@ -180,6 +180,8 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 
 A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
 
+A value that the preset completes also shows an error when the result is not valid. For example, a limit that you clear keeps the limit of the preset, and the editor says `The CPU limit of 1 comes from the preset and is below the CPU request of 2.` This value counts as a change. **Review** stays disabled until you set a limit that is not below the request.
+
 ## A claim made outside the fleet manager
 
 You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. With the choice, a removed field that has a default gets its default value again, and the review names that value. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.

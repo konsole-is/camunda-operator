@@ -275,6 +275,122 @@ describe("settingsOf", () => {
   });
 });
 
+describe("settingsOf merged errors", () => {
+  // brokers returns the resources setting of the brokers when preset is
+  // spec.cluster.zeebe.resources of the preset and claim that of the claim.
+  function brokers(preset?: object, claim?: object): Setting {
+    return setting(
+      processSettings("zeebe", "zeebe", {
+        ...(preset && { preset: { zeebe: { resources: preset } } }),
+        ...(claim && { claim: { cluster: { zeebe: { resources: claim } } } }),
+      }),
+      "resources",
+    );
+  }
+
+  it("names the preset when its limit stays below the request of the claim", () => {
+    expect(
+      brokers({ limits: { cpu: "1" } }, { requests: { cpu: "2" } })
+        .mergedErrors,
+    ).toEqual([
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    ]);
+  });
+
+  it("names the preset when its request stays above the limit of the claim", () => {
+    expect(
+      brokers({ requests: { cpu: "2" } }, { limits: { cpu: "1" } })
+        .mergedErrors,
+    ).toEqual([
+      "The CPU request of 2 comes from the preset and is above the CPU limit of 1.",
+    ]);
+  });
+
+  it("names the preset when it sets both and the claim changes nothing", () => {
+    expect(
+      brokers({ requests: { cpu: "2" }, limits: { cpu: "1" } }).mergedErrors,
+    ).toEqual([
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    ]);
+  });
+
+  it("leaves a limit below a request that the claim sets both of to the editor", () => {
+    expect(
+      brokers(
+        { requests: { cpu: "4" }, limits: { cpu: "8" } },
+        { requests: { cpu: "2" }, limits: { cpu: "1" } },
+      ).mergedErrors,
+    ).toBeUndefined();
+  });
+
+  it("has no error when the merged limit is not below the request", () => {
+    expect(
+      brokers({ limits: { cpu: "4" } }, { requests: { cpu: "2" } })
+        .mergedErrors,
+    ).toBeUndefined();
+    expect(brokers().mergedErrors).toBeUndefined();
+  });
+
+  it("compares the memory and quantities in other units", () => {
+    expect(
+      brokers(
+        { requests: { memory: "2Gi" }, limits: { cpu: "500m" } },
+        { requests: { cpu: "1" }, limits: { memory: "1024Mi" } },
+      ).mergedErrors,
+    ).toEqual([
+      "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
+      "The memory request of 2Gi comes from the preset and is above the memory limit of 1024Mi.",
+    ]);
+  });
+
+  it("checks the resources of every component and of the dump", () => {
+    const gateway = setting(
+      processSettings("gateway", "gateway", {
+        preset: { gateway: { resources: { limits: { memory: "1Gi" } } } },
+        claim: {
+          cluster: { gateway: { resources: { requests: { memory: "2Gi" } } } },
+        },
+      }),
+      "resources",
+    );
+    expect(gateway.mergedErrors).toHaveLength(1);
+    const dump = setting(
+      clusterSettings({
+        preset: {
+          backup: { dump: { resources: { limits: { cpu: "1" } } } },
+        },
+        claim: {
+          cluster: {
+            backup: { dump: { resources: { requests: { cpu: "2" } } } },
+          },
+        },
+      }),
+      "backup.dump.resources",
+    );
+    expect(dump.mergedErrors).toEqual([
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    ]);
+  });
+
+  it("has no merged errors without the claim, as on the preset page", () => {
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(setting(settings, "resources").mergedErrors).toHaveLength(1);
+    const { merged } = settingsFieldsOf({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(
+      setting(settingsOf({ group, spec: merged.spec }), "resources")
+        .mergedErrors,
+    ).toBeUndefined();
+  });
+});
+
 describe("settingChange", () => {
   const labels = () =>
     setting(

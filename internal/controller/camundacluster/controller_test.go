@@ -588,6 +588,37 @@ var _ = Describe("CamundaCluster controller", func() {
 		)
 	})
 
+	It("reports the refused apply when the merged CPU limit of the brokers is below their request", func() {
+		ns := newNamespace()
+		preset := minimalPreset()
+		preset.Spec.Cluster.Zeebe.Resources = &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		}
+		Expect(k8sClient.Create(ctx, preset)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, preset) })
+
+		// Requests and limits merge key by key, so the limit of the preset
+		// stays under the request of the cluster.
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.Zeebe = &v1.ZeebeSpec{WorkloadSpec: v1.WorkloadSpec{
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+			},
+		}}
+		createCluster(cluster)
+
+		refused := And(
+			ContainSubstring("StatefulSet/"+ns+"/"+cluster.Name+"-zeebe"),
+			ContainSubstring("must be less than or equal to cpu limit of 1"),
+		)
+		expectCondition(cluster, v1.ConditionZeebeReady, Equal(string(component.Error)))
+		expectReady(cluster, metav1.ConditionFalse, Equal(string(component.Error)), And(HavePrefix("zeebe: "), refused))
+		Expect(k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}, &appsv1.StatefulSet{},
+		)).NotTo(Succeed())
+	})
+
 	It("reports MissingSecret for a missing storage credentials Secret and recovers when it appears", func() {
 		ns := newNamespace()
 		binding := createBinding(ns, false)

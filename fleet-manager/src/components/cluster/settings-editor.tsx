@@ -84,7 +84,7 @@ export function SettingsEditor({
   invalid?: (steps: Step[], message: string | undefined) => void;
 }) {
   const [resets, setResets] = useState(0);
-  // The keys of the settings whose editor shows an error.
+  // The keys of the settings whose row shows an error.
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
   const [open, setOpen] = useState(false);
   const [counted, setCounted] = useState(0);
@@ -172,13 +172,14 @@ export function SettingsEditor({
  * its lock reason. A change with errors shows them and is not passed on. A
  * claim value of undefined resets the field. A map of strings of a setting
  * that replaces the value below it can be set to {} when it starts with a
- * value. errors are field errors from outside the row. onReset runs after a
- * click on the reset link: the caller remounts the rows, so that they show
- * the values below the claim. invalid gets the claim steps of the shown
- * field and "<label>: <error>" after an edit that shows an error, and
- * undefined once the error goes or the row unmounts. onShows gets whether
- * the editor shows an error, also for a value from below the claim before
- * any edit, which invalid does not get.
+ * value. errors are field errors from outside the row. The mergedErrors of
+ * the setting show under them. onReset runs after a click on the reset
+ * link: the caller remounts the rows, so that they show the values below
+ * the claim. The row shows an error while its editor shows one or the
+ * setting has mergedErrors, also before any edit. invalid gets the claim
+ * steps of the shown field and "<label>: <error>" while the row shows an
+ * error, the first merged error first, and undefined once the error goes
+ * or the row unmounts. onShows gets whether the row shows an error.
  */
 export function SettingRow({
   setting,
@@ -200,6 +201,8 @@ export function SettingRow({
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
+  // The error that the editor shows, which it reports after it renders.
+  const [editorError, setEditorError] = useState<string>();
   const errorId = useId();
   // The caller remounts the rows when the pending changes end.
   const { generation, own } = useEditorGeneration(0, setting.value);
@@ -224,6 +227,16 @@ export function SettingRow({
     if (!editable) reportShows.current?.(false);
     return () => reportShows.current?.(false);
   }, [editable]);
+  const rowError = editable
+    ? (setting.mergedErrors?.[0] ?? editorError)
+    : undefined;
+  useErrorsReport(
+    rowError === undefined ? [] : [{ path: "", message: rowError }],
+    ([error]) => {
+      reportShows.current?.(error !== undefined);
+      shows(error && `${setting.label}: ${error.message}`);
+    },
+  );
   if (!editor || !steps)
     return (
       <div className="py-3">
@@ -244,6 +257,10 @@ export function SettingRow({
     else set(next.steps, next.value);
   });
   const note = setting.state && stateNote(setting.state);
+  const messages = [
+    ...errors.map((e) => e.message),
+    ...(setting.mergedErrors ?? []),
+  ];
   return (
     <div
       role="group"
@@ -259,14 +276,12 @@ export function SettingRow({
         current={"current" in setting ? setting.current : mounted}
         replaces={setting.replaces}
         describedBy={
-          errors.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
+          messages.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
         }
         secrets={secrets ?? []}
         onChange={change}
-        onInvalid={own((message: string | undefined) =>
-          shows(message && `${setting.label}: ${message}`),
-        )}
-        onShown={(message) => reportShows.current?.(message !== undefined)}
+        onRefused={own(() => {})}
+        onShown={setEditorError}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -293,22 +308,22 @@ export function SettingRow({
           </span>
         )}
       </div>
-      {errors.map((e, i) => (
+      {messages.map((message, i) => (
         <p
           key={i}
           id={`${errorId}-${i}`}
           role="alert"
           className="text-xs text-bad"
         >
-          {e.message}
+          {message}
         </p>
       ))}
     </div>
   );
 }
 
-// useShownError returns the function that reports the error of the editor
-// at steps to invalid. The row clears a reported error when it unmounts.
+// useShownError returns the function that reports the error of the row at
+// steps to invalid. The row clears a reported error when it unmounts.
 function useShownError(
   steps: Step[] | undefined,
   invalid: ((steps: Step[], message: string | undefined) => void) | undefined,
@@ -317,6 +332,7 @@ function useShownError(
   useEffect(() => () => clear.current?.(), []);
   return (message: string | undefined) => {
     if (!steps || !invalid) return;
+    if (message === undefined && clear.current === undefined) return;
     invalid(steps, message);
     clear.current =
       message === undefined ? undefined : () => invalid(steps, undefined);
@@ -325,9 +341,9 @@ function useShownError(
 
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
-// reported; onInvalid gets its first error, and undefined after a valid
-// change. For an editor kind that can show an error, onShown gets its
-// first error, or undefined, also at mount. current is the value before
+// reported; onRefused runs for it. For an editor kind that can show an
+// error, onShown gets its first error, or undefined, also at mount and
+// after each change. current is the value before
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
 // size, environment, maps of strings, and tolerations.
@@ -340,7 +356,7 @@ function Editor({
   describedBy,
   secrets,
   onChange,
-  onInvalid,
+  onRefused,
   onShown,
 }: {
   label: string;
@@ -351,7 +367,7 @@ function Editor({
   describedBy?: string;
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
-  onInvalid: (message: string | undefined) => void;
+  onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
   const initial = editorValueOf(editor, value);
@@ -359,8 +375,8 @@ function Editor({
     onShown(errors[0]?.message);
   const [startsSet] = useState(value !== undefined);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
-    onInvalid(errors[0]?.message);
     if (errors.length === 0) onChange(v);
+    else onRefused();
   };
   switch (editor.kind) {
     case "number":
@@ -370,7 +386,7 @@ function Editor({
           editor={editor}
           defaultValue={initial as number | undefined}
           onChange={onChange}
-          onInvalid={onInvalid}
+          onRefused={onRefused}
           onShown={onShown}
         />
       );
@@ -578,14 +594,14 @@ function NumberEditor({
   editor,
   defaultValue,
   onChange,
-  onInvalid,
+  onRefused,
   onShown,
 }: {
   label: string;
   editor: Extract<SettingEditor, { kind: "number" }>;
   defaultValue: number | undefined;
   onChange: (value: unknown) => void;
-  onInvalid: (message: string | undefined) => void;
+  onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
   const id = useId();
@@ -614,9 +630,8 @@ function NumberEditor({
         onChange={(event) => {
           const next = event.target.value;
           setText(next);
-          const nextError = numberError(next, editor);
-          onInvalid(nextError);
-          if (!nextError) onChange(next === "" ? undefined : Number(next));
+          if (numberError(next, editor)) onRefused();
+          else onChange(next === "" ? undefined : Number(next));
         }}
       />
       {error && (
