@@ -333,18 +333,40 @@ describe("settingsOf merged errors", () => {
     ]);
   });
 
-  it("names any resource that both the requests and the limits hold, and how to correct one without a field", () => {
-    expect(
-      messages(
-        brokers(
-          { limits: { "ephemeral-storage": "1Gi" } },
-          { requests: { "ephemeral-storage": "2Gi" } },
-        ),
-      ),
-    ).toEqual([
-      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi. Pick another preset, or ask your admin to correct the preset.",
-    ]);
-  });
+  it.each([
+    [
+      "both values come from the preset",
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      undefined,
+      "The ephemeral-storage limit of 1Gi and the ephemeral-storage request of 2Gi come from the preset. The limit is below the request. Pick another preset, or ask your admin to correct the preset.",
+    ],
+    [
+      "the claim sets one value",
+      { limits: { "ephemeral-storage": "1Gi" } },
+      { requests: { "ephemeral-storage": "2Gi" } },
+      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove this value from the claim. Pick another preset, or ask your admin to correct the preset.",
+    ],
+    [
+      "the claim holds both values, as after an edit of another amount",
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      "The ephemeral-storage limit of 1Gi is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove these values from the claim.",
+    ],
+  ])(
+    "says how to correct a resource without a field when %s",
+    (_, preset, claim, message) => {
+      expect(messages(brokers(preset, claim))).toEqual([message]);
+    },
+  );
 
   it("does not block on the resources of an embedded app", () => {
     const tasklist = setting(

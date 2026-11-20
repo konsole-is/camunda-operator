@@ -220,13 +220,17 @@ function mergedLimitError(
   requestState: FieldState | undefined,
 ): string {
   const states = [limitState, requestState];
-  // The editor has no field for this resource, so only the preset can
-  // change a value that it gives.
+  // The editor has no field for this resource. An edit of another amount
+  // writes the whole block, so the claim can hold copies of these values.
+  const claimed = states.filter((state) => state?.kind === "claim").length;
+  const unedited = !EDITED_RESOURCES.includes(below.resource);
   const fixed =
-    !EDITED_RESOURCES.includes(below.resource) &&
-    states.some((state) => state?.kind === "preset")
+    (unedited && claimed > 0
+      ? ` Select Reset to preset to remove ${claimed > 1 ? "these values" : "this value"} from the claim.`
+      : "") +
+    (unedited && states.some((state) => state?.kind === "preset")
       ? " Pick another preset, or ask your admin to correct the preset."
-      : "";
+      : "");
   const later = applies
     ? ""
     : group.embedded

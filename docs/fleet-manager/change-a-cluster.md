@@ -184,7 +184,9 @@ Requests and limits merge key by key, so a request or a limit that you leave emp
 
 While the error shows, also before you change anything, **Review** is disabled. The bar names the setting and the error, also when its editor is closed. Set a limit that is not below the request, or a lower request.
 
-A resource that the editor has no field for, such as `ephemeral-storage`, needs another preset, or a correction of the preset by your admin. For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable **Review**. Correct it before the process runs on its own, because its resources apply only then.
+For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable **Review**. Correct it before the process runs on its own, because its resources apply only then.
+
+A resource such as `ephemeral-storage` has no field in the editor. An edit of another amount of the same setting writes its values into the claim too. **Reset to preset** removes them from the claim, together with the other amounts that the claim sets there. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 
 ## A claim made outside the fleet manager
 

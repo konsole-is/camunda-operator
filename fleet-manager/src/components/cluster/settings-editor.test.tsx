@@ -885,7 +885,7 @@ describe("SettingsEditor collapsed", () => {
     expect(row().textContent).toContain("1 error");
   });
 
-  it("names the preset as the source of the limit once the claim sets the request", async () => {
+  it("names the preset as the source of the limit when the limit field is empty and the claim sets the request", async () => {
     const invalid = vi.fn();
     const onClaim = vi.fn();
     render(
@@ -982,6 +982,60 @@ describe("SettingsEditor collapsed", () => {
       expect(screen.getByText("The limit is below the request")).toBeDefined();
     },
   );
+
+  it("tells to reset a resource without a field once an edit of another amount copied it into the claim", async () => {
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{
+          requests: { "ephemeral-storage": "2Gi" },
+          limits: { "ephemeral-storage": "1Gi" },
+        }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.type(amount("CPU request"), "1");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: {
+        resources: {
+          requests: { "ephemeral-storage": "2Gi", cpu: "1" },
+          limits: { "ephemeral-storage": "1Gi" },
+        },
+      },
+    });
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      "The ephemeral-storage limit of 1Gi is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove these values from the claim.",
+    );
+  });
+
+  it("reports the error that the editor shows for a value from below the claim at mount also in strict mode, as on the preset page", () => {
+    const invalid = vi.fn();
+    const { group } = settingsGroupOf("zeebe", "zeebe", {});
+    const settings = settingsOf({
+      group,
+      spec: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    render(
+      <StrictMode>
+        <SettingsEditor
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={vi.fn()}
+          reset={vi.fn()}
+          invalid={invalid}
+        />
+      </StrictMode>,
+    );
+    expect(screen.getByText("The limit is below the request")).toBeDefined();
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "resources"),
+      "resources: The limit is below the request",
+    );
+  });
 
   it("lets a fix of one of two faults of the preset through, and drops its message", async () => {
     const invalid = vi.fn();
