@@ -304,12 +304,13 @@ export const PresetLimitBelowRequest: Story = {
     const limit = within(
       within(resources).getByRole("group", { name: "CPU limit" }),
     ).getByRole("textbox", { name: "Amount" });
+    // A cleared field keeps the value of the preset.
     await userEvent.clear(limit);
     await expect(within(resources).getByRole("alert")).toHaveTextContent(
-      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     );
     await expect(limit).toHaveAccessibleDescription(
-      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     );
     await expect(row).toHaveAccessibleName(/ 1 error$/);
   },

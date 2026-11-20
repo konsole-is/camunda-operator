@@ -523,21 +523,36 @@ describe("SettingsEditor collapsed", () => {
       within(settingRow("resources")).getByRole("group", { name: "CPU limit" }),
     ).getByRole("textbox", { name: "Amount" });
 
-  // MergedHost holds a claim as a page does: each change goes to the claim,
-  // and the settings come from the claim merged over a preset that sets
-  // resources of the brokers.
+  // MergedHost holds a claim: each change goes to the claim, and the
+  // settings come from the claim merged over a preset that sets the
+  // resources of process. Tasklist runs embedded in a standalone gateway.
+  // onClaim gets spec.cluster of the held claim at each render.
   function MergedHost({
     preset,
     invalid,
+    process = "zeebe",
+    onClaim,
   }: {
     preset: object;
     invalid: (at: Step[], message: string | undefined) => void;
+    process?: "zeebe" | "tasklist";
+    onClaim?: (cluster: object) => void;
   }) {
     const [cluster, setCluster] = useState<object>({});
-    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
-      preset: { zeebe: { resources: preset } },
-      claim: { cluster },
-    });
+    onClaim?.(cluster);
+    const tasklist = process === "tasklist";
+    const { group, settings } = settingsGroupOf(
+      tasklist ? "gateway" : "zeebe",
+      process,
+      {
+        preset: { [process]: { resources: preset } } as SettingsPage["preset"],
+        claim: {
+          cluster: tasklist
+            ? { ...cluster, gateway: { mode: "Standalone" } }
+            : cluster,
+        },
+      },
+    );
     return (
       <SettingsEditor
         collapsed
@@ -550,6 +565,11 @@ describe("SettingsEditor collapsed", () => {
       />
     );
   }
+
+  const amount = (label: string) =>
+    within(
+      within(settingRow("resources")).getByRole("group", { name: label }),
+    ).getByRole("textbox", { name: "Amount" });
 
   it("starts closed with its rows in the page", () => {
     renderClosed();
@@ -823,10 +843,12 @@ describe("SettingsEditor collapsed", () => {
 
   it("keeps the error when a cleared limit leaves the limit of the preset below the request", async () => {
     const invalid = vi.fn();
+    const onClaim = vi.fn();
     render(
       <MergedHost
         preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
         invalid={invalid}
+        onClaim={onClaim}
       />,
     );
     await userEvent.clear(cpuLimit());
@@ -834,9 +856,36 @@ describe("SettingsEditor collapsed", () => {
       within(section()).queryByText("The limit is below the request"),
     ).toBeNull();
     const alert = within(settingRow("resources")).getByRole("alert");
-    expect(alert.textContent).toBe(PRESET_LIMIT);
+    expect(alert.textContent).toBe(PRESET_BOTH);
     expect(cpuLimit().getAttribute("aria-describedby")).toContain(alert.id);
     expect(row().textContent).toContain("1 error");
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "resources"),
+      `resources: ${PRESET_BOTH}`,
+    );
+    // The claim gets no copy of the request of the preset.
+    expect(onClaim).toHaveBeenLastCalledWith({});
+  });
+
+  it("names the preset as the source of the limit once the claim sets the request", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.click(row());
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(amount("CPU request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { cpu: "2" } } },
+    });
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      PRESET_LIMIT,
+    );
     expect(invalid).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "zeebe", "resources"),
       `resources: ${PRESET_LIMIT}`,
@@ -858,6 +907,128 @@ describe("SettingsEditor collapsed", () => {
     expect(invalid).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "zeebe", "resources"),
       undefined,
+    );
+  });
+
+  it("writes only the typed key to the claim", async () => {
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(cpuLimit(), "3");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { limits: { cpu: "3" } } },
+    });
+  });
+
+  it("lets a fix of one of two faults of the preset through, and drops its message", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{
+          requests: { cpu: "2", memory: "2Gi" },
+          limits: { cpu: "1", memory: "1Gi" },
+        }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(cpuLimit(), "3");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { limits: { cpu: "3" } } },
+    });
+    expect(
+      within(settingRow("resources"))
+        .getAllByRole("alert")
+        .map((a) => a.textContent),
+    ).toEqual([
+      "The memory limit of 1Gi and the memory request of 2Gi come from the preset. The limit is below the request.",
+    ]);
+  });
+
+  it.each(["1.0", "1000m"])(
+    "takes a typed limit of %s that equals the limit of the preset as the same fault",
+    async (typed) => {
+      const onClaim = vi.fn();
+      render(
+        <MergedHost
+          preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+          invalid={vi.fn()}
+          onClaim={onClaim}
+        />,
+      );
+      await userEvent.clear(cpuLimit());
+      const millicores = typed.endsWith("m");
+      // The unit comes first, so that no amount on the way is valid.
+      if (millicores)
+        await userEvent.selectOptions(
+          within(
+            within(settingRow("resources")).getByRole("group", {
+              name: "CPU limit",
+            }),
+          ).getByRole("combobox", { name: "Unit" }),
+          "m",
+        );
+      await userEvent.type(cpuLimit(), millicores ? typed.slice(0, -1) : typed);
+      expect(
+        within(section()).queryByText("The limit is below the request"),
+      ).toBeNull();
+      expect(onClaim).toHaveBeenLastCalledWith({
+        zeebe: { resources: { limits: { cpu: typed } } },
+      });
+      expect(
+        within(settingRow("resources")).getByRole("alert").textContent,
+      ).toBe(
+        `The CPU request of 2 comes from the preset and is above the CPU limit of ${typed}.`,
+      );
+    },
+  );
+
+  async function openTasklist() {
+    await userEvent.click(
+      within(
+        within(
+          screen.getByRole("region", { name: "Tasklist settings" }),
+        ).getByRole("heading", { level: 3 }),
+      ).getByRole("button"),
+    );
+  }
+
+  it("lets an edit beside a fault of the preset in an embedded group reach the claim", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        process="tasklist"
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await openTasklist();
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      tasklist: { resources: { requests: { memory: "2Gi" } } },
+    });
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("still blocks a typed limit below its request in an embedded group", async () => {
+    const invalid = vi.fn();
+    render(<MergedHost process="tasklist" preset={{}} invalid={invalid} />);
+    await openTasklist();
+    await userEvent.type(amount("CPU request"), "2");
+    await userEvent.type(amount("CPU limit"), "1");
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "tasklist", "resources"),
+      "resources: The limit is below the request",
     );
   });
 

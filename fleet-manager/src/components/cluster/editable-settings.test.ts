@@ -292,10 +292,7 @@ describe("settingsOf merged errors", () => {
 
   it("names the preset when its limit stays below the request of the claim", () => {
     expect(
-      brokers(
-        { limits: { cpu: "1" } },
-        { requests: { cpu: "2" } },
-      ).mergedErrors?.map((e) => e.message),
+      messages(brokers({ limits: { cpu: "1" } }, { requests: { cpu: "2" } })),
     ).toEqual([
       "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
     ]);
@@ -303,10 +300,7 @@ describe("settingsOf merged errors", () => {
 
   it("names the preset when its request stays above the limit of the claim", () => {
     expect(
-      brokers(
-        { requests: { cpu: "2" } },
-        { limits: { cpu: "1" } },
-      ).mergedErrors?.map((e) => e.message),
+      messages(brokers({ requests: { cpu: "2" } }, { limits: { cpu: "1" } })),
     ).toEqual([
       "The CPU request of 2 comes from the preset and is above the CPU limit of 1.",
     ]);
@@ -314,10 +308,12 @@ describe("settingsOf merged errors", () => {
 
   it("names the preset when it sets both and the claim changes nothing", () => {
     expect(
-      brokers({
-        requests: { cpu: "2" },
-        limits: { cpu: "1" },
-      }).mergedErrors?.map((e) => e.message),
+      messages(
+        brokers({
+          requests: { cpu: "2" },
+          limits: { cpu: "1" },
+        }),
+      ),
     ).toEqual([
       "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     ]);
@@ -337,7 +333,7 @@ describe("settingsOf merged errors", () => {
     ]);
   });
 
-  it("names any resource that both the requests and the limits hold", () => {
+  it("names any resource that both the requests and the limits hold, and how to correct one without a field", () => {
     expect(
       messages(
         brokers(
@@ -346,7 +342,7 @@ describe("settingsOf merged errors", () => {
         ),
       ),
     ).toEqual([
-      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi.",
+      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi. Pick another preset, or ask your admin to correct the preset.",
     ]);
   });
 
@@ -396,10 +392,12 @@ describe("settingsOf merged errors", () => {
 
   it("compares the memory and quantities in other units", () => {
     expect(
-      brokers(
-        { requests: { memory: "2Gi" }, limits: { cpu: "500m" } },
-        { requests: { cpu: "1" }, limits: { memory: "1024Mi" } },
-      ).mergedErrors?.map((e) => e.message),
+      messages(
+        brokers(
+          { requests: { memory: "2Gi" }, limits: { cpu: "500m" } },
+          { requests: { cpu: "1" }, limits: { memory: "1024Mi" } },
+        ),
+      ),
     ).toEqual([
       "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
       "The memory request of 2Gi comes from the preset and is above the memory limit of 1024Mi.",
@@ -433,6 +431,43 @@ describe("settingsOf merged errors", () => {
     expect(messages(dump)).toEqual([
       "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
     ]);
+  });
+
+  it("asks to correct a fault of an embedded app before it runs standalone", () => {
+    const tasklist = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: {
+          tasklist: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+      }),
+      "resources",
+    );
+    expect(messages(tasklist)).toEqual([
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request. Correct it before Tasklist runs standalone.",
+    ]);
+  });
+
+  it("gives the value of the claim to settingChange, which writes only the changed keys", () => {
+    const resources = brokers(
+      { requests: { cpu: "2", memory: "2Gi" }, limits: { cpu: "1" } },
+      { limits: { memory: "4Gi" } },
+    );
+    expect(resources.claimed).toEqual({ limits: { memory: "4Gi" } });
+    expect(
+      settingChange(resources, {
+        requests: { cpu: "2", memory: "2Gi" },
+        limits: { cpu: "3", memory: "4Gi" },
+      }).value,
+    ).toEqual({ limits: { cpu: "3", memory: "4Gi" } });
+    expect(
+      settingChange(resources, {
+        requests: { cpu: "2", memory: "2Gi" },
+        limits: { cpu: "1" },
+      }).value,
+    ).toBeUndefined();
   });
 
   it("has no merged errors without the claim, as on the preset page", () => {

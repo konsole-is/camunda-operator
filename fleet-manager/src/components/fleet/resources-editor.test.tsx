@@ -225,6 +225,62 @@ describe("ResourcesEditor quantities", () => {
   });
 });
 
+describe("ResourcesEditor noted faults", () => {
+  const noted = [{ resource: "cpu", request: "2", limit: "1" }];
+  const field = (label: string) =>
+    within(screen.getByRole("group", { name: label })).getByRole("textbox", {
+      name: "Amount",
+    });
+
+  it("passes on an edit beside a noted fault", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        noted={noted}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.type(field("Memory request"), "2");
+    expect(onChange).toHaveBeenLastCalledWith(
+      { requests: { cpu: "2", memory: "2Gi" }, limits: { cpu: "1" } },
+      [],
+    );
+  });
+
+  it.each(["1.0", "1000m"])(
+    "takes a limit of %s as the noted limit of 1",
+    async (typed) => {
+      const onChange = vi.fn();
+      render(
+        <ResourcesEditor
+          label="Resources"
+          defaultValue={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+          noted={noted}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.clear(field("CPU limit"));
+      if (typed.endsWith("m")) {
+        await userEvent.type(field("CPU limit"), typed.slice(0, -1));
+        await userEvent.selectOptions(
+          within(screen.getByRole("group", { name: "CPU limit" })).getByRole(
+            "combobox",
+            { name: "Unit" },
+          ),
+          "m",
+        );
+      } else await userEvent.type(field("CPU limit"), typed);
+      expect(screen.queryByText("The limit is below the request")).toBeNull();
+      expect(onChange).toHaveBeenLastCalledWith(
+        { requests: { cpu: "2" }, limits: { cpu: typed } },
+        [],
+      );
+    },
+  );
+});
+
 describe("limitsBelowRequests", () => {
   it("names a limit below its request in another unit", () => {
     expect(

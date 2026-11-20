@@ -26,6 +26,9 @@ export type LimitBelowRequest = {
   limit: string;
 };
 
+/** EDITED_RESOURCES are the resources that ResourcesEditor has fields for. */
+export const EDITED_RESOURCES: readonly string[] = ["cpu", "memory"];
+
 type Side = "requests" | "limits";
 type Resource = "cpu" | "memory";
 type Amount = { amount: string; unit: string };
@@ -77,10 +80,10 @@ const FIELDS: [Side, Resource, string][] = [
  * unit. onChange gets the resources and the errors after each edit: an
  * amount that is not a number, a negative amount, and a limit below its
  * request. describedBy names the hint and error elements of the field for
- * each amount and unit. noted are the limits below their request that the
- * caller names: while the editor holds the same request and limit, it shows
- * no error of its own for them, and onChange still gets the error. onErrors
- * gets the errors that it shows, also at mount.
+ * each amount and unit. noted are limits below their request. A limit below
+ * its request whose request and limit in the editor equal those of a noted
+ * entry shows no message, and neither onChange nor onErrors gets it.
+ * onErrors gets the errors that it shows, also at mount.
  */
 export function ResourcesEditor({
   label,
@@ -100,13 +103,16 @@ export function ResourcesEditor({
   const id = useId();
   const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
   const all = amountErrors(amounts);
-  const errors = all.filter((e) => !isNoted(e, amounts, noted));
+  const errors = editErrors(all, amounts, noted);
   useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
     const next = { ...amounts, [path]: amount };
     setAmounts(next);
-    onChange?.(toResources(defaultValue, next), amountErrors(next));
+    onChange?.(
+      toResources(defaultValue, next),
+      editErrors(amountErrors(next), next, noted),
+    );
   };
 
   return (
@@ -233,20 +239,29 @@ function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
   return errors;
 }
 
-// isNoted tells whether error is a limit below its request that noted holds
-// with the request and the limit of amounts.
-function isNoted(
-  error: ValidationError,
+function editErrors(
+  errors: ValidationError[],
   amounts: Record<string, Amount>,
   noted: readonly LimitBelowRequest[],
-): boolean {
-  if (error.message !== BELOW_REQUEST) return false;
-  const resource = error.path.slice("limits.".length);
-  return noted.some(
-    (n) =>
-      n.resource === resource &&
-      n.request === quantityOf(amounts[`requests.${resource}`]) &&
-      n.limit === quantityOf(amounts[`limits.${resource}`]),
+): ValidationError[] {
+  return errors.filter((error) => {
+    if (error.message !== BELOW_REQUEST) return true;
+    const resource = error.path.slice("limits.".length);
+    return !noted.some(
+      (n) =>
+        n.resource === resource &&
+        sameQuantity(parse(n.request), amounts[`requests.${resource}`]) &&
+        sameQuantity(parse(n.limit), amounts[`limits.${resource}`]),
+    );
+  });
+}
+
+function sameQuantity(a: Amount, b: Amount): boolean {
+  return (
+    base(a) !== undefined &&
+    base(b) !== undefined &&
+    !isBelow(a, b) &&
+    !isBelow(b, a)
   );
 }
 

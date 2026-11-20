@@ -1,4 +1,5 @@
 import {
+  EDITED_RESOURCES,
   type LimitBelowRequest,
   limitsBelowRequests,
   type Resources,
@@ -20,6 +21,7 @@ import {
   type SettingEditor,
   type Step,
 } from "@/lib/fields";
+import { equalJSON } from "@/lib/policy";
 import type { OpenAPISchema } from "@/lib/schema";
 import { valueAt, without, withValue } from "@/lib/session";
 import type { SettingsGroup } from "./settings";
@@ -35,7 +37,8 @@ import type { SettingsGroup } from "./settings";
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the limits of the merged value that are
- * below their request.
+ * below their request. claimed is the value of the claim at the path of the
+ * setting, for a resources setting when settingsOf gets a claim.
  */
 export type Setting = {
   key: string;
@@ -53,11 +56,12 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
+  claimed?: unknown;
 };
 
 /**
  * MergedError is a limit below its request in the merged value of a
- * setting. blocks is false when the value does not apply now, as the
+ * setting. blocks is false when the value does not apply now, such as the
  * resources of an embedded app.
  */
 export type MergedError = {
@@ -147,20 +151,22 @@ export function settingsOf(input: {
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
-    const merged: MergedError[] =
-      "claim" in input && editor.kind === "resources"
-        ? limitsBelowRequests((value ?? {}) as Resources).map((below) => ({
-            message: mergedLimitError(below, (side) => {
-              const part = [...names, side, below.resource];
-              return mine.find(({ names: f }) => sameNames(f, part))?.field
-                .state;
-            }),
-            belowRequest: below,
-            blocks: !group.embedded,
-          }))
-        : [];
-    const checked: Setting =
-      merged.length > 0 ? { ...setting, mergedErrors: merged } : setting;
+    const keyed = "claim" in input && editor.kind === "resources";
+    const merged: MergedError[] = keyed
+      ? limitsBelowRequests((value ?? {}) as Resources).map((below) => ({
+          message: mergedLimitError(below, group, (side) => {
+            const part = [...names, side, below.resource];
+            return mine.find(({ names: f }) => sameNames(f, part))?.field.state;
+          }),
+          belowRequest: below,
+          blocks: !group.embedded,
+        }))
+      : [];
+    const checked: Setting = {
+      ...setting,
+      ...(merged.length > 0 && { mergedErrors: merged }),
+      ...(keyed && { claimed: valueAt(claim, steps(names)) }),
+    };
     if (holder?.field.claimSteps)
       return {
         ...checked,
@@ -191,19 +197,40 @@ export function settingsOf(input: {
   return [...settings, ...rest];
 }
 
-// mergedLimitError returns the message of a limit below its request. It
-// names where the limit and the request come from when that is not the
-// claim. stateOf gives the state of the requests or the limits of the
+// mergedLimitError returns the message of a limit below its request in
+// group. stateOf gives the state of the requests or the limits of the
 // resource.
 function mergedLimitError(
   below: LimitBelowRequest,
+  group: SettingsGroup,
   stateOf: (side: "requests" | "limits") => FieldState | undefined,
+): string {
+  const states = [stateOf("limits"), stateOf("requests")];
+  // The editor has no field for this resource, so only the preset can
+  // change a value that it gives.
+  const fixed =
+    !EDITED_RESOURCES.includes(below.resource) &&
+    states.some((state) => state?.kind === "preset")
+      ? " Pick another preset, or ask your admin to correct the preset."
+      : "";
+  const later = group.embedded
+    ? ` Correct it before ${group.label} runs standalone.`
+    : "";
+  return faultOf(below, states[0], states[1]) + fixed + later;
+}
+
+// faultOf returns the sentence of a limit below its request. It names
+// where the limit and the request come from when that is not the claim.
+function faultOf(
+  below: LimitBelowRequest,
+  limitState: FieldState | undefined,
+  requestState: FieldState | undefined,
 ): string {
   const name = RESOURCE_NAMES[below.resource] ?? below.resource;
   const limit = `${name} limit of ${below.limit}`;
   const request = `${name} request of ${below.request}`;
-  const limitFrom = originOf(stateOf("limits"));
-  const requestFrom = originOf(stateOf("requests"));
+  const limitFrom = originOf(limitState);
+  const requestFrom = originOf(requestState);
   if (limitFrom === undefined)
     return requestFrom === undefined
       ? `The ${limit} is below the ${request}.`
@@ -331,13 +358,21 @@ function plural(source: string): string {
  * settingChange returns where an editor value goes and its claim value. A
  * value of undefined resets the field at steps. A setting with a holder
  * writes the whole held field with the setting changed, and resets it when
- * that leaves it empty. The setting must have an editor and steps.
+ * that leaves it empty. A setting with claimed and no holder writes claimed
+ * with each key that differs between value and editorValue, so that the
+ * claim gets no copy of a value of the preset. The setting must have an
+ * editor and steps.
  */
 export function settingChange(
   setting: Setting,
   editorValue: unknown,
 ): { steps: Step[]; value: unknown } {
-  const claim = claimValueOf(setting.editor!, editorValue);
+  const claim = claimValueOf(
+    setting.editor!,
+    "claimed" in setting
+      ? changedOver(setting.claimed, setting.value, editorValue)
+      : editorValue,
+  );
   const at = setting.steps!;
   const { holder } = setting;
   if (!holder) return { steps: at, value: claim };
@@ -346,6 +381,41 @@ export function settingChange(
       ? without(holder.value ?? {}, holder.rest)
       : withValue(holder.value ?? {}, holder.rest, claim);
   return { steps: at, value: isEmpty(value) ? undefined : value };
+}
+
+function changedOver(
+  claimed: unknown,
+  merged: unknown,
+  edited: unknown,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = structuredClone(
+    isObject(claimed) ? claimed : {},
+  );
+  const before = isObject(merged) ? merged : {};
+  const after = isObject(edited) ? edited : {};
+  for (const field of new Set([
+    ...Object.keys(before),
+    ...Object.keys(after),
+  ])) {
+    const was = before[field];
+    const now = after[field];
+    if (isObject(was) || isObject(now)) {
+      const map = isObject(result[field]) ? result[field] : {};
+      const from = isObject(was) ? was : {};
+      const to = isObject(now) ? now : {};
+      for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
+        if (equalJSON(from[key], to[key])) continue;
+        if (to[key] === undefined) delete map[key];
+        else map[key] = to[key];
+      }
+      if (Object.keys(map).length > 0) result[field] = map;
+      else delete result[field];
+    } else if (!equalJSON(was, now)) {
+      if (now === undefined) delete result[field];
+      else result[field] = now;
+    }
+  }
+  return result;
 }
 
 /**
