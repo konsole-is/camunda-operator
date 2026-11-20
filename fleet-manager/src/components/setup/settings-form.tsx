@@ -17,6 +17,7 @@ import {
 import { gitBase } from "@/lib/git-layout";
 import type { KindInfo } from "@/lib/k8s/kinds";
 import type { SettingKey, Settings, TestResult } from "@/lib/settings";
+import { messageOf } from "@/lib/text";
 import type { WriteResult } from "@/lib/write/types";
 import { GitLayoutPreview } from "./git-layout-preview";
 import { SecretNameSelect } from "./secret-name-select";
@@ -123,7 +124,7 @@ export function SettingsForm({
       setSent(undefined);
       setToast({
         kind: "error",
-        message: `Could not save the settings: ${errorText(error)}`,
+        message: `Could not save the settings: ${messageOf(error)}`,
       });
       return;
     }
@@ -425,7 +426,7 @@ function TestButton({
           } catch (error) {
             setResult({
               ok: false,
-              message: `Could not run the test: ${errorText(error)}`,
+              message: `Could not run the test: ${messageOf(error)}`,
             });
           } finally {
             setRunning(false);
@@ -449,8 +450,4 @@ function TestButton({
       )}
     </div>
   );
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

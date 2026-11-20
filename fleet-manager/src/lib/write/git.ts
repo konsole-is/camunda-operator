@@ -101,17 +101,24 @@ type Remote = {
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
- * applied yet (Conflict), an object to delete with a UID is gone from the
- * cluster or has another UID there (Stale), an object of create exists in
+ * applied yet (Conflict), an object to delete with a UID or a generation
+ * is gone from the cluster or has another one there (Stale), an object to
+ * delete with a generation has a file that GitOps has not applied yet
+ * (Conflict), an object of create exists in
  * the cluster or has a file in the repository (Stale), or the dry run
  * against the cluster fails. The dry run skips an ExternalSecret and an
  * object in a namespace that the same change creates. The preview shows them as rendered. The
  * dry run of an object that GitOps applied with server-side apply, or of a
  * custom resource that GitOps applied with client-side apply, drops each
- * field of GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
- * an object without a file, and a file behind a symbolic link of the
- * repository, are Invalid. The UID is checked only before the push: GitOps
- * later deletes the object of that name, whatever its UID.
+ * field of GitOps that the change leaves out, except the revision
+ * annotation. Any other object is dry-run as the app. A delete of an
+ * object without a file, and a file behind a symbolic link of the
+ * repository, are Invalid, in the preview too for an object to delete. The
+ * UID is checked only before the push: GitOps later deletes the object of
+ * that name, whatever its UID. A change with takeOver or remove and
+ * without directOnly is Invalid in the preview and in apply: GitOps applies
+ * the file under its own field manager, so a take-over by the fleet
+ * manager has no meaning there. A preview has no ownership.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -131,8 +138,14 @@ export function gitWriter(options: GitWriterOptions): Writer {
   const http = options.http ?? defaultHttp;
 
   const preview = async (change: Change): Promise<Preview> => {
-    if (change.directOnly) return direct.preview(change);
-    const refusals = refsOf(change).flatMap(gitRefusalOf);
+    if (change.directOnly) {
+      const { objects, errors } = await direct.preview(change);
+      return { objects, errors };
+    }
+    const refusals = [
+      ...takeOverRefusalsOf(change),
+      ...refsOf(change).flatMap(gitRefusalOf),
+    ];
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
@@ -222,13 +235,21 @@ export function gitWriter(options: GitWriterOptions): Writer {
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
       const uid = change.uids?.[refKey(ref)];
-      if (expected === undefined && uid === undefined) continue;
+      const generation = change.generations?.[refKey(ref)];
+      if (
+        expected === undefined &&
+        uid === undefined &&
+        generation === undefined
+      )
+        continue;
       try {
         const object = await read(ref);
         if (
           (expected !== undefined &&
             object?.metadata.resourceVersion !== expected) ||
-          (uid !== undefined && object?.metadata.uid !== uid)
+          (uid !== undefined && object?.metadata.uid !== uid) ||
+          (generation !== undefined &&
+            object?.metadata.generation !== generation)
         ) {
           errors.push(staleError(ref));
         }
@@ -255,7 +276,10 @@ export function gitWriter(options: GitWriterOptions): Writer {
   const apply = async (change: Change): Promise<WriteResult> => {
     if (change.directOnly) return direct.apply(change);
     return inOrder(`git ${target.url} ${target.branch}`, async () => {
-      const refusals = refsOf(change).flatMap(gitRefusalOf);
+      const refusals = [
+        ...takeOverRefusalsOf(change),
+        ...refsOf(change).flatMap(gitRefusalOf),
+      ];
       if (refusals.length > 0) return { ok: false, errors: refusals };
       const stale = await staleErrors(change);
       if (stale.length > 0) return { ok: false, errors: stale };
@@ -269,13 +293,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
   const commitChange = async (change: Change): Promise<WriteResult> => {
     const base = gitBase(target.path);
-    if (base === undefined) {
-      return failure({
-        code: "Invalid",
-        path: "git.path",
-        message: "git.path must be a folder inside the repository.",
-      });
-    }
+    if (base === undefined) return failure(GIT_PATH_ERROR);
     const auth = await gitCredentials(target.url, target.credentialsSecretRef);
     if (!auth.ok) return failure(auth.error);
 
@@ -302,9 +320,9 @@ export function gitWriter(options: GitWriterOptions): Writer {
     }
   };
 
-  // The live object of a ref with a precondition passes the stale check
-  // until GitOps applies a pushed save, so a second save from the same
-  // read would undo the first in the repository.
+  // The live object of a ref with a precondition or a generation passes
+  // the stale check until GitOps applies a pushed save, so a second save
+  // from the same read would undo the first in the repository.
   const pendingErrors = async (
     dir: string,
     base: string,
@@ -313,20 +331,44 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const errors: ApiError[] = [];
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
-      if (expected === undefined) continue;
+      const generation = change.generations?.[refKey(ref)];
+      const uid = change.uids?.[refKey(ref)];
+      if (expected === undefined && generation === undefined) continue;
       const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
       const committed = await revisionOf(dir, file);
       try {
         // GitOps can apply an earlier save during the clone.
         const object = await read(ref);
-        if (object?.metadata.resourceVersion !== expected) {
+        if (
+          object === undefined ||
+          (expected !== undefined &&
+            object.metadata.resourceVersion !== expected) ||
+          (generation !== undefined &&
+            object.metadata.generation !== generation) ||
+          (uid !== undefined && object.metadata.uid !== uid)
+        ) {
           errors.push(staleError(ref));
           continue;
         }
-        if (committed === undefined) continue;
         const annotations = object.metadata.annotations as
           Record<string, string> | undefined;
-        if (annotations?.[REVISION_ANNOTATION] === committed) continue;
+        const live = annotations?.[REVISION_ANNOTATION];
+        if (committed === undefined) {
+          // GitOps applied the object from a file that the branch no longer
+          // holds, so a write would undo a pushed delete.
+          if (
+            live !== undefined &&
+            appliedRef(change, ref) &&
+            !(await exists(path.join(dir, file)))
+          )
+            errors.push({
+              code: "Conflict",
+              message: `${target.url} holds a delete of the ${ref.kind} ${ref.name} that GitOps has not applied yet. Wait until GitOps applies it. To keep the ${ref.kind}, restore ${file} in the repository.`,
+              ref,
+            });
+          continue;
+        }
+        if (live === committed) continue;
         errors.push({
           code: "Conflict",
           message: `${file} in ${target.url} holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert ${file} in the repository.`,
@@ -467,7 +509,55 @@ export function gitWriter(options: GitWriterOptions): Writer {
     }
   };
 
-  return { mode: "git", preview, apply };
+  // fileErrors refuses each of refs that has no file on the branch, or a
+  // file behind a link, as the commit of its delete would.
+  const fileErrors = async (
+    refs: readonly ObjectRef[],
+  ): Promise<ApiError[]> => {
+    const base = gitBase(target.path);
+    if (base === undefined) return [GIT_PATH_ERROR];
+    const auth = await gitCredentials(target.url, target.credentialsSecretRef);
+    if (!auth.ok) return [auth.error];
+    const dir = await mkdtemp(path.join(os.tmpdir(), "fleet-git-"));
+    try {
+      const credentials = auth.auth;
+      await git.clone({
+        fs,
+        http,
+        dir,
+        url: target.url,
+        ...(credentials ? { onAuth: () => credentials } : {}),
+        onAuthFailure: () => ({ cancel: true }),
+        depth: 1,
+        singleBranch: true,
+        ...(target.branch ? { ref: target.branch } : {}),
+      });
+      const errors: ApiError[] = [];
+      for (const ref of refs) {
+        const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
+        if (await throughLink(dir, file)) errors.push(linkError(file, ref));
+        else if (!(await exists(path.join(dir, file))))
+          errors.push(noFileError(file, ref));
+      }
+      return errors;
+    } catch (error) {
+      const refusal = gitErrorOf(error, target);
+      if (refusal.code === "Forbidden") auth.forget();
+      return [refusal];
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+
+  const previewWithFiles = async (change: Change): Promise<Preview> => {
+    const result = await preview(change);
+    const deletes = change.delete ?? [];
+    if (change.directOnly || deletes.length === 0 || result.errors.length > 0)
+      return result;
+    return { ...result, errors: await fileErrors(deletes) };
+  };
+
+  return { mode: "git", preview: previewWithFiles, apply };
 }
 
 type Written =
@@ -513,11 +603,7 @@ async function writeFiles(
       continue;
     }
     if (!(await exists(path.join(dir, file)))) {
-      errors.push({
-        code: "Invalid",
-        message: `${file} is not in the repository. GitOps does not manage ${ref.kind} ${ref.name}.`,
-        ref,
-      });
+      errors.push(noFileError(file, ref));
       continue;
     }
     await rm(path.join(dir, file));
@@ -606,6 +692,23 @@ function isRejected(error: unknown): boolean {
   return code === "PushRejectedError" || code === "GitPushError";
 }
 
+// takeOverRefusalsOf refuses each object of a take-over list of change.
+function takeOverRefusalsOf(change: Change): ApiError[] {
+  const keys = new Set([
+    ...Object.keys(change.takeOver ?? {}),
+    ...Object.keys(change.remove ?? {}),
+  ]);
+  if (keys.size === 0) return [];
+  const listed = change.apply.map(refOf).filter((r) => keys.has(refKey(r)));
+  const refs: (ObjectRef | undefined)[] =
+    listed.length > 0 ? listed : [undefined];
+  return refs.map((ref) => ({
+    code: "Invalid",
+    message: "A take-over is for direct mode.",
+    ...(ref === undefined ? {} : { ref }),
+  }));
+}
+
 function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
   if (refusals.length > 0) return refusals;
@@ -656,6 +759,24 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
     message: `Could not reach ${target.url}: ${reasonOf(error)}`,
   };
 }
+
+function appliedRef(change: Change, ref: ObjectRef): boolean {
+  return change.apply.some((o) => refKey(refOf(o)) === refKey(ref));
+}
+
+function noFileError(file: string, ref: ObjectRef): ApiError {
+  return {
+    code: "Invalid",
+    message: `${file} is not in the repository. GitOps does not manage ${ref.kind} ${ref.name}.`,
+    ref,
+  };
+}
+
+const GIT_PATH_ERROR: ApiError = {
+  code: "Invalid",
+  path: "git.path",
+  message: "git.path must be a folder inside the repository.",
+};
 
 function failure(...errors: ApiError[]): WriteResult {
   return { ok: false, errors };

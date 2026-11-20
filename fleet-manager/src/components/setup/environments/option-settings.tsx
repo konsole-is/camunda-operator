@@ -5,16 +5,14 @@ import { LimitsList } from "@/components/fleet/limits-list";
 import { ParameterField } from "@/components/fleet/parameter-field";
 import { Button } from "@/components/ui/button";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { accessPatterns, renderHosts } from "@/lib/claims/hosts";
+import { templateData } from "@/lib/claims/templates";
 import { renderJSON } from "@/lib/gotemplate";
+import type { OptionPick } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { AllowedEditor } from "./allowed-editor";
-import {
-  emptyPreviewText,
-  previewClaims,
-  previewSection,
-  templateData,
-} from "./preview";
+import { emptyPreviewText, previewClaims, previewSection } from "./preview";
 import {
   type NamedValue,
   type OptionSettings,
@@ -33,6 +31,29 @@ const PRESET_WORDS = {
   ElasticsearchClusterPreset: "Elasticsearch",
   DatabaseServerPreset: "PostgreSQL",
 } as const;
+
+const NEEDS_VALUE =
+  "This parameter needs a value. A new claim that picks this option is refused until you give it a value or let a claim change it.";
+
+const CLAIM_WORDS = {
+  CamundaClusterClaim: "a cluster claim",
+  CamundaManagementClusterClaim: "a management plane claim",
+} as const;
+
+// needsValueFor is the warning for a parameter that only some picks of the
+// option get no value for.
+function needsValueFor(
+  picks: readonly OptionPick[],
+  sections: readonly PluginSection[],
+): string {
+  const ways = picks.map((p) => {
+    const label =
+      sections.find((s) => s.metadata.name === p.section)?.spec.label ??
+      p.section;
+    return `${p.kind ? CLAIM_WORDS[p.kind] : "a claim"} in ${label}`;
+  });
+  return `This parameter needs a value for ${ways.join(" or ")}. Such a claim is refused until you give it a value or let a claim change it.`;
+}
 
 /**
  * OptionSettingsSection edits the parameters of each option that a section
@@ -269,6 +290,13 @@ function ParameterSettingRow({
         <p className="text-xs text-warn">
           No {presetWords} preset is allowed. A new claim that picks this option
           is refused until you check one under Presets.
+        </p>
+      )}
+      {option.allowedBySection && setting.needsValue && (
+        <p className="text-xs text-warn">
+          {setting.needsValueFor
+            ? needsValueFor(setting.needsValueFor, sources.sections)
+            : NEEDS_VALUE}
         </p>
       )}
       {setting.hostPattern && registration && (

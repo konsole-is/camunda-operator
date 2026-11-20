@@ -47,7 +47,7 @@ export function resolveInputs(
 /**
  * readyOutputs returns the outputs of the request of section and
  * registration while it reports OutputsReady=True for its current
- * generation, else undefined.
+ * generation, an empty map when it has none, else undefined.
  */
 export function readyOutputs(
   requests: readonly PluginRequest[],
@@ -67,7 +67,7 @@ export function readyOutputs(
   ) {
     return undefined;
   }
-  return request.status?.outputs;
+  return request.status?.outputs ?? {};
 }
 
 /**
@@ -99,7 +99,11 @@ export function missingInputs(
     }));
 }
 
-function splitFrom(from: string): { section: string; output: string } {
+/**
+ * splitFrom splits the from of an input into the section and the output
+ * key. A from without a slash names a section with an empty output.
+ */
+export function splitFrom(from: string): { section: string; output: string } {
   const slash = from.indexOf("/");
   return slash < 0
     ? { section: from, output: "" }

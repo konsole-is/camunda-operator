@@ -8,8 +8,9 @@ import {
   LAST_APPLIED_ANNOTATION,
 } from "@/lib/labels";
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
-import { own, setOwn } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { deleteChangeOf } from "@/lib/write/delete";
+import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
@@ -185,17 +186,13 @@ export function createChange(draft: EnvironmentDraft): Change {
 
 /**
  * updateChange applies live with the spec of specOf, with the
- * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. It sends false for each
- * namespaceCreation.allowed, required, and claimEditable that live has true
- * and the edit turns off. It leaves out the last applied file of kubectl.
- * existing names the PluginSections and PluginRegistrations that exist: an
- * edit that removes the entry of one that does not exist leaves it out.
+ * resourceVersion of live as its precondition. It leaves out the last
+ * applied file of kubectl. A field that another tool set and the edit
+ * changes or clears needs the take-over of the review.
  */
 export function updateChange(
   live: Environment,
   draft: EnvironmentDraft,
-  existing: { sections: readonly string[]; registrations: readonly string[] },
 ): Change {
   const name = live.metadata.name ?? "";
   const { labels, annotations } = live.metadata;
@@ -212,80 +209,25 @@ export function updateChange(
       ...(labels && { labels }),
       ...(Object.keys(kept).length > 0 && { annotations: kept }),
     },
-    spec: updatedSpec(live, draft, existing),
+    spec: specOf(draft),
   };
-  return {
-    intent: `Change the environment ${name}`,
-    apply: [object],
-    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
-    force: true,
-  };
-}
-
-// Another field manager can own namespaceCreation.allowed, the required
-// flag of a section, and the claimEditable flag of a parameter, and a save
-// that leaves such a flag out keeps it true.
-function updatedSpec(
-  live: Environment,
-  draft: EnvironmentDraft,
-  existing: { sections: readonly string[]; registrations: readonly string[] },
-): Environment["spec"] {
-  const spec = specOf(draft);
-  if (live.spec.namespaceCreation?.allowed && !spec.namespaceCreation?.allowed)
-    spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
-  for (const [section, policy] of Object.entries(live.spec.sections ?? {})) {
-    const edited = own(spec.sections ?? {}, section);
-    const kept = edited || existing.sections.includes(section);
-    if (policy.required && kept && !edited?.required)
-      spec.sections = setEntry(spec.sections, section, {
-        ...edited,
-        required: false,
-      });
-  }
-  for (const [registration, policies] of Object.entries(
-    live.spec.parameters ?? {},
-  )) {
-    for (const [parameter, policy] of Object.entries(policies)) {
-      const edited = own(
-        own(spec.parameters ?? {}, registration) ?? {},
-        parameter,
-      );
-      const kept = edited || existing.registrations.includes(registration);
-      if (!policy.claimEditable || !kept || edited?.claimEditable) continue;
-      spec.parameters = setEntry(
-        spec.parameters,
-        registration,
-        setEntry(own(spec.parameters ?? {}, registration), parameter, {
-          ...edited,
-          claimEditable: false,
-        }),
-      );
-    }
-  }
-  return spec;
-}
-
-function setEntry<T>(
-  map: Record<string, T> | undefined,
-  key: string,
-  value: T,
-): Record<string, T> {
-  const next = { ...map };
-  setOwn(next, key, value);
-  return next;
+  return keepEmpty(
+    {
+      intent: `Change the environment ${name}`,
+      apply: [object],
+      ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+    },
+    live,
+    { ...object, spec: draft.spec },
+  );
 }
 
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: Environment): Change {
-  const name = live.metadata.name ?? "";
-  const uid = live.metadata.uid;
-  return {
-    intent: `Delete the environment ${name}`,
-    apply: [],
-    delete: [{ apiVersion: API_VERSION, kind: KIND, name }],
-    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
-    ...(uid ? { uids: { [refKey({ kind: KIND, name })]: uid } } : {}),
-  };
+  return deleteChangeOf(
+    [{ apiVersion: API_VERSION, kind: KIND, metadata: live.metadata }],
+    `Delete the environment ${live.metadata.name ?? ""}`,
+  );
 }
 
 /**

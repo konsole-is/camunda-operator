@@ -121,7 +121,7 @@ The fleet manager checks a new release against the version that the cluster runs
 | Skips 8.*n*. Move to an 8.*n* release first. | The release is one minor too far. Move to a release of the minor between them first. |
 | downgrade | The release has a lower version. The review asks you to confirm the downgrade with **Downgrade**, or **Push downgrade** in Git mode. |
 | The version checks run when the cluster resumes. | The cluster is suspended, so it reports no version. No release shows as a downgrade or a skip. |
-| The version checks run when the cluster reports its version. | The cluster reports no version yet. |
+| The version checks run when the cluster reports its version. | The cluster reports no version yet, or a version that is not of the form `8.9.4`. |
 
 A downgrade writes the release and `allowVersionDowngrade` with the target version:
 
@@ -167,7 +167,7 @@ Next to the empty map, **Use the inherited value** removes `{}` from the claim. 
 
 **Change schedule** on the **Backups** tab opens the **Attachments** panel.
 
-**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**.
+**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**. When the registration of an option does not exist, **Keep the resources** is disabled too. The option then shows with **Registration does not exist**.
 
 ## Save or discard the changes
 
@@ -179,6 +179,10 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 **Discard** removes every unsaved change. The editors then show the live values again.
 
 A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
+
+## A claim made outside the fleet manager
+
+You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. With the choice, a removed field that has a default gets its default value again, and the review names that value. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
 
 ## The state of a field
 

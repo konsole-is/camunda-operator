@@ -17,6 +17,7 @@ import {
   type SecretRefs,
   SecretRefPicker,
 } from "./secret-ref-picker";
+import { useErrorsReport } from "./errors-report";
 
 /** EnvVar is one entry of extraEnv, as the CRDs define it. */
 export type EnvVar = NonNullable<CamundaClusterSpec["extraEnv"]>[number];
@@ -35,19 +36,25 @@ type Row =
  * entries and the errors after each edit. An error path is
  * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
  * the hint and error elements of the field for each control of a row.
+ * missingIn gives the namespaces that lack a picked Secret key, and the row
+ * names them. onErrors gets the errors that it shows, also at mount.
  */
 export function EnvEditor({
   label,
   secrets,
   defaultValue = [],
   describedBy,
+  missingIn,
   onChange,
+  onErrors,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue?: EnvVar[];
   describedBy?: string;
+  missingIn?: (name: string, key: string) => readonly string[];
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const next = useRef(defaultValue.length);
@@ -55,6 +62,7 @@ export function EnvEditor({
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
   const errors = rowErrors(rows);
+  useErrorsReport(errors, onErrors);
   const env = rows.map(toEnv);
   const report = JSON.stringify([env, errors]);
   const reported = useRef(report);
@@ -80,8 +88,17 @@ export function EnvEditor({
           (e) => e.path === `${index}.secret`,
         )?.message;
         const errorId = `${id}-${row.id}-error`;
+        const missing =
+          row.source === "secret" && row.ref && missingIn
+            ? missingIn(row.ref.name, row.ref.key)
+            : [];
+        const missingId = `${id}-${row.id}-missing`;
         const described =
-          [(nameError || secretError) && errorId, describedBy]
+          [
+            (nameError || secretError) && errorId,
+            missing.length > 0 && missingId,
+            describedBy,
+          ]
             .filter(Boolean)
             .join(" ") || undefined;
         return (
@@ -177,6 +194,11 @@ export function EnvEditor({
             {(nameError || secretError) && (
               <p id={errorId} className="text-xs text-bad">
                 {[nameError, secretError].filter(Boolean).join(". ")}
+              </p>
+            )}
+            {missing.length > 0 && (
+              <p id={missingId} className="text-xs text-warn">
+                Missing in {missing.join(", ")}
               </p>
             )}
           </div>

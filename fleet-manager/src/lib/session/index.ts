@@ -3,7 +3,17 @@ export {
   type ClusterClaimContext,
   type FieldError,
 } from "./cluster";
-export { clusterLocks, type LockProvider } from "./locks";
+export {
+  clusterLocks,
+  filledClaimSteps,
+  planeLocks,
+  type LockProvider,
+} from "./locks";
+export {
+  validatePlaneClaim,
+  type PlaneClaim,
+  type PlaneClaimContext,
+} from "./plane";
 export { outcomeOf, STALE_CLAIM_MESSAGE, type WriteOutcome } from "./outcome";
 export { PRECHECK_REASONS, precheckOf, type ClaimCondition } from "./precheck";
 export {
@@ -21,3 +31,11 @@ export {
   type SetResult,
 } from "./session";
 export { valueAt, without, withValue } from "./steps";
+export {
+  appliedSession,
+  keptFields,
+  savedOf,
+  saveManager,
+  savedSession,
+  type Saved,
+} from "./kept";

@@ -1,0 +1,124 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  applyContractChange,
+  previewContractChange,
+} from "@/app/setup/connections/actions";
+import { get } from "@/lib/k8s/read";
+import { writeMode } from "@/lib/write/writer";
+import ConnectionPage, { dynamic } from "./page";
+
+vi.mock("next/navigation", () => ({
+  notFound: vi.fn(() => {
+    throw new Error("NEXT_NOT_FOUND");
+  }),
+}));
+vi.mock("@/lib/k8s/read", () => ({
+  list: vi.fn(async () => []),
+  get: vi.fn(
+    async (kind: string, namespace: string | undefined, name: string) =>
+      (kind === "ObjectStorageConfig" &&
+        namespace === "team-a" &&
+        name === "backups") ||
+      (kind === "ManagementAuthConfig" &&
+        namespace === undefined &&
+        name === "plane-a")
+        ? { kind, metadata: { namespace, name } }
+        : undefined,
+  ),
+}));
+vi.mock("@/lib/write/writer", () => ({
+  writeMode: vi.fn(async () => "git"),
+}));
+vi.mock("@/app/setup/connections/actions", () => ({
+  previewContractChange: vi.fn(),
+  applyContractChange: vi.fn(),
+}));
+const passed = vi.hoisted(() => ({ props: undefined as unknown }));
+vi.mock("@/components/setup/connections/connection-detail", () => ({
+  ConnectionDetailLive: (props: {
+    target: { kind: string; namespace?: string; name: string };
+  }) => {
+    passed.props = props;
+    return (
+      <p>
+        detail {props.target.kind} {props.target.namespace ?? "-"}{" "}
+        {props.target.name}
+      </p>
+    );
+  },
+}));
+
+afterEach(cleanup);
+
+const params = (kind: string, ref: string[]) => ({
+  params: Promise.resolve({ kind, ref }),
+  searchParams: Promise.resolve({}),
+});
+
+describe("ConnectionPage", () => {
+  it("opens a namespaced contract from its namespace and name", async () => {
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "backups"])),
+    );
+    expect(
+      screen.getByText("detail ObjectStorageConfig team-a backups"),
+    ).toBeTruthy();
+    expect(dynamic).toBe("force-dynamic");
+  });
+
+  it("passes the write mode and the actions", async () => {
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "backups"])),
+    );
+    expect(passed.props).toMatchObject({
+      mode: "git",
+      actions: {
+        previewChange: previewContractChange,
+        applyChange: applyContractChange,
+      },
+    });
+  });
+
+  it("opens the page without a write mode when the settings cannot be read", async () => {
+    vi.mocked(writeMode).mockRejectedValueOnce(new Error("no settings"));
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "backups"])),
+    );
+    expect((passed.props as { mode?: string }).mode).toBeUndefined();
+  });
+
+  it("opens a Management Identity contract from its name", async () => {
+    render(await ConnectionPage(params("management-identity", ["plane-a"])));
+    expect(
+      screen.getByText("detail ManagementAuthConfig - plane-a"),
+    ).toBeTruthy();
+    expect(vi.mocked(get)).toHaveBeenCalledWith(
+      "ManagementAuthConfig",
+      undefined,
+      "plane-a",
+    );
+  });
+
+  it("opens the page when the read of the kind fails, so that it can show the error", async () => {
+    vi.mocked(get).mockRejectedValueOnce(new Error("forbidden"));
+    render(
+      await ConnectionPage(params("object-storage", ["team-a", "orders"])),
+    );
+    expect(
+      screen.getByText("detail ObjectStorageConfig team-a orders"),
+    ).toBeTruthy();
+  });
+
+  it.each<[string, string[]]>([
+    ["buckets", ["team-a", "backups"]],
+    ["object-storage", ["backups"]],
+    ["management-identity", ["team-a", "plane-a"]],
+    ["object-storage", ["team-a", "gone"]],
+  ])("is not found for the tab %j and the segments %j", async (kind, ref) => {
+    await expect(ConnectionPage(params(kind, ref))).rejects.toThrow(
+      "NEXT_NOT_FOUND",
+    );
+  });
+});

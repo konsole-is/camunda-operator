@@ -303,7 +303,8 @@ export function conditionTrue(
   );
 }
 
-function conditionOf(registration: PluginRegistration, type: string) {
+/** conditionOf returns the condition of type of registration, or undefined. */
+export function conditionOf(registration: PluginRegistration, type: string) {
   return registration.status?.conditions?.find((c) => c.type === type);
 }
 

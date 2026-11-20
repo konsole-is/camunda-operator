@@ -7,6 +7,8 @@ import {
   clusterFieldsInputOf,
   componentSettings,
   operatorVersionOf,
+  sectionSettings,
+  settingsGroupsOf,
 } from "./settings";
 
 function field(group: FieldGroup): ClusterField {
@@ -157,5 +159,67 @@ describe("clusterFieldsInputOf", () => {
     });
     expect(input.backupSchedule).toBeUndefined();
     expect(input.policy).toBeUndefined();
+  });
+});
+
+describe("settingsGroupsOf", () => {
+  const all = [field("cluster"), ...fields, field("connectors")];
+
+  it("puts the whole cluster first, then each process with its embedded apps", () => {
+    const groups = settingsGroupsOf(all, {});
+    expect(groups.map((g) => g.label)).toEqual([
+      "Whole cluster",
+      "Brokers",
+      "Gateway",
+      "Operate",
+      "Tasklist",
+      "Admin",
+      "Connectors",
+    ]);
+    expect(groups[0]).toMatchObject({
+      component: "cluster",
+      embedded: false,
+    });
+    expect(groups[0].fields.map((f) => f.group)).toEqual(["cluster"]);
+  });
+
+  it("has one Connectors group whether connectors run or not", () => {
+    for (const spec of [{ connectors: { enabled: true } }, {}])
+      expect(
+        settingsGroupsOf(all, spec).filter((g) => g.component === "connectors"),
+      ).toHaveLength(1);
+  });
+
+  it("keeps the Connectors group while the claim turns them off", () => {
+    const off = { ...field("connectors"), state: { kind: "claim" as const } };
+    expect(
+      settingsGroupsOf([field("cluster"), ...fields, off], {
+        connectors: { enabled: false },
+      }).map((g) => g.label),
+    ).toContain("Connectors");
+  });
+});
+
+describe("sectionSettings", () => {
+  it("gives one block of the parameters of a selection, named by its section and option", () => {
+    const parameters = [
+      { key: "secondary-storage/elasticsearch:spec.parameters.preset" },
+    ] as unknown as ClusterField[];
+    expect(
+      sectionSettings({
+        id: "section:secondary-storage",
+        section: "secondary-storage",
+        sectionLabel: "Secondary storage",
+        registration: "elasticsearch",
+        optionLabel: "Elasticsearch",
+        parameters,
+      }),
+    ).toEqual([
+      {
+        label: "Secondary storage: Elasticsearch",
+        embedded: false,
+        fields: parameters,
+      },
+    ]);
   });
 });

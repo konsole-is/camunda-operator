@@ -200,6 +200,31 @@ describe("planeProgressRows", () => {
     });
   });
 
+  it("the environment row shows a wiring cycle of the current generation", () => {
+    const refused = condition(
+      "Ready",
+      "False",
+      "WiringCycle",
+      "the inputs of access and identity wait for each other",
+    );
+    const [row] = planeProgressRows(
+      claim([database], {
+        conditions: [{ ...refused, observedGeneration: 1 }],
+      }),
+      sections,
+    );
+    expect(row.checks).toEqual([
+      {
+        label: "Policy",
+        condition: {
+          status: "False",
+          reason: "WiringCycle",
+          message: "the inputs of access and identity wait for each other",
+        },
+      },
+    ]);
+  });
+
   it("the request rows read outputsReady and ready of status.requests", () => {
     const rows = planeProgressRows(
       claim([database, access], {

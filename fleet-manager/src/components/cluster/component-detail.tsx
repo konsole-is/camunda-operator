@@ -1,9 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { ConditionList } from "@/components/fleet/condition-list";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { ConditionBadge } from "@/components/setup/plugins/condition-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResources } from "@/lib/k8s/hooks";
 import type { EventRef } from "@/lib/observe/events";
@@ -14,7 +16,7 @@ import { DetailEvents } from "./detail-events";
 import { type ControllerLogs, DetailLogs } from "./detail-logs";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 import { DetailSection } from "./detail-section";
-import { type PodLike, PodTable } from "./pod-table";
+import { NO_PODS, type PodLike, PodTable } from "./pod-table";
 
 /** DetailTab names one tab of a component detail. */
 export type DetailTab = "overview" | "metrics" | "logs" | "events" | "settings";
@@ -33,9 +35,22 @@ type DetailProps = {
   subtitle?: string;
   conditions: ConditionRow[];
   ready: ConditionRow | undefined;
+  unread?: string;
   settings?: ReactNode;
   children?: ReactNode;
   now: string;
+};
+
+type TabProps = {
+  tab?: DetailTab;
+  onTab?: (tab: DetailTab) => void;
+};
+
+type ObserveProps = {
+  namespace: string;
+  metrics?: MetricsRef;
+  controllerLogs?: ControllerLogs;
+  eventRefs?: EventRef[];
 };
 
 /**
@@ -44,11 +59,39 @@ type DetailProps = {
  * with their live usage, and the given conditions. The Overview tab ends
  * with children, the Metrics tab charts the metrics ref, and the Settings
  * tab holds settings. Without metrics, the Metrics tab shows the live usage
- * only. With controllerLogs, the Logs tab also follows the controller pods. The Events tab lists the events of the
- * pods, of the Services and PVCs that relatedSelector selects (podSelector
- * without it), and of eventRefs. It needs a QueryClientProvider above it.
+ * only. With controllerLogs, the Logs tab also follows the controller pods.
+ * The Events tab lists the events of the pods, of the Services and PVCs
+ * that relatedSelector selects (podSelector without it), and of eventRefs.
+ * A missing or empty podSelector selects no pods: the detail watches no
+ * pods and no usage, says that the component runs no pods, and lists only
+ * the events of eventRefs. unread names the kind of the object of the
+ * component while the page could not read it or its list is out of date:
+ * the state then shows Not known, and the Conditions section names the
+ * kind in place of conditions. It needs a QueryClientProvider above it.
  */
 export function ComponentDetail({
+  podSelector,
+  relatedSelector,
+  ...props
+}: DetailProps &
+  ObserveProps & { podSelector?: string; relatedSelector?: string }) {
+  // The tab lives here, so that it stays open when the pod selector comes
+  // or goes and the view below mounts again.
+  const [tab, setTab] = useState<DetailTab>("overview");
+  return podSelector ? (
+    <PodDetail
+      {...props}
+      tab={tab}
+      onTab={setTab}
+      podSelector={podSelector}
+      relatedSelector={relatedSelector}
+    />
+  ) : (
+    <PodlessDetail {...props} tab={tab} onTab={setTab} />
+  );
+}
+
+function PodDetail({
   namespace,
   podSelector,
   metrics,
@@ -56,14 +99,9 @@ export function ComponentDetail({
   controllerLogs,
   eventRefs,
   ...props
-}: DetailProps & {
-  namespace: string;
-  podSelector: string;
-  relatedSelector?: string;
-  metrics?: MetricsRef;
-  controllerLogs?: ControllerLogs;
-  eventRefs?: EventRef[];
-}) {
+}: DetailProps &
+  ObserveProps &
+  TabProps & { podSelector: string; relatedSelector?: string }) {
   const pods = useResources(
     "Pod",
     { namespace, labelSelector: podSelector },
@@ -105,17 +143,61 @@ export function ComponentDetail({
   );
 }
 
+function PodlessDetail({
+  namespace,
+  metrics,
+  controllerLogs,
+  eventRefs,
+  ...props
+}: DetailProps & ObserveProps & TabProps) {
+  return (
+    <ComponentDetailView
+      {...props}
+      pods={[]}
+      usage={[]}
+      podless
+      metricsTab={
+        <DetailMetrics
+          namespace={namespace}
+          source={metrics}
+          pods={[]}
+          usage={[]}
+          podless
+        />
+      }
+      logsTab={
+        <DetailLogs
+          namespace={namespace}
+          pods={[]}
+          controller={controllerLogs}
+        />
+      }
+      eventsTab={
+        <DetailEvents
+          namespace={namespace}
+          pods={[]}
+          refs={eventRefs ?? []}
+          now={props.now}
+        />
+      }
+    />
+  );
+}
+
 /**
  * ComponentDetailView is ComponentDetail with its pods and usage given.
  * An undefined usage is not loaded yet. Without metricsTab, the Metrics
  * tab shows the live usage of the pods and no charts. Without logsTab or
- * eventsTab, that tab says there is nothing to show.
+ * eventsTab, that tab says there is nothing to show. A podless component
+ * shows no pod numbers and says that it runs no pods. With tab, the caller
+ * holds the open tab, and onTab gets each tab that the user opens.
  */
 export function ComponentDetailView({
   title,
   subtitle,
   conditions,
   ready,
+  unread,
   pods,
   usage,
   settings,
@@ -124,13 +206,18 @@ export function ComponentDetailView({
   eventsTab,
   children,
   now,
-}: DetailProps & {
-  pods: PodLike[];
-  usage: PodUsage[] | Unavailable | undefined;
-  metricsTab?: ReactNode;
-  logsTab?: ReactNode;
-  eventsTab?: ReactNode;
-}) {
+  podless = false,
+  tab,
+  onTab,
+}: DetailProps &
+  TabProps & {
+    pods: PodLike[];
+    podless?: boolean;
+    usage: PodUsage[] | Unavailable | undefined;
+    metricsTab?: ReactNode;
+    logsTab?: ReactNode;
+    eventsTab?: ReactNode;
+  }) {
   return (
     <section
       aria-label={title}
@@ -144,11 +231,19 @@ export function ComponentDetailView({
           >
             {title}
           </h2>
-          <StatusChip condition={ready} readyReason />
+          {unread ? (
+            <ConditionBadge type="Ready" unknown />
+          ) : (
+            <StatusChip condition={ready} readyReason />
+          )}
         </div>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
       </header>
-      <Tabs defaultValue="overview">
+      <Tabs
+        defaultValue="overview"
+        value={tab}
+        onValueChange={(value) => onTab?.(value as DetailTab)}
+      >
         <TabsList variant="line">
           {DETAIL_TABS.map((t) => (
             <TabsTrigger key={t.value} value={t.value}>
@@ -158,17 +253,25 @@ export function ComponentDetailView({
         </TabsList>
         <TabsContent value="overview">
           <div className="flex flex-col gap-6 pt-2">
-            <ComponentStats pods={pods} usage={usage} />
+            {!podless && <ComponentStats pods={pods} usage={usage} />}
             <div className="flex flex-wrap items-start gap-6">
               <DetailSection title="Pods" className="flex-[999_1_32rem]">
-                <PodTable pods={pods} usage={usage ?? []} />
+                {podless ? (
+                  <p className="text-sm text-muted">{NO_PODS}</p>
+                ) : (
+                  <PodTable pods={pods} usage={usage ?? []} />
+                )}
               </DetailSection>
               <DetailSection title="Conditions" className="flex-[1_1_18rem]">
-                <ConditionList
-                  conditions={conditions}
-                  label={`${title} conditions`}
-                  now={now}
-                />
+                {unread ? (
+                  <NotRead kinds={[unread]} />
+                ) : (
+                  <ConditionList
+                    conditions={conditions}
+                    label={`${title} conditions`}
+                    now={now}
+                  />
+                )}
               </DetailSection>
             </div>
             {children}
@@ -176,7 +279,12 @@ export function ComponentDetailView({
         </TabsContent>
         <TabsContent value="metrics">
           {metricsTab ?? (
-            <DetailMetricsView pods={pods} usage={usage} range="1h" />
+            <DetailMetricsView
+              pods={pods}
+              usage={usage}
+              range="1h"
+              podless={podless}
+            />
           )}
         </TabsContent>
         <TabsContent value="logs">

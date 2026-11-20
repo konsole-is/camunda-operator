@@ -17,6 +17,8 @@ vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 const watch = vi.hoisted(() => ({
   failing: "",
   added: {} as Record<string, unknown[]>,
+  // overdue holds each kind whose watch never answered and is overdue.
+  overdue: [] as string[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
@@ -24,6 +26,10 @@ vi.mock("@/lib/k8s/hooks", () => ({
     ...(kind === watch.failing && { error: `${kind} is forbidden` }),
   }),
   useResource: () => ({}),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => !watch.overdue.includes(kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => watch.overdue.includes(kind)),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
@@ -32,12 +38,13 @@ afterEach(() => {
   cleanup();
   watch.failing = "";
   watch.added = {};
+  watch.overdue = [];
   fakeWriter.reset();
   vi.restoreAllMocks();
 });
 
 function show(initial: PlaneCreateData = data) {
-  render(
+  return render(
     <PlaneCreateFlow
       initial={initial}
       mode={fakeWriter.mode}
@@ -204,6 +211,50 @@ const create = () =>
   screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
 
 describe("PlaneCreateFlow", () => {
+  it("names the earlier step whose error keeps Create disabled on the review", async () => {
+    const { rerender } = show();
+    await toReview();
+    await waitFor(() => expect(create().disabled).toBe(false));
+    watch.added = {
+      CamundaManagementClusterClaim: [
+        {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "CamundaManagementClusterClaim",
+          metadata: { namespace: "platform", name: "plane-a" },
+          spec: { environments: ["staging"], management: {} },
+        },
+      ],
+    };
+    rerender(
+      <PlaneCreateFlow
+        initial={data}
+        mode={fakeWriter.mode}
+        preview={previewPlaneCreate}
+        create={createPlane}
+      />,
+    );
+    expect(create().disabled).toBe(true);
+    expect(
+      screen
+        .getByText("The name plane-a is taken in this namespace.")
+        .closest("li")?.textContent,
+    ).toBe("Basics: The name plane-a is taken in this namespace.");
+    expect(
+      document.getElementById(create().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Basics: The name plane-a is taken in this namespace.");
+  });
+
+  it("puts the section headings of a step under the step heading", () => {
+    show();
+    const texts = (level: number) =>
+      screen.getAllByRole("heading", { level }).map((h) => h.textContent);
+    expect(texts(2)).toEqual(["Basics"]);
+    expect(texts(3)).toEqual(
+      expect.arrayContaining(["Environment", "Namespace"]),
+    );
+  });
+
   it("blocks Next on step 1 until the basics are complete", async () => {
     show();
     expect(next().disabled).toBe(true);
@@ -305,6 +356,28 @@ describe("PlaneCreateFlow", () => {
       ).toBeTruthy();
     },
   );
+  it("names an old list of plane claims that never answered and blocks step 1 while it is overdue", async () => {
+    watch.overdue = ["CamundaManagementClusterClaim"];
+    const { rerender } = show();
+    const text =
+      "Not known: the fleet manager has no current list of CamundaManagementClusterClaim.";
+    expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+    await fillBasics();
+    expect(next().disabled).toBe(true);
+
+    watch.overdue = [];
+    rerender(
+      <PlaneCreateFlow
+        initial={data}
+        mode={fakeWriter.mode}
+        preview={previewPlaneCreate}
+        create={createPlane}
+      />,
+    );
+    expect(screen.queryByText(text)).toBeNull();
+    expect(next().disabled).toBe(false);
+  });
+
   it("shows a failed read of the Secrets and refuses a picked SMTP Secret while it lasts", async () => {
     watch.added.Secret = [
       { metadata: { name: "smtp" }, keys: ["username", "password"] },

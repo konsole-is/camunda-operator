@@ -18,7 +18,14 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
   // The pages follow the theme of the system. The journeys check dark only.
-  use: { browserName: "chromium", baseURL, colorScheme: "dark" },
+  // CI uploads outputDir when a journey fails.
+  use: {
+    browserName: "chromium",
+    baseURL,
+    colorScheme: "dark",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
   projects: [
     { name: "journeys", testMatch: "*.spec.ts", teardown: "journeys-index" },
     { name: "journeys-index", testMatch: "index.teardown.ts" },

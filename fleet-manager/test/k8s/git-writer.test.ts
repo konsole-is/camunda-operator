@@ -254,6 +254,53 @@ describe("the Git writer against envtest", () => {
     expect(result).toEqual(expect.objectContaining({ ok: true, mode: "git" }));
   });
 
+  it("refuses a take-over in Git mode and commits nothing", async () => {
+    await api.patch(
+      {
+        ...environment(name, { displayName: "One" }),
+        metadata: { name, annotations: { [REVISION_ANNOTATION]: "one" } },
+      },
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+    await api.patch(
+      environment(name, { releases: { allowed: ["r1"] } }),
+      undefined,
+      undefined,
+      "someone-else",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+    const live = await readObject(kc, {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      name,
+    });
+    const key = refKey({ kind: "Environment", name });
+    const head = await repo.log();
+
+    const result = await writer.apply({
+      intent: "Take over the releases",
+      apply: [environment(name, { displayName: "One" })],
+      preconditions: { [key]: live!.metadata.resourceVersion! },
+      remove: { [key]: ["spec.releases"] },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message: "A take-over is for direct mode.",
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(head);
+  });
+
   it("a directOnly change writes nothing to Git and creates the object in envtest", async () => {
     expect(
       await writer.apply({
@@ -284,6 +331,11 @@ describe("the Git writer against envtest", () => {
       kind: "Environment",
       name,
     };
+    await repo.commitFromOtherClone(
+      { [`fleet/_cluster/environments/${name}.yaml`]: "kind: Environment\n" },
+      "GitOps manages the environment",
+    );
+    const head = await repo.log();
     const live = () => api.read({ ...ref, metadata: { name } });
     const before = await live();
 
@@ -299,7 +351,7 @@ describe("the Git writer against envtest", () => {
     const after = await live();
     expect(after.metadata?.deletionTimestamp).toBeUndefined();
     expect(after.metadata?.uid).toBe(before.metadata!.uid);
-    expect(await repo.log()).toEqual(["Initial commit"]);
+    expect(await repo.log()).toEqual(head);
   });
 
   it("a create of a claim that exists in the cluster makes no commit and returns Stale", async () => {

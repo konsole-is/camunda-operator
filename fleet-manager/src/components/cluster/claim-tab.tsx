@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { lockLabel } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { ClaimObject } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import {
   type ClaimRef,
@@ -372,7 +373,8 @@ function RequestsTable({ view }: { view: ClaimView }) {
   );
 }
 
-function StoredYaml({ claim }: { claim: Resource<"CamundaClusterClaim"> }) {
+/** StoredYaml is the Show YAML control of a Claim tab, for a claim of either kind. */
+export function StoredYaml({ claim }: { claim: ClaimObject }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col items-start gap-2">

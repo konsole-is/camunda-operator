@@ -7,11 +7,20 @@ import {
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
+import { NotRead } from "@/components/fleet/not-read";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FieldDoc } from "@/generated/fielddocs";
-import { useResource, useResources } from "@/lib/k8s/hooks";
+import { useClock } from "@/components/fleet/use-clock";
+import { useAnswered } from "@/lib/k8s/answered";
+import {
+  useResource,
+  useResources,
+  useWatchesFresh,
+  useWatchesOverdue,
+} from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
+import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -20,6 +29,7 @@ import {
   SECTION_LABEL,
   isManaged,
 } from "@/lib/labels";
+import { type SectionClaim, sectionComponents } from "@/lib/claims/sections";
 import { clusterFields } from "@/lib/fields";
 import type { WriteMode } from "@/lib/write/types";
 import { mergeCluster } from "@/lib/merge";
@@ -29,9 +39,17 @@ import { ActionSlot, rowActionsOf } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
-import { type CardId, componentCards, componentOf } from "./cards";
+import {
+  type CardId,
+  componentCards,
+  componentOf,
+  isSectionId,
+  overviewHref,
+  sectionCards,
+} from "./cards";
 import { claimView } from "./claim";
 import { ClaimTab } from "./claim-tab";
+import { BuiltinStorage } from "./builtin-storage";
 import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
@@ -41,12 +59,16 @@ import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
 import { clusterOptimize } from "./optimize";
 import { OverviewConditions } from "./overview-conditions";
+import { RequestOverview } from "./request-detail";
+import { builtinStorageOf, requestDetail } from "./requests";
 import {
   clusterFieldsInputOf,
   componentSettings,
   operatorVersionOf,
+  sectionSettings,
 } from "./settings";
 import { type ClaimActions, ClusterEditProvider } from "./edit/cluster-edit";
+import { SectionComponentDetail } from "./section-detail";
 import type { ClusterSlotContext, ClusterSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
@@ -54,8 +76,7 @@ import { TopologyView } from "./topology-view";
 
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
- * lists hold the objects of the namespace of the cluster. accessRequests are
- * the PluginRequests of the access section. requests holds the
+ * lists hold the objects of the namespace of the cluster. requests holds the
  * PluginRequests of the namespace whose claim label names the claim of the
  * cluster. podSelector selects the pods of the cluster by its owner label,
  * and pods holds them. backupStorage holds
@@ -63,8 +84,11 @@ import { TopologyView } from "./topology-view";
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
  * registrations every PluginSection and PluginRegistration.
- * platformConfigs and managementAuthConfigs are cluster-scoped. fieldDocs
- * holds the help of the settings fields by field key.
+ * platformConfigs and managementAuthConfigs are cluster-scoped. grants and
+ * elasticsearchClusters hold the Grants and ElasticsearchClusters of the
+ * namespace. fieldDocs holds the help of the settings fields by field key.
+ * readErrors names each kind whose first read failed: its list is then
+ * empty.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -74,7 +98,6 @@ export type ClusterPageData = {
   presets: Resource<"CamundaClusterPreset">[];
   releases: Resource<"CamundaRelease">[];
   storage: Resource<"SecondaryStorageConfig">[];
-  accessRequests: Resource<"PluginRequest">[];
   requests: Resource<"PluginRequest">[];
   pods: Resource<"Pod">[];
   podSelector: string;
@@ -100,18 +123,22 @@ export type ClusterPageData = {
   registrations: Resource<"PluginRegistration">[];
   platformConfigs: Resource<"CamundaPlatformConfig">[];
   managementAuthConfigs: Resource<"ManagementAuthConfig">[];
+  grants: Resource<"Grant">[];
+  elasticsearchClusters: Resource<"ElasticsearchCluster">[];
   fieldDocs: Record<string, FieldDoc>;
+  readErrors?: { kind: string; message: string }[];
 };
 
 /**
  * ClusterView is the cluster page. It follows the objects of initial live,
  * and selects the tab that the tab query parameter of the URL names. A
  * click on a tab replaces that parameter. The component query parameter
- * opens the detail of a used component, or of an app embedded in one, on
- * the Overview tab, in place of the cards. slots fill the action slots of a
- * managed cluster, and an unmanaged cluster ignores them. A render function
- * of slots gets the slot context of the page, and the render function of
- * cluster.backups.row also gets each backup row. For a managed cluster with a
+ * opens the detail of a used component, of an app embedded in one, or of a
+ * selection of the claim, on the Overview tab, in place of the cards. slots
+ * fill the action slots of a managed cluster, and an unmanaged cluster
+ * ignores them. A render function of slots gets the slot context of the
+ * page, and the render function of cluster.backups.row also gets each
+ * backup row. For a managed cluster with a
  * claim, a filled cluster.claim.editor slot shows in place of the read view
  * of the claim. writeMode is the write mode of the fleet manager, undefined
  * when the page could not read it. claimActions turn on the edit host of a
@@ -177,15 +204,14 @@ export function ClusterView({
     { namespace: ns },
     initial.storage,
   );
-  const accessRequests = useResources(
-    "PluginRequest",
-    { namespace: ns, labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` },
-    initial.accessRequests,
-  );
   const claimName = cluster.item?.metadata?.labels?.[CLAIM_LABEL];
+  const requestsOpts = {
+    namespace: ns,
+    labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
+  };
   const requests = useResources(
     "PluginRequest",
-    { namespace: ns, labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}` },
+    requestsOpts,
     initial.requests,
   );
   const pods = useResources(
@@ -269,6 +295,56 @@ export function ClusterView({
     {},
     initial.managementAuthConfigs,
   );
+  const grants = useResources("Grant", { namespace: ns }, initial.grants);
+  const elasticsearchClusters = useResources(
+    "ElasticsearchCluster",
+    { namespace: ns },
+    initial.elasticsearchClusters,
+  );
+  // The detail of a section reads these lists, and the Backups tab the
+  // lists after them. A list is not current when its watch answered and is
+  // not fresh, or never answered and is overdue: the read of the server
+  // then has no time limit.
+  const sectionLists = [
+    { kind: "PluginRequest", opts: requestsOpts },
+    { kind: "CamundaClusterClaim", opts: { namespace: ns } },
+    { kind: "PluginSection", opts: {} },
+    { kind: "PluginRegistration", opts: {} },
+    { kind: "Grant", opts: { namespace: ns } },
+    { kind: "ElasticsearchCluster", opts: { namespace: ns } },
+    { kind: "DatabaseServer", opts: { namespace: ns } },
+    { kind: "SecondaryStorageConfig", opts: { namespace: ns } },
+    { kind: "ObjectStorageConfig", opts: { namespace: ns } },
+    { kind: "DatabaseConfig", opts: { namespace: ns } },
+    { kind: "Environment", opts: {} },
+  ] as const;
+  const followedLists = [
+    ...sectionLists,
+    { kind: "LogicalBackupElasticsearch", opts: { namespace: ns } },
+    { kind: "LogicalBackupRDBMS", opts: { namespace: ns } },
+    { kind: "LogicalRestoreElasticsearch", opts: { namespace: ns } },
+    { kind: "LogicalRestoreRDBMS", opts: { namespace: ns } },
+    { kind: "PointInTimeRestore", opts: { namespace: ns } },
+  ] as const;
+  const listFresh = useWatchesFresh(followedLists);
+  const listOverdue = useWatchesOverdue(followedLists);
+  const answered = useAnswered([
+    ...followedLists,
+    { kind: "CamundaCluster", opts: { namespace: ns, name: name ?? "" } },
+    { kind: "Namespace", opts: { name: ns } },
+    "CamundaClusterPreset",
+    "CamundaRelease",
+    {
+      kind: "Pod",
+      opts: { namespace: ns, labelSelector: initial.podSelector },
+    },
+    { kind: "DatabaseServerConfig", opts: { namespace: ns } },
+    "DatabaseServerPreset",
+    { kind: "BackupSchedule", opts: { namespace: ns } },
+    { kind: "CamundaOptimize", opts: { namespace: ns } },
+    "CamundaPlatformConfig",
+    "ManagementAuthConfig",
+  ]);
   useEffect(() => {
     const selector = focusNext.current;
     if (!selector) return;
@@ -291,7 +367,7 @@ export function ClusterView({
     return <p className="text-sm text-muted">This cluster no longer exists.</p>;
   }
 
-  const errors = (
+  const liveErrors = (
     [
       ["CamundaCluster", cluster],
       ["Namespace", namespaceObject],
@@ -300,7 +376,6 @@ export function ClusterView({
       ["CamundaRelease", releases],
       ["CamundaClusterClaim", claims],
       ["SecondaryStorageConfig", storage],
-      ["PluginRequest", accessRequests],
       ["PluginRequest", requests],
       ["Pod", pods],
       ["LogicalBackupElasticsearch", backupsES],
@@ -319,17 +394,34 @@ export function ClusterView({
       ["PluginRegistration", registrations],
       ["CamundaPlatformConfig", platformConfigs],
       ["ManagementAuthConfig", managementAuthConfigs],
+      ["Grant", grants],
+      ["ElasticsearchCluster", elasticsearchClusters],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
   );
+  const errors = currentReadErrors(liveErrors, initial.readErrors, answered);
+  const requestsError = errors.find((e) => e.kind === "PluginRequest")?.message;
+  const stale = followedLists
+    .filter(
+      ({ kind }, i) => !listFresh[i] && (answered.has(kind) || listOverdue[i]),
+    )
+    .map(({ kind }) => kind);
+  // A watch keeps the last claim when it loses its connection, so the claim
+  // can be there and still not be current.
+  const claimUnread =
+    claimName !== undefined &&
+    [...stale, ...errors.map((e) => e.kind)].includes("CamundaClusterClaim");
 
   const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
-  const access = accessRequests.items.find(
+  const claimRequests = requests.items.filter(
     (r) =>
       r.spec.claimRef.kind === "CamundaClusterClaim" &&
       r.spec.claimRef.name === claimName,
+  );
+  const access = claimRequests.find(
+    (r) => r.metadata?.labels?.[SECTION_LABEL] === ACCESS_SECTION,
   );
   const preset = presets.items.find(
     (p) => p.metadata?.name === live.spec.presetRef,
@@ -357,18 +449,38 @@ export function ClusterView({
     ConditionLike | undefined;
   const clusterConditions = conditionRows(live.status?.conditions);
   const optimize = clusterOptimize(name ?? "", optimizes.items);
-  const cards = componentCards({
-    spec: merged.spec,
-    pods: pods.items,
-    conditions: clusterConditions,
-    optimize,
-    usage,
-    partitions,
-  });
+  const sectionList = claim
+    ? sectionComponents({
+        // A claim holds the parameters of a selection as unknown, because the
+        // CRD schema does not give them a shape. sectionComponents reads no
+        // parameter.
+        claim: claim as SectionClaim,
+        sections: sections.items,
+        requests: claimRequests,
+      })
+    : [];
+  const cards = [
+    ...componentCards({
+      spec: merged.spec,
+      pods: pods.items,
+      conditions: clusterConditions,
+      optimize,
+      usage,
+      partitions,
+    }),
+    ...sectionCards(
+      sectionList,
+      requestsError,
+      (stale.includes("PluginRequest") || claimUnread) &&
+        requestsError === undefined,
+    ),
+  ];
   const processConditions: Partial<Record<Process, ConditionLike>> =
     Object.fromEntries(
       cards.flatMap((c) =>
-        c.id !== "optimize" && c.condition ? [[c.id, c.condition]] : [],
+        c.id !== "optimize" && !isSectionId(c.id) && c.condition
+          ? [[c.id, c.condition]]
+          : [],
       ),
     );
 
@@ -418,6 +530,9 @@ export function ClusterView({
     window.history.replaceState(null, "", overviewHref(id));
   };
   const openId = componentOf(component, cards);
+  const openSection = sectionList.find((s) => s.id === openId);
+  const unread = unreadKinds({ errors, stale });
+  const requestsStale = unread.includes("PluginRequest");
   const context: ClusterSlotContext = {
     cluster: live,
     claim,
@@ -430,11 +545,7 @@ export function ClusterView({
     managementAuthConfigs: managementAuthConfigs.items,
     sections: sections.items,
     registrations: registrations.items,
-    requests: requests.items.filter(
-      (r) =>
-        r.spec.claimRef.kind === "CamundaClusterClaim" &&
-        r.spec.claimRef.name === claimName,
-    ),
+    requests: claimRequests,
     storage: storageObject,
     backups,
     restores,
@@ -445,6 +556,7 @@ export function ClusterView({
     writeMode,
     openId,
     now: clock,
+    unread,
   };
   const slot = (
     slotName: Parameters<typeof ActionSlot>[0]["name"],
@@ -456,6 +568,54 @@ export function ClusterView({
       context={context}
     />
   );
+
+  const sectionDetail =
+    openSection && claim
+      ? requestDetail({
+          component: openSection,
+          claim,
+          cluster: name ?? "",
+          sections: sections.items,
+          registrations: registrations.items,
+          components: sectionList,
+          grants: grants.items,
+          contracts: {
+            SecondaryStorageConfig: storage.items,
+            ObjectStorageConfig: objectStorage.items,
+            DatabaseConfig: databaseConfigs.items,
+          },
+        })
+      : undefined;
+  const builtin =
+    openSection?.request &&
+    builtinStorageOf(
+      openSection.request,
+      elasticsearchClusters.items,
+      databaseServers.items,
+    );
+  const sectionOverview = (builtin || sectionDetail) && (
+    <div className="flex flex-col gap-4">
+      {builtin && (
+        <BuiltinStorage storage={builtin} unread={unread} now={clock} />
+      )}
+      {sectionDetail && (
+        <RequestOverview detail={sectionDetail} unread={unread} now={clock} />
+      )}
+    </div>
+  );
+  const claimSection =
+    openSection && claim
+      ? claimView({
+          claim,
+          cluster: live,
+          merged,
+          environments: environments.items,
+          sections: sections.items,
+          registrations: registrations.items,
+        }).sections.find((s) => s.id === openSection.id)
+      : undefined;
+  const sectionBlocks = claimSection ? sectionSettings(claimSection) : [];
+  const settingsUnread = unread.filter((kind) => SETTINGS_KINDS.includes(kind));
 
   const content = (
     <div className="flex flex-col gap-4">
@@ -510,28 +670,62 @@ export function ClusterView({
               >
                 All components
               </a>
-              <ClusterComponentDetail
-                id={openId}
-                cards={cards}
-                cluster={live}
-                namespace={ns}
-                podSelector={initial.podSelector}
-                conditions={clusterConditions}
-                optimize={optimize}
-                partitions={partitions}
-                now={clock}
-                settings={
-                  <div className="flex flex-col gap-4">
-                    <ComponentSettings
-                      groups={componentSettings(fields, openId, merged.spec)}
-                      docs={initial.fieldDocs}
-                      operatorVersion={operatorVersionOf(registrations.items)}
-                      cluster={{ namespace: ns, name: name ?? "" }}
-                    />
-                    {slot("component.settings.editor")}
-                  </div>
-                }
-              />
+              {isSectionId(openId) ? (
+                openSection && (
+                  <SectionComponentDetail
+                    component={openSection}
+                    registrations={registrations.items}
+                    namespace={ns}
+                    requestsError={requestsError}
+                    requestsStale={requestsStale}
+                    settings={
+                      <div className="flex flex-col gap-4">
+                        {settingsUnread.length > 0 ? (
+                          <NotRead kinds={settingsUnread} />
+                        ) : (
+                          <>
+                            <ComponentSettings
+                              groups={sectionBlocks}
+                              docs={initial.fieldDocs}
+                              operatorVersion={operatorVersionOf(
+                                registrations.items,
+                              )}
+                              cluster={{ namespace: ns, name: name ?? "" }}
+                            />
+                            {slot("component.settings.editor")}
+                          </>
+                        )}
+                      </div>
+                    }
+                    now={clock}
+                  >
+                    {sectionOverview}
+                  </SectionComponentDetail>
+                )
+              ) : (
+                <ClusterComponentDetail
+                  id={openId}
+                  cards={cards}
+                  cluster={live}
+                  namespace={ns}
+                  podSelector={initial.podSelector}
+                  conditions={clusterConditions}
+                  optimize={optimize}
+                  partitions={partitions}
+                  now={clock}
+                  settings={
+                    <div className="flex flex-col gap-4">
+                      <ComponentSettings
+                        groups={componentSettings(fields, openId, merged.spec)}
+                        docs={initial.fieldDocs}
+                        operatorVersion={operatorVersionOf(registrations.items)}
+                        cluster={{ namespace: ns, name: name ?? "" }}
+                      />
+                      {slot("component.settings.editor")}
+                    </div>
+                  }
+                />
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -545,6 +739,7 @@ export function ClusterView({
                 hrefOf={overviewHref}
                 onOpen={openComponent}
               />
+              {claimUnread && <NotRead kinds={["CamundaClusterClaim"]} />}
               <OverviewConditions
                 cluster={clusterConditions}
                 optimize={
@@ -553,7 +748,9 @@ export function ClusterView({
                     : undefined
                 }
                 claim={
-                  claim ? conditionRows(claim.status?.conditions) : undefined
+                  claim && !claimUnread
+                    ? conditionRows(claim.status?.conditions)
+                    : undefined
                 }
                 now={clock}
               />
@@ -567,6 +764,7 @@ export function ClusterView({
             restores={restoreRowsOf(live, restores)}
             actions={slot("cluster.backups.actions")}
             rowActions={rowActionsOf(slots, managed, context)}
+            unread={unread}
           />
         </TabsContent>
         <TabsContent value="endpoints">
@@ -580,7 +778,11 @@ export function ClusterView({
           />
         </TabsContent>
         <TabsContent value="claim">
-          {managed && claim && slots?.["cluster.claim.editor"] !== undefined ? (
+          {claimUnread ? (
+            <NotRead kinds={["CamundaClusterClaim"]} />
+          ) : managed &&
+            claim &&
+            slots?.["cluster.claim.editor"] !== undefined ? (
             slot("cluster.claim.editor")
           ) : (
             <div className="flex flex-col gap-6">
@@ -616,6 +818,14 @@ export function ClusterView({
   );
 }
 
+// SETTINGS_KINDS are the kinds of the lists that claimView reads.
+const SETTINGS_KINDS: readonly string[] = [
+  "CamundaClusterClaim",
+  "PluginSection",
+  "PluginRegistration",
+  "Environment",
+];
+
 function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
   return (
     <p className="text-sm text-muted">
@@ -626,12 +836,6 @@ function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
   );
 }
 
-// overviewHref is the URL of the Overview tab with the detail of id open,
-// or with the cards when id is null.
-function overviewHref(id: CardId | null): string {
-  return id ? `?tab=overview&component=${id}` : "?tab=overview";
-}
-
 // conditionRows gives the conditions of a status as the table rows. The
 // API server sends metav1.Condition, whose status is one of the three values
 // of ConditionRow.
@@ -639,16 +843,4 @@ function conditionRows(
   conditions: readonly { type: string; status: string }[] | undefined,
 ): ConditionRow[] | undefined {
   return conditions as ConditionRow[] | undefined;
-}
-
-// useClock starts at the time of the server, so that the first render in
-// the browser matches the render of the server.
-function useClock(initial: string, ticking: boolean): string {
-  const [clock, setClock] = useState(initial);
-  useEffect(() => {
-    if (!ticking) return;
-    const timer = setInterval(() => setClock(new Date().toISOString()), 1000);
-    return () => clearInterval(timer);
-  }, [ticking]);
-  return clock;
 }

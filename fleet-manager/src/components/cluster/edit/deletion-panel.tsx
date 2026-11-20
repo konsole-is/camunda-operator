@@ -1,25 +1,19 @@
 "use client";
 
-import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
+import {
+  DeletionChoiceField,
+  KEEP_REFUSED,
+} from "@/components/fleet/deletion-choice";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { Step } from "@/lib/fields";
-import {
-  type DeletionChoice,
-  deletionChoice,
-  deletionPolicyOf,
-  offeredSection,
-  type PluginSelection,
-} from "@/lib/policy";
+import { claimDeletionChoice, type PluginSelection } from "@/lib/policy";
 import { claimAfter } from "@/lib/session";
 import type { ClusterSlotContext } from "../slots";
-import { type ClusterEdit, useClusterEdit } from "./cluster-edit";
+import { useClusterEdit } from "./cluster-edit";
 
 const POLICY: Step[] = [{ field: "spec" }, { field: "deletionPolicy" }];
-
-const KEEP_REFUSED =
-  "The claim keeps its resources, but an option below cannot keep them. Choose Delete, or remove that option.";
 
 /**
  * DeletionPanel edits the deletion policy of the claim. Choosing the
@@ -30,8 +24,27 @@ const KEEP_REFUSED =
 export function DeletionPanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();
   if (!edit.session) return null;
-  const choice = shownChoice(context, edit.session);
-  const refused = choice.policy === "Orphan" && !choice.keepAllowed;
+  const after = claimAfter(edit.session);
+  // The cache objects differ from the generated types only in their
+  // timestamps, which claimDeletionChoice does not read.
+  const choice = claimDeletionChoice({
+    claim: {
+      ...after,
+      spec: {
+        ...after.spec,
+        plugins: after.spec?.plugins as PluginSelection[] | undefined,
+      },
+    },
+    environment: context.environment as unknown as Environment | undefined,
+    sections: context.sections as unknown as PluginSection[],
+    registrations: context.registrations as unknown as PluginRegistration[],
+    registrationsRead: !context.unread.includes("PluginRegistration"),
+    // A saved policy reaches the requests only through a live pass of the
+    // claim controller.
+    livePass: true,
+    kind: "CamundaClusterClaim",
+  });
+  const refused = choice.policy === "Orphan" && choice.alwaysDeleted.length > 0;
   const claimed = edit.session.claim.spec?.deletionPolicy;
   return (
     <div className="flex flex-col gap-3">
@@ -47,33 +60,4 @@ export function DeletionPanel({ context }: { context: ClusterSlotContext }) {
       {refused && <p className="text-sm text-warn">{KEEP_REFUSED}</p>}
     </div>
   );
-}
-
-function shownChoice(
-  context: ClusterSlotContext,
-  session: NonNullable<ClusterEdit["session"]>,
-): DeletionChoice {
-  const after = claimAfter(session);
-  const selections = (after.spec?.plugins ?? []) as PluginSelection[];
-  // The cache objects differ from the generated types only in their
-  // timestamps, which deletionChoice and offeredSection do not read.
-  const registrations =
-    context.registrations as unknown as PluginRegistration[];
-  const environment = context.environment as unknown as Environment | undefined;
-  const views = (context.sections as unknown as PluginSection[]).map((s) =>
-    offeredSection(s, registrations, environment, "CamundaClusterClaim"),
-  );
-  const resolved = after.status?.resolvedPolicy;
-  const choice = deletionChoice(
-    after.spec?.deletionPolicy,
-    selections,
-    environment,
-    registrations,
-    views,
-    deletionPolicyOf(undefined, resolved),
-  );
-  return {
-    ...choice,
-    policy: deletionPolicyOf(after.spec?.deletionPolicy, resolved),
-  };
 }

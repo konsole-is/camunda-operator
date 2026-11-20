@@ -271,6 +271,94 @@ describe("ComponentDetail", () => {
     render(keycloak({ children: <p>Partitions here</p> }));
     expect(screen.getByText("Partitions here")).toBeTruthy();
   });
+
+  it("watches no pods and polls no usage without a pod selector", () => {
+    render(keycloak({ podSelector: undefined }));
+    expect(live.calls.filter((c) => c.kind === "Pod")).toEqual([]);
+    expect(live.usageCalls).toEqual([]);
+    expect(screen.getByText("This component runs no pods.")).toBeTruthy();
+    expect(screen.queryByText("Pods ready")).toBeNull();
+  });
+
+  it("treats an empty pod selector as none", () => {
+    render(keycloak({ podSelector: "" }));
+    expect(live.calls.filter((c) => c.kind === "Pod")).toEqual([]);
+    expect(live.usageCalls).toEqual([]);
+  });
+
+  it("starts to watch the pods when a pod selector arrives", () => {
+    const { rerender } = render(keycloak({ podSelector: "" }));
+    rerender(keycloak({ podSelector: "app=echo" }));
+    expect(live.calls).toContainEqual({
+      kind: "Pod",
+      opts: { namespace: "mgmt", labelSelector: "app=echo" },
+    });
+    expect(live.usageCalls).toContainEqual(["mgmt", "app=echo"]);
+  });
+
+  it("keeps the open tab when a pod selector arrives", async () => {
+    const { rerender } = render(keycloak({ podSelector: "" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    rerender(keycloak({ podSelector: "app=echo" }));
+    expect(
+      screen.getByRole("tab", { name: "Logs" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("says on the Metrics tab that a component without a pod selector runs no pods", async () => {
+    render(keycloak({ podSelector: "" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    const panel = screen.getByRole("tabpanel", { name: "Metrics" });
+    expect(
+      within(panel).getByText("This component runs no pods."),
+    ).toBeTruthy();
+    expect(within(panel).queryByRole("table")).toBeNull();
+  });
+
+  it("lists only the events of its refs without a pod selector", async () => {
+    live.events = [
+      {
+        metadata: { name: "r", namespace: "mgmt", uid: "r" },
+        reason: "Applied",
+        eventTime: "2026-10-30T11:00:00Z",
+        regarding: {
+          kind: "PluginRequest",
+          name: "orders-access",
+          namespace: "mgmt",
+          uid: "u-r",
+        },
+      },
+      {
+        metadata: { name: "p", namespace: "mgmt", uid: "p" },
+        reason: "Pulled",
+        eventTime: "2026-10-30T11:00:00Z",
+        regarding: { kind: "Pod", name: "orders-zeebe-0", namespace: "mgmt" },
+      },
+    ];
+    render(
+      keycloak({
+        podSelector: "",
+        eventRefs: [
+          {
+            kind: "PluginRequest",
+            name: "orders-access",
+            namespace: "mgmt",
+            uid: "u-r",
+          },
+        ],
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+
+    expect(screen.getByText("PluginRequest/orders-access")).toBeTruthy();
+    expect(screen.queryByText("Pod/orders-zeebe-0")).toBeNull();
+    expect(
+      live.calls.filter(
+        (c) => c.kind === "Service" || c.kind === "PersistentVolumeClaim",
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("ComponentDetailView", () => {
@@ -322,6 +410,34 @@ describe("ComponentDetailView", () => {
     expect(within(header).getByText("Not ready · Degraded")).toBeTruthy();
   });
 
+  it("shows the state as Not known and names the kind in place of the conditions while the object is not read", () => {
+    render(
+      view({
+        unread: "PluginRequest",
+        ready: {
+          type: "Ready",
+          status: "True",
+          reason: "Healthy",
+          lastTransitionTime: "2026-10-30T11:52:00Z",
+        },
+        conditions: [{ type: "Ready", status: "True", reason: "Healthy" }],
+      }),
+    );
+    const header = screen.getByRole("heading", {
+      name: "Operate",
+    }).parentElement!;
+    expect(within(header).getByText("Ready: Not known")).toBeTruthy();
+    expect(within(header).queryByText("Ready")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of PluginRequest.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("list", { name: "Operate conditions" }),
+    ).toBeNull();
+  });
+
   it("says No status beside the title when no condition decides the state", () => {
     render(view({ ready: undefined }));
     const header = screen.getByRole("heading", {
@@ -356,6 +472,16 @@ describe("ComponentDetailView", () => {
       screen.getByRole("rowheader", { name: /^orders-gateway-0/ }),
     ).toBeTruthy();
     expect(screen.queryByText(/Usage is not available/)).toBeNull();
+  });
+
+  it("says that a component without pods runs none and shows no pod numbers", () => {
+    render(view({ pods: [], usage: [], podless: true }));
+    const overview = screen.getByRole("tabpanel", { name: "Overview" });
+    expect(
+      within(overview).getByText("This component runs no pods."),
+    ).toBeTruthy();
+    expect(within(overview).queryAllByRole("term")).toEqual([]);
+    expect(within(overview).queryByRole("table")).toBeNull();
   });
 
   it("says that a component without a settings slot has no settings", async () => {

@@ -6,11 +6,12 @@ import { REVISION_ANNOTATION } from "@/lib/labels";
 import { refKey } from "@/lib/write/refs";
 import type { Change, WriteResult } from "@/lib/write/types";
 
-/** SetupObject is the part of a cluster-scoped object that useSetupEditor reads. */
+/** SetupObject is the part of an object that useSetupEditor reads. namespace is unset for a cluster-scoped kind. */
 export type SetupObject = {
   kind: string;
   metadata: {
     name?: string;
+    namespace?: string;
     resourceVersion?: string;
     annotations?: Record<string, string>;
   };
@@ -20,15 +21,17 @@ export type SetupObject = {
 export type SetupReview = { change: Change; kind: "save" | "delete" };
 
 /**
- * useSetupEditor holds the form state of the editor of one cluster-scoped
- * object of a Setup page. live is the object of the live list, undefined
+ * useSetupEditor holds the form state of the editor of one object of a
+ * Setup page, cluster-scoped or namespaced. live is the object of the live list, undefined
  * for a new object and until the list shows it. base is the copy that the
  * draft started from, so a save of a stale draft fails with Stale. The form
  * is locked while a change is under review and after an ok write: after a
  * save until the list shows the saved copy, in Git mode the pushed revision
  * or another one that replaced it;
- * after a create until the page moves to hrefOf of the new name, once the
- * list shows it. An ok delete moves the page to listHref. onReset runs on
+ * after a create until the page moves to hrefOf of the new name and
+ * namespace, once the list shows it. written looks up the pushed revision
+ * of the object in the namespace that it gets, else in the namespace of
+ * base. An ok delete moves the page to listHref. onReset runs on
  * each reset of the draft, and generation changes with it.
  */
 export function useSetupEditor<T extends SetupObject, D>({
@@ -46,7 +49,7 @@ export function useSetupEditor<T extends SetupObject, D>({
   listed: readonly string[];
   draftOf: (object: T | undefined) => D;
   listHref: string;
-  hrefOf: (name: string) => string;
+  hrefOf: (name: string, namespace?: string) => string;
   onReset?: () => void;
 }): {
   base: T | undefined;
@@ -58,7 +61,7 @@ export function useSetupEditor<T extends SetupObject, D>({
   review: (review: SetupReview) => void;
   cancel: () => void;
   discard: () => void;
-  written: (result: WriteResult, name: string) => void;
+  written: (result: WriteResult, name: string, namespace?: string) => void;
 } {
   const router = useRouter();
   const [base, setBase] = useState<T | undefined>(live);
@@ -68,7 +71,10 @@ export function useSetupEditor<T extends SetupObject, D>({
   const [waiting, setWaiting] = useState<
     { revision: string; before?: string } | "save"
   >();
-  const [created, setCreated] = useState<string>();
+  const [created, setCreated] = useState<{
+    name: string;
+    namespace?: string;
+  }>();
   const [deleted, setDeleted] = useState(false);
 
   const reset = (to: T | undefined) => {
@@ -94,9 +100,9 @@ export function useSetupEditor<T extends SetupObject, D>({
   )
     reset(live);
 
-  const createdShown = created !== undefined && listed.includes(created);
+  const createdShown = created !== undefined && listed.includes(created.name);
   useEffect(() => {
-    if (createdShown) router.push(hrefOf(created));
+    if (createdShown) router.push(hrefOf(created.name, created.namespace));
   }, [createdShown, created, hrefOf, router]);
   useEffect(() => {
     if (deleted) router.push(listHref);
@@ -116,16 +122,22 @@ export function useSetupEditor<T extends SetupObject, D>({
     review: setReviewing,
     cancel: () => setReviewing(undefined),
     discard: () => reset(live),
-    written: (result, name) => {
+    written: (result, name, namespace) => {
       const kind = reviewing?.kind;
       setReviewing(undefined);
       if (!result.ok) return;
       if (kind === "delete") setDeleted(true);
-      else if (isNew) setCreated(name);
+      else if (isNew) setCreated({ name, namespace });
       else {
         const revision =
           result.mode === "git"
-            ? result.revisions[refKey({ kind: base?.kind ?? "", name })]
+            ? result.revisions[
+                refKey({
+                  kind: base?.kind ?? "",
+                  namespace: namespace ?? base?.metadata.namespace,
+                  name,
+                })
+              ]
             : undefined;
         const before = base?.metadata.annotations?.[REVISION_ANNOTATION];
         setWaiting(revision ? { revision, before } : "save");

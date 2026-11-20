@@ -23,8 +23,8 @@ import {
   builtinEntry,
   builtinOption,
   byCodeUnit,
+  declaresRelease,
   deletionChoice,
-  isObject,
   lockedSummary,
   offeredSection,
   resolve,
@@ -143,19 +143,6 @@ export function clusterControllerParameters(
 ): ControllerParameters {
   return (_, registration) =>
     declaresRelease(registration) ? { releaseRef: release } : {};
-}
-
-// The claim controller sets releaseRef to the release of the claim on the
-// request of a registration whose schema has a top-level string property
-// releaseRef (requestParameters of pkg/components/claimrequests).
-function declaresRelease(registration: PluginRegistration): boolean {
-  const schema = registration.spec.parameters;
-  const properties = isObject(schema) ? schema.properties : undefined;
-  return (
-    isObject(properties) &&
-    isObject(properties.releaseRef) &&
-    properties.releaseRef.type === "string"
-  );
 }
 
 /**

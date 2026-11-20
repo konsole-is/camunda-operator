@@ -105,6 +105,7 @@ function ctx(over: Partial<ClusterClaimContext> = {}): ClusterClaimContext {
     },
     backups: [],
     requests: [],
+    registrationsRead: true,
     ...over,
   };
 }
@@ -353,6 +354,71 @@ describe("validateClusterClaim", () => {
       );
       s = set(s, [f("spec"), f("deletionPolicy")], "Delete");
       expect(validateClusterClaim(s, keeping())).toEqual([]);
+    });
+
+    const MISSING =
+      'the deletion policy is Orphan, and the claim cannot tell that these registrations support it, because they do not exist: PluginRegistration "gateway-access" of section "access"';
+
+    it("refuses Keep of a claim that recorded its policy while a selected registration does not exist", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Delete" }, {} as ResolvedPolicy)),
+        [f("spec"), f("deletionPolicy")],
+        "Orphan",
+      );
+      expect(
+        validateClusterClaim(s, ctx({ registrations: [] })),
+      ).toContainEqual({ message: MISSING });
+    });
+
+    it("does not count a registration as missing while the registrations are not read", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Delete" }, {} as ResolvedPolicy)),
+        [f("spec"), f("deletionPolicy")],
+        "Orphan",
+      );
+      expect(
+        validateClusterClaim(
+          s,
+          ctx({ registrations: [], registrationsRead: false }),
+        ),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
+    it("passes a save that does not move the claim to Keep while a selected registration does not exist", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Orphan" }, {} as ResolvedPolicy)),
+        [...ACCESS, f("parameters"), f("hostnamePattern")],
+        "{name}.b.example.com",
+      );
+      expect(
+        validateClusterClaim(s, ctx({ registrations: [] })),
+      ).not.toContainEqual({ message: MISSING });
+    });
+
+    it("refuses a save that removes the policy of the claim, so that it takes the recorded Keep, while a selected registration does not exist", () => {
+      const result = resetValue(
+        open(
+          claim({ deletionPolicy: "Delete" }, {
+            deletionPolicy: "Orphan",
+          } as ResolvedPolicy),
+        ),
+        [f("spec"), f("deletionPolicy")],
+      );
+      if (!("session" in result)) throw new Error("refused");
+      expect(
+        validateClusterClaim(result.session, ctx({ registrations: [] })),
+      ).toContainEqual({ message: MISSING });
+    });
+
+    it("passes Keep of a claim that has not recorded its policy while a selected registration does not exist", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Delete" })),
+        [f("spec"), f("deletionPolicy")],
+        "Orphan",
+      );
+      expect(
+        validateClusterClaim(s, ctx({ registrations: [] })),
+      ).not.toContainEqual({ message: MISSING });
     });
 
     it("accepts Keep when every option can keep its resources", () => {

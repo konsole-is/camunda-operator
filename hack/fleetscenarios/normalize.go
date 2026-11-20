@@ -31,6 +31,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // scenarioTime is the one time of every output: each timestamp that the
@@ -39,6 +41,11 @@ var scenarioTime = metav1.NewTime(time.Date(2026, time.January, 1, 0, 0, 0, 0, t
 
 // secretValue is the one value of every key of every Secret in the outputs.
 const secretValue = "scenario"
+
+// scenarioConfigHash is the one value of the config hash annotation of each
+// object in the outputs and of its spec.template, and of each pod template
+// that the simulator hashes.
+const scenarioConfigHash = "scenario"
 
 // scenarioNode is the node that every Pod of a scenario runs on. The
 // reporting instance of each Event names it in place of the host name.
@@ -72,22 +79,19 @@ const (
 //  4. Each RFC 3339 string becomes scenarioTime, in the layout of the
 //     original.
 //  5. Each value of a v1 Secret becomes secretValue.
-//  6. metadata.managedFields are sorted by manager, operation, and
+//  6. The config hash annotation of an object and of its spec.template
+//     becomes scenarioConfigHash.
+//  7. metadata.managedFields are sorted by manager, operation, and
 //     subresource.
-//  7. metadata.generation becomes 1, and so does each observedGeneration in
+//  8. metadata.generation becomes 1, and so does each observedGeneration in
 //     status that equals the generation. One that is behind becomes 0.
-//  8. Each v1 Service with a cluster IP gets its IP of 10.0.0.0/24 from
+//  9. Each v1 Service with a cluster IP gets its IP of 10.0.0.0/24 from
 //     addresses. The API server picks a free IP at random.
-//  9. The objects are sorted by apiVersion, kind, namespace, and name.
+//  10. The objects are sorted by apiVersion, kind, namespace, and name.
 func normalize(addresses *serviceIPs, objs []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
 	objs = normalizeEvents(objs)
 
-	uids := map[string]string{}
-	for i := range objs {
-		if uid := string(objs[i].GetUID()); uid != "" {
-			uids[uid] = scenarioUID(objs[i].GetKind(), objs[i].GetNamespace(), objs[i].GetName())
-		}
-	}
+	uids := scenarioUIDs(objs)
 
 	ips, err := addresses.assign(objs)
 	if err != nil {
@@ -113,6 +117,18 @@ func normalize(addresses *serviceIPs, objs []unstructured.Unstructured) ([]unstr
 	})
 
 	return out, nil
+}
+
+// scenarioUIDs returns the scenario UID of each object of objs, by its real
+// UID.
+func scenarioUIDs(objs []unstructured.Unstructured) map[string]string {
+	uids := map[string]string{}
+	for i := range objs {
+		if uid := string(objs[i].GetUID()); uid != "" {
+			uids[uid] = scenarioUID(objs[i].GetKind(), objs[i].GetNamespace(), objs[i].GetName())
+		}
+	}
+	return uids
 }
 
 // scenarioUID returns the UID that an object of kind, namespace, and name
@@ -245,8 +261,9 @@ func (s *serviceIPs) assign(objs []unstructured.Unstructured) (map[string]string
 	return ips, nil
 }
 
-// normalizeObject applies rules 2 to 8 of normalize to obj, a copy that it
-// may change. uids maps each real UID to its scenario UID, and ips maps the
+// normalizeObject applies rules 2 to 9 of normalize to obj, a copy that it
+// may change, apart from the resource version of the object that an Event is
+// about. uids maps each real UID to its scenario UID, and ips maps the
 // namespace and name of each Service with a cluster IP to its scenario IP.
 func normalizeObject(
 	obj *unstructured.Unstructured,
@@ -260,6 +277,17 @@ func normalizeObject(
 			for key := range data {
 				data[key] = base64.StdEncoding.EncodeToString([]byte(secretValue))
 			}
+		}
+	}
+
+	// The config hash covers the UID of a Secret that the operator generates.
+	hash := camundamanagementcluster.ConfigHashAnnotation
+	for _, field := range [][]string{
+		{"metadata", "annotations", hash},
+		{"spec", "template", "metadata", "annotations", hash},
+	} {
+		if _, found, _ := unstructured.NestedString(obj.Object, field...); found {
+			_ = unstructured.SetNestedField(obj.Object, scenarioConfigHash, field...)
 		}
 	}
 

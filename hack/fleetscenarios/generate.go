@@ -229,17 +229,10 @@ func settleAndList(
 	ips *serviceIPs,
 	overlays []overlay,
 ) ([]unstructured.Unstructured, error) {
-	before, _, err := controllerActivity()
-	if err != nil {
+	if err := runUntilSettled(ctx, cfg, scheme, sim, sco); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(settleTimeout)
-	err = runReconcilers(ctx, cfg, scheme, deadline, func(ctx context.Context) error {
-		return settle(ctx, sim, sco, time.Until(deadline), before)
-	})
-	if err != nil {
-		return nil, err
-	}
+
 	if err := sim.missingSteps(ctx); err != nil {
 		return nil, err
 	}
@@ -252,6 +245,26 @@ func settleAndList(
 		return nil, err
 	}
 	return normalize(ips, objs)
+}
+
+// runUntilSettled starts the reconcilers, and stops them once the scenario
+// settled. It fails when the scenario does not settle within settleTimeout.
+func runUntilSettled(
+	ctx context.Context,
+	cfg *rest.Config,
+	scheme *runtime.Scheme,
+	sim *simulator,
+	sco *scope,
+) error {
+	before, _, err := controllerActivity()
+	if err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(settleTimeout)
+	return runReconcilers(ctx, cfg, scheme, deadline, func(ctx context.Context) error {
+		return settle(ctx, sim, sco, time.Until(deadline), before)
+	})
 }
 
 // runReconcilers runs every reconciler of the operator against cfg while
@@ -406,12 +419,25 @@ func runState(
 	if err != nil {
 		return nil, fmt.Errorf("reading the objects to apply: %w", err)
 	}
+	then, err := toUnstructured(st.ThenApply)
+	if err != nil {
+		return nil, fmt.Errorf("reading the objects to apply after the settle: %w", err)
+	}
 	if err := applyObjects(ctx, c, sco, sim, apply); err != nil {
 		return nil, err
 	}
 
 	sim.add(st.Workload)
 	*overlays = append(*overlays, st.Overlays...)
+
+	if len(then) > 0 {
+		if err := runUntilSettled(ctx, cfg, scheme, sim, sco); err != nil {
+			return nil, fmt.Errorf("settling before thenApply: %w", err)
+		}
+		if err := applyObjects(ctx, c, sco, sim, then); err != nil {
+			return nil, err
+		}
+	}
 
 	return settleAndList(ctx, cfg, scheme, c, sim, sco, ips, *overlays)
 }

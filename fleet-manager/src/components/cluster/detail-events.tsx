@@ -5,33 +5,61 @@ import { useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type EventRef, componentEvents } from "@/lib/observe/events";
 
-/**
- * DetailEvents is the Events tab of a component detail: the events of the
- * pods, the Services and PersistentVolumeClaims that selector selects,
- * the workloads of the pods, and refs, by the rule of componentEvents.
- * Each event names its object. It reads the events of namespace only, so
- * a ref in another namespace gets no events. It needs a
- * QueryClientProvider above it.
- */
-export function DetailEvents({
-  namespace,
-  selector,
-  pods,
-  podsError,
-  refs,
-  now,
-}: {
+type EventsProps = {
   namespace: string;
-  selector: string;
   pods: readonly Resource<"Pod">[];
   podsError?: string;
   refs: readonly EventRef[];
   now: string;
-}) {
-  const events = useResources("Event", { namespace }, []);
-  const selected = { namespace, labelSelector: selector };
+};
+
+/**
+ * DetailEvents is the Events tab of a component detail: the events of the
+ * pods, the Services and PersistentVolumeClaims that selector selects,
+ * the workloads of the pods, and refs, by the rule of componentEvents.
+ * A missing or empty selector selects no Service and no
+ * PersistentVolumeClaim. Each event names its object. It reads the events
+ * of namespace only, so a ref in another namespace gets no events. It needs
+ * a QueryClientProvider above it.
+ */
+export function DetailEvents({
+  selector,
+  ...props
+}: EventsProps & { selector?: string }) {
+  return selector ? (
+    <SelectedEvents {...props} selector={selector} />
+  ) : (
+    <EventsView {...props} services={NO_LIST} claims={NO_LIST} />
+  );
+}
+
+type List = {
+  items: readonly { metadata?: { name?: string } }[];
+  error?: string;
+};
+
+const NO_LIST: List = { items: [] };
+
+function SelectedEvents({
+  selector,
+  ...props
+}: EventsProps & { selector: string }) {
+  const selected = { namespace: props.namespace, labelSelector: selector };
   const services = useResources("Service", selected, []);
   const claims = useResources("PersistentVolumeClaim", selected, []);
+  return <EventsView {...props} services={services} claims={claims} />;
+}
+
+function EventsView({
+  namespace,
+  pods,
+  podsError,
+  refs,
+  now,
+  services,
+  claims,
+}: EventsProps & { services: List; claims: List }) {
+  const events = useResources("Event", { namespace }, []);
   const own = componentEvents(events.items, {
     namespace,
     pods,

@@ -333,6 +333,76 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it("drops ownership from a Git preview", async () => {
+    repo = await serveBareRepository();
+    live.set("Environment//prod", environment("prod"));
+    directPreview.mockResolvedValue({
+      objects: [],
+      errors: [],
+      ownership: [
+        {
+          ref: refOf(environment("prod")),
+          changed: [],
+          cleared: [
+            {
+              path: "spec.color",
+              steps: [{ field: "spec" }, { field: "color" }],
+              managers: [
+                {
+                  name: "kubectl",
+                  operation: "Apply",
+                  kind: "other",
+                  known: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const preview = await writerFor().preview({
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+    });
+
+    expect(preview).not.toHaveProperty("ownership");
+    const directOnly = await writerFor().preview({
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+      directOnly: true,
+    });
+    expect(directOnly).not.toHaveProperty("ownership");
+  });
+
+  it("refuses a take-over in the preview and in the apply, and commits nothing", async () => {
+    repo = await serveBareRepository();
+    const change: Change = {
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+      remove: { "Environment//prod": ["spec.color"] },
+    };
+    const refusal = {
+      code: "Invalid",
+      message: "A take-over is for direct mode.",
+      ref: refOf(environment("prod")),
+    };
+
+    expect(await writerFor().preview(change)).toEqual({
+      objects: [],
+      errors: [refusal],
+    });
+    expect(await writerFor().apply(change)).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(directPreview).not.toHaveBeenCalled();
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("a change that the dry run refuses makes no commit and returns the API errors", async () => {
     repo = await serveBareRepository();
     const refusal = {
@@ -443,6 +513,114 @@ describe("the Git writer", slow, () => {
       ],
     });
     expect(await repo.log()).toEqual(["Never applied", "Initial commit"]);
+  });
+
+  // pushedThenDeleted pushes a save and a delete of the claim orders, and
+  // leaves the live claim as GitOps applied the save: with the revision of
+  // the pushed file, which the repository no longer holds.
+  const pushedThenDeleted = async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    const saved = ok(
+      await writerFor().apply({
+        intent: "Save",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+    const revision = saved.revisions["CamundaClusterClaim/team-a/orders"];
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders", "large"),
+      metadata: {
+        name: "orders",
+        namespace: "team-a",
+        uid: "uid-1",
+        generation: 2,
+        resourceVersion: "8",
+        annotations: { [REVISION_ANNOTATION]: revision },
+      },
+    });
+    ok(
+      await writerFor().apply({
+        intent: "Delete",
+        apply: [],
+        delete: [claimRef("team-a", "orders")],
+        uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/orders": 2 },
+      }),
+    );
+  };
+
+  it("a save of an object whose pushed delete GitOps has not applied fails with Conflict and does not write the file again", async () => {
+    await pushedThenDeleted();
+
+    const result = await writerFor().apply({
+      intent: "Suspend",
+      apply: [claim("team-a", "orders", "medium")],
+      preconditions: { "CamundaClusterClaim/team-a/orders": "8" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          message: expect.stringContaining(
+            "holds a delete of the CamundaClusterClaim orders that GitOps has not applied yet",
+          ),
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Delete", "Save", "Initial commit"]);
+    expect(
+      await repo.show("team-a/camundaclusterclaims/orders.yaml"),
+    ).toBeUndefined();
+  });
+
+  it("a second push of the delete keeps the refusal of a delete without a file", async () => {
+    await pushedThenDeleted();
+
+    const result = await writerFor().apply({
+      intent: "Delete again",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+      uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+      generations: { "CamundaClusterClaim/team-a/orders": 2 },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message: expect.stringContaining("is not in the repository"),
+        }),
+      ],
+    });
+  });
+
+  it("the first save in Git mode of an object without the revision annotation writes its file", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "First save",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+
+    expect(
+      await repo.show("team-a/camundaclusterclaims/orders.yaml"),
+    ).toBeDefined();
   });
 
   it("a save from an older read fails with Stale when GitOps applies the previous save during the clone", async () => {
@@ -669,6 +847,131 @@ describe("the Git writer", slow, () => {
     expect(await repo.files()).toEqual(["README.md"]);
   });
 
+  const liveClaim = (
+    generation: number,
+    resourceVersion: string,
+  ): KubeObject => ({
+    ...claim("team-a", "orders"),
+    metadata: {
+      name: "orders",
+      namespace: "team-a",
+      uid: "same",
+      generation,
+      resourceVersion,
+    },
+  });
+  const removeAt = (generation: number) => ({
+    intent: "Delete the claim orders",
+    apply: [],
+    delete: [claimRef("team-a", "orders")],
+    uids: { "CamundaClusterClaim/team-a/orders": "same" },
+    generations: { "CamundaClusterClaim/team-a/orders": generation },
+  });
+
+  it("a delete with the generation of the live object removes the file, also after a status write", async () => {
+    repo = await serveBareRepository();
+    const created = ok(
+      await writerFor().apply({
+        intent: "Create",
+        apply: [claim("team-a", "orders")],
+      }),
+    );
+    const applied = liveClaim(3, "99");
+    applied.metadata = {
+      ...applied.metadata,
+      annotations: {
+        [REVISION_ANNOTATION]:
+          created.revisions["CamundaClusterClaim/team-a/orders"],
+      },
+    };
+    live.set("CamundaClusterClaim/team-a/orders", applied);
+
+    ok(await writerFor().apply(removeAt(3)));
+
+    expect(await repo.files()).toEqual(["README.md"]);
+  });
+
+  it("a delete whose generation is not the generation of the live object makes no commit and returns Stale", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+    live.set("CamundaClusterClaim/team-a/orders", liveClaim(4, "99"));
+
+    const result = await writerFor().apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
+  it("a delete makes no commit and returns Stale when the claim is made again during the clone", async () => {
+    repo = await serveBareRepository();
+    const created = ok(
+      await writerFor().apply({
+        intent: "Create",
+        apply: [claim("team-a", "orders")],
+      }),
+    );
+    const annotated = (uid: string): KubeObject => {
+      const object = liveClaim(3, "99");
+      object.metadata = {
+        ...object.metadata,
+        uid,
+        annotations: {
+          [REVISION_ANNOTATION]:
+            created.revisions["CamundaClusterClaim/team-a/orders"],
+        },
+      };
+      return object;
+    };
+    live.set("CamundaClusterClaim/team-a/orders", annotated("same"));
+    // GitOps makes the claim again, with the same generation and revision,
+    // while the writer clones the repository.
+    const replacing: HttpClient = {
+      request: async (r) => {
+        live.set("CamundaClusterClaim/team-a/orders", annotated("new"));
+        return gitHttp.request(r);
+      },
+    };
+
+    const result = await writerFor({}, replacing).apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
+  it("a delete with a generation fails with Conflict while GitOps has not applied a save of the claim", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", liveClaim(3, "7"));
+    ok(
+      await writerFor().apply({
+        intent: "First",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+
+    const result = await writerFor().apply(removeAt(3));
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["First", "Initial commit"]);
+  });
+
   it("a change that writes and deletes returns the revision of the written object and the file of the deleted one", async () => {
     repo = await serveBareRepository();
     await writerFor().apply({
@@ -739,6 +1042,61 @@ describe("the Git writer", slow, () => {
       ],
     });
     expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("the preview of a delete of an object without a file returns the refusal of the delete", async () => {
+    repo = await serveBareRepository();
+
+    const preview = await writerFor().preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining(
+          "team-a/camundaclusterclaims/orders.yaml is not in the repository",
+        ),
+        ref: claimRef("team-a", "orders"),
+      }),
+    ]);
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("the preview of a delete of an object with a file has no error", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const preview = await writerFor().preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([]);
+  });
+
+  it("the preview of a delete refuses when the clone fails, and does not report the file as there", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const preview = await writerFor({ branch: "release" }).preview({
+      intent: "Delete",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+    });
+
+    expect(preview.errors).toEqual([
+      { code: "Unavailable", message: `${repo.url} has no branch release.` },
+    ]);
   });
 
   it("a change whose files are already in the repository makes no commit", async () => {

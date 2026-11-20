@@ -16,8 +16,10 @@ import type { EnvironmentSources } from "./sources";
  * NamespacesSection lists the namespaces of environment with their claims,
  * and adds the label of environment to a namespace that has no environment
  * label. The label goes to the cluster also in Git mode. A new environment
- * offers no namespace yet, and without mode no review opens. onReview gets
- * true when the review of a label opens and false when it closes.
+ * offers no namespace yet, and without mode no review opens. The review
+ * offers no take-over, because the label change leaves out the labels and
+ * annotations of other tools on purpose. onReview gets true when the review
+ * of a label opens and false when it closes.
  */
 export function NamespacesSection({
   environment,
@@ -115,6 +117,7 @@ export function NamespacesSection({
             gitLabel: "Add the namespace",
           }}
           savedMessage={`The namespace ${picked} is in the environment ${environment}.`}
+          offerTakeOver={false}
           preview={actions.previewLabel}
           apply={actions.applyLabel}
           show={show}

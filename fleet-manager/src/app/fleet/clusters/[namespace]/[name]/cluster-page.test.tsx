@@ -24,6 +24,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useResource: (_kind: string, _ref: unknown, initial?: unknown) => ({
     item: initial,
   }),
+  useWatchesFresh: (lists: readonly unknown[]) => lists.map(() => true),
+  useWatchesOverdue: (lists: readonly unknown[]) => lists.map(() => false),
   useGitSync: () => "waiting",
   useGitGone: () => "waiting",
 }));
@@ -67,7 +69,6 @@ function data(managed = true): ClusterPageData {
     presets: [],
     releases: [],
     storage: [],
-    accessRequests: [],
     requests: [],
     pods: [],
     podSelector: "camunda.io/cluster=orders",
@@ -86,6 +87,8 @@ function data(managed = true): ClusterPageData {
     registrations: [],
     platformConfigs: [],
     managementAuthConfigs: [],
+    grants: [],
+    elasticsearchClusters: [],
     fieldDocs: {},
   };
 }

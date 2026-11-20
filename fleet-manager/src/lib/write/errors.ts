@@ -1,5 +1,6 @@
 import "server-only";
 import { KubernetesRequestError } from "@/lib/k8s/client";
+import { messageOf } from "@/lib/text";
 import type { ApiError, ObjectRef } from "./types";
 
 const managerOfCause = /conflict with "([^"]+)"/;
@@ -28,7 +29,7 @@ function withSecretMessage(error: ApiError): ApiError {
   const name = error.ref?.name ?? "";
   const messages: Record<ApiError["code"], string> = {
     Stale: error.message,
-    Conflict: `Another field manager owns a field of the Secret ${name}.`,
+    Conflict: `Another tool owns a field of the Secret ${name}.`,
     Invalid: `The API server refused the Secret ${name}.`,
     Forbidden: `The fleet manager may not write the Secret ${name}.`,
     Unavailable: `The API server did not write the Secret ${name}.`,
@@ -127,11 +128,6 @@ export function existsError(ref: ObjectRef): ApiError {
 function pathOf(field: string | undefined): { path?: string } {
   if (!field) return {};
   return { path: field.startsWith(".") ? field.slice(1) : field };
-}
-
-/** messageOf is the message of error, or error as text when it is not an Error. */
-export function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

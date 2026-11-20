@@ -702,15 +702,10 @@ var _ = Describe("CamundaOptimize controller", func() {
 			}, timeout, interval).Should(Succeed())
 
 			By("dropping the suspension from the message, and recording no resume yet")
-			// An instance created beside its cluster can park on the storage
-			// claim of the backend before that cluster takes it, and the pass
-			// that starts the workloads records a resume of its own. The counts
-			// below read against that baseline.
-			resumesBefore := countSuspensionEvents(s.optimize, eventReasonClusterResumed)
 			setClusterSuspend(s.cluster, false)
 			Consistently(func(g Gomega) {
 				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(
-					Equal(resumesBefore), "the workloads are still at zero",
+					BeZero(), "the workloads are still at zero",
 				)
 				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(
 					Equal(1), "and the suspension is recorded once, however often the failure repeats",
@@ -742,10 +737,10 @@ var _ = Describe("CamundaOptimize controller", func() {
 			)
 			expectReplicas(1, webappKey, importerKey)
 			Eventually(func(g Gomega) {
-				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(1))
 			}, timeout, interval).Should(Succeed())
 			Consistently(func(g Gomega) {
-				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
+				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(1))
 			}, "2s", interval).Should(Succeed())
 		})
 
@@ -795,24 +790,19 @@ var _ = Describe("CamundaOptimize controller", func() {
 			By("keeping the exporter patch, because the suspension is not a detachment")
 			expectClusterEnv(s.cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
 
-			// An instance created beside its cluster can reach its first pass
-			// before the cluster holds the storage claim of the backend. That
-			// pass records nothing, because the instance has no workload yet,
-			// and the pass that starts them records a resume of its own. The
-			// count of this reason is what says the suspension was named once.
 			By("naming the cluster in an event, once for the transition")
 			Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
 			Consistently(func(g Gomega) {
 				g.Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
 			}, 3*time.Second, interval).Should(Succeed())
-			resumesBefore := countSuspensionEvents(s.optimize, eventReasonClusterResumed)
+			Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(BeZero())
 
 			By("starting both workloads again when the suspension is cleared")
 			setClusterSuspend(s.cluster, false)
 			expectReplicas(1, webappKey, importerKey)
 			expectReadyWhileStamping(s.optimize, webappKey, importerKey)
 			Expect(countSuspensionEvents(s.optimize, eventReasonClusterSuspended)).To(Equal(1))
-			Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(resumesBefore + 1))
+			Expect(countSuspensionEvents(s.optimize, eventReasonClusterResumed)).To(Equal(1))
 		})
 
 		It("scales to zero when another cluster holds the backend of its cluster", func() {

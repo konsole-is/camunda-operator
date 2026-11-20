@@ -19,6 +19,7 @@ import { CLAIM_LABEL } from "@/lib/labels";
 import {
   claimAfter,
   openSession,
+  rebase,
   resetValue,
   setValue,
   STALE_CLAIM_MESSAGE,
@@ -28,7 +29,7 @@ import {
 import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
-import { ClaimReview } from "./claim-review";
+import { ClaimReview, type ClaimReviewInput } from "./claim-review";
 import { GitPushesProvider } from "./git-pushes";
 import { Toast, useWriteToast } from "./toast";
 
@@ -78,6 +79,12 @@ function resetPartitions(s: Session): Session {
 
 type Props = Partial<Parameters<typeof ClaimReview>[0]> & { mode?: WriteMode };
 
+// inputOf gives the input of a page that adds given to the review.
+const inputOf = (given: Partial<ClaimReviewInput>) => (): ClaimReviewInput => ({
+  impacts: [],
+  ...given,
+});
+
 // Page owns the toast, as a page does, and closes the review after a write.
 function Page(props: Props) {
   const { toast, show, dismiss } = useWriteToast();
@@ -89,7 +96,7 @@ function Page(props: Props) {
           session={session()}
           mode={fakeWriter.mode}
           intent={INTENT}
-          impacts={[]}
+          input={inputOf({})}
           preview={previewClaimChange}
           apply={applyClaimChange}
           show={show}
@@ -136,7 +143,9 @@ describe("ClaimReview", () => {
     expect(screen.queryByRole("note", { name: "Caution" })).toBeNull();
     unmount();
     review({
-      caution: "A backup of orders runs now. The rollout makes it fail.",
+      input: inputOf({
+        caution: "A backup of orders runs now. The rollout makes it fail.",
+      }),
     });
     expect(screen.getByRole("note", { name: "Caution" }).textContent).toContain(
       "A backup of orders runs now.",
@@ -153,10 +162,10 @@ describe("ClaimReview", () => {
     ["direct", "Change anyway"],
     ["git", "Push anyway"],
   ] as const)(
-    "in %s mode the confirm prop gives the danger button %s",
+    "in %s mode the confirm of input gives the danger button %s",
     async (mode, label) => {
       fakeWriter.reset(mode);
-      review({ confirm: ANYWAY });
+      review({ input: inputOf({ confirm: ANYWAY }) });
       expect((await confirm(label)).getAttribute("data-variant")).toBe(
         "destructive",
       );
@@ -167,7 +176,7 @@ describe("ClaimReview", () => {
     ["direct", "Save"],
     ["git", "Push to Git"],
   ] as const)(
-    "without the confirm prop, %s mode shows %s as a default button",
+    "without a confirm in input, %s mode shows %s as a default button",
     async (mode, label) => {
       fakeWriter.reset(mode);
       review();
@@ -179,7 +188,10 @@ describe("ClaimReview", () => {
 
   it("a typed confirm enables only after the preview and the word", async () => {
     const preview = vi.fn(previewClaimChange);
-    review({ preview, confirm: { ...ANYWAY, typed: "orders" } });
+    review({
+      preview,
+      input: inputOf({ confirm: { ...ANYWAY, typed: "orders" } }),
+    });
     const button = screen.getByRole<HTMLButtonElement>("button", {
       name: "Change anyway",
     });
@@ -371,7 +383,8 @@ describe("ClaimReview", () => {
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
-  it("shows a note when the preview keeps a reset field", async () => {
+  it("Git mode shows a note when the preview keeps a reset field", async () => {
+    fakeWriter.reset("git");
     const s = session(resetPartitions);
     // Another field manager owns partitions, so the dry run keeps it.
     fakeWriter.previews = [
@@ -395,13 +408,14 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.zeebe.partitions, so the reset does not remove it.",
       ),
     );
-    expect((await confirm("Save")).disabled).toBe(false);
+    expect((await confirm("Push to Git")).disabled).toBe(false);
   });
 
-  it("shows a note when the preview keeps a reset field of a list item named by index", async () => {
+  it("Git mode shows a note when the preview keeps a reset field of a list item named by index", async () => {
+    fakeWriter.reset("git");
     const env = { name: "TZ", value: "UTC" };
     const withEnv: ClaimObject = {
       ...claim,
@@ -441,12 +455,13 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
       ),
     );
   });
 
-  it("shows a note when the preview keeps a reset list item without keys", async () => {
+  it("Git mode shows a note when the preview keeps a reset list item without keys", async () => {
+    fakeWriter.reset("git");
     const withEnv: ClaimObject = {
       ...claim,
       spec: {
@@ -489,7 +504,7 @@ describe("ClaimReview", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain(
-        "Another field manager keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
+        "Another tool keeps spec.cluster.extraEnvFrom[0], so the reset does not remove it.",
       ),
     );
   });
@@ -503,11 +518,13 @@ describe("ClaimReview", () => {
 
   it("shows the impacts and the merged diff", async () => {
     review({
-      impacts: ["Broker pods restart."],
-      mergedLines: [
-        { op: "removed", text: "replicas: 3" },
-        { op: "added", text: "replicas: 5" },
-      ],
+      input: inputOf({
+        impacts: ["Broker pods restart."],
+        mergedLines: [
+          { op: "removed", text: "replicas: 3" },
+          { op: "added", text: "replicas: 5" },
+        ],
+      }),
     });
 
     expect(screen.getByText("Broker pods restart.")).toBeTruthy();
@@ -532,5 +549,307 @@ describe("ClaimReview", () => {
         preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
       },
     ]);
+  });
+});
+
+describe("ClaimReview with fields of another tool", () => {
+  const ref = {
+    apiVersion: claim.apiVersion,
+    kind: claim.kind,
+    namespace: "team-a",
+    name: "orders",
+  };
+  const key = "CamundaClusterClaim/team-a/orders";
+  const kubectl = {
+    name: "kubectl-client-side-apply",
+    operation: "Update",
+    kind: "other" as const,
+    known: true,
+  };
+  const fieldAt = (steps: Step[]) => ({
+    path: steps.map((s) => ("field" in s ? s.field : "")).join("."),
+    steps: steps.map((s) => ({ field: "field" in s ? s.field : "" })),
+    managers: [kubectl],
+  });
+  const conflicted = {
+    objects: [],
+    errors: [
+      {
+        code: "Conflict" as const,
+        message: 'conflict with "kubectl-client-side-apply"',
+        path: "spec.cluster.zeebe.replicas",
+        manager: "kubectl-client-side-apply",
+        ref,
+      },
+    ],
+    ownership: [{ ref, changed: [fieldAt(replicas)], cleared: [] }],
+  };
+  const clean = {
+    objects: [{ ref, after: claimAfter(session()) as KubeObject, diff: [] }],
+    errors: [],
+  };
+  const choice = () =>
+    screen.getByRole("checkbox", { name: "Take over these fields" });
+
+  it("Save stays off until the take-over is chosen, then saves the change with the lists", async () => {
+    fakeWriter.previews = [conflicted, clean];
+    const onRefused = vi.fn();
+    review({ onRefused });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.cluster.zeebe.replicas: kubectl-client-side-apply set it. The save changes it.",
+      ),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+    // The panel names the conflict, so neither an alert nor the field repeats it.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onRefused).not.toHaveBeenCalled();
+
+    fireEvent.click(choice());
+    fireEvent.click(await confirm("Save"));
+
+    const withList = {
+      intent: INTENT,
+      apply: [claimAfter(session())],
+      preconditions: { [key]: "41" },
+      takeOver: { [key]: ["spec.cluster.zeebe.replicas"] },
+    };
+    await waitFor(() => expect(fakeWriter.applied).toEqual([withList]));
+    expect(fakeWriter.previewed[1]).toEqual(withList);
+  });
+
+  it("shows a Conflict of the preview with the take-over, and Save stays off", async () => {
+    const message =
+      "The save would take spec.cluster.zeebe.partitions from kubectl-client-side-apply, and the review did not list it.";
+    fakeWriter.previews = [
+      conflicted,
+      {
+        ...clean,
+        errors: [
+          {
+            code: "Conflict" as const,
+            message,
+            path: "spec.cluster.zeebe.partitions",
+            manager: "kubectl-client-side-apply",
+            ref,
+          },
+        ],
+      },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("a save that did not remove each field says what it saved, and Save stays off", async () => {
+    const message =
+      "The fleet manager saved the CamundaClusterClaim orders, but did not remove spec.cluster.zeebe.partitions. The CamundaClusterClaim orders changed since you opened it.";
+    fakeWriter.previews = [conflicted, clean];
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message, ref }] },
+    ];
+    review();
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    fireEvent.click(await confirm("Save"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(message),
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      STALE_CLAIM_MESSAGE,
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("a reset of a field of another tool says that it stays, and Save is on", async () => {
+    fakeWriter.previews = [
+      {
+        objects: [{ ref, after: claim as KubeObject, diff: [] }],
+        errors: [],
+        ownership: [{ ref, changed: [], cleared: [fieldAt(partitions)] }],
+      },
+    ];
+    review({ session: session(resetPartitions) });
+
+    expect((await confirm("Save")).disabled).toBe(false);
+    expect(
+      screen.getByRole("group", { name: "Fields that another tool set" })
+        .textContent,
+    ).toContain(
+      "spec.cluster.zeebe.partitions: kubectl-client-side-apply set it. It stays unless you take it over.",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("the diff shows a reset field of another tool as removed only after the choice", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:cluster": {
+                  "f:zeebe": { "f:partitions": {}, "f:replicas": {} },
+                },
+              },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [] },
+    ];
+    review({ session: reset.session });
+    const diff = () => screen.getByRole("region", { name: "Review" });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    // Without the choice, the field stays, so the save changes nothing.
+    expect(diff().querySelector("del")).toBeNull();
+    expect(diff().textContent).toContain("No changes");
+
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(diff().querySelector("del")?.textContent?.trim()).toBe(
+        "partitions: 3",
+      ),
+    );
+    expect(diff().querySelectorAll("del")).toHaveLength(1);
+  });
+
+  it("with the choice, a reset field that the API server defaults shows its default value in the row and the diff", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:cluster": {
+                  "f:zeebe": { "f:partitions": {}, "f:replicas": {} },
+                },
+              },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    const defaulted = {
+      ...claim,
+      spec: { cluster: { zeebe: { replicas: 3, partitions: 1 } } },
+    } as KubeObject;
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [{ ref, after: defaulted, diff: [] }], errors: [] },
+    ];
+    review({ session: reset.session });
+    await waitFor(() => expect(choice()).toBeTruthy());
+
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.cluster.zeebe.partitions: kubectl-client-side-apply set it. It gets its default value 1 again.",
+      ),
+    );
+    const diff = screen.getByRole("region", { name: "Review" });
+    expect(diff.querySelector("del")?.textContent?.trim()).toBe(
+      "partitions: 3",
+    );
+    expect(diff.querySelector("ins")?.textContent?.trim()).toBe(
+      "partitions: 1",
+    );
+  });
+
+  it("the choice resets after a rebase", async () => {
+    fakeWriter.previews = [conflicted, clean, conflicted];
+    const first = session();
+    const props = {
+      mode: "direct" as const,
+      intent: INTENT,
+      input: inputOf({}),
+      preview: previewClaimChange,
+      apply: applyClaimChange,
+      show: vi.fn(),
+    };
+    const wrap = (s: Session) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <GitPushesProvider>
+          <ClaimReview session={s} {...props} />
+        </GitPushesProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(wrap(first));
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await confirm("Save");
+
+    rerender(
+      wrap(
+        rebase(first, {
+          ...claim,
+          metadata: { ...claim.metadata, resourceVersion: "42" },
+        }),
+      ),
+    );
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(3));
+    await waitFor(() =>
+      expect(choice().getAttribute("aria-checked")).toBe("false"),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("Git mode shows no choice", async () => {
+    fakeWriter.reset("git");
+    fakeWriter.previews = [{ ...clean, ownership: conflicted.ownership }];
+    review();
+    await confirm("Push to Git");
+    expect(
+      screen.queryByRole("group", { name: "Fields that another tool set" }),
+    ).toBeNull();
   });
 });

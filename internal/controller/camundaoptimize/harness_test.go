@@ -293,6 +293,15 @@ func (h *reconcileHarness) releaseClaim(t *testing.T) {
 	require.NoError(t, h.client.Delete(t.Context(), h.lease))
 }
 
+// takeClaim creates the storage claim Lease again, so the cluster holds its
+// backend.
+func (h *reconcileHarness) takeClaim(t *testing.T) {
+	t.Helper()
+	lease := h.lease.DeepCopy()
+	lease.ResourceVersion = ""
+	require.NoError(t, h.client.Create(t.Context(), lease))
+}
+
 // runForeignWriter starts a pod of another cluster that carries the storage
 // claim of the backend of the harness cluster.
 func (h *reconcileHarness) runForeignWriter() {
@@ -408,12 +417,15 @@ func (h *reconcileHarness) expectWorkloads(t *testing.T, reason string) {
 }
 
 // suspensionEvents drains the recorder and returns the counts of the events
-// that report the suspension of the cluster.
+// that report the start or the end of a wait of the Optimize workloads.
 func (h *reconcileHarness) suspensionEvents() map[string]int {
 	counts := map[string]int{}
 	for reason, count := range h.events() {
 		switch reason {
-		case eventReasonClusterSuspended, eventReasonClusterResumed, eventReasonStorageClaimAwaited:
+		case eventReasonClusterSuspended,
+			eventReasonClusterResumed,
+			eventReasonStorageClaimAwaited,
+			eventReasonStorageClaimHeld:
 			counts[reason] = count
 		}
 	}

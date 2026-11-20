@@ -40,7 +40,7 @@ export function ImpactLine({ impact }: { impact: EnvironmentImpact }) {
 
 function countLine({ clusters, planes, unread }: EnvironmentImpact): string {
   const first = unread
-    ? `The fleet manager cannot read ${unread.join(", ")}, so the claims that this change touches can be more than this note names.`
+    ? `The fleet manager has no current list of ${unread.join(", ")}, so the claims that this change touches can be more than this note names.`
     : "Changes apply to new claims only.";
   const parts = [
     ...(clusters > 0 ? [plural(clusters, "cluster", "clusters")] : []),

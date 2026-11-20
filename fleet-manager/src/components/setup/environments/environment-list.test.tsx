@@ -6,17 +6,20 @@ import { environmentFixtures } from "./fixtures";
 import { environmentRows, unassignedNamespaces } from "./rows";
 
 const failing = vi.hoisted(() => ({ kind: "" }));
+const watch = vi.hoisted(() => ({ stale: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
-  useWatchesFresh: (lists: unknown[]) => lists.map(() => true),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => !watch.stale.includes(kind)),
 }));
 
 afterEach(() => {
   cleanup();
   failing.kind = "";
+  watch.stale = [];
 });
 
 describe("EnvironmentList", () => {
@@ -69,6 +72,40 @@ describe("EnvironmentList", () => {
         "No environment yet. Without one, every namespace takes the policy of the registrations.",
       ),
     ).toBeTruthy();
+  });
+
+  it("shows no cluster count and no banner while the cluster claims could not be read", () => {
+    failing.kind = "CamundaClusterClaim";
+    render(<EnvironmentListLive initial={environmentFixtures()} />);
+    const cells = within(screen.getByRole("row", { name: /Production/ }))
+      .getAllByRole("cell")
+      .map((c) => c.textContent);
+    expect(cells.slice(1)).toEqual(["2", "Not known", "0", "Ready"]);
+    expect(
+      screen.queryByRole("note", { name: "Namespaces without an environment" }),
+    ).toBeNull();
+  });
+
+  it("names a stale list of the page and shows no count and no banner from it", () => {
+    watch.stale = ["Namespace", "PluginSection"];
+    render(<EnvironmentListLive initial={environmentFixtures()} />);
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Namespace.",
+      ),
+    ).toBeTruthy();
+    const cells = within(screen.getByRole("row", { name: /Staging/ }))
+      .getAllByRole("cell")
+      .map((c) => c.textContent);
+    expect(cells.slice(1)).toEqual([
+      "Not known",
+      "Not known",
+      "Not known",
+      "No status",
+    ]);
+    expect(
+      screen.queryByRole("note", { name: "Namespaces without an environment" }),
+    ).toBeNull();
   });
 
   it("shows the error of a failed read above the table", () => {

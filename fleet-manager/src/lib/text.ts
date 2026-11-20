@@ -1,5 +1,10 @@
 // This module runs in the browser and on the server.
 
+/** messageOf is the message of error, or error as text when it is not an Error. */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** listOf joins items for a sentence: "a and b", or "a, b, and c" for three or more. */
 export function listOf(items: readonly string[]): string {
   if (items.length <= 2) return items.join(" and ");

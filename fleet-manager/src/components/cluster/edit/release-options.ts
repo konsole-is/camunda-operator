@@ -1,7 +1,12 @@
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { Resource } from "@/lib/k8s/kinds";
-import { releaseAllowed, releaseMove } from "@/lib/policy";
+import {
+  moveStatus,
+  releaseAllowed,
+  releaseMove,
+  versionCheckWait,
+} from "@/lib/policy";
 import { parseVersion } from "@/lib/policy/release";
 import type { BackupObject } from "../backups";
 import type { ClusterClaim } from "./cluster-edit";
@@ -24,10 +29,9 @@ export type ReleaseOption = {
  * first, each with what releaseMove reports for it, and the current release
  * of the claim also when the Environment no longer allows it. The current
  * release is the release of the claim, else the release of the cluster.
- * note says why no version check runs: "The version checks run when the
- * cluster resumes." for a suspended cluster, "The version checks run when
- * the cluster reports its version." for a cluster without
- * status.management.version. Then no option is disabled or a downgrade.
+ * The texts come from moveStatus. A backup never disables an option: the
+ * Claim tab warns on a running backup instead. note is versionCheckWait of
+ * the cluster. Then no option is disabled or a downgrade.
  */
 export function releaseChoices(input: {
   cluster: Resource<"CamundaCluster">;
@@ -41,11 +45,7 @@ export function releaseChoices(input: {
   // timestamps, which the policy library does not read.
   const environment = input.environment as Environment | undefined;
   const current = claim.spec?.releaseRef || cluster.spec.releaseRef;
-  const note = cluster.spec.suspend
-    ? "The version checks run when the cluster resumes."
-    : cluster.status?.management?.version
-      ? undefined
-      : "The version checks run when the cluster reports its version.";
+  const note = versionCheckWait(cluster);
   const options = releases
     .filter((r) => {
       const name = r.metadata?.name ?? "";
@@ -59,21 +59,21 @@ export function releaseChoices(input: {
         environment,
         backups,
       );
-      const checked = note === undefined;
+      // The select lists only allowed releases and the current one, and the
+      // backup warning of the Claim tab covers a backup.
+      const status = moveStatus(
+        { ...move, allowed: true, backup: undefined },
+        cluster,
+      );
       return {
         name,
         version: r.spec.version,
         isDefault: environment?.spec.releases?.default === name,
         isCurrent: name === current,
-        ...(checked &&
-          move.skippedMinor && {
-            disabled: `Skips ${move.skippedMinor}. Move to an ${move.skippedMinor} release first.`,
-          }),
-        ...(checked &&
-          move.downgrade &&
-          move.current && {
-            downgrade: { from: move.current, to: move.target },
-          }),
+        ...(status.kind === "skipsMinor" && { disabled: status.text }),
+        ...(status.kind === "downgrade" && {
+          downgrade: { from: status.from, to: status.to },
+        }),
       };
     });
   options.sort(
@@ -81,6 +81,56 @@ export function releaseChoices(input: {
       compareVersions(b.version, a.version) || a.name.localeCompare(b.name),
   );
   return { options, ...(note && { note }) };
+}
+
+/**
+ * createReleaseChoices returns the releases that a new cluster can use: those
+ * that environment allows, every release without an Environment, newest
+ * first. The default release of environment is marked. No option is
+ * current, disabled, or a downgrade, because a new cluster runs no version.
+ */
+export function createReleaseChoices(
+  releases: readonly Resource<"CamundaRelease">[],
+  environment: Environment | undefined,
+): ReleaseOption[] {
+  return releases
+    .filter((r) => releaseAllowed(r.metadata?.name ?? "", environment))
+    .map((r) => {
+      const name = r.metadata?.name ?? "";
+      return {
+        name,
+        version: r.spec.version,
+        isDefault: environment?.spec.releases?.default === name,
+        isCurrent: false,
+      };
+    })
+    .sort(
+      (a, b) =>
+        compareVersions(b.version, a.version) || a.name.localeCompare(b.name),
+    );
+}
+
+/**
+ * releaseLabel returns the text of a release option: its version and name,
+ * then the reason when it is disabled, else its marks Default and
+ * downgrade.
+ */
+export function releaseLabel(
+  release: {
+    name: string;
+    version: string;
+    disabled?: string;
+    downgrade?: { from: string; to: string };
+  },
+  isDefault: boolean,
+): string {
+  const label = `${release.version} (${release.name})`;
+  if (release.disabled) return `${label}: ${release.disabled}`;
+  const marks = [
+    isDefault && "Default",
+    release.downgrade && "downgrade",
+  ].filter(Boolean);
+  return marks.length > 0 ? `${label}, ${marks.join(", ")}` : label;
 }
 
 // A version that parseVersion cannot read is lower than every other.

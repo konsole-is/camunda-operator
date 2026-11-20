@@ -101,6 +101,8 @@ spec:
 
 `CamundaPlatformConfig` is cluster-scoped. It has no namespace.
 
+You can change this platform configuration later in the [fleet manager](fleet-manager/platform-and-connections.md). `kubectl apply` set its fields, so the review of a save names each field that the save changes or removes, and asks to take it over. [Fields that another tool set](fleet-manager/settings.md#fields-that-another-tool-set) says what a take-over does.
+
 ## 6. Create the Camunda cluster
 
 ```yaml

@@ -9,8 +9,15 @@ import {
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
   MANAGEMENT_CLUSTER_ANNOTATION,
+  MANAGEMENT_CLUSTER_LABEL,
+  MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
   OPTIMIZE_COMPONENTS,
   OPTIMIZE_UID_LABEL,
+  PLANE_COMPONENTS,
+  PLUGIN_CLUSTER_LABEL,
+  REGISTRATION_LABEL,
+  REQUEST_LABEL,
+  REQUEST_NAMESPACE_LABEL,
   REVISION_ANNOTATION,
   SECTION_LABEL,
   isDNSLabel,
@@ -102,6 +109,28 @@ it.each([
     "pkg/labels/labels.go",
     "ManagementClusterKey",
   ],
+  [
+    REGISTRATION_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelRegistration",
+  ],
+  [REQUEST_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelRequest"],
+  [
+    REQUEST_NAMESPACE_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelRequestNamespace",
+  ],
+  [
+    PLUGIN_CLUSTER_LABEL,
+    "api/plugins/v1alpha1/shared_types.go",
+    "LabelCluster",
+  ],
+  [MANAGEMENT_CLUSTER_LABEL, "pkg/labels/labels.go", "ManagementClusterKey"],
+  [
+    MANAGEMENT_CLUSTER_NAMESPACE_LABEL,
+    "pkg/labels/labels.go",
+    "ManagementClusterNamespaceKey",
+  ],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
 });
@@ -112,6 +141,17 @@ it("OPTIMIZE_COMPONENTS match ComponentWebapp and ComponentImporter of pkg/compo
     goConstant(names, "ComponentWebapp"),
     goConstant(names, "ComponentImporter"),
   ]);
+});
+
+it("PLANE_COMPONENTS match the component constants of pkg/components/camundamanagementcluster", () => {
+  const names = "pkg/components/camundamanagementcluster/names.go";
+  expect(PLANE_COMPONENTS).toEqual({
+    keycloak: goConstant(names, "ComponentKeycloak"),
+    identity: goConstant(names, "ComponentIdentity"),
+    console: goConstant(names, "ComponentConsole"),
+    webModelerRestapi: goConstant(names, "ComponentWebModelerRestapi"),
+    webModelerWebsockets: goConstant(names, "ComponentWebModelerWebsockets"),
+  });
 });
 
 describe("isManaged", () => {

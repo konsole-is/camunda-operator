@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
-import type { ReadError } from "@/components/planes/planes-table";
+import type { ReadError } from "@/lib/k8s/unread";
 import type { WriteMode, WriteResult } from "@/lib/write/types";
 import {
   EnvironmentEditor,
@@ -39,7 +39,7 @@ function setup(
   opts: {
     name?: string;
     mode?: WriteMode;
-    sources?: EnvironmentSources & { namespacesStale?: boolean };
+    sources?: EnvironmentSources & { stale?: string[] };
     result?: WriteResult;
     errors?: ReadError[];
   } = {},
@@ -168,16 +168,84 @@ describe("EnvironmentEditor", () => {
     });
   });
 
-  it("saves an edit with the resourceVersion that the form read and force", async () => {
+  it("saves an edit with the resourceVersion that the form read and no force", async () => {
     const { actions } = setup();
     await saveDisplayName("Prod");
     await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
-    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+    const saved = actions.applyChange.mock.calls[0][0];
+    expect(saved).toMatchObject({
       intent: "Change the environment production",
       preconditions: { "Environment//production": "12" },
-      force: true,
       apply: [{ spec: { displayName: "Prod" } }],
     });
+    expect(saved.force).toBeUndefined();
+  });
+
+  it("a save that changes a field of kubectl shows the field and asks", async () => {
+    const { actions } = setup();
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      name: "production",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.displayName",
+            steps: [{ field: "spec" }, { field: "displayName" }],
+            managers: [
+              {
+                name: "kubectl-client-side-apply",
+                operation: "Update",
+                kind: "other" as const,
+                known: true,
+              },
+            ],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    actions.previewChange.mockImplementation(async (change) =>
+      change.takeOver
+        ? { objects: [], errors: [], ownership }
+        : {
+            objects: [],
+            errors: [
+              {
+                code: "Conflict",
+                message: 'conflict with "kubectl-client-side-apply"',
+                path: "spec.displayName",
+                ref,
+              },
+            ],
+            ownership,
+          },
+    );
+    fireEvent.change(displayName(), { target: { value: "Prod" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const choice = await screen.findByRole("checkbox", {
+      name: "Take over these fields",
+    });
+    expect(
+      screen.getByRole("group", { name: "Fields that another tool set" })
+        .textContent,
+    ).toContain(
+      "spec.displayName: kubectl-client-side-apply set it. The save changes it.",
+    );
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.click(choice);
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    expect(actions.applyChange.mock.calls[0][0]).toMatchObject({
+      takeOver: { "Environment//production": ["spec.displayName"] },
+    });
+    expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
   });
 
   it("counts the changed fields and blocks Review with the first error", () => {
@@ -563,7 +631,7 @@ describe("EnvironmentEditor", () => {
   it("offers no Delete while the namespace list is not fresh", () => {
     const sources = environmentFixtures();
     sources.namespaces = [];
-    setup({ sources: { ...sources, namespacesStale: true } });
+    setup({ sources: { ...sources, stale: ["Namespace"] } });
     expect(
       screen.getByText(
         "Delete is possible when the fleet manager can read the namespaces.",
@@ -579,7 +647,7 @@ describe("EnvironmentEditor", () => {
       errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
     });
     const unread =
-      "The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.";
+      "The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.";
     fireEvent.change(displayName(), { target: { value: "Prod" } });
     const note = screen.getByRole("note", { name: "Impact" });
     expect(note.textContent).toContain(unread);

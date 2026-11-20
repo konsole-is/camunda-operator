@@ -8,6 +8,7 @@ import {
   type ValidationError,
   validate,
 } from "@/lib/schema";
+import { useErrorsReport } from "./errors-report";
 
 /**
  * YamlEditor edits a value as YAML text. It is for fields without a
@@ -19,6 +20,7 @@ import {
  * change, not at mount. error is an error of the parent, such as a missing
  * value, and shows while the text has no error of its own. describedBy is
  * the id of an element outside the editor that also describes the field.
+ * onErrors gets the errors of the text, also at mount.
  */
 export function YamlEditor({
   label,
@@ -28,6 +30,7 @@ export function YamlEditor({
   error,
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   defaultValue?: unknown;
@@ -36,12 +39,14 @@ export function YamlEditor({
   error?: string;
   describedBy?: string;
   onChange?: (value: unknown, errors: ValidationError[]) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(() =>
     defaultValue === undefined ? "" : stringify(defaultValue),
   );
   const [value, errors] = check(text, schema);
+  useErrorsReport(errors, onErrors);
   const report = JSON.stringify([value === undefined, value ?? null, errors]);
   const reported = useRef(report);
   useEffect(() => {

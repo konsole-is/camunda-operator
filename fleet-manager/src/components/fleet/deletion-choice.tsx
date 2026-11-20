@@ -12,6 +12,13 @@ export const DELETION_LABELS: Readonly<Record<DeletionPolicy, string>> = {
   Delete: "Delete the resources",
 };
 
+/**
+ * KEEP_REFUSED says why a claim that keeps its resources cannot keep them:
+ * an option that it selects always deletes what it made.
+ */
+export const KEEP_REFUSED =
+  "The claim keeps its resources, but an option below cannot keep them. Choose Delete, or remove that option.";
+
 /** deletionQuestion is the question that a deletion policy answers. */
 export function deletionQuestion(
   subject: "cluster" | "management plane",
@@ -24,27 +31,32 @@ export function deletionQuestion(
  * resources" or "Delete the resources", with "Default" on the default of
  * choice and choice.policy checked. Keep is disabled while
  * choice.keepAllowed is false, with the options that always delete what
- * they made. When the default keeps and Keep is disabled, a line says why
- * Delete is chosen. Each item of choice.alwaysDeleted shows with "Always
- * deleted".
+ * they made, else the options whose registration does not exist. When the
+ * default keeps and Keep is disabled, a line says why Delete is chosen.
+ * Each item of choice.alwaysDeleted shows with "Always deleted", and each
+ * item of choice.missing with "Registration does not exist".
  */
 export function DeletionChoiceField({
   subject,
   choice,
   onChange,
+  disabled = false,
 }: {
   subject: "cluster" | "management plane";
   choice: DeletionChoice;
   onChange: (policy: DeletionPolicy) => void;
+  disabled?: boolean;
 }) {
   const id = useId();
+  const missing = choice.missing ?? [];
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="mb-1 font-heading text-base font-semibold text-text">
         {deletionQuestion(subject)}
       </legend>
       <p className="-mt-1 text-sm text-muted">
-        This applies to the resources of the storage and access options.
+        This applies to the resources of the{" "}
+        {subject === "cluster" ? "storage" : "database"} and access options.
       </p>
       <div className="grid gap-3 md:grid-cols-2 @5xl:grid-cols-3">
         <PolicyCard
@@ -56,8 +68,11 @@ export function DeletionChoiceField({
           disabledReason={
             choice.keepAllowed
               ? undefined
-              : "Some options always delete what they made."
+              : choice.alwaysDeleted.length === 0 && missing.length > 0
+                ? "Some options have a registration that does not exist."
+                : "Some options always delete what they made."
           }
+          disabled={disabled}
           onPick={() => onChange("Orphan")}
         />
         <PolicyCard
@@ -66,6 +81,7 @@ export function DeletionChoiceField({
           description={`They are deleted with the ${subject}.`}
           checked={choice.policy === "Delete"}
           isDefault={choice.defaultPolicy === "Delete"}
+          disabled={disabled}
           onPick={() => onChange("Delete")}
         />
       </div>
@@ -75,15 +91,24 @@ export function DeletionChoiceField({
           them.
         </p>
       )}
-      {choice.alwaysDeleted.length > 0 && (
+      {(choice.alwaysDeleted.length > 0 || missing.length > 0) && (
         <ul className="flex flex-col gap-1.5">
-          {choice.alwaysDeleted.map((item) => (
+          {[
+            ...choice.alwaysDeleted.map((item) => ({
+              ...item,
+              badge: "Always deleted",
+            })),
+            ...missing.map((item) => ({
+              ...item,
+              badge: "Registration does not exist",
+            })),
+          ].map((item) => (
             <li
-              key={`${item.section}/${item.label}`}
+              key={`${item.section}/${item.label}/${item.badge}`}
               className="flex flex-wrap items-center gap-2 text-sm text-text-2"
             >
               {item.label}
-              <Badge variant="outline">Always deleted</Badge>
+              <Badge variant="outline">{item.badge}</Badge>
             </li>
           ))}
         </ul>
@@ -101,6 +126,7 @@ function PolicyCard({
   checked,
   isDefault,
   disabledReason,
+  disabled,
   onPick,
 }: {
   name: string;
@@ -109,20 +135,22 @@ function PolicyCard({
   checked: boolean;
   isDefault: boolean;
   disabledReason?: string;
+  disabled: boolean;
   onPick: () => void;
 }) {
+  const off = disabled || !!disabledReason;
   return (
     <label
       className={cn(
         "flex min-w-0 gap-3 rounded-md border bg-panel p-3",
         checked ? "border-accent" : "border-border",
-        disabledReason ? "cursor-not-allowed" : "cursor-pointer",
+        off ? "cursor-not-allowed" : "cursor-pointer",
       )}
     >
       <Radio
         name={name}
         checked={checked}
-        disabled={!!disabledReason}
+        disabled={off}
         onChange={onPick}
         className="mt-1"
       />

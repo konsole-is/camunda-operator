@@ -3,7 +3,9 @@ import { fakeWriter } from "../../../../../../test/fakes/writer";
 import {
   applyBackupChange,
   applyClaimChange,
+  applyClaimDelete,
   previewClaimChange,
+  previewClaimDelete,
 } from "./actions";
 
 vi.mock(
@@ -57,6 +59,89 @@ describe("previewClaimChange", () => {
   it("previewClaimChange refuses a change of another kind and previews nothing", async () => {
     const result = await previewClaimChange(change("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+const remove = (kind = "CamundaClusterClaim") => ({
+  intent: "Delete the cluster orders",
+  apply: [],
+  delete: [
+    {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind,
+      namespace: "team-a",
+      name: "orders",
+    },
+  ],
+  uids: { [`${kind}/team-a/orders` as const]: "uid-1" },
+  generations: { [`${kind}/team-a/orders` as const]: 3 },
+});
+const liveClaim = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  metadata: {
+    name: "orders",
+    namespace: "team-a",
+    uid: "uid-1",
+    generation: 3,
+    resourceVersion: "45",
+  },
+};
+
+describe("applyClaimDelete", () => {
+  it("applyClaimDelete deletes the claim through the writer at the resourceVersion that it reads", async () => {
+    fakeWriter.objects = [liveClaim];
+    expect(await applyClaimDelete(remove())).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([
+      {
+        ...remove(),
+        preconditions: { "CamundaClusterClaim/team-a/orders": "45" },
+      },
+    ]);
+  });
+
+  it("applyClaimDelete refuses a delete of another kind and writes nothing", async () => {
+    const result = await applyClaimDelete(remove("Environment"));
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("previewClaimDelete", () => {
+  it("previewClaimDelete previews the delete through the writer", async () => {
+    fakeWriter.objects = [liveClaim];
+    expect(await previewClaimDelete(remove())).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fakeWriter.previewed).toEqual([remove()]);
+  });
+
+  it("previewClaimDelete refuses a delete of another kind and previews nothing", async () => {
+    const result = await previewClaimDelete(remove("Environment"));
+    expect(result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+describe("the cluster actions refuse a plane claim", () => {
+  it("each cluster claim action refuses a plane claim as Invalid and writes nothing", async () => {
+    const plane = "CamundaManagementClusterClaim";
+    const changed = await applyClaimChange(change(plane));
+    expect(!changed.ok && changed.errors[0].code).toBe("Invalid");
+    expect((await previewClaimChange(change(plane))).errors[0].code).toBe(
+      "Invalid",
+    );
+    const removed = await applyClaimDelete(remove(plane));
+    expect(!removed.ok && removed.errors[0].code).toBe("Invalid");
+    expect((await previewClaimDelete(remove(plane))).errors[0].code).toBe(
+      "Invalid",
+    );
+    expect(fakeWriter.applied).toEqual([]);
     expect(fakeWriter.previewed).toEqual([]);
   });
 });

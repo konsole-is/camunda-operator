@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ClusterField, parameterFields } from "@/lib/fields";
+import { type ClusterField, parameterFields, pathFrom } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
@@ -187,6 +187,15 @@ describe("SelectionSettingsEditor", () => {
       replicasSteps,
       "overrides.replicas: Enter 1 or more",
     ]);
+  });
+
+  it("shows an error at one part of a whole parameter at that part only", () => {
+    const path = pathFrom("", [...overridesSteps, { field: "replicas" }]);
+    renderEditor({ errors: [{ path, message: "too few replicas" }] });
+    expect(screen.getAllByText("too few replicas")).toHaveLength(1);
+    expect(
+      within(settingRow("overrides.replicas")).getByText("too few replicas"),
+    ).toBeDefined();
   });
 
   it("checks a YAML part against its registration schema", async () => {

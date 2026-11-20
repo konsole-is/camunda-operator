@@ -1,0 +1,235 @@
+import type { ConditionRow } from "@/components/fleet/conditions-table";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginSection } from "@/generated/crds/pluginsection";
+import { SLOT_FIELDS, type SlotField } from "@/lib/fields/slots";
+import { type SourceReads, unreadKinds } from "@/lib/k8s/unread";
+import { environmentOf } from "@/lib/policy/environment";
+import { byCodeUnit } from "@/lib/policy/json";
+import { conditionOf, conditionTrue } from "@/lib/policy/options";
+import type { RegistrationSources } from "./sources";
+
+/** SectionHeader is what the group of one section says about it. */
+export type SectionHeader = {
+  name: string;
+  label: string;
+  selection: "One" | "Many";
+  emptyOptionLabel?: string;
+  fields: readonly SlotField[];
+};
+
+/** RegistrationRow is one registration in the group of one section. */
+export type RegistrationRow = {
+  name: string;
+  label: string;
+  controller?: { name: string; version?: string };
+  mode: "Default" | "Optional";
+  accepted?: ConditionRow;
+  ready?: ConditionRow;
+  /**
+   * healthUnknown is true while PluginRegistration is not read. accepted,
+   * ready, and healthySince are then unset.
+   */
+  healthUnknown?: boolean;
+  /** healthySince is lastTransitionTime of Ready while Ready is True. */
+  healthySince?: string;
+  /**
+   * requests is unset while PluginRequest is not read, and byEnvironment
+   * while Namespace or Environment is not read.
+   */
+  requests?: {
+    total: number;
+    byEnvironment?: { environment: string; count: number }[];
+  };
+  operatorVersions?: string;
+  orphan: boolean;
+};
+
+/**
+ * section is undefined for the group of the registrations without an
+ * existing section. unread is true while a list that the group needs is not
+ * read: PluginRegistration for the group of a section, so that its rows can
+ * be missing, and PluginSection for the group without a section, so that
+ * its sections can exist.
+ */
+export type RegistrationGroup = {
+  section?: SectionHeader;
+  rows: RegistrationRow[];
+  unread?: boolean;
+};
+
+/** NO_ENVIRONMENT names the requests whose namespace belongs to no Environment. */
+export const NO_ENVIRONMENT = "No environment";
+
+/**
+ * sectionFields returns the fields that the slot of section fills, for each
+ * claim kind that the section applies to. A section without a slot fills
+ * none.
+ */
+export function sectionFields(section: PluginSection): SlotField[] {
+  const { slot, appliesTo } = section.spec;
+  if (!slot) return [];
+  return SLOT_FIELDS.filter(
+    (f) => f.slot === slot && appliesTo.includes(f.claimKind),
+  );
+}
+
+/**
+ * fillsText says which field of which kind field fills, and that a
+ * management plane claim fills it.
+ */
+export function fillsText(field: SlotField): string {
+  const plane =
+    field.claimKind === "CamundaManagementClusterClaim"
+      ? " for a management plane"
+      : "";
+  return `Fills ${field.kind} ${field.path}${plane}`;
+}
+
+/**
+ * registrationRow returns the row of registration. The requests count by
+ * the Environment of their namespace, named by its display name, else its
+ * name, and "No environment" for a namespace without one or not in sources,
+ * in the order of the names. Two of these names that are the same get the
+ * name of the Environment in brackets.
+ */
+export function registrationRow(
+  registration: PluginRegistration,
+  sources: RegistrationSources & SourceReads,
+): RegistrationRow {
+  const { spec } = registration;
+  const unread = unreadKinds(sources);
+  const healthUnknown = unread.includes("PluginRegistration");
+  const accepted = healthUnknown
+    ? undefined
+    : conditionOf(registration, "Accepted");
+  const ready = healthUnknown ? undefined : conditionOf(registration, "Ready");
+  return {
+    name: registration.metadata.name ?? "",
+    label: spec.label,
+    ...(spec.controller && { controller: spec.controller }),
+    mode: spec.mode,
+    ...(healthUnknown && { healthUnknown }),
+    ...(accepted && { accepted }),
+    ...(ready && { ready }),
+    ...(ready?.status === "True" && {
+      healthySince: String(ready.lastTransitionTime),
+    }),
+    ...(!unread.includes("PluginRequest") && {
+      requests: requestCounts(registration, sources, unread),
+    }),
+    ...(spec.operatorVersions && { operatorVersions: spec.operatorVersions }),
+    orphan: spec.deletionPolicies.includes("Orphan"),
+  };
+}
+
+/**
+ * registrationGroups returns one group for each section, by spec.order and
+ * then by name, also for a section without a registration. A registration
+ * is a row of each of its sections that exists. The registrations with no
+ * existing section are the rows of a last group without a section, which
+ * exists only when it has a row. Rows sort by label, then by name.
+ */
+export function registrationGroups(
+  sources: RegistrationSources & SourceReads,
+): RegistrationGroup[] {
+  const unread = unreadKinds(sources);
+  const sections = [...sources.sections].sort(
+    (a, b) =>
+      (a.spec.order ?? 0) - (b.spec.order ?? 0) ||
+      byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""),
+  );
+  const names = new Set(sections.map((s) => s.metadata.name));
+  const rowsOf = (registrations: PluginRegistration[]) =>
+    registrations
+      .map((r) => registrationRow(r, sources))
+      .sort(
+        (a, b) => byCodeUnit(a.label, b.label) || byCodeUnit(a.name, b.name),
+      );
+  const groups: RegistrationGroup[] = sections.map((section) => ({
+    section: {
+      name: section.metadata.name ?? "",
+      label: section.spec.label,
+      selection: section.spec.selection,
+      ...(section.spec.emptyOptionLabel && {
+        emptyOptionLabel: section.spec.emptyOptionLabel,
+      }),
+      fields: sectionFields(section),
+    },
+    ...(unread.includes("PluginRegistration") && { unread: true }),
+    rows: rowsOf(
+      sources.registrations.filter((r) =>
+        r.spec.sections.includes(section.metadata.name ?? ""),
+      ),
+    ),
+  }));
+  const lost = sources.registrations.filter(
+    (r) => !r.spec.sections.some((s) => names.has(s)),
+  );
+  if (lost.length === 0) return groups;
+  return [
+    ...groups,
+    {
+      rows: rowsOf(lost),
+      ...(unread.includes("PluginSection") && { unread: true }),
+    },
+  ];
+}
+
+/**
+ * registrationSummary counts each registration once: healthy while its
+ * Accepted and Ready conditions are both True, else not healthy.
+ */
+export function registrationSummary(
+  registrations: readonly PluginRegistration[],
+): { healthy: number; notHealthy: number } {
+  const healthy = registrations.filter(
+    (r) => conditionTrue(r, "Accepted") && conditionTrue(r, "Ready"),
+  ).length;
+  return { healthy, notHealthy: registrations.length - healthy };
+}
+
+function requestCounts(
+  registration: PluginRegistration,
+  sources: RegistrationSources,
+  unread: readonly string[],
+): NonNullable<RegistrationRow["requests"]> {
+  const requests = sources.requests.filter(
+    (r) => r.spec.registration === registration.metadata.name,
+  );
+  if (unread.includes("Namespace") || unread.includes("Environment"))
+    return { total: requests.length };
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const request of requests) {
+    const environment = environmentOfNamespace(
+      request.metadata.namespace ?? "",
+      sources,
+    );
+    const key = environment?.metadata.name ?? "";
+    const label = environment
+      ? environment.spec.displayName || key
+      : NO_ENVIRONMENT;
+    counts.set(key, { label, count: (counts.get(key)?.count ?? 0) + 1 });
+  }
+  const entries = [...counts];
+  const shared = (label: string) =>
+    entries.filter(([, e]) => e.label === label).length > 1;
+  return {
+    total: requests.length,
+    byEnvironment: entries
+      .map(([key, { label, count }]) => ({
+        environment: key && shared(label) ? `${label} (${key})` : label,
+        count,
+      }))
+      .sort((a, b) => byCodeUnit(a.environment, b.environment)),
+  };
+}
+
+function environmentOfNamespace(
+  namespace: string,
+  sources: RegistrationSources,
+): Environment | undefined {
+  const object = sources.namespaces.find((n) => n.metadata?.name === namespace);
+  if (!object) return undefined;
+  return environmentOf(object, sources.environments).environment;
+}

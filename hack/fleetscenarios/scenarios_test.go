@@ -68,3 +68,24 @@ func TestTheOneBrokerScenarioHoldsOneReadyBroker(t *testing.T) {
 	assert.Contains(t, zeebe["message"], "1/5 ready")
 	assert.Equal(t, "False", condition(t, cluster, "Ready")["status"])
 }
+
+func TestThePlaneScenarioStartsOptimizeOnAClusterThatHoldsItsBackend(t *testing.T) {
+	objs := readOutput(t, "plane-ready", "serves-a-cluster.yaml")
+
+	for _, obj := range objs {
+		if !isEvent(&obj) {
+			continue
+		}
+		kind, _, _ := unstructured.NestedString(obj.Object, "regarding", "kind")
+		if kind != "CamundaOptimize" {
+			continue
+		}
+		reason, _, _ := unstructured.NestedString(obj.Object, "reason")
+		assert.NotContains(
+			t,
+			[]string{"StorageClaimAwaited", "StorageClaimHeld", "ClusterResumed", "UpdatedDeployment"},
+			reason,
+			"the cluster held its backend before the Optimize existed, so the Optimize never waited for it",
+		)
+	}
+}

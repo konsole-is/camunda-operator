@@ -2,12 +2,15 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
- * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is
- * one button with triggerLabel. Open, it lists what goes and what stays,
- * with the confirm and Cancel. Cancel closes it and puts the focus back on
- * the trigger.
+ * InlineConfirm asks for a confirm in place, not in a dialog. Closed, it is one
+ * button with triggerLabel. Open, it lists what goes and what stays, then
+ * children, with the confirm and Cancel. An empty list does not show. The
+ * trigger opens it and calls onOpen. The confirm is off while confirmDisabled.
+ * Cancel closes it, calls onCancel, and puts the focus back on the trigger.
+ * danger, true by default, marks the confirm as destructive.
  */
 export function InlineConfirm({
   triggerLabel,
@@ -15,14 +18,24 @@ export function InlineConfirm({
   goes,
   stays = [],
   defaultOpen = false,
+  danger = true,
+  confirmDisabled = false,
+  children,
   onConfirm,
+  onCancel,
+  onOpen,
 }: {
   triggerLabel: string;
   confirmLabel: string;
   goes: ReactNode[];
   stays?: ReactNode[];
   defaultOpen?: boolean;
+  danger?: boolean;
+  confirmDisabled?: boolean;
+  children?: ReactNode;
   onConfirm?: () => void;
+  onCancel?: () => void;
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -36,7 +49,14 @@ export function InlineConfirm({
 
   if (!open) {
     return (
-      <Button ref={trigger} variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        ref={trigger}
+        variant="outline"
+        onClick={() => {
+          setOpen(true);
+          onOpen?.();
+        }}
+      >
         {triggerLabel}
       </Button>
     );
@@ -45,12 +65,20 @@ export function InlineConfirm({
     <div
       role="group"
       aria-label={triggerLabel}
-      className="flex max-w-xl flex-col gap-3 rounded-md border border-bad/40 bg-bad/5 p-3 text-sm"
+      className={cn(
+        "flex max-w-xl flex-col gap-3 rounded-md border p-3 text-sm",
+        danger ? "border-bad/40 bg-bad/5" : "border-border bg-panel",
+      )}
     >
-      <List title="What goes" items={goes} />
+      {goes.length > 0 && <List title="What goes" items={goes} />}
       {stays.length > 0 && <List title="What stays" items={stays} />}
+      {children}
       <div className="flex flex-wrap gap-2">
-        <Button variant="destructive" onClick={() => onConfirm?.()}>
+        <Button
+          variant={danger ? "destructive" : "default"}
+          disabled={confirmDisabled}
+          onClick={() => onConfirm?.()}
+        >
           {confirmLabel}
         </Button>
         <Button
@@ -59,6 +87,7 @@ export function InlineConfirm({
           onClick={() => {
             setReturnFocus(true);
             setOpen(false);
+            onCancel?.();
           }}
         >
           Cancel

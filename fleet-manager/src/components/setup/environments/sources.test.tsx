@@ -14,14 +14,16 @@ vi.mock("@/lib/k8s/hooks", () => ({
 }));
 
 describe("useEnvironmentSources", () => {
-  it("marks the namespaces stale until their watch has a fresh snapshot", () => {
+  it("marks a list stale until its watch has a fresh snapshot", () => {
     watch.fresh = [];
     const { result, rerender } = renderHook(() =>
       useEnvironmentSources(environmentFixtures()),
     );
-    expect(result.current.namespacesStale).toBe(true);
+    expect(result.current.stale).toContain("Namespace");
+    expect(result.current.stale).toContain("CamundaClusterClaim");
     watch.fresh = ["Namespace"];
     rerender();
-    expect(result.current.namespacesStale).toBe(false);
+    expect(result.current.stale).not.toContain("Namespace");
+    expect(result.current.stale).toContain("CamundaClusterClaim");
   });
 });

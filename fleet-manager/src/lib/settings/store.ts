@@ -2,7 +2,8 @@ import "server-only";
 import { getJSON, kubeConfig, unlessNotFound } from "@/lib/k8s/client";
 import { objectPath } from "@/lib/k8s/kinds";
 import { inOrder } from "@/lib/serial";
-import { messageOf, staleError } from "@/lib/write/errors";
+import { messageOf } from "@/lib/text";
+import { staleError } from "@/lib/write/errors";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
 import {
   WRITE_TIMEOUT_MS,

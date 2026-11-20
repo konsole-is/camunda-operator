@@ -15,7 +15,12 @@ import type {
   PartitionHealth,
   Unavailable,
 } from "@/lib/observe/types";
-import { type CardId, type ComponentCardModel, componentReady } from "./cards";
+import {
+  type ComponentCardModel,
+  type ProcessCardId,
+  componentReady,
+  isSectionId,
+} from "./cards";
 import { ComponentDetail } from "./component-detail";
 import { PartitionTable } from "./partition-table";
 
@@ -37,7 +42,7 @@ export function ClusterComponentDetail({
   settings,
   now,
 }: {
-  id: CardId;
+  id: ProcessCardId;
   cards: readonly ComponentCardModel[];
   cluster: Resource<"CamundaCluster">;
   namespace: string;
@@ -55,8 +60,9 @@ export function ClusterComponentDetail({
   const title =
     own?.label ?? host?.embedded.find((e) => e.process === id)?.label ?? id;
 
+  const hostId = host && !isSectionId(host.id) ? host.id : undefined;
   const component: MetricsComponent =
-    id === "optimize" ? "optimize" : (host?.id ?? id);
+    id === "optimize" ? "optimize" : (hostId ?? id);
   const selector = componentPodSelector(
     podSelector,
     component,

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -148,4 +148,25 @@ export const Optimize: Story = {
       importer: { replicas: 1 },
     },
   }),
+};
+
+export const Collapsed: Story = {
+  name: "Collapsed",
+  args: {
+    ...BrokersFromThePreset.args,
+    collapsed: true,
+  },
+  play: async ({ canvasElement }) => {
+    const row = within(
+      within(canvasElement).getByRole("heading", { level: 3, name: "Brokers" }),
+    ).getByRole("button");
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await expect(row).toHaveAccessibleName("Brokers 1 changed in the claim");
+    await userEvent.click(row);
+    await expect(
+      within(canvasElement).getByText(
+        /^\d+ settings: .*1 changed in the claim$/,
+      ),
+    ).toBeVisible();
+  },
 };

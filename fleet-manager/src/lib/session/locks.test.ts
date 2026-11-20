@@ -4,15 +4,22 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import type { ResolvedPolicy } from "@/lib/policy";
-import { clusterFields } from "@/lib/fields";
+import {
+  clusterFields,
+  IDENTITY_INITIAL_CLAIM_ANNOTATION,
+  planeFields,
+} from "@/lib/fields";
 import { LOCK_FIELDS } from "@/lib/fields/locks";
 import { SLOT_FIELDS } from "@/lib/fields/slots";
-import { clusterLocks } from "./locks";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { clusterLocks, filledClaimSteps, planeLocks } from "./locks";
+import { openSession, setValue } from "./session";
 
 const SELECTION =
   "spec.plugins[section=volume-encryption,registration=aws-ebs-kms]";
 
-function locks() {
+function fields() {
   const spec = {
     version: "8.9.4",
     serviceAccount: { name: "orders" },
@@ -62,17 +69,17 @@ function locks() {
       },
     },
   } as unknown as ResolvedPolicy;
-  return clusterLocks(
-    clusterFields({
-      cluster,
-      merged: mergeCluster(undefined, undefined, spec as CamundaClusterSpec),
-      claim,
-      policy,
-      sections: [section],
-      registrations: [],
-    }),
-  );
+  return clusterFields({
+    cluster,
+    merged: mergeCluster(undefined, undefined, spec as CamundaClusterSpec),
+    claim,
+    policy,
+    sections: [section],
+    registrations: [],
+  });
 }
+
+const locks = () => clusterLocks(fields());
 
 describe("clusterLocks", () => {
   it("locks spec.cluster.version by the release", () => {
@@ -123,5 +130,184 @@ describe("clusterLocks", () => {
     ];
     for (const row of names)
       for (const name of row) expect(name).toMatch(/^[A-Za-z][A-Za-z0-9]*$/);
+  });
+});
+
+describe("filledClaimSteps", () => {
+  it("gives the claim steps of each field that a section fills", () => {
+    expect(filledClaimSteps(fields())).toEqual([
+      ["spec", "cluster", "zeebe", "storageClassName"].map((field) => ({
+        field,
+      })),
+    ]);
+  });
+});
+
+describe("planeLocks", () => {
+  const oidcClaim = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name: "plane-a", namespace: "platform", resourceVersion: "7" },
+    spec: {
+      environments: ["platform"],
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          externalUrl: "https://management.example.com/identity",
+          admin: { claimName: "email", claimValue: "admin@example.com" },
+        },
+        webModeler: {
+          externalUrl: "https://management.example.com/modeler",
+          websocketsExternalUrl: "https://management.example.com/modeler-ws",
+          mail: {
+            fromAddress: "modeler@example.com",
+            smtpHost: "smtp.example.com",
+          },
+        },
+      },
+      versions: { identity: "8.9.14", webModeler: "8.9.15" },
+      plugins: [
+        {
+          section: "management-database",
+          registration: "existing-database-configs",
+          parameters: { identity: "identity-db", webModeler: "modeler-db" },
+        },
+      ],
+    },
+  } as unknown as Resource<"CamundaManagementClusterClaim">;
+  const managedPlane = {
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaManagementCluster",
+    metadata: {
+      name: "plane-a",
+      namespace: "platform",
+      labels: { [CLAIM_LABEL]: "plane-a" },
+      annotations: {
+        [IDENTITY_INITIAL_CLAIM_ANNOTATION]: "email=admin@example.com",
+      },
+    },
+    spec: {},
+  } as unknown as Resource<"CamundaManagementCluster">;
+  const registrations = [
+    {
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name: "existing-database-configs" },
+      spec: {
+        parameterValues: {},
+        parameters: {
+          type: "object",
+          properties: { keycloak: {}, identity: {}, webModeler: {} },
+        },
+      },
+    },
+  ] as unknown as PluginRegistration[];
+  const environment = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name: "platform" },
+    spec: {
+      platformConfigRef: "oidc-platform",
+      parameters: {
+        "existing-database-configs": { identity: { claimEditable: true } },
+      },
+    },
+  } as unknown as Environment;
+  const fields = planeFields({
+    claim: oidcClaim,
+    plane: managedPlane,
+    registrations,
+    environment,
+  });
+  const item = {
+    item: {
+      section: "management-database",
+      registration: "existing-database-configs",
+    },
+  };
+
+  it("returns the lock of each locked field at its claim path and nothing elsewhere", () => {
+    const locks = planeLocks(fields);
+    expect(locks("spec.management.identity.admin.claimName")).toEqual({
+      reason: "immutableAfterStart",
+    });
+    expect(locks("metadata.name")).toEqual({ reason: "atCreation" });
+    expect(
+      locks(
+        "spec.plugins[section=management-database,registration=existing-database-configs].registration",
+      ),
+    ).toEqual({ reason: "chosenAtCreation" });
+    expect(locks("spec.versions.identity")).toBeUndefined();
+    expect(locks("spec.platformConfigRef")).toBeUndefined();
+    expect(
+      locks(
+        "spec.plugins[section=management-database,registration=existing-database-configs]",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("a session refuses an edit of a locked field and keeps a claim-editable parameter open", () => {
+    const s = openSession({
+      claim: oidcClaim,
+      resource: managedPlane,
+      locks: planeLocks(fields),
+    })!;
+    expect(
+      setValue(
+        s,
+        [
+          { field: "spec" },
+          { field: "management" },
+          { field: "identity" },
+          { field: "admin" },
+          { field: "claimValue" },
+        ],
+        "other",
+      ),
+    ).toEqual({ refused: { reason: "immutableAfterStart" } });
+    expect(
+      setValue(
+        s,
+        [
+          { field: "spec" },
+          { field: "plugins" },
+          item,
+          { field: "registration" },
+        ],
+        "other",
+      ),
+    ).toEqual({ refused: { reason: "chosenAtCreation" } });
+    expect(
+      "session" in
+        setValue(
+          s,
+          [
+            { field: "spec" },
+            { field: "plugins" },
+            item,
+            { field: "parameters" },
+            { field: "identity" },
+          ],
+          "identity-db-2",
+        ),
+    ).toBe(true);
+    expect(
+      "session" in
+        setValue(
+          s,
+          [
+            { field: "spec" },
+            { field: "management" },
+            { field: "webModeler" },
+            { field: "mail" },
+            { field: "smtpHost" },
+          ],
+          "mail.example.com",
+        ),
+    ).toBe(true);
+    expect(
+      "session" in
+        setValue(s, [{ field: "spec" }, { field: "platformConfigRef" }], "x"),
+    ).toBe(true);
   });
 });
