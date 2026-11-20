@@ -134,10 +134,9 @@ export function presetUsers(
 }
 
 /**
- * findPresetUsers returns presetUsers over sources. It resolves the policy
- * of each selection of a claim once, so a caller that looks up many presets
- * in the same sources calls it once and then calls the result for each
- * preset.
+ * findPresetUsers returns presetUsers over sources. It resolves the claim
+ * policies when it is called, so a caller that looks up many presets in the
+ * same sources calls it once and then calls the result for each preset.
  */
 export function findPresetUsers(
   sources: PresetUsageSources,
@@ -161,7 +160,7 @@ export function findPresetUsers(
       const selects = claim.selections.some(
         (s, i) =>
           names(s.registration, s.parameters) ||
-          claim.requested[i].some((p) => names(s.registration, p)),
+          names(s.registration, claim.requested[i]),
       );
       if (byRef || selects) users.push(claim.user);
     }
@@ -177,7 +176,7 @@ type ClaimUse = {
   user: PresetUser;
   presetRef?: string;
   selections: { registration: string; parameters?: unknown }[];
-  requested: unknown[][];
+  requested: unknown[];
 };
 
 function claimUse(
@@ -193,7 +192,7 @@ function claimUse(
     selections,
     requested: selections.map((s) =>
       own(BUILTIN_OPTIONS, s.registration)?.lists.preset === undefined
-        ? []
+        ? undefined
         : requestedParameters(claim, s, sources),
     ),
   };

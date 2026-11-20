@@ -230,6 +230,7 @@ describe("presetUsers", () => {
         status: { resolvedPolicy },
       };
       expect(users("picked", [picked])).toEqual([plain]);
+      expect(users("recorded", [picked])).toEqual([]);
     });
 
     it("counts a claim whose environment gives the preset over the registration", () => {

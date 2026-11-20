@@ -582,15 +582,14 @@ function selectedContracts(
   );
   if (!selects) return [];
   return selections.flatMap((s) =>
-    requestedParameters(claim, s, sources).flatMap((parameters) =>
-      contractParameters(s.registration, parameters).map(
-        ([kind, name, parameter]) => ({
-          kind,
-          name,
-          field: `spec.plugins.${s.registration}.parameters.${parameter}`,
-        }),
-      ),
-    ),
+    contractParameters(
+      s.registration,
+      requestedParameters(claim, s, sources),
+    ).map(([kind, name, parameter]) => ({
+      kind,
+      name,
+      field: `spec.plugins.${s.registration}.parameters.${parameter}`,
+    })),
   );
 }
 

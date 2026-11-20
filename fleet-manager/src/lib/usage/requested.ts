@@ -29,23 +29,23 @@ export type RequestedSources = {
 };
 
 /**
- * requestedParameters returns each object of parameters that the request of
- * selection of claim can get. When the policy of the claim resolves for the
- * selection, it is the parameters of that request. When it does not, it is
- * the parameters of the selection and, when the policy resolves without
- * them, the parameters that the policy alone gives the request. So a value
- * that the recorded policy holds still counts while the claim is refused.
+ * requestedParameters returns the parameters that the request of selection
+ * of claim gets from the claim policy. When the parameters of the selection
+ * are not a JSON object, it is what the policy alone gives the request. When
+ * the policy does not resolve without them either, it is the parameters of
+ * the selection, which can be any JSON value.
  */
 export function requestedParameters(
   claim: Claim,
   selection: Selection,
   sources: RequestedSources,
-): unknown[] {
-  const resolved = resolvedParameters(claim, selection, sources);
-  if (resolved !== undefined) return [resolved];
+): unknown {
   const { parameters, ...withoutParameters } = selection;
-  const byPolicy = resolvedParameters(claim, withoutParameters, sources);
-  return byPolicy === undefined ? [parameters] : [parameters, byPolicy];
+  return (
+    resolvedParameters(claim, selection, sources) ??
+    resolvedParameters(claim, withoutParameters, sources) ??
+    parameters
+  );
 }
 
 // resolvedParameters gives the parameters of the request of selection, or
