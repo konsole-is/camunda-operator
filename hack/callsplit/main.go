@@ -191,10 +191,11 @@ func rewrite(fset *token.FileSet, src []byte, call *ast.CallExpr) []edit {
 	for lineStart > 0 && src[lineStart-1] != '\n' {
 		lineStart--
 	}
-	indent := ""
-	for i := lineStart; i < len(src) && (src[i] == '\t' || src[i] == ' '); i++ {
-		indent += string(src[i])
+	indentEnd := lineStart
+	for indentEnd < len(src) && (src[indentEnd] == '\t' || src[indentEnd] == ' ') {
+		indentEnd++
 	}
+	indent := string(src[lineStart:indentEnd])
 
 	edits := []edit{{offset: lparen + 1, text: "\n" + indent + "\t"}}
 

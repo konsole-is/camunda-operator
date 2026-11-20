@@ -160,7 +160,7 @@ func newOwner[T client.Object]() (T, error) {
 	}
 	// reflect.New of the element of a pointer type is that pointer type, so
 	// the assertion holds for every T that reaches this line.
-	owner, _ := reflect.New(kind.Elem()).Interface().(T)
+	owner, _ := reflect.TypeAssert[T](reflect.New(kind.Elem()))
 
 	return owner, nil
 }

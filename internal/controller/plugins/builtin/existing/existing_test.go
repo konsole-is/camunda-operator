@@ -208,9 +208,13 @@ func TestExistingWaitsForAMissingContract(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, string(component.GuardBlocked), cond.Reason)
 	assert.Equal(
-		t, []pluginsv1alpha1.SummaryItem{{
-			Label: adapter.KindObjectStorageConfig, Value: "my-bucket, waiting", Severity: pluginsv1alpha1.SeverityWarning,
-		}}, s.Report().Summary,
+		t, []pluginsv1alpha1.SummaryItem{
+			{
+				Label:    adapter.KindObjectStorageConfig,
+				Value:    "my-bucket, waiting",
+				Severity: pluginsv1alpha1.SeverityWarning,
+			},
+		}, s.Report().Summary,
 	)
 }
 
@@ -280,16 +284,26 @@ func TestExistingReadsOnlyTheExactParameterNames(t *testing.T) {
 		want                     []adapter.ContractRef
 	}{
 		{
-			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":"bucket-b"}`,
-			[]adapter.ContractRef{{
-				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "bucket-a",
-			}},
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":"bucket-a","NAME":"bucket-b"}`,
+			[]adapter.ContractRef{
+				{
+					Output: pluginstartup.OutputObjectStorageConfig,
+					Kind:   adapter.KindObjectStorageConfig,
+					Name:   "bucket-a",
+				},
+			},
 		},
 		{
-			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":3}`,
-			[]adapter.ContractRef{{
-				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "bucket-a",
-			}},
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":"bucket-a","NAME":3}`,
+			[]adapter.ContractRef{
+				{
+					Output: pluginstartup.OutputObjectStorageConfig,
+					Kind:   adapter.KindObjectStorageConfig,
+					Name:   "bucket-a",
+				},
+			},
 		},
 		{
 			pluginstartup.RegistrationExistingDatabaseConfigs, `{"KEYCLOAK":"kc","identity":"id"}`,

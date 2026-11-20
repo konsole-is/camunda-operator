@@ -152,7 +152,9 @@ func TestManagementDatabasesReportTheVersionOfAReadyServer(t *testing.T) {
 
 	assert.Equal(
 		t, pluginsv1alpha1.SummaryItem{
-			Label: adapter.KindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+			Label:    adapter.KindDatabaseServer,
+			Value:    "ops-db, PostgreSQL 17, Ready",
+			Severity: pluginsv1alpha1.SeverityInfo,
 		}, s.Report().Summary[0],
 	)
 }
@@ -171,7 +173,9 @@ func TestManagementDatabasesReportTheServer(t *testing.T) {
 		"Ready at the current generation": {
 			v1.DatabaseServerStatus{ObservedGeneration: 2, Version: "17", Conditions: ready(2)},
 			pluginsv1alpha1.SummaryItem{
-				Label: adapter.KindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+				Label:    adapter.KindDatabaseServer,
+				Value:    "ops-db, PostgreSQL 17, Ready",
+				Severity: pluginsv1alpha1.SeverityInfo,
 			},
 		},
 		"Ready from an older generation": {
@@ -275,7 +279,10 @@ func TestManagementDatabasesCleanupWaitsForEveryObjectThatTheRequestCanOwn(t *te
 			assert.NotNil(t, c.Backing)
 			assert.ElementsMatch(
 				t, []string{
-					"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
+					"DatabaseServer/ops-db",
+					"Database/ops-keycloak",
+					"Database/ops-identity",
+					"Database/ops-web-modeler",
 				}, objectNames(c.Remaining), "every Database, also one that is not listed now",
 			)
 		})

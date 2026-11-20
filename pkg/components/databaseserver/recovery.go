@@ -19,6 +19,7 @@ package databaseserver
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -138,8 +139,7 @@ func SelectArchive(
 	// Newest first: the intervals never overlap, and a record that a later
 	// recovery superseded is the answer only when nothing newer holds the
 	// point.
-	for i := len(history) - 1; i >= 0; i-- {
-		record := history[i]
+	for _, record := range slices.Backward(history) {
 		if target.Before(record.From.Time) {
 			continue
 		}

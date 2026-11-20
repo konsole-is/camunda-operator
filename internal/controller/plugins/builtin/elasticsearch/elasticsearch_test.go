@@ -107,9 +107,13 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 	)
 	assert.Equal(t, map[string]string{pluginstartup.OutputSecondaryStorageConfig: "orders-es"}, s.Report().Outputs)
 	assert.Equal(
-		t, []adapter.ContractRef{{
-			Output: pluginstartup.OutputSecondaryStorageConfig, Kind: adapter.KindSecondaryStorageConfig, Name: "orders-es",
-		}}, Handler{}.Contracts(request),
+		t, []adapter.ContractRef{
+			{
+				Output: pluginstartup.OutputSecondaryStorageConfig,
+				Kind:   adapter.KindSecondaryStorageConfig,
+				Name:   "orders-es",
+			},
+		}, Handler{}.Contracts(request),
 	)
 	refs := Handler{}.Backing(request)
 	require.Len(t, refs, 1)
@@ -315,12 +319,17 @@ func TestElasticsearchSummary(t *testing.T) {
 		},
 		{
 			"not ready with a reason",
-			0, 0,
+			0,
+			0,
 			&metav1.Condition{Type: v1.ConditionReady, Status: metav1.ConditionFalse, Reason: "Creating"},
 			nil,
-			[]pluginsv1alpha1.SummaryItem{{
-				Label: "Elasticsearch", Value: "not Ready (Creating), 0 nodes", Severity: pluginsv1alpha1.SeverityWarning,
-			}},
+			[]pluginsv1alpha1.SummaryItem{
+				{
+					Label:    "Elasticsearch",
+					Value:    "not Ready (Creating), 0 nodes",
+					Severity: pluginsv1alpha1.SeverityWarning,
+				},
+			},
 		},
 		{
 			"no Ready condition",
