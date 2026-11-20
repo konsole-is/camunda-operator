@@ -38,7 +38,9 @@ The first line of an open group says how many settings the group has and where t
 
 When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. A red count next to the name then says how many settings have an error, for example `1 error`. This count stays when you close the group.
 
-A setting also shows an error when the value that the cluster gets is not valid. Requests and limits merge key by key, so a limit that you clear here keeps the value of the preset. When that limit is below the request, the setting shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2.` To correct it, set a limit that is not below the request. **Next** stays off while a setting shows an error, also when the error comes from the preset and you changed nothing.
+A setting also shows an error when the value that the cluster gets is not valid. Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the setting shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2.` The same error shows when the preset alone gives a limit below its request.
+
+**Next** stays off while a setting shows such an error, also when you changed nothing. To correct it, set a limit that is not below the request, or a lower request. For a process that runs embedded, such as Tasklist inside the gateway, the error shows as a warning and does not stop **Next**. Its resources apply only when it runs standalone.
 
 A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 

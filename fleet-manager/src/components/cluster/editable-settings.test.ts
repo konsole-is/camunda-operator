@@ -288,10 +288,14 @@ describe("settingsOf merged errors", () => {
     );
   }
 
+  const messages = (s: Setting) => s.mergedErrors?.map((e) => e.message);
+
   it("names the preset when its limit stays below the request of the claim", () => {
     expect(
-      brokers({ limits: { cpu: "1" } }, { requests: { cpu: "2" } })
-        .mergedErrors,
+      brokers(
+        { limits: { cpu: "1" } },
+        { requests: { cpu: "2" } },
+      ).mergedErrors?.map((e) => e.message),
     ).toEqual([
       "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
     ]);
@@ -299,8 +303,10 @@ describe("settingsOf merged errors", () => {
 
   it("names the preset when its request stays above the limit of the claim", () => {
     expect(
-      brokers({ requests: { cpu: "2" } }, { limits: { cpu: "1" } })
-        .mergedErrors,
+      brokers(
+        { requests: { cpu: "2" } },
+        { limits: { cpu: "1" } },
+      ).mergedErrors?.map((e) => e.message),
     ).toEqual([
       "The CPU request of 2 comes from the preset and is above the CPU limit of 1.",
     ]);
@@ -308,19 +314,76 @@ describe("settingsOf merged errors", () => {
 
   it("names the preset when it sets both and the claim changes nothing", () => {
     expect(
-      brokers({ requests: { cpu: "2" }, limits: { cpu: "1" } }).mergedErrors,
+      brokers({
+        requests: { cpu: "2" },
+        limits: { cpu: "1" },
+      }).mergedErrors?.map((e) => e.message),
     ).toEqual([
       "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     ]);
   });
 
-  it("leaves a limit below a request that the claim sets both of to the editor", () => {
+  it("names no source when the claim sets the limit and the request", () => {
+    const setting = brokers(
+      { requests: { cpu: "4" }, limits: { cpu: "8" } },
+      { requests: { cpu: "2" }, limits: { cpu: "1" } },
+    );
+    expect(setting.mergedErrors).toEqual([
+      {
+        message: "The CPU limit of 1 is below the CPU request of 2.",
+        belowRequest: { resource: "cpu", request: "2", limit: "1" },
+        blocks: true,
+      },
+    ]);
+  });
+
+  it("names any resource that both the requests and the limits hold", () => {
     expect(
-      brokers(
-        { requests: { cpu: "4" }, limits: { cpu: "8" } },
-        { requests: { cpu: "2" }, limits: { cpu: "1" } },
-      ).mergedErrors,
-    ).toBeUndefined();
+      messages(
+        brokers(
+          { limits: { "ephemeral-storage": "1Gi" } },
+          { requests: { "ephemeral-storage": "2Gi" } },
+        ),
+      ),
+    ).toEqual([
+      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi.",
+    ]);
+  });
+
+  it("does not block on the resources of an embedded app", () => {
+    const tasklist = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: {
+          tasklist: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+      }),
+      "resources",
+    );
+    expect(tasklist.mergedErrors).toMatchObject([{ blocks: false }]);
+    const zeebe = brokers({ requests: { cpu: "2" }, limits: { cpu: "1" } });
+    expect(zeebe.mergedErrors).toMatchObject([{ blocks: true }]);
+  });
+
+  it("says that a value that no manager owns is already set on the cluster", () => {
+    const resources = setting(
+      processSettings("zeebe", "zeebe", {
+        cluster: {
+          zeebe: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+        claim: {
+          cluster: { zeebe: { resources: { requests: { cpu: "2" } } } },
+        },
+      }),
+      "resources",
+    );
+    expect(messages(resources)).toEqual([
+      "The CPU limit of 1 is already set on the cluster and is below the CPU request of 2.",
+    ]);
   });
 
   it("has no error when the merged limit is not below the request", () => {
@@ -336,7 +399,7 @@ describe("settingsOf merged errors", () => {
       brokers(
         { requests: { memory: "2Gi" }, limits: { cpu: "500m" } },
         { requests: { cpu: "1" }, limits: { memory: "1024Mi" } },
-      ).mergedErrors,
+      ).mergedErrors?.map((e) => e.message),
     ).toEqual([
       "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
       "The memory request of 2Gi comes from the preset and is above the memory limit of 1024Mi.",
@@ -367,7 +430,7 @@ describe("settingsOf merged errors", () => {
       }),
       "backup.dump.resources",
     );
-    expect(dump.mergedErrors).toEqual([
+    expect(messages(dump)).toEqual([
       "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
     ]);
   });

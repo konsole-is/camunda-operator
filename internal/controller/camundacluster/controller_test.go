@@ -608,15 +608,25 @@ var _ = Describe("CamundaCluster controller", func() {
 		}}
 		createCluster(cluster)
 
-		refused := And(
-			ContainSubstring("StatefulSet/"+ns+"/"+cluster.Name+"-zeebe"),
-			ContainSubstring("must be less than or equal to cpu limit of 1"),
+		applyFailed := "failed to apply resource apps/v1/StatefulSet/" + ns + "/" + cluster.Name + "-zeebe: "
+		belowLimit := ContainSubstring("must be less than or equal to cpu limit of 1")
+		Eventually(func(g Gomega) {
+			var latest v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			zeebe := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionZeebeReady)
+			g.Expect(zeebe).NotTo(BeNil())
+			g.Expect(zeebe.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(zeebe.Reason).To(Equal(string(component.Error)))
+			g.Expect(zeebe.Message).To(And(HavePrefix(applyFailed), belowLimit))
+		}, timeout, interval).Should(Succeed())
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(string(component.Error)),
+			And(HavePrefix("zeebe: "+applyFailed), belowLimit),
 		)
-		expectCondition(cluster, v1.ConditionZeebeReady, Equal(string(component.Error)))
-		expectReady(cluster, metav1.ConditionFalse, Equal(string(component.Error)), And(HavePrefix("zeebe: "), refused))
-		Expect(k8sClient.Get(
-			ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}, &appsv1.StatefulSet{},
-		)).NotTo(Succeed())
+		err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}, &appsv1.StatefulSet{})
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the API server stored the refused StatefulSet: %v", err)
 	})
 
 	It("reports MissingSecret for a missing storage credentials Secret and recovers when it appears", func() {

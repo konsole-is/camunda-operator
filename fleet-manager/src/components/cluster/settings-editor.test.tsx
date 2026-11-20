@@ -679,21 +679,34 @@ describe("SettingsEditor collapsed", () => {
     [
       "resources",
       { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
-      "The limit is below the request",
+      "resources",
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     ],
     [
       "tolerations",
       { scheduling: { tolerations: [{ effect: "NoSchedule" }] } },
+      "scheduling.tolerations",
       "Enter a key, or use the operator Exists",
     ],
-    ["a map of labels", { podLabels: { "bad key!": "a" } }, undefined],
+    [
+      "a map of labels",
+      { podLabels: { "bad key!": "a" } },
+      "podLabels",
+      undefined,
+    ],
     [
       "environment variables",
       { extraEnv: [{ name: "", value: "a" }] },
+      "extraEnv",
       "Enter a name",
     ],
-    ["a storage size", { storageSize: "0Gi" }, "Enter a size above 0"],
-    ["a number", { replicas: -1 }, "Enter 0 or more"],
+    [
+      "a storage size",
+      { storageSize: "0Gi" },
+      "storageSize",
+      "Enter a size above 0",
+    ],
+    ["a number", { replicas: -1 }, "replicas", "Enter 0 or more"],
     [
       "YAML",
       {
@@ -701,11 +714,12 @@ describe("SettingsEditor collapsed", () => {
           nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: 3 },
         },
       },
+      "scheduling.nodeAffinity",
       undefined,
     ],
   ])(
     "opens at once with an error that the editor of %s shows for a value from below the claim, and reports it",
-    (_, zeebe, message) => {
+    (_, zeebe, label, message) => {
       const { invalid, set } = renderClosed({
         preset: { zeebe } as SettingsPage["preset"],
       });
@@ -713,14 +727,71 @@ describe("SettingsEditor collapsed", () => {
       // The cluster gets the value from below the claim, so its error
       // blocks the change as an error of the user does.
       expect(invalid).toHaveBeenLastCalledWith(
-        expect.any(Array),
-        expect.any(String),
+        steps("spec", "cluster", "zeebe", ...label.split(".")),
+        expect.stringMatching(new RegExp(`^${label.replace(".", "\\.")}: `)),
       );
       expect(set).not.toHaveBeenCalled();
       expect(row().textContent).toContain("1 error");
-      if (message) expect(within(section()).getByText(message)).toBeDefined();
+      if (message)
+        expect(within(section()).getAllByText(message)).toHaveLength(1);
     },
   );
+
+  it("shows a limit of the preset below its request once, in the words of the merge", () => {
+    renderClosed({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(
+      within(section()).queryByText("The limit is below the request"),
+    ).toBeNull();
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      PRESET_BOTH,
+    );
+    expect(cpuLimit().getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("warns about the resources of an embedded app and does not block", () => {
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("gateway", "tasklist", {
+      cluster: { gateway: { mode: "Standalone" } },
+      preset: {
+        tasklist: {
+          resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+        },
+      },
+    });
+    render(
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        set={vi.fn()}
+        reset={vi.fn()}
+        invalid={invalid}
+      />,
+    );
+    const tasklist = screen.getByRole("region", { name: "Tasklist settings" });
+    const heading = within(
+      within(tasklist).getByRole("heading", { level: 3 }),
+    ).getByRole("button");
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    expect(heading.textContent).not.toMatch(/error/);
+    expect(invalid).not.toHaveBeenCalled();
+    const resources = within(tasklist).getAllByRole("group", {
+      name: "resources",
+      hidden: true,
+    })[0];
+    expect(within(resources).queryByRole("alert", { hidden: true })).toBeNull();
+    expect(resources.textContent).toContain(PRESET_BOTH);
+    expect(
+      within(resources).queryByText("The limit is below the request", {
+        ignore: false,
+      }),
+    ).toBeNull();
+  });
 
   it("counts an error that an editor shows at mount also in strict mode", () => {
     const invalid = vi.fn();

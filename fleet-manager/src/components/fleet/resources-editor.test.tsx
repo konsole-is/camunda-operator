@@ -169,6 +169,62 @@ describe("ResourcesEditor", () => {
   });
 });
 
+describe("ResourcesEditor quantities", () => {
+  it("accepts an amount with a plus sign, which a quantity can have", () => {
+    const onErrors = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: "+1" } }}
+        onErrors={onErrors}
+      />,
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+  });
+
+  it("refuses a negative amount", () => {
+    const onErrors = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ limits: { memory: "-1Gi" } }}
+        onErrors={onErrors}
+      />,
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([
+      { path: "limits.memory", message: "Enter 0 or more" },
+    ]);
+  });
+
+  it("shows no message of its own for a limit below its request that the caller names", async () => {
+    const onErrors = vi.fn();
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        noted={[{ resource: "cpu", request: "2", limit: "1" }]}
+        onChange={onChange}
+        onErrors={onErrors}
+      />,
+    );
+    expect(screen.queryByText("The limit is below the request")).toBeNull();
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+    const limit = within(
+      screen.getByRole("group", { name: "CPU limit" }),
+    ).getByRole("textbox", { name: "Amount" });
+    expect(limit.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.clear(limit);
+    await userEvent.type(limit, "1.5");
+    // Another limit below the request is a fault that the caller does not name.
+    expect(screen.getByText("The limit is below the request")).toBeDefined();
+    expect(onChange).toHaveBeenLastCalledWith(
+      { requests: { cpu: "2" }, limits: { cpu: "1.5" } },
+      [{ path: "limits.cpu", message: "The limit is below the request" }],
+    );
+  });
+});
+
 describe("limitsBelowRequests", () => {
   it("names a limit below its request in another unit", () => {
     expect(
@@ -204,6 +260,29 @@ describe("limitsBelowRequests", () => {
     expect(limitsBelowRequests({ limits: { cpu: "1" } })).toEqual([]);
     expect(limitsBelowRequests({ requests: { cpu: "2" } })).toEqual([]);
     expect(limitsBelowRequests({})).toEqual([]);
+  });
+
+  it("compares every resource that the requests and the limits both hold", () => {
+    expect(
+      limitsBelowRequests({
+        requests: { "ephemeral-storage": "2Gi", "nvidia.com/gpu": "1" },
+        limits: { "ephemeral-storage": "1Gi" },
+      }),
+    ).toEqual([
+      { resource: "ephemeral-storage", request: "2Gi", limit: "1Gi" },
+    ]);
+  });
+
+  it("reads a quantity with a sign or an exponent", () => {
+    expect(
+      limitsBelowRequests({
+        requests: { cpu: "+2", memory: "2e9" },
+        limits: { cpu: "1", memory: "1E+9" },
+      }),
+    ).toEqual([
+      { resource: "cpu", request: "+2", limit: "1" },
+      { resource: "memory", request: "2e9", limit: "1E+9" },
+    ]);
   });
 
   it("compares nothing with a quantity that is not a number", () => {

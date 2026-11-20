@@ -34,9 +34,9 @@ import type { SettingsGroup } from "./settings";
  * counts the entries that the preset and the release put before value.
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key. mergedErrors are the errors of value that the editor
- * cannot show, because a layer below the claim gives a part of value that
- * the editor leaves empty. Each one names that layer.
+ * map key by key. mergedErrors are the faults of value, the value that
+ * the cluster gets, each with a message that names where each part comes
+ * from when it is not the claim.
  */
 export type Setting = {
   key: string;
@@ -53,7 +53,18 @@ export type Setting = {
   resetLabel: string;
   resetNote?: string;
   replaces?: true;
-  mergedErrors?: string[];
+  mergedErrors?: MergedError[];
+};
+
+/**
+ * MergedError is a limit below its request in the merged value of a
+ * setting. blocks is false when the value does not apply now, as the
+ * resources of an embedded app.
+ */
+export type MergedError = {
+  message: string;
+  belowRequest: LimitBelowRequest;
+  blocks: boolean;
 };
 
 /**
@@ -75,8 +86,7 @@ export type Setting = {
  * setting is a read-only setting of its own, after the others.
  *
  * With claim, spec is a merge of layers, and a resources setting gets
- * mergedErrors: a limit of spec below its request where a layer other than
- * the claim gives the limit or the request.
+ * mergedErrors: each limit of spec below its request, for any resource.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -138,15 +148,17 @@ export function settingsOf(input: {
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
-    const merged =
+    const merged: MergedError[] =
       "claim" in input && editor.kind === "resources"
-        ? limitsBelowRequests((value ?? {}) as Resources).flatMap((below) =>
-            mergedLimitError(below, (side) => {
+        ? limitsBelowRequests((value ?? {}) as Resources).map((below) => ({
+            message: mergedLimitError(below, (side) => {
               const part = [...names, side, below.resource];
               return mine.find(({ names: f }) => sameNames(f, part))?.field
                 .state;
             }),
-          )
+            belowRequest: below,
+            blocks: !group.embedded,
+          }))
         : [];
     const checked: Setting =
       merged.length > 0 ? { ...setting, mergedErrors: merged } : setting;
@@ -180,59 +192,77 @@ export function settingsOf(input: {
   return [...settings, ...rest];
 }
 
-// mergedLimitError returns the error of a limit below its request when a
-// layer other than the claim gives one of the two, else nothing: the
-// editor shows the error of two values of the claim. stateOf gives the
-// state of the requests or the limits of the resource.
+// mergedLimitError returns the message of a limit below its request. It
+// names where the limit and the request come from when that is not the
+// claim. stateOf gives the state of the requests or the limits of the
+// resource.
 function mergedLimitError(
   below: LimitBelowRequest,
   stateOf: (side: "requests" | "limits") => FieldState | undefined,
-): string[] {
-  const name = below.resource === "cpu" ? "CPU" : "memory";
+): string {
+  const name = RESOURCE_NAMES[below.resource] ?? below.resource;
   const limit = `${name} limit of ${below.limit}`;
   const request = `${name} request of ${below.request}`;
-  const limitFrom = layerOf(stateOf("limits"));
-  const requestFrom = layerOf(stateOf("requests"));
-  if (limitFrom === undefined && requestFrom === undefined) return [];
-  if (requestFrom === undefined)
-    return [
-      `The ${limit} comes from ${limitFrom} and is below the ${request}.`,
-    ];
+  const limitFrom = originOf(stateOf("limits"));
+  const requestFrom = originOf(stateOf("requests"));
   if (limitFrom === undefined)
-    return [
-      `The ${request} comes from ${requestFrom} and is above the ${limit}.`,
-    ];
-  if (limitFrom === requestFrom)
-    return [
-      `The ${limit} and the ${request} come from ${limitFrom}. The limit is below the request.`,
-    ];
-  return [
-    `The ${limit} comes from ${limitFrom}. It is below the ${request} from ${requestFrom}.`,
-  ];
+    return requestFrom === undefined
+      ? `The ${limit} is below the ${request}.`
+      : `The ${request} ${requestFrom.one} and is above the ${limit}.`;
+  if (requestFrom === undefined)
+    return `The ${limit} ${limitFrom.one} and is below the ${request}.`;
+  if (limitFrom.one === requestFrom.one)
+    return `The ${limit} and the ${request} ${limitFrom.many}. The limit is below the request.`;
+  return `The ${limit} ${limitFrom.one}. It is below the ${request}, which ${requestFrom.one}.`;
 }
 
-// layerOf names where a value of state comes from, or gives undefined for
-// a value of the claim.
-function layerOf(state: FieldState | undefined): string | undefined {
+const RESOURCE_NAMES: Partial<Record<string, string>> = {
+  cpu: "CPU",
+  memory: "memory",
+};
+
+// originOf gives the words that say where a value of state comes from, for
+// one value and for two, or undefined for a value of the claim. A value
+// that no manager owns, or one of an unknown writer, is only known to be on
+// the cluster.
+function originOf(
+  state: FieldState | undefined,
+): { one: string; many: string } | undefined {
+  const from = (layer: string) => ({
+    one: `comes from ${layer}`,
+    many: `come from ${layer}`,
+  });
+  const by = (writer: string) => ({
+    one: `is set by ${writer}`,
+    many: `are set by ${writer}`,
+  });
   switch (state?.kind) {
     case undefined:
     case "claim":
       return undefined;
     case "preset":
-      return "the preset";
+      return from("the preset");
     case "release":
-      return "the release";
+      return from("the release");
     case "environment":
-      return "the environment";
+      return from("the environment");
     case "admin":
-      return "your admin";
+      return by("your admin");
     case "filled":
-      return state.sectionLabel;
+      return {
+        one: `is filled by ${state.sectionLabel}`,
+        many: `are filled by ${state.sectionLabel}`,
+      };
     case "setBy":
-      return state.manager ?? "an unknown writer";
+      if (state.manager !== undefined) return by(state.manager);
+      break;
     case "default":
-      return "a default";
+      break;
   }
+  return {
+    one: "is already set on the cluster",
+    many: "are already set on the cluster",
+  };
 }
 
 /**

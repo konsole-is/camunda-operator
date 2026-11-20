@@ -16,11 +16,12 @@ export type Resources = NonNullable<
 >;
 
 /**
- * LimitBelowRequest is a resource whose limit is below its request. request
- * and limit are the quantities as the value writes them.
+ * LimitBelowRequest is a resource whose limit is below its request, such as
+ * cpu or ephemeral-storage. request and limit are the quantities as the
+ * value writes them.
  */
 export type LimitBelowRequest = {
-  resource: Resource;
+  resource: string;
   request: string;
   limit: string;
 };
@@ -58,8 +59,9 @@ const SCALE: Record<string, number> = {
   Pi: 2 ** 50,
   Ei: 2 ** 60,
 };
-// The number part of a Kubernetes quantity.
-const NUMBER = /^(\d+\.?\d*|\.\d+)$/;
+const BELOW_REQUEST = "The limit is below the request";
+// The signed number part of a Kubernetes quantity.
+const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 const FIELDS: [Side, Resource, string][] = [
   ["requests", "cpu", "CPU request"],
   ["limits", "cpu", "CPU limit"],
@@ -73,26 +75,32 @@ const FIELDS: [Side, Resource, string][] = [
  * Every other resource, such as ephemeral-storage, and every other key stay
  * unchanged, and a value in a unit that the list does not hold keeps its
  * unit. onChange gets the resources and the errors after each edit: an
- * amount that is not a number, and a limit below its request. describedBy
- * names the hint and error elements of the field for each amount and unit.
- * onErrors gets the errors that it shows, also at mount.
+ * amount that is not a number, a negative amount, and a limit below its
+ * request. describedBy names the hint and error elements of the field for
+ * each amount and unit. noted are the limits below their request that the
+ * caller names: while the editor holds the same request and limit, it shows
+ * no error of its own for them, and onChange still gets the error. onErrors
+ * gets the errors that it shows, also at mount.
  */
 export function ResourcesEditor({
   label,
   defaultValue = {},
   describedBy,
+  noted = [],
   onChange,
   onErrors,
 }: {
   label: string;
   defaultValue?: Resources;
   describedBy?: string;
+  noted?: readonly LimitBelowRequest[];
   onChange?: (value: Resources, errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
-  const errors = amountErrors(amounts);
+  const all = amountErrors(amounts);
+  const errors = all.filter((e) => !isNoted(e, amounts, noted));
   useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
@@ -108,6 +116,7 @@ export function ResourcesEditor({
         const path = `${side}.${resource}`;
         const value = amounts[path];
         const error = errors.find((e) => e.path === path)?.message;
+        const invalid = all.some((e) => e.path === path);
         const described =
           [error && `${id}-${path}-error`, describedBy]
             .filter(Boolean)
@@ -130,7 +139,7 @@ export function ResourcesEditor({
                 aria-label="Amount"
                 inputMode="decimal"
                 value={value.amount}
-                aria-invalid={error ? true : undefined}
+                aria-invalid={invalid || undefined}
                 aria-describedby={described}
                 onChange={(event) =>
                   update(path, { ...value, amount: event.target.value })
@@ -171,18 +180,15 @@ function amountsOf(value: Resources): Record<string, Amount> {
   return Object.fromEntries(
     FIELDS.map(([side, resource]) => [
       `${side}.${resource}`,
-      parse(value[side]?.[resource], resource),
+      parse(value[side]?.[resource], DEFAULT_UNIT[resource]),
     ]),
   );
 }
 
-function parse(
-  quantity: string | number | undefined,
-  resource: Resource,
-): Amount {
-  if (quantity === undefined)
-    return { amount: "", unit: DEFAULT_UNIT[resource] };
-  const match = /^(\d+\.?\d*|\.\d+)([eE][-+]?\d+|[A-Za-z]*)$/.exec(
+// An undefined quantity is an empty amount in emptyUnit.
+function parse(quantity: string | number | undefined, emptyUnit = ""): Amount {
+  if (quantity === undefined) return { amount: "", unit: emptyUnit };
+  const match = /^([+-]?(?:\d+\.?\d*|\.\d+))([eE][-+]?\d+|[A-Za-z]*)$/.exec(
     String(quantity),
   );
   return match
@@ -211,43 +217,70 @@ function toResources(
 function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
   const errors: ValidationError[] = [];
   for (const [path, value] of Object.entries(amounts)) {
-    if (value.amount !== "" && !NUMBER.test(value.amount))
+    if (value.amount === "") continue;
+    if (!NUMBER.test(value.amount))
       errors.push({ path, message: "Enter a number" });
+    // Kubernetes refuses a negative request or limit.
+    else if (value.amount.startsWith("-"))
+      errors.push({ path, message: "Enter 0 or more" });
   }
-  for (const resource of belowRequests(amounts))
-    errors.push({
-      path: `limits.${resource}`,
-      message: "The limit is below the request",
-    });
+  for (const resource of ["cpu", "memory"] as const)
+    if (isBelow(amounts[`requests.${resource}`], amounts[`limits.${resource}`]))
+      errors.push({
+        path: `limits.${resource}`,
+        message: BELOW_REQUEST,
+      });
   return errors;
 }
 
-/**
- * limitsBelowRequests returns the CPU and the memory of value whose limit is
- * below the request, with the rule that the editor shows, CPU first. A
- * quantity that is not a number in a unit of Kubernetes is below nothing.
- */
-export function limitsBelowRequests(value: Resources): LimitBelowRequest[] {
-  const amounts = amountsOf(value);
-  return belowRequests(amounts).map((resource) => ({
-    resource,
-    request: quantityOf(amounts[`requests.${resource}`]),
-    limit: quantityOf(amounts[`limits.${resource}`]),
-  }));
+// isNoted tells whether error is a limit below its request that noted holds
+// with the request and the limit of amounts.
+function isNoted(
+  error: ValidationError,
+  amounts: Record<string, Amount>,
+  noted: readonly LimitBelowRequest[],
+): boolean {
+  if (error.message !== BELOW_REQUEST) return false;
+  const resource = error.path.slice("limits.".length);
+  return noted.some(
+    (n) =>
+      n.resource === resource &&
+      n.request === quantityOf(amounts[`requests.${resource}`]) &&
+      n.limit === quantityOf(amounts[`limits.${resource}`]),
+  );
 }
 
-function belowRequests(amounts: Record<string, Amount>): Resource[] {
-  return (["cpu", "memory"] as const).filter((resource) => {
-    const request = base(amounts[`requests.${resource}`]);
-    const limit = base(amounts[`limits.${resource}`]);
-    // Float scales make equal quantities differ in the last digit, such as
-    // 700m and 0.7.
-    return (
-      request !== undefined &&
-      limit !== undefined &&
-      limit < request * (1 - 1e-12)
-    );
+/**
+ * limitsBelowRequests returns each resource of value whose limit is below
+ * its request, with the rule that the editor shows: the CPU first, then the
+ * memory, then the others in the order of the requests. A quantity that is
+ * not a number in a unit of Kubernetes is below nothing.
+ */
+export function limitsBelowRequests(value: Resources): LimitBelowRequest[] {
+  const requests = value.requests ?? {};
+  const limits = value.limits ?? {};
+  const keys = Object.keys(requests).sort((a, b) => rank(a) - rank(b));
+  return keys.flatMap((resource) => {
+    const request = requests[resource];
+    const limit = limits[resource];
+    if (limit === undefined) return [];
+    return isBelow(parse(request), parse(limit))
+      ? [{ resource, request: String(request), limit: String(limit) }]
+      : [];
   });
+}
+
+function rank(resource: string): number {
+  const at = ["cpu", "memory"].indexOf(resource);
+  return at < 0 ? 2 : at;
+}
+
+function isBelow(request: Amount, limit: Amount): boolean {
+  const r = base(request);
+  const l = base(limit);
+  // Float scales make equal quantities differ in the last digit, such as
+  // 700m and 0.7.
+  return r !== undefined && l !== undefined && l < r * (1 - 1e-12);
 }
 
 function quantityOf(value: Amount): string {

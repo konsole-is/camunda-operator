@@ -180,7 +180,9 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 
 A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
 
-A value that the preset completes also shows an error when the result is not valid. For example, a limit that you clear keeps the limit of the preset, and the editor says `The CPU limit of 1 comes from the preset and is below the CPU request of 2.` This value counts as a change. **Review** stays disabled until you set a limit that is not below the request.
+Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the editor shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2.` When the preset alone gives a limit below its request, the same error shows as soon as the editor opens. While the error shows, also before you change anything, **Review** is disabled. Set a limit that is not below the request, or a lower request.
+
+For a process that runs embedded, such as Tasklist inside the gateway, the error shows as a warning and does not disable **Review**. Its resources apply only when it runs standalone.
 
 ## A claim made outside the fleet manager
 

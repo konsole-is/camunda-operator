@@ -11,6 +11,7 @@ import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
+  type LimitBelowRequest,
   ResourcesEditor,
   type Resources,
 } from "@/components/fleet/resources-editor";
@@ -176,10 +177,11 @@ export function SettingsEditor({
  * the setting show under them. onReset runs after a click on the reset
  * link: the caller remounts the rows, so that they show the values below
  * the claim. The row shows an error while its editor shows one or the
- * setting has mergedErrors, also before any edit. invalid gets the claim
- * steps of the shown field and "<label>: <error>" while the row shows an
- * error, the first merged error first, and undefined once the error goes
- * or the row unmounts. onShows gets whether the row shows an error.
+ * setting has a merged error that blocks, also before any edit. invalid
+ * gets the claim steps of the shown field and "<label>: <error>" while the
+ * row shows an error, the first merged error that blocks first, and
+ * undefined once the error goes or the row unmounts. onShows gets whether
+ * the row shows an error.
  */
 export function SettingRow({
   setting,
@@ -227,9 +229,9 @@ export function SettingRow({
     if (!editable) reportShows.current?.(false);
     return () => reportShows.current?.(false);
   }, [editable]);
-  const rowError = editable
-    ? (setting.mergedErrors?.[0] ?? editorError)
-    : undefined;
+  const merged = setting.mergedErrors ?? [];
+  const blocking = merged.filter((e) => e.blocks).map((e) => e.message);
+  const rowError = editable ? (blocking[0] ?? editorError) : undefined;
   useErrorsReport(
     rowError === undefined ? [] : [{ path: "", message: rowError }],
     ([error]) => {
@@ -258,8 +260,8 @@ export function SettingRow({
   });
   const note = setting.state && stateNote(setting.state);
   const messages = [
-    ...errors.map((e) => e.message),
-    ...(setting.mergedErrors ?? []),
+    ...errors.map((e) => ({ text: e.message, blocks: true })),
+    ...merged.map((e) => ({ text: e.message, blocks: e.blocks })),
   ];
   return (
     <div
@@ -279,6 +281,7 @@ export function SettingRow({
           messages.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
         }
         secrets={secrets ?? []}
+        noted={merged.map((e) => e.belowRequest)}
         onChange={change}
         onRefused={own(() => {})}
         onShown={setEditorError}
@@ -312,10 +315,10 @@ export function SettingRow({
         <p
           key={i}
           id={`${errorId}-${i}`}
-          role="alert"
-          className="text-xs text-bad"
+          role={message.blocks ? "alert" : undefined}
+          className={`text-xs ${message.blocks ? "text-bad" : "text-warn"}`}
         >
-          {message}
+          {message.text}
         </p>
       ))}
     </div>
@@ -354,6 +357,7 @@ function Editor({
   current,
   replaces,
   describedBy,
+  noted,
   secrets,
   onChange,
   onRefused,
@@ -366,6 +370,7 @@ function Editor({
   replaces?: boolean;
   describedBy?: string;
   secrets: SecretRefs;
+  noted: readonly LimitBelowRequest[];
   onChange: (value: unknown) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
@@ -430,6 +435,7 @@ function Editor({
           label={label}
           defaultValue={initial as Resources}
           describedBy={describedBy}
+          noted={noted}
           onChange={valid}
           onErrors={onErrors}
         />
