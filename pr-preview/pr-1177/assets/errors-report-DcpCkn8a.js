@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";function n(e,t){let n=JSON.stringify(e),i=(0,r.useRef)(void 0);(0,r.useEffect)(()=>()=>{i.current=void 0},[]),(0,r.useEffect)(()=>{i.current!==n&&(i.current=n,t?.([...e]))})}var r;function i(){return(i=e((()=>{r=t()})))()}export{n,i as t};
