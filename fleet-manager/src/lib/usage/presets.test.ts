@@ -208,6 +208,30 @@ describe("presetUsers", () => {
       );
     });
 
+    it("counts a claim whose selection gives a claim-editable preset over the recorded policy", () => {
+      const resolvedPolicy: ResolvedPolicy = {
+        deletionPolicy: "Delete",
+        parameters: {
+          "database-server": {
+            preset: { value: "recorded", claimEditable: true },
+          },
+        },
+      };
+      const picked = {
+        ...named("team-e", "plain", {
+          plugins: [
+            {
+              section: "storage",
+              registration: "database-server",
+              parameters: { preset: "picked" },
+            },
+          ],
+        }),
+        status: { resolvedPolicy },
+      };
+      expect(users("picked", [picked])).toEqual([plain]);
+    });
+
     it("counts a claim whose environment gives the preset over the registration", () => {
       const environment = {
         apiVersion: "fleet.camunda.io/v1alpha1",
