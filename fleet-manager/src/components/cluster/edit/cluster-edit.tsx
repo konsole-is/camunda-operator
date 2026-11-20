@@ -10,16 +10,20 @@ import {
   type ClaimReviewInput,
 } from "@/components/fleet/claim-edit";
 import { objectDiff } from "@/lib/diff";
-import { pathFrom, type Step } from "@/lib/fields";
+import { clusterFields, pathFrom, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  claimAfter,
   clusterLocks,
+  type FieldError,
   resetValue,
   validateClusterClaim,
   type Session,
 } from "@/lib/session";
 import type { WriteMode } from "@/lib/write/types";
+import { blockingMergedErrors } from "../editable-settings";
 import { mergedSpecs, showsMergedDiff } from "../impacts";
+import { clusterFieldsInputOf } from "../settings";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
 import { downgradeDone } from "./downgrade";
@@ -34,10 +38,11 @@ export type ClusterEdit = ClaimEdit<ClusterClaim>;
 
 /**
  * ClusterEditProvider is the claim edit host of the cluster page, over the
- * live claim of context, with clusterLocks of context.fields and
- * validateClusterClaim. Review adds the reset of allowVersionDowngrade once
- * the downgrade is done, and shows the impacts, cautions, confirm, and
- * merged diff of the cluster. It needs a GitPushesProvider above it.
+ * live claim of context, with clusterLocks of context.fields, and with
+ * validateClusterClaim and the merged errors that block as its
+ * validation. Review adds the reset of allowVersionDowngrade once the
+ * downgrade is done, and shows the impacts, cautions, confirm, and merged
+ * diff of the cluster. It needs a GitPushesProvider above it.
  */
 export function ClusterEditProvider({
   context,
@@ -57,12 +62,17 @@ export function ClusterEditProvider({
     cluster,
     backups,
     requests,
+    presets,
+    platformConfigs,
+    storage,
+    optimize,
+    schedules,
   } = context;
   const registrationsRead = !context.unread.includes("PluginRegistration");
   const locks = useMemo(() => clusterLocks(fields), [fields]);
   const validate = useCallback(
-    (s: Session<ClusterClaim>) =>
-      validateClusterClaim(s, {
+    (s: Session<ClusterClaim>) => [
+      ...validateClusterClaim(s, {
         environment,
         sections,
         registrations,
@@ -72,6 +82,24 @@ export function ClusterEditProvider({
         requests,
         registrationsRead,
       }),
+      ...mergedErrorsAfter(
+        {
+          cluster,
+          presets,
+          releases,
+          sections,
+          environment,
+          platformConfigs,
+          storage,
+          registrations,
+          optimize,
+          schedules,
+        },
+        s,
+      ),
+    ],
+    // The page builds a new context on each render, as each second for its
+    // clock, so the check depends on the lists that it reads.
     [
       environment,
       sections,
@@ -81,6 +109,11 @@ export function ClusterEditProvider({
       backups,
       requests,
       registrationsRead,
+      presets,
+      platformConfigs,
+      storage,
+      optimize,
+      schedules,
     ],
   );
   const host: ClaimEditHost<ClusterClaim> = {
@@ -96,6 +129,34 @@ export function ClusterEditProvider({
     <ClaimEditProvider host={host} actions={actions}>
       {children}
     </ClaimEditProvider>
+  );
+}
+
+// mergedErrorsAfter returns the merged errors that block after the pending
+// changes of session. The editors that show them can be closed, and the
+// preset can change while they are.
+function mergedErrorsAfter(
+  context: Parameters<typeof changeInputOf>[0] &
+    Pick<ClusterSlotContext, "registrations" | "optimize" | "schedules">,
+  session: Session<ClusterClaim>,
+): FieldError[] {
+  const { after } = mergedSpecs(changeInputOf(context, session));
+  const claim = claimAfter(session);
+  const fields = clusterFields(
+    clusterFieldsInputOf({
+      cluster: context.cluster,
+      merged: after,
+      claim,
+      sections: context.sections,
+      registrations: context.registrations,
+      optimize: context.optimize,
+      schedules: context.schedules,
+    }),
+  );
+  // Without a path, the change bar shows the message also while the
+  // editors of the setting are closed.
+  return blockingMergedErrors(fields, after.spec, claim.spec.cluster ?? {}).map(
+    (message) => ({ message }),
   );
 }
 

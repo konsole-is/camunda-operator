@@ -1760,6 +1760,97 @@ describe("ClusterCreateFlow write", () => {
     await waitFor(() => expect(next().disabled).toBe(false));
   });
 
+  // withBrokerResources is the data of the flow with a preset small that
+  // sets the resources of the brokers.
+  const withBrokerResources = (resources: object) =>
+    data({
+      accessRequests: [],
+      presets: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "CamundaClusterPreset",
+          metadata: { name: "small" },
+          spec: { cluster: { zeebe: { resources } } },
+        },
+      ],
+    });
+  const brokerResources = () =>
+    within(
+      screen.getByRole("region", { name: "Brokers settings" }),
+    ).getAllByRole("group", { name: "resources" })[0];
+  const cpuLimit = () =>
+    within(
+      within(brokerResources()).getByRole("group", { name: "CPU limit" }),
+    ).getByRole("textbox", { name: "Amount" });
+
+  it("blocks Next on a preset whose limit is below its request, also when nothing changed", async () => {
+    show(withBrokerResources({ requests: { cpu: "2" }, limits: { cpu: "1" } }));
+    await toStep("Cluster settings");
+    await waitFor(() => expect(next().disabled).toBe(true));
+    expect(settingsRow("Brokers").getAttribute("aria-expanded")).toBe("true");
+    expect(settingsRow("Brokers").textContent).toContain("1 error");
+    expect(footer()).toContain(
+      "Cluster settings: zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    );
+  });
+
+  it("names the preset as the source of the limit after the limit field is cleared, and blocks Next", async () => {
+    show(withBrokerResources({ requests: { cpu: "2" }, limits: { cpu: "1" } }));
+    await toStep("Cluster settings");
+    await userEvent.clear(cpuLimit());
+    const message =
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
+    await waitFor(() =>
+      expect(within(brokerResources()).getByRole("alert").textContent).toBe(
+        message,
+      ),
+    );
+    expect(settingsRow("Brokers").textContent).toContain("1 error");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(`Cluster settings: zeebe.resources: ${message}`);
+
+    await userEvent.type(cpuLimit(), "2");
+    await waitFor(() => expect(next().disabled).toBe(false));
+    expect(within(brokerResources()).queryByRole("alert")).toBeNull();
+  });
+
+  it("compares a merged limit with a request in another unit", async () => {
+    show(withBrokerResources({ limits: { cpu: "500m" } }));
+    await toStep("Cluster settings");
+    expect(next().disabled).toBe(false);
+    await openSettings("Brokers");
+    const request = within(brokerResources()).getByRole("group", {
+      name: "CPU request",
+    });
+    await userEvent.type(
+      within(request).getByRole("textbox", { name: "Amount" }),
+      "1",
+    );
+    await waitFor(() => expect(next().disabled).toBe(true));
+    expect(within(brokerResources()).getByRole("alert").textContent).toBe(
+      "The CPU limit of 500m is below the CPU request of 1.",
+    );
+  });
+
+  it("turns Create off when the preset changes to a limit below the request after step 3", async () => {
+    const initial = data({ accessRequests: [] });
+    const { rerender } = show(initial);
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    live.objects.CamundaClusterPreset = withBrokerResources({
+      requests: { cpu: "2" },
+      limits: { cpu: "1" },
+    }).presets;
+    rerender(flowOf(initial));
+    expect(create().disabled).toBe(true);
+    expect(
+      document.getElementById(create().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe(
+      "Cluster settings: zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    );
+  });
+
   it("refuses the reference while the Secret watch is overdue", async () => {
     const { view, initial } = await pickInTeamA();
     live.objects.Secret = [

@@ -7,17 +7,18 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
-import type { FieldError } from "@/lib/session";
+import type { Step } from "@/lib/fields";
+import { type FieldError, without, withValue } from "@/lib/session";
 import {
   accessSection,
   type SettingsPage,
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
-import { settingsSummary } from "./editable-settings";
+import { settingsOf, settingsSummary } from "./editable-settings";
 import { SettingsEditor } from "./settings-editor";
 import type { Process } from "./topology";
 
@@ -513,6 +514,63 @@ describe("SettingsEditor collapsed", () => {
     path: "spec.cluster.zeebe.replicas",
     message: "replicas must be odd",
   };
+  const PRESET_BOTH =
+    "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
+  const PRESET_LIMIT =
+    "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
+  const cpuLimit = () =>
+    within(
+      within(settingRow("resources")).getByRole("group", { name: "CPU limit" }),
+    ).getByRole("textbox", { name: "Amount" });
+
+  // MergedHost holds a claim: each change goes to the claim, and the
+  // settings come from the claim merged over a preset that sets the
+  // resources of process. Tasklist runs embedded in a standalone gateway.
+  function MergedHost({
+    preset,
+    invalid,
+    process = "zeebe",
+    onClaim,
+    initial = {},
+  }: {
+    preset: object;
+    invalid: (at: Step[], message: string | undefined) => void;
+    process?: "zeebe" | "tasklist";
+    onClaim?: (cluster: object) => void;
+    initial?: object;
+  }) {
+    const [cluster, setCluster] = useState<object>(initial);
+    onClaim?.(cluster);
+    const tasklist = process === "tasklist";
+    const { group, settings } = settingsGroupOf(
+      tasklist ? "gateway" : "zeebe",
+      process,
+      {
+        preset: { [process]: { resources: preset } } as SettingsPage["preset"],
+        claim: {
+          cluster: tasklist
+            ? { ...cluster, gateway: { mode: "Standalone" } }
+            : cluster,
+        },
+      },
+    );
+    return (
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        set={(at, value) => setCluster((c) => withValue(c, at.slice(2), value))}
+        reset={(at) => setCluster((c) => without(c, at.slice(2)))}
+        invalid={invalid}
+      />
+    );
+  }
+
+  const amount = (label: string) =>
+    within(
+      within(settingRow("resources")).getByRole("group", { name: label }),
+    ).getByRole("textbox", { name: "Amount" });
 
   it("starts closed with its rows in the page", () => {
     renderClosed();
@@ -640,23 +698,30 @@ describe("SettingsEditor collapsed", () => {
 
   it.each([
     [
-      "resources",
-      { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
-      "The limit is below the request",
-    ],
-    [
       "tolerations",
       { scheduling: { tolerations: [{ effect: "NoSchedule" }] } },
+      "scheduling.tolerations",
       "Enter a key, or use the operator Exists",
     ],
-    ["a map of labels", { podLabels: { "bad key!": "a" } }, undefined],
+    [
+      "a map of labels",
+      { podLabels: { "bad key!": "a" } },
+      "podLabels",
+      undefined,
+    ],
     [
       "environment variables",
       { extraEnv: [{ name: "", value: "a" }] },
+      "extraEnv",
       "Enter a name",
     ],
-    ["a storage size", { storageSize: "0Gi" }, "Enter a size above 0"],
-    ["a number", { replicas: -1 }, "Enter 0 or more"],
+    [
+      "a storage size",
+      { storageSize: "0Gi" },
+      "storageSize",
+      "Enter a size above 0",
+    ],
+    ["a number", { replicas: -1 }, "replicas", "Enter 0 or more"],
     [
       "YAML",
       {
@@ -664,24 +729,88 @@ describe("SettingsEditor collapsed", () => {
           nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: 3 },
         },
       },
+      "scheduling.nodeAffinity",
       undefined,
     ],
   ])(
-    "opens at once with an error that the editor of %s shows for a value from below the claim",
-    (_, zeebe, message) => {
+    "opens at once with an error that the editor of %s shows for a value from below the claim, and reports it",
+    (_, zeebe, label, message) => {
       const { invalid, set } = renderClosed({
         preset: { zeebe } as SettingsPage["preset"],
       });
       expect(isOpen()).toBe(true);
-      // A value from below the claim is not the user's change to refuse.
-      expect(invalid).not.toHaveBeenCalled();
+      // The cluster gets the value from below the claim, so its error
+      // blocks the change as an error of the user does.
+      expect(invalid).toHaveBeenLastCalledWith(
+        steps("spec", "cluster", "zeebe", ...label.split(".")),
+        expect.stringMatching(new RegExp(`^${label.replace(".", "\\.")}: `)),
+      );
       expect(set).not.toHaveBeenCalled();
       expect(row().textContent).toContain("1 error");
-      if (message) expect(within(section()).getByText(message)).toBeDefined();
+      if (message)
+        expect(within(section()).getAllByText(message)).toHaveLength(1);
     },
   );
 
-  it("counts an error that an editor shows at mount also in strict mode", () => {
+  it("shows a limit of the preset below its request once, in the words of the merge, and leaves the report to the host", () => {
+    const { invalid } = renderClosed({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(
+      within(section()).queryByText("The limit is below the request"),
+    ).toBeNull();
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      PRESET_BOTH,
+    );
+    expect(isOpen()).toBe(true);
+    expect(row().textContent).toContain("1 error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("warns about the resources of an embedded app and does not block", () => {
+    const invalid = vi.fn();
+    const { group, settings } = settingsGroupOf("gateway", "tasklist", {
+      cluster: { gateway: { mode: "Standalone" } },
+      preset: {
+        tasklist: {
+          resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+        },
+      },
+    });
+    render(
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        set={vi.fn()}
+        reset={vi.fn()}
+        invalid={invalid}
+      />,
+    );
+    const tasklist = screen.getByRole("region", { name: "Tasklist settings" });
+    const heading = within(
+      within(tasklist).getByRole("heading", { level: 3 }),
+    ).getByRole("button");
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    expect(heading.textContent).not.toMatch(/error/);
+    expect(invalid).not.toHaveBeenCalled();
+    const resources = within(tasklist).getAllByRole("group", {
+      name: "resources",
+      hidden: true,
+    })[0];
+    expect(within(resources).queryByRole("alert", { hidden: true })).toBeNull();
+    expect(resources.textContent).toContain(PRESET_BOTH);
+    expect(
+      within(resources).queryByText("The limit is below the request", {
+        ignore: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("counts a merged error at mount also in strict mode", () => {
     const invalid = vi.fn();
     const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
       preset: {
@@ -706,24 +835,326 @@ describe("SettingsEditor collapsed", () => {
     expect(invalid).not.toHaveBeenCalled();
   });
 
-  it("drops the error from the heading once the editor shows none, though the value below the claim still fails", async () => {
-    const { set } = renderClosed({
-      preset: {
-        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
-      },
-    });
-    expect(row().textContent).toContain("1 error");
-    const limit = within(settingRow("resources")).getByRole("group", {
-      name: "CPU limit",
-    });
-    await userEvent.clear(
-      within(limit).getByRole("textbox", { name: "Amount" }),
+  it("keeps the error when a cleared limit leaves the limit of the preset below the request", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
     );
+    await userEvent.clear(cpuLimit());
     expect(
       within(section()).queryByText("The limit is below the request"),
     ).toBeNull();
-    expect(set).toHaveBeenCalled();
+    const alert = within(settingRow("resources")).getByRole("alert");
+    expect(alert.textContent).toBe(PRESET_LIMIT);
+    expect(cpuLimit().getAttribute("aria-describedby")).toContain(alert.id);
+    expect(row().textContent).toContain("1 error");
+    expect(invalid).not.toHaveBeenCalled();
+    // The editor writes the whole value that it shows, as before.
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { cpu: "2" } } },
+    });
+  });
+
+  it("lets an edit beside a fault of the preset through, and names no source for the copy that the claim then holds", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: {
+        resources: {
+          requests: { cpu: "2", memory: "2Gi" },
+          limits: { cpu: "1" },
+        },
+      },
+    });
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      "The CPU limit of 1 is below the CPU request of 2.",
+    );
+    expect(row().textContent).toContain("1 error");
+  });
+
+  it("names the preset as the source of the limit when the limit field is empty and the claim sets the request", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{ limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.click(row());
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(amount("CPU request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { resources: { requests: { cpu: "2" } } },
+    });
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      PRESET_LIMIT,
+    );
+    expect(row().textContent).toContain("1 error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("drops the error once the limit of the claim is not below the request", async () => {
+    const invalid = vi.fn();
+    render(
+      <MergedHost
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={invalid}
+      />,
+    );
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(cpuLimit(), "3");
+    expect(within(settingRow("resources")).queryByRole("alert")).toBeNull();
     expect(row().textContent).not.toMatch(/error/);
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("writes the whole value after a refused edit where no claim merges, as on the preset page", async () => {
+    const set = vi.fn();
+    const { group } = settingsGroupOf("zeebe", "zeebe", {});
+    const settings = settingsOf({
+      group,
+      spec: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "3" } } },
+      },
+    });
+    render(
+      <SettingsEditor
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        set={set}
+        reset={vi.fn()}
+      />,
+    );
+    await userEvent.type(amount("CPU request"), "4");
+    expect(set).not.toHaveBeenCalled();
+    await userEvent.type(amount("CPU limit"), "0");
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "resources"),
+      { requests: { cpu: "24" }, limits: { cpu: "30" } },
+    );
+  });
+
+  it.each([
+    ["a request typed above the limit", "CPU request", "4", false],
+    ["a limit typed below the request", "CPU limit", "1", true],
+  ])(
+    "refuses %s where no claim merges, as on the preset page",
+    async (_, label, typed, clear) => {
+      const set = vi.fn();
+      const { group } = settingsGroupOf("zeebe", "zeebe", {});
+      const settings = settingsOf({
+        group,
+        spec: {
+          zeebe: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+          },
+        },
+      });
+      render(
+        <SettingsEditor
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={set}
+          reset={vi.fn()}
+        />,
+      );
+      if (clear) await userEvent.clear(amount(label));
+      set.mockClear();
+      await userEvent.type(amount(label), typed);
+      expect(set).not.toHaveBeenCalled();
+      expect(screen.getByText("The limit is below the request")).toBeDefined();
+    },
+  );
+
+  it("tells to reset a resource without a field once an edit of another amount copied it into the claim", async () => {
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{
+          requests: { "ephemeral-storage": "2Gi" },
+          limits: { "ephemeral-storage": "1Gi" },
+        }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.type(amount("CPU request"), "1");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: {
+        resources: {
+          requests: { "ephemeral-storage": "2Gi", cpu: "1" },
+          limits: { "ephemeral-storage": "1Gi" },
+        },
+      },
+    });
+    expect(within(settingRow("resources")).getByRole("alert").textContent).toBe(
+      "The ephemeral-storage limit of 1Gi is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove these values from the claim.",
+    );
+  });
+
+  it("reports the error that the editor shows for a value from below the claim at mount also in strict mode, as on the preset page", () => {
+    const invalid = vi.fn();
+    const { group } = settingsGroupOf("zeebe", "zeebe", {});
+    const settings = settingsOf({
+      group,
+      spec: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    render(
+      <StrictMode>
+        <SettingsEditor
+          group={group}
+          settings={settings}
+          secrets={SECRETS}
+          set={vi.fn()}
+          reset={vi.fn()}
+          invalid={invalid}
+        />
+      </StrictMode>,
+    );
+    expect(screen.getByText("The limit is below the request")).toBeDefined();
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "resources"),
+      "resources: The limit is below the request",
+    );
+  });
+
+  it("lets a fix of one of two faults of the preset through, and drops its message", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        preset={{
+          requests: { cpu: "2", memory: "2Gi" },
+          limits: { cpu: "1", memory: "1Gi" },
+        }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.clear(cpuLimit());
+    await userEvent.type(cpuLimit(), "3");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: {
+        resources: {
+          requests: { cpu: "2", memory: "2Gi" },
+          limits: { cpu: "3", memory: "1Gi" },
+        },
+      },
+    });
+    expect(
+      within(settingRow("resources"))
+        .getAllByRole("alert")
+        .map((a) => a.textContent),
+    ).toEqual(["The memory limit of 1Gi is below the memory request of 2Gi."]);
+  });
+
+  async function openTasklist() {
+    await userEvent.click(
+      within(
+        within(
+          screen.getByRole("region", { name: "Tasklist settings" }),
+        ).getByRole("heading", { level: 3 }),
+      ).getByRole("button"),
+    );
+  }
+
+  it("lets an edit beside a fault of the preset in an embedded group reach the claim", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        process="tasklist"
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "1" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await openTasklist();
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      tasklist: {
+        resources: {
+          requests: { cpu: "2", memory: "2Gi" },
+          limits: { cpu: "1" },
+        },
+      },
+    });
+    expect(invalid).not.toHaveBeenCalled();
+    expect(settingRow("resources").textContent).toContain(
+      "The CPU limit of 1 is below the CPU request of 2. Correct it before Tasklist runs standalone.",
+    );
+  });
+
+  it("warns about a typed limit below its request in an embedded group", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <MergedHost
+        process="tasklist"
+        preset={{ requests: { cpu: "2" }, limits: { cpu: "3" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await openTasklist();
+    await userEvent.clear(amount("CPU limit"));
+    await userEvent.type(amount("CPU limit"), "1");
+    expect(onClaim).toHaveBeenLastCalledWith({
+      tasklist: {
+        resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+      },
+    });
+    expect(invalid).not.toHaveBeenCalled();
+    const resources = settingRow("resources");
+    expect(within(resources).queryByRole("alert")).toBeNull();
+    expect(resources.textContent).toContain(
+      "The CPU limit of 1 is below the CPU request of 2. Correct it before Tasklist runs standalone.",
+    );
+  });
+
+  it("still blocks a typed amount that is not a number in an embedded group", async () => {
+    const invalid = vi.fn();
+    render(<MergedHost process="tasklist" preset={{}} invalid={invalid} />);
+    await openTasklist();
+    await userEvent.type(amount("CPU limit"), "x");
+    expect(invalid).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "tasklist", "resources"),
+      "resources: Enter a number",
+    );
+  });
+
+  it("shows no merged error for a valid preset and a request of the claim below its limit", async () => {
+    const invalid = vi.fn();
+    render(<MergedHost preset={{ limits: { cpu: "4" } }} invalid={invalid} />);
+    await userEvent.click(row());
+    const request = within(settingRow("resources")).getByRole("group", {
+      name: "CPU request",
+    });
+    await userEvent.type(
+      within(request).getByRole("textbox", { name: "Amount" }),
+      "2",
+    );
+    expect(within(settingRow("resources")).queryByRole("alert")).toBeNull();
+    expect(invalid).not.toHaveBeenCalled();
   });
 
   it("stays closed after the user closes it while its count of errors stays the same", async () => {

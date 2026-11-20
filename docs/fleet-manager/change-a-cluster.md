@@ -178,7 +178,15 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 
 **Discard** removes every unsaved change. The editors then show the live values again.
 
-A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
+A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Closing the editor does not clear an error of the merged value, which the next paragraphs describe. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
+
+Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the editor shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2`. When the preset alone gives a limit below its request, the error names the preset for both values as soon as the editor opens.
+
+While the error shows, also before you change anything, **Review** is disabled. The bar names the setting and the error, also when its editor is closed. Set a limit that is not below the request, or a lower request.
+
+For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable **Review**. Correct it before the process runs on its own, because its resources apply only then.
+
+A resource such as `ephemeral-storage` has no field in the editor. An edit of another amount of the same setting writes its values into the claim too. **Reset to preset** removes them from the claim, together with the other amounts that the claim sets there. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 
 ## A claim made outside the fleet manager
 

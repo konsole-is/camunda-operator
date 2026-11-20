@@ -16,6 +16,7 @@ import { useAnswered } from "@/lib/k8s/answered";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
+import { blockingMergedErrors } from "@/components/cluster/editable-settings";
 import {
   createReleaseChoices,
   releaseLabel,
@@ -399,7 +400,7 @@ export function ClusterCreateFlow({
       ];
     },
     settings: (draft) => {
-      const { environment, fields } = derive(draft);
+      const { environment, fields, drafted } = derive(draft);
       return [
         ...settingsFailures,
         ...settingsErrors(draft, {
@@ -411,6 +412,13 @@ export function ClusterCreateFlow({
         }),
         ...secretErrors(draft, secretsRead).filter(
           (e) => !e.startsWith(ATTACHMENTS),
+        ),
+        // The value of the cluster can fail while step 3 is not open, as
+        // after a change of the preset.
+        ...blockingMergedErrors(
+          fields,
+          drafted.merged.spec,
+          draft.claim.spec.cluster ?? {},
         ),
         ...editor.shown("spec.cluster"),
       ];
