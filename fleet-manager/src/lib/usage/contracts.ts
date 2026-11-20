@@ -261,13 +261,11 @@ type Condition = {
  * contractKey. A namespaced reference resolves in the namespace of the user.
  * A claim of either kind names a contract through a parameter of a built-in
  * registration that publishes contracts already in its namespace, such as
- * existing-object-storage: by the parameter that its request gets from the
- * claim policy, else, when the policy does not resolve, by the one of its
- * selection and by the one that the policy alone gives its request. It names
- * the contract this way before its cluster or plane exists. A request of
- * such a registration names it by its parameter. A request of any other
- * registration names each contract that a status output of the slot of its
- * section gives, unless the request wrote that contract.
+ * existing-object-storage: by the parameter that requestedParameters gives
+ * its request. It names the contract this way before its cluster or plane
+ * exists. A request of such a registration names it by its parameter. A
+ * request of any other registration names each contract that a status output
+ * of the slot of its section gives, unless the request wrote that contract.
  * Each list is sorted by kind, namespace, and name.
  */
 export function contractUsage(

@@ -118,12 +118,11 @@ export function presetResources(
  * resources of presetResources; for a cluster preset, the cluster claims
  * whose spec.presetRef is name; each claim of either kind with a selection,
  * and each request, of a built-in registration whose preset parameter lists
- * kind, when that parameter, or the one its request gets from the claim
- * policy, is name. A selection whose policy does not resolve also counts by
- * the parameter that the policy alone gives its request. A claim names a
- * preset this way before its resource exists. Each object is in the list
- * once, sorted by kind in the order of PresetUserKind, then namespace, then
- * name, by code unit. An empty name matches nothing.
+ * kind, when that parameter, or the one that requestedParameters gives its
+ * request, is name. A claim names a preset this way before its resource
+ * exists. Each object is in the list once, sorted by kind in the order of
+ * PresetUserKind, then namespace, then name, by code unit. An empty name
+ * matches nothing.
  */
 export function presetUsers(
   kind: PresetKind,
