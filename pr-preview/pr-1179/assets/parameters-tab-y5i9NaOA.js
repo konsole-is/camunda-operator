@@ -1,0 +1,37 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";import{a as n,n as r,u as i}from"./json-Ch039IR8.js";import{_ as a,g as o,m as s,v as c,y as l}from"./release-zhHsTP2R.js";import{c as u,l as d}from"./fields-CnMyiCBC.js";import{n as f,r as p,t as m}from"./not-read-RuqQXk-B.js";import{a as h,i as g,n as _,o as v}from"./claim-tab-DbqP0gyG.js";import{i as y,r as b,t as x}from"./values-B2NDHvSx.js";import{n as S,r as C}from"./tab-parts-CL47Dl9H.js";function w(e,t,n){let o=e.spec.parameters;if(o!==void 0&&!b(o))return{error:`The parameter schema is not an object.`};let c=o?.properties;if(c!==void 0&&!b(c))return{error:`The properties of the parameter schema are not an object.`};let u=l(e,void 0);if(!(`value`in u))return u;let d=[];if(!n.includes(`Environment`))for(let n of t){if(!D(n,e.metadata.name??``))return{error:`The parameters of the Environment ${n.metadata.name??``} for this option are not valid.`};let t=l(e,n);if(!(`value`in t))return t;d.push({name:n.metadata.name??``,environment:n.spec.displayName||(n.metadata.name??``),policies:t.value})}let f=s(e)?.hidden??[];return{value:[...new Set([...Object.keys(c??{}),...Object.keys(u.value),...d.flatMap(({policies:e})=>Object.keys(e))])].filter(e=>!f.includes(e)).sort(r).map(e=>{let t=i(u.value,e),r=c?i(c,e):void 0;return{name:e,...r===void 0&&t===void 0&&{environmentOnly:!0},...T(r),...t&&a(t)&&{fallback:t.value},claimEditable:t?.claimEditable===!0,...!n.includes(`Environment`)&&{environments:d.map(({name:t,environment:n,policies:r})=>{let o=i(r,e);return{name:t,environment:n,value:o&&a(o)?o.value:void 0,claimEditable:o?.claimEditable===!0}})}}})}}function T(e){if(e===void 0)return{};let t=u(e);return!t||!b(e)?{error:`The schema of this parameter is not an object.`}:!y(e.description,!0)||!y(e.type,!0)||!E(e.minimum)||!E(e.maximum)||e.enum!==void 0&&!Array.isArray(e.enum)?{error:`The schema of this parameter has a field of the wrong type.`}:{...typeof e.description==`string`&&{description:e.description},...typeof e.type==`string`&&{type:e.type},...t.minimum!==void 0&&{minimum:t.minimum},...t.maximum!==void 0&&{maximum:t.maximum},...Array.isArray(e.enum)&&{values:e.enum.map(e=>typeof e==`string`?e:JSON.stringify(e))}}}function E(e){return e===void 0||typeof e==`number`}function D(e,t){let n=e.spec.parameters;if(n===void 0)return!0;if(!b(n))return!1;let r=i(n,t);return r===void 0||b(r)&&Object.values(r).every(e=>b(e)&&(e.allowed===void 0||Array.isArray(e.allowed)&&e.allowed.every(b)))}function O(){return(O=e((()=>{d(),o(),n(),c(),x()})))()}function k({rows:e,unread:t}){return`value`in e?e.value.length===0?t.includes(`Environment`)?(0,M.jsx)(m,{kinds:[`Environment`]}):(0,M.jsx)(`p`,{className:`text-sm text-muted`,children:`This option takes no parameters.`}):(0,M.jsxs)(`div`,{className:`flex flex-col gap-4`,children:[(0,M.jsx)(`p`,{className:`text-sm text-text-2`,children:`Default and A claim can change it apply in a namespace without an environment. Each environment shows what a new claim in it gets. A claim that exists keeps the values that it resolved.`}),t.includes(`Environment`)&&(0,M.jsxs)(`p`,{className:`text-sm text-muted`,children:[`Values of the environments: `,p([`Environment`])]}),(0,M.jsx)(`div`,{className:`grid grid-cols-1 gap-4 lg:grid-cols-2`,children:e.value.map(e=>(0,M.jsx)(_,{label:e.name,children:e.error?(0,M.jsx)(S,{text:e.error}):(0,M.jsxs)(M.Fragment,{children:[e.description&&(0,M.jsx)(`p`,{className:`text-sm text-text-2`,children:e.description}),e.environmentOnly&&(0,M.jsx)(`p`,{className:`text-sm text-text-2`,children:`Only an environment sets this parameter.`}),(0,M.jsxs)(h,{children:[(0,M.jsx)(g,{label:`Type`,children:e.type??`Any`}),A(e)&&(0,M.jsx)(g,{label:`Range`,children:A(e)}),e.values&&(0,M.jsx)(g,{label:`Values`,children:e.values.join(`, `)}),(0,M.jsx)(g,{label:`Default`,children:(0,M.jsx)(j,{value:e.fallback,none:`None`})}),(0,M.jsx)(g,{label:`A claim can change it`,children:e.claimEditable?`Yes`:`No`}),e.environments?.map(e=>(0,M.jsx)(g,{label:e.environment,note:`A claim can change it: ${e.claimEditable?`Yes`:`No`}`,children:(0,M.jsx)(j,{value:e.value,none:`No value`})},e.name))]})]})},e.name))})]}):(0,M.jsx)(S,{text:`error`in e?e.error:e.refusal.message})}function A({minimum:e,maximum:t}){if(e!==void 0&&t!==void 0)return`${e} to ${t}`;if(e!==void 0)return`At least ${e}`;if(t!==void 0)return`At most ${t}`}function j({value:e,none:t}){return e===void 0?(0,M.jsx)(`span`,{className:`text-muted`,children:t}):(0,M.jsx)(`span`,{className:`font-mono break-all`,children:JSON.stringify(e)})}var M;function N(){return(N=e((()=>{M=t(),v(),f(),C(),k.__docgenInfo={description:`ParametersTab shows each parameter of rows in its own panel: its type,
+its range or values, its default, whether a claim can change it, and its
+value in each Environment. While Environment is in unread, it says that
+the values of the environments are not known.`,methods:[],displayName:`ParametersTab`,props:{rows:{required:!0,tsType:{name:`PolicyResult`,elements:[{name:`Array`,elements:[{name:`signature`,type:`object`,raw:`{
+  name: string;
+  environmentOnly?: true;
+  error?: string;
+  description?: string;
+  /** type is the type of the property schema, as written there. */
+  type?: string;
+  minimum?: number;
+  maximum?: number;
+  values?: readonly string[];
+  /** fallback is the value without an Environment: parameterValues of the registration. */
+  fallback?: unknown;
+  claimEditable: boolean;
+  /** environments is unset while Environment is not read. */
+  environments?: {
+    /** name is the name of the Environment, and environment its display name, else its name. */
+    name: string;
+    environment: string;
+    value?: unknown;
+    claimEditable: boolean;
+  }[];
+}`,signature:{properties:[{key:`name`,value:{name:`string`,required:!0}},{key:`environmentOnly`,value:{name:`literal`,value:`true`,required:!1}},{key:`error`,value:{name:`string`,required:!1}},{key:`description`,value:{name:`string`,required:!1}},{key:`type`,value:{name:`string`,required:!1},description:`type is the type of the property schema, as written there.`},{key:`minimum`,value:{name:`number`,required:!1}},{key:`maximum`,value:{name:`number`,required:!1}},{key:`values`,value:{name:`unknown`,required:!1}},{key:`fallback`,value:{name:`unknown`,required:!1},description:`fallback is the value without an Environment: parameterValues of the registration.`},{key:`claimEditable`,value:{name:`boolean`,required:!0}},{key:`environments`,value:{name:`Array`,elements:[{name:`signature`,type:`object`,raw:`{
+  /** name is the name of the Environment, and environment its display name, else its name. */
+  name: string;
+  environment: string;
+  value?: unknown;
+  claimEditable: boolean;
+}`,signature:{properties:[{key:`name`,value:{name:`string`,required:!0},description:`name is the name of the Environment, and environment its display name, else its name.`},{key:`environment`,value:{name:`string`,required:!0}},{key:`value`,value:{name:`unknown`,required:!1}},{key:`claimEditable`,value:{name:`boolean`,required:!0}}]}}],raw:`{
+  /** name is the name of the Environment, and environment its display name, else its name. */
+  name: string;
+  environment: string;
+  value?: unknown;
+  claimEditable: boolean;
+}[]`,required:!1},description:`environments is unset while Environment is not read.`}]}}],raw:`ParameterRow[]`}],raw:`PolicyResult<ParameterRow[]>`},description:``},unread:{required:!0,tsType:{name:`unknown`},description:``}}}})))()}export{w as i,N as n,O as r,k as t};
