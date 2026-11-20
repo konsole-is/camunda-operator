@@ -438,6 +438,24 @@ describe("ComponentSettingsEditor", () => {
       }),
     ).getByRole("textbox", { name: "Amount" });
 
+  it("leaves no edit of a longer value after a reset to the preset and a backspace", async () => {
+    brokerSlot({ requests: { cpu: "2" } }, { requests: { cpu: "1" } });
+    await openEditors();
+    await userEvent.click(
+      within(settingRow(group("Brokers"), "resources")).getByRole("button", {
+        name: "Reset to preset",
+      }),
+    );
+    await userEvent.type(brokerAmount("CPU request"), "2");
+    expect(claimSpec().cluster.zeebe.resources).toEqual({
+      requests: { cpu: "12" },
+    });
+    await userEvent.type(brokerAmount("CPU request"), "{Backspace}");
+    expect(claimSpec().cluster.zeebe.resources).toEqual({
+      requests: { cpu: "1" },
+    });
+  });
+
   it("ends with no change after a delete and a retype of the value of the claim", async () => {
     brokerSlot({ requests: { cpu: "1" } }, { requests: { cpu: "1" } });
     await openEditors();
