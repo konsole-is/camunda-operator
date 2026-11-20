@@ -34,14 +34,12 @@ import {
   byCodeUnit,
   decodeObject,
   environmentNameOf,
-  environmentOf,
   nameOf,
   own,
-  type PluginSelection,
   readyOutputs,
   type ResolvedPolicy,
-  resolve,
 } from "@/lib/policy";
+import { requestedParameters } from "./requested";
 
 /** CONTRACT_KINDS are the kinds of the connection contracts, in the order of the Connections tabs. */
 export const CONTRACT_KINDS = [
@@ -263,9 +261,8 @@ type Condition = {
  * contractKey. A namespaced reference resolves in the namespace of the user.
  * A claim of either kind names a contract through a parameter of a built-in
  * registration that publishes contracts already in its namespace, such as
- * existing-object-storage: by the parameter that its request gets from the
- * claim policy, else, when the policy does not resolve, by the one of its
- * selection. It names the contract this way before its cluster or plane
+ * existing-object-storage: by the parameter that requestedParameters gives
+ * its request. It names the contract this way before its cluster or plane
  * exists. A request of such a registration names it by its parameter. A
  * request of any other registration names each contract that a status output
  * of the slot of its section gives, unless the request wrote that contract.
@@ -585,7 +582,7 @@ function selectedContracts(
   return selections.flatMap((s) =>
     contractParameters(
       s.registration,
-      requestedParameters(claim, s, sources) ?? s.parameters,
+      requestedParameters(claim, s, sources),
     ).map(([kind, name, parameter]) => ({
       kind,
       name,
@@ -766,27 +763,6 @@ function waitingCauses(waiting: readonly WaitingRequest[]): string {
 
 function isContractKind(kind: string): kind is ContractKind {
   return (CONTRACT_KINDS as readonly string[]).includes(kind);
-}
-
-// requestedParameters gives the parameters of the request of selection of
-// claim, or undefined when the policy cannot be resolved for it.
-function requestedParameters(
-  claim: SelectingClaim,
-  selection: { section: string; registration: string; parameters?: unknown },
-  sources: ContractUserSources,
-): unknown {
-  const namespace = sources.namespaces.find(
-    (n) => n.metadata?.name === claim.metadata.namespace,
-  );
-  const resolved = resolve({
-    recorded: claim.status?.resolvedPolicy,
-    environment:
-      namespace && environmentOf(namespace, sources.environments).environment,
-    registrations: [...sources.registrations],
-    selections: [selection as PluginSelection],
-  });
-  if (!("value" in resolved)) return undefined;
-  return resolved.value.requests?.[0]?.parameters ?? {};
 }
 
 // USER_KINDS holds, for each contract kind, the kinds whose objects

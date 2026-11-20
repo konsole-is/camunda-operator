@@ -208,6 +208,31 @@ describe("presetUsers", () => {
       );
     });
 
+    it("counts a claim whose selection gives a claim-editable preset over the recorded policy", () => {
+      const resolvedPolicy: ResolvedPolicy = {
+        deletionPolicy: "Delete",
+        parameters: {
+          "database-server": {
+            preset: { value: "recorded", claimEditable: true },
+          },
+        },
+      };
+      const picked = {
+        ...named("team-e", "plain", {
+          plugins: [
+            {
+              section: "storage",
+              registration: "database-server",
+              parameters: { preset: "picked" },
+            },
+          ],
+        }),
+        status: { resolvedPolicy },
+      };
+      expect(users("picked", [picked])).toEqual([plain]);
+      expect(users("recorded", [picked])).toEqual([]);
+    });
+
     it("counts a claim whose environment gives the preset over the registration", () => {
       const environment = {
         apiVersion: "fleet.camunda.io/v1alpha1",
@@ -237,6 +262,131 @@ describe("presetUsers", () => {
         });
       expect(inEnvironment("from-environment")).toEqual([plain]);
       expect(inEnvironment("policy-default")).toEqual([]);
+    });
+  });
+
+  describe("with a claim that does not resolve", () => {
+    const recorded = (preset: string): ResolvedPolicy => ({
+      deletionPolicy: "Delete",
+      parameters: { elasticsearch: { preset: { value: preset } } },
+    });
+    const search = (parameters?: unknown) => ({
+      section: "secondary-storage",
+      registration: "elasticsearch",
+      ...(parameters !== undefined && { parameters }),
+    });
+    const notAnObject = {
+      section: "backup-storage",
+      registration: "existing-object-storage",
+      parameters: "x",
+    };
+    const claim = (
+      plugins: {
+        section: string;
+        registration: string;
+        parameters?: unknown;
+      }[],
+      resolvedPolicy?: ResolvedPolicy,
+    ) => ({
+      ...named("team-f", "broken", { plugins }),
+      ...(resolvedPolicy && { status: { resolvedPolicy } }),
+    });
+    const registration = {
+      metadata: { name: "elasticsearch" },
+      spec: {
+        sections: ["secondary-storage"],
+        mode: "Default",
+        parameterValues: { preset: "unlisted" },
+      },
+    } as PluginRegistration;
+    const users = (
+      name: string,
+      clusterClaims: PresetUsageSources["clusterClaims"],
+      more: Partial<PresetUsageSources> = {},
+    ) =>
+      presetUsers("ElasticsearchClusterPreset", name, {
+        ...sources,
+        clusterClaims,
+        planeClaims: [],
+        requests: [],
+        namespaces: [{ metadata: { name: "team-f" } }],
+        environments: [],
+        registrations: [],
+        ...more,
+      });
+    const broken = {
+      kind: "CamundaClusterClaim",
+      namespace: "team-f",
+      name: "broken",
+    };
+
+    it("counts the preset that the recorded policy gives a selection while another selection is not a JSON object", () => {
+      expect(
+        users("unlisted", [
+          claim([search(), notAnObject], recorded("unlisted")),
+        ]),
+      ).toEqual([broken]);
+    });
+
+    it("counts the preset that the recorded policy gives a selection whose parameters are not a JSON object", () => {
+      expect(
+        users("unlisted", [claim([search("x")], recorded("unlisted"))]),
+      ).toEqual([broken]);
+    });
+
+    it("counts the preset that a selection names while another selection is not a JSON object", () => {
+      expect(
+        users("chosen", [
+          claim([search({ preset: "chosen" }), notAnObject], recorded("other")),
+        ]),
+      ).toEqual([broken]);
+    });
+
+    it("does not count a preset that neither the selections nor the recorded policy name", () => {
+      expect(
+        users("unlisted", [
+          claim([search("x"), notAnObject], recorded("other")),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("counts a request that names the preset as well as the claim", () => {
+      expect(
+        users("unlisted", [claim([search("x")], recorded("unlisted"))], {
+          requests: [
+            named("team-f", "broken-search", {
+              registration: "elasticsearch",
+              parameters: { preset: "unlisted" },
+            }),
+          ],
+        }),
+      ).toEqual([
+        broken,
+        { kind: "PluginRequest", namespace: "team-f", name: "broken-search" },
+      ]);
+    });
+
+    it("counts the preset that the registration gives a selection while the registration of another selection does not exist", () => {
+      expect(
+        users(
+          "unlisted",
+          [
+            claim([
+              search(),
+              { section: "backup-storage", registration: "missing" },
+            ]),
+          ],
+          { registrations: [registration] },
+        ),
+      ).toEqual([broken]);
+    });
+
+    it("counts the preset that the registration gives a selection whose parameters are not a JSON object", () => {
+      expect(
+        users("unlisted", [claim([search("x")])], {
+          registrations: [registration],
+        }),
+      ).toEqual([broken]);
     });
   });
 
