@@ -16,7 +16,7 @@
         <link rel="prev" href="../management-planes/">
       
       
-        <link rel="next" href="../backups/">
+        <link rel="next" href="../platform-and-connections/">
       
       
         
@@ -478,6 +478,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -561,6 +569,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -877,6 +913,90 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2883,6 +3003,7 @@
 <h1 id="environments">Environments<a class="headerlink" href="#environments" title="Permanent link">&para;</a></h1>
 <p>An environment holds the policy for the claims in its namespaces. A claim asks for a Camunda cluster or a management plane. The policy names the platform config, the presets, and the releases that a claim can use. It sets the options that a claim can pick in each section, and the values of their parameters. It also sets the deletion default and the rules for a new namespace. The page <strong>Setup &gt; Environments</strong> of the fleet manager lists the environments and edits each one. The <a href="../../crds/environment/">Environment</a> reference lists the fields.</p>
 <p>The list shows each environment with its color, the number of its namespaces, its clusters, its management planes, and its status. Select an environment to open its editor. Select <strong>New environment</strong> to create one.</p>
+<p>A count shows <code>Not known</code> while the fleet manager has no current list of the objects that it counts. A failed read shows <code>Could not read &lt;kind&gt;: &lt;message&gt;</code> at the top of the page. A list that is out of date shows <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code></p>
 <p>If the fleet manager cannot read its settings, the editor shows <code>Changes are off: the fleet manager could not read its settings.</code> and accepts no change. Reload the page when the settings can be read again.</p>
 <h2 id="membership">Membership<a class="headerlink" href="#membership" title="Permanent link">&para;</a></h2>
 <p>A namespace belongs to the environment that its label <code>fleet.camunda.io/environment</code> names. A namespace belongs to one environment at most.</p>
@@ -2895,7 +3016,7 @@
 </span></code></pre></div>
 <p>In the editor, the section <strong>Namespaces</strong> lists the namespaces of the environment and their claims. To add a namespace, pick it in <strong>Add a namespace</strong> and select <strong>Add</strong>. The list offers only namespaces without an environment label. The review shows the label change, and <strong>Add the namespace</strong> writes it. The review also names each claim of the namespace that names no release or no platform config. Such a claim moves to the default of the environment.</p>
 <p>The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.</p>
-<p>When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist.</p>
+<p>When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist. The banner does not show while the fleet manager has no current list of the environments, the namespaces, the claims, or the clusters.</p>
 <table>
 <thead>
 <tr>
@@ -2989,8 +3110,10 @@
 </span></code></pre></div>
 <p>A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example <code>From the registration: 3</code>. When the option sets a map, the editor of the map shows <strong>Set to an empty map</strong> while it has no rows. Select it to make the environment value <code>{}</code>, a map with no entries. <strong>Use the inherited value</strong> goes back to the map of the option. <strong>A claim can change it</strong> lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.</p>
 <p>When <strong>A claim can change it</strong> is on, the parameter can get a list of choices, <code>allowed</code> in the YAML. Select <strong>Add a choice</strong> and give each choice a name, a label, and a value. The value of a map can be <strong>Set to an empty map</strong>, <code>{}</code>. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn <strong>A claim can change it</strong> off, the choices go too.</p>
-<p>A choice that another field manager set stays when you remove it, and the review names it, as <a href="#changes-apply-to-new-claims-only">Changes apply to new claims only</a> says. While such a choice is in the list, a save that turns <strong>A claim can change it</strong> off fails with <code>allowed needs claimEditable: true</code>. Remove the choice with the tool that set it first.</p>
+<p>A choice that another tool set stays when you remove it, unless you take it over in the review. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says how. While such a choice is in the list, a save that turns <strong>A claim can change it</strong> off can fail with <code>allowed needs claimEditable: true</code>. Then remove the choice first, with the take-over, and save. Turn <strong>A claim can change it</strong> off in a second save.</p>
 <p>A host pattern of an access option shows the host that it gives the first claim of the environment, for example <code>orders in team-a gets orders.team-a.example.com</code>. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section <strong>Presets</strong> allows. With an empty list, a new claim of the option is refused with <code>NotAllowed</code>, and the page says so.</p>
+<p>A parameter that the option requires needs a value from the environment or from the option, or <strong>A claim can change it</strong>. Without one, the page shows <code>This parameter needs a value.</code> under the parameter of an option that a section allows. You can still save. The create flow refuses a new claim that picks the option. When another tool writes such a claim, the request of the claim is refused with the reason <code>InvalidParameters</code>. The claim then waits with <code>RequestsReady</code> at <code>False</code>.</p>
+<p>A cluster claim gives its release to a parameter <code>releaseRef</code> of type string. A management plane claim gives its databases to the parameter <code>databases</code> in a section with the slot <code>managementDatabases</code>. These parameters need no value there. When only some claims of the option get no value, the warning names each claim kind and section, for example <code>a management plane claim in Access</code>.</p>
 <h2 id="template-parameters">Template parameters<a class="headerlink" href="#template-parameters" title="Permanent link">&para;</a></h2>
 <p>Some parameters are templates, for example the inline policy of the Connectors role. Such a parameter gets an editor with a chip for each placeholder. Select a chip to put the placeholder at the cursor.</p>
 <table>
@@ -3085,12 +3208,12 @@
 <td>The claim follows the default platform config.</td>
 </tr>
 <tr>
-<td><code>The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.</code></td>
-<td>The fleet manager cannot read a list that the note counts, so the count and the other notes can be incomplete. This note takes the place of <code>Changes apply to new claims only.</code> An alert at the top of the page shows the error.</td>
+<td><code>The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.</code></td>
+<td>A read of a list that the note counts failed, or the list is out of date. The count and the other notes can be incomplete. This note takes the place of <code>Changes apply to new claims only.</code> An alert at the top of the page shows the error of a failed read.</td>
 </tr>
 <tr>
 <td><code>This is the first environment. The claims in legacy have no environment label, …</code></td>
-<td>Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment.</td>
+<td>Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. This note does not show while the note <code>The fleet manager has no current list of …</code> shows.</td>
 </tr>
 <tr>
 <td><code>orders in team-a names no release, and this change removes the default release.</code></td>
@@ -3098,7 +3221,7 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Review</strong> shows the change to the environment before the save. A field manager is a tool that writes the object, such as <code>kubectl apply</code> or a GitOps tool. If another field manager set a field that the change leaves out, the field stays. To remove such a field, remove it with the tool that set it. The review names each one: <code>spec.sections.backup-storage stays, because another field manager set it.</code></p>
+<p><strong>Review</strong> shows the change to the environment before the save. Another tool, such as <code>kubectl apply</code> or a GitOps tool, can set a field that the change changes or removes. The review names such a field and the tool. It asks before the save takes the field over, as <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says. In Git mode, a field of another tool that the change removes stays, and the review names it: <code>spec.sections.backup-storage stays, because another tool set it.</code></p>
 <p>If the environment changed after you opened the page, the save writes nothing. It shows <code>The Environment production changed since you opened it.</code> Select <strong>Discard</strong> to load the current environment, then make your change again.</p>
 <p>In Git mode, the save pushes a commit, and the page waits until GitOps applied it. The form stays locked while it waits.</p>
 <h2 id="delete-an-environment">Delete an environment<a class="headerlink" href="#delete-an-environment" title="Permanent link">&para;</a></h2>
@@ -3193,13 +3316,13 @@
         
         
           
-          <a href="../backups/" class="md-footer__link md-footer__link--next" aria-label="Next: Back up and restore a cluster">
+          <a href="../platform-and-connections/" class="md-footer__link md-footer__link--next" aria-label="Next: Platform config and connections">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Back up and restore a cluster
+                Platform config and connections
               </div>
             </div>
             <div class="md-footer__button md-icon">

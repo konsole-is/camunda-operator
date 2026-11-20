@@ -478,6 +478,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -561,6 +569,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -842,6 +878,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -2827,8 +2947,9 @@
 
 
 <h1 id="the-fleet-view">The fleet view<a class="headerlink" href="#the-fleet-view" title="Permanent link">&para;</a></h1>
-<p>The <strong>Fleet</strong> page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button <strong>New cluster</strong> opens the create flow.</p>
+<p>The <strong>Fleet</strong> page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button <strong>New cluster</strong> opens the create flow, which <a href="../create-a-cluster/">Create a cluster</a> describes.</p>
 <p>The page updates live. A new cluster, a change of status, or a new backup shows without a reload. The warnings of the pods update every 15 seconds.</p>
+<p>When the page cannot read a list, it shows <code>Could not read &lt;kind&gt;:</code> and the error. A list can also be not current, for example the copy of an earlier visit. The page then shows <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code> In both cases, the page does not say that there is no cluster or no plane. The line goes away when the page gets a current list.</p>
 <h2 id="needs-attention">Needs attention<a class="headerlink" href="#needs-attention" title="Permanent link">&para;</a></h2>
 <p>The panel <strong>Needs attention</strong> is at the top of the page, above the tabs. It shows the same list on every tab, and the filters do not apply to it. It lists, in this order:</p>
 <table>
@@ -2862,7 +2983,7 @@
 </tr>
 </tbody>
 </table>
-<p>Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When the page cannot read one of these lists, the panel says "Some lists could not be read, so this list can miss entries."</p>
+<p>Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When one of these lists is not read or not current, the panel says "Some lists could not be read, so this list can miss entries."</p>
 <h2 id="environments-and-tabs">Environments and tabs<a class="headerlink" href="#environments-and-tabs" title="Permanent link">&para;</a></h2>
 <p>A namespace belongs to the <code>Environment</code> that its label <code>fleet.camunda.io/environment</code> names, as <a href="../../crds/environment/">Environment</a> shows. The page has one tab for each <code>Environment</code>, in the order of their names. Each tab shows the display name of the environment, its color, and the number of its clusters. The tab <strong>All</strong> comes first and shows every cluster, with one table for each environment.</p>
 <p>The color comes from <code>spec.color</code> of the <code>Environment</code>:</p>
@@ -2888,7 +3009,7 @@
 <li>On the tab of an environment, it lists the planes that serve that environment. A plane serves the environments that its claim names, as <a href="../../crds/camundamanagementclusterclaim/">CamundaManagementClusterClaim</a> shows.</li>
 <li>On <strong>No environment</strong>, it lists the planes that serve a namespace that belongs to no environment.</li>
 </ul>
-<p>When the tab has no plane, the page says "No management plane serves this environment." When no plane exists at all, it says "No management plane yet." on <strong>All</strong>.</p>
+<p>When the tab has no plane, the page says "No management plane serves this environment." When no plane exists at all, it says "No management plane yet." on <strong>All</strong>. When the page has no current list of the planes, it says <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code> in place of these lines.</p>
 <h2 id="clusters">Clusters<a class="headerlink" href="#clusters" title="Permanent link">&para;</a></h2>
 <p>Each table of clusters has these columns:</p>
 <table>

@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -4016,6 +4136,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>The <code>ManagementAuthConfig</code>, the annotations on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay. <code>Ready</code> reads <code>True</code> with reason <code>Suspended</code>.</p>
 <p><code>status.endpoints</code> stays, and so do the Services and the ServiceAccounts. A route answers again when the management plane resumes. See <a href="#routes">Routes</a>.</p>
 <p>Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is suspended, because all three authenticate through Management Identity. The orchestration clusters continue to run.</p>
+<p>In the <code>keycloak</code> mode, an orchestration cluster that uses OIDC signs in at the Keycloak of the management plane. See <a href="#an-oidc-cluster-must-name-the-same-issuer">An OIDC cluster must name the same issuer</a>. Its users and API clients cannot sign in or get tokens until the management plane resumes.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>
 <p>Deleting the <code>CamundaManagementCluster</code> removes:</p>
 <ul>
@@ -4035,6 +4156,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li>The Secrets that you referenced.</li>
 <li>The orchestration clusters.</li>
 </ul>
+<p>In the <code>keycloak</code> mode, an orchestration cluster that uses OIDC signs in at the Keycloak of the management plane. After the deletion, its users and API clients cannot sign in or get tokens. Set <code>spec.auth.oidc.issuerUrl</code> of its platform config to another issuer.</p>
 <p>The resource stays in <code>Terminating</code> while the Kubernetes API refuses a call, or while a Deployment named <code>my-management-identity</code> of another owner exists in this namespace. The operator log names the cause. Delete or rename that Deployment.</p>
 <h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
 <p><code>kubectl get camundamanagementcluster</code> shows <code>Ready</code>, its reason, and the age.</p>

@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -3148,9 +3268,10 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
 <p>Without <code>spec.deletionPolicy</code>, the claim uses the default that it recorded from its <code>Environment</code> at creation, or <code>Delete</code>. When the policy is <code>Orphan</code> and a selected registration does not list <code>Orphan</code> in <code>spec.deletionPolicies</code>, the claim is refused with <code>NotAllowed</code>, and it creates nothing. When you delete such a claim, it deletes nothing and stays, and <code>Ready</code> is <code>False</code> with reason <code>NotAllowed</code>. To continue the deletion, set <code>spec.deletionPolicy: Delete</code>.</p>
+<p>The claim gives a change of its policy to its requests also while <code>Ready</code> reports a failed check, such as <code>InvalidReference</code>. It does not give them an <code>Orphan</code> policy that a selected registration does not support, or while a selected registration does not exist. <code>Ready</code> then has reason <code>NotAllowed</code>, and the requests keep the policy that they had. A delete with foreground propagation, as some GitOps tools send, can delete the requests before the claim starts its deletion. Each request then uses the policy that it has at that time. So a request that still has <code>Delete</code> deletes the resources of its plugin.</p>
 <p>The claim always deletes the <code>CamundaManagementCluster</code> <code>&lt;claim&gt;</code> first. Then it deletes the requests. The claim stays until each plugin deleted or kept the resources of its request. While the claim waits, <code>Ready</code> is <code>False</code> with reason <code>Deleting</code>, and the message names each object that is still there. Read it with <code>kubectl get camundamanagementclusterclaim my-plane -n my-plane-ns -o yaml</code>.</p>
 <h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
-<p><code>Ready</code> is <code>False</code> with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:</p>
+<p><code>Ready</code> is <code>False</code> with a reason of the check of the claim when that check fails. The claim then creates nothing. It only gives its deletion policy to its requests, as <a href="#deletion">Deletion</a> describes. It also adds the finalizer <code>fleet.camunda.io/cleanup</code> back if someone removed it:</p>
 <table>
 <thead>
 <tr>
@@ -3177,7 +3298,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>NotAllowed</code></td>
-<td>The <code>Environment</code> does not allow the preset of the built-in PostgreSQL or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code>. The message names the value.</td>
+<td>The <code>Environment</code> does not allow the preset of the built-in PostgreSQL or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code>. After the claim recorded its policy, the same holds for a selected registration that does not exist. The message names the value.</td>
 <td>Pick an allowed value, or change the <code>Environment</code>. For <code>Orphan</code>, set <code>spec.deletionPolicy: Delete</code>, or pick a registration that supports <code>Orphan</code>.</td>
 </tr>
 <tr>

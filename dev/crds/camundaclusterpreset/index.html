@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -2962,7 +3082,14 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </table>
 <p>Each cluster reads the Secret of <code>auth.clientSecretRef</code> in its own namespace. Every namespace with a cluster that inherits the client needs that Secret.</p>
 <h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
-<p>When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change of <code>auth.basic.adminEmail</code> rolls no pods, and a change under <code>connectors.serviceAccount</code> rolls only the connectors pods. A new <code>auth.basic.passwordRotation</code> rotates the admin password of each cluster and rolls only the connectors pods, see <a href="../camundacluster/#authentication">Authentication</a>.</p>
+<p>When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change of <code>auth.basic.adminEmail</code> rolls no pods. A change under <code>connectors.serviceAccount</code> restarts only the connectors pods, and only in a cluster that runs connectors. The connectors pods restart after one of these changes:</p>
+<ul>
+<li>The preset adds or removes the whole block, and the cluster does not set a block of its own. The connectors then move between the ServiceAccount <code>default</code> and an account of their own. See <a href="../camundacluster/#connectors">Connectors</a>.</li>
+<li>The annotations change on an account that the operator creates. A switch of <code>create</code> also restarts the pods when the account has annotations.</li>
+<li>The annotation <code>azure.workload.identity/client-id</code> is added or removed. This also applies to an account with <code>create: false</code>.</li>
+</ul>
+<p>Other changes to an account with <code>create: false</code> restart no pod.</p>
+<p>A new value of <code>auth.basic.passwordRotation</code> rotates the admin password of each cluster and rolls only the connectors pods, see <a href="../camundacluster/#authentication">Authentication</a>.</p>
 <p>A preset can lower <code>zeebe.storageSize</code>. A cluster that already applied a larger size keeps its volumes and records the Warning event <code>StorageShrinkIgnored</code>. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See <a href="../../guides/operations/#grow-storage">Operations: Grow storage</a>.</p>
 <p>A change of <code>zeebe.storageClassName</code> reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the Warning event <code>StorageClassChangeIgnored</code>. Volumes that <code>whenDeleted: Retain</code> kept from a deleted cluster of the same name keep their class.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>

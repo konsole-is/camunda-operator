@@ -1,0 +1,4000 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Core Kubernetes operator for the Camunda platform">
+      
+      
+      
+        <link rel="canonical" href="https://konsole-is.github.io/camunda-operator/dev/fleet-manager/presets-and-releases/">
+      
+      
+        <link rel="prev" href="../platform-and-connections/">
+      
+      
+        <link rel="next" href="../registrations/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Presets and releases - Camunda Operator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/panzoom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <meta name="panzoom-theme" content="material">
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#presets-and-releases" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Camunda Operator" class="md-header__button md-logo" aria-label="Camunda Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Camunda Operator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Presets and releases
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/konsole-is/camunda-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konsole-is/camunda-operator
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Camunda Operator" class="md-nav__button md-logo" aria-label="Camunda Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Camunda Operator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/konsole-is/camunda-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konsole-is/camunda-operator
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started-management-plane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started with the management plane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../go-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use the API types from Go
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet manager
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Fleet manager
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install the fleet manager
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Presets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-presets-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Presets page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#who-uses-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who uses a preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-preset-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The preset page
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The preset page">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#change-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-impact-of-a-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The impact of a change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings-and-merge-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings and merge rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fields-a-preset-cannot-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields a preset cannot set
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inheriting-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inheriting resources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-from-the-preset-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete from the preset page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rotate-the-admin-password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotate the admin password
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#releases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Releases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-releases-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Releases list
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Release settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-change-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a change does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#move-clusters-to-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Move clusters to a release
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Move clusters to a release">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#move-one-cluster-or-many" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Move one cluster or many
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-moves-with-a-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What moves with a claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#downgrades" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downgrades
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backups-block-a-move-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backups block a move here
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environments-of-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environments of a release
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/secondary-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secondary storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/management-plane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management plane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/backup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/writing-a-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../crds/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CRD reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_2" id="__nav_10_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Cluster
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundacluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaplatformconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaPlatformConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundarelease/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaRelease
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_3" id="__nav_10_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage backends
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Storage backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/elasticsearchcluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElasticsearchCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/elasticsearchclusterpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElasticsearchClusterPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserver/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserverpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServerPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_4" id="__nav_10_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/secondarystorageconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SecondaryStorageConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/objectstorageconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ObjectStorageConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserverconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServerConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/managementauthconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagementAuthConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_5" id="__nav_10_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementcluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_6" id="__nav_10_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaoptimize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaOptimize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_7" id="__nav_10_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalbackupelasticsearch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalBackupElasticsearch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalbackuprdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalBackupRDBMS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/backupschedule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BackupSchedule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_8" id="__nav_10_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restore
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Restore
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalrestoreelasticsearch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalRestoreElasticsearch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalrestorerdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalRestoreRDBMS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pointintimerestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointInTimeRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_9" id="__nav_10_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Plugins
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginsection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginSection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginregistration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRegistration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginrequest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRequest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/grant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Grant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_10" id="__nav_10_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Fleet
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Presets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-presets-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Presets page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#who-uses-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Who uses a preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a preset
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-preset-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The preset page
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The preset page">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#change-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-impact-of-a-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The impact of a change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#settings-and-merge-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings and merge rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fields-a-preset-cannot-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields a preset cannot set
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inheriting-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inheriting resources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-from-the-preset-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete from the preset page
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rotate-the-admin-password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotate the admin password
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#releases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Releases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-releases-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Releases list
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delete a release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#new-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Release settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-a-change-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a change does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#move-clusters-to-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Move clusters to a release
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Move clusters to a release">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#move-one-cluster-or-many" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Move one cluster or many
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-moves-with-a-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What moves with a claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#downgrades" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downgrades
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backups-block-a-move-here" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backups block a move here
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environments-of-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environments of a release
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="presets-and-releases">Presets and releases<a class="headerlink" href="#presets-and-releases" title="Permanent link">&para;</a></h1>
+<p>A preset holds the shared settings of the resources that name it. A release says what a platform runs: the versions, the pinned images, and the environment variables. The pages <strong>Setup &gt; Presets</strong> and <strong>Setup &gt; Releases</strong> of the fleet manager show them.</p>
+<p>If the fleet manager cannot read its settings, the pages show <code>Changes are off: the fleet manager could not read its settings.</code> and accept no change. Reload the page when the settings can be read again.</p>
+<h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
+<p>The page <strong>Setup &gt; Presets</strong> of the fleet manager lists the presets of three kinds:</p>
+<table>
+<thead>
+<tr>
+<th>Kind on the page</th>
+<th>Preset</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cluster</td>
+<td><a href="../../crds/camundaclusterpreset/">CamundaClusterPreset</a></td>
+<td><code>CamundaCluster</code></td>
+</tr>
+<tr>
+<td>Elasticsearch</td>
+<td><a href="../../crds/elasticsearchclusterpreset/">ElasticsearchClusterPreset</a></td>
+<td><code>ElasticsearchCluster</code></td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td><a href="../../crds/databaseserverpreset/">DatabaseServerPreset</a></td>
+<td><code>DatabaseServer</code></td>
+</tr>
+</tbody>
+</table>
+<p>The page shows who uses each preset and how each field of it merges. It edits a preset, with a preview of the resources whose pods roll. It deletes a preset that nothing uses. It does not create a preset. Apply a new preset with <code>kubectl</code> or through your Git repository.</p>
+<h2 id="the-presets-page">The Presets page<a class="headerlink" href="#the-presets-page" title="Permanent link">&para;</a></h2>
+<p>The list has one row for each preset, sorted by kind and then by name. To show one kind, select <strong>Cluster</strong>, <strong>Elasticsearch</strong>, or <strong>PostgreSQL</strong> in the filter <strong>Kind</strong>. The columns are:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>What it shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Name</td>
+<td>The name of the preset, with its description below it.</td>
+</tr>
+<tr>
+<td>Kind</td>
+<td><strong>Cluster</strong>, <strong>Elasticsearch</strong>, or <strong>PostgreSQL</strong>.</td>
+</tr>
+<tr>
+<td>Key facts</td>
+<td>The size that the preset sets: brokers and partitions for a cluster, nodes for Elasticsearch, instances for PostgreSQL. Then the CPU and memory requests and the storage size. A fact that the preset does not set is not shown.</td>
+</tr>
+<tr>
+<td>Allowed in</td>
+<td>The <a href="../environments/#platform-config-presets-and-releases">environments</a> that list the preset, or <strong>Nowhere</strong>. The operator refuses a claim that names a preset that its environment does not list. The column shows <strong>Unknown</strong> while the fleet manager cannot read the environments.</td>
+</tr>
+<tr>
+<td>Used by</td>
+<td>The number of users of each kind, for example <code>1 cluster, 1 claim</code>, or <strong>Unused</strong>. <a href="#who-uses-a-preset">Who uses a preset</a> says what counts as a user. The column shows <strong>Unknown</strong> while the fleet manager cannot read a list that it needs to find the users. <a href="#delete-a-preset">Delete a preset</a> names these lists.</td>
+</tr>
+<tr>
+<td>Last changed</td>
+<td>The time of the newest change to the preset, in UTC to the minute. In Git mode, this is the time that GitOps applied the file.</td>
+</tr>
+</tbody>
+</table>
+<p>The description comes from the annotation <code>kubernetes.io/description</code> of the preset:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">kubernetes.io/description</span><span class="p">:</span><span class="w"> </span><span class="s">"For</span><span class="nv"> </span><span class="s">production</span><span class="nv"> </span><span class="s">workloads</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">three</span><span class="nv"> </span><span class="s">brokers</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">replication."</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="c1"># ... the rest of your preset</span>
+</span></code></pre></div>
+<p>A preset without the annotation shows no description. Two presets of different kinds can have the same name, for example an Elasticsearch preset and a PostgreSQL preset both named <code>standard</code>. The column <strong>Kind</strong> tells them apart, and the path of the preset page holds the kind, for example <code>/setup/presets/postgresql/standard</code>.</p>
+<p>If the fleet manager cannot read a kind, the page shows <code>Could not read &lt;kind&gt;: &lt;message&gt;</code> above the table.</p>
+<p>The users of a preset count only for the preset of their kind. A PostgreSQL preset <code>standard</code> that is in use does not stop the delete of an unused Elasticsearch preset <code>standard</code>.</p>
+<h2 id="who-uses-a-preset">Who uses a preset<a class="headerlink" href="#who-uses-a-preset" title="Permanent link">&para;</a></h2>
+<p>The column <strong>Used by</strong> counts each object that names the preset:</p>
+<ul>
+<li>A <code>CamundaCluster</code>, <code>ElasticsearchCluster</code>, or <code>DatabaseServer</code> whose <code>spec.presetRef</code> names it.</li>
+<li>A <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a> whose <code>spec.presetRef</code> names a cluster preset.</li>
+<li>A claim that selects the built-in Elasticsearch or PostgreSQL option, with the preset in the parameter <code>preset</code>. The claim can set the parameter, or its environment or the option can give it as a default. This counts for a cluster claim and for a management plane claim.</li>
+<li>A <a href="../../crds/pluginrequest/">PluginRequest</a> of the built-in Elasticsearch or PostgreSQL option, with the preset in the parameter <code>preset</code>.</li>
+</ul>
+<p>A claim counts before its cluster or its storage exists. For example, this claim uses the cluster preset <code>medium</code> and the PostgreSQL preset <code>small</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">presetRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">database-server</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">        </span><span class="nt">preset</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">small</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<h2 id="delete-a-preset">Delete a preset<a class="headerlink" href="#delete-a-preset" title="Permanent link">&para;</a></h2>
+<p>The page offers a delete only for a preset that it can delete safely. The check box of a preset is disabled in each of these cases:</p>
+<ul>
+<li>An object uses the preset (see <a href="#who-uses-a-preset">Who uses a preset</a>).</li>
+<li>An environment allows the preset.</li>
+<li>The fleet manager cannot read a list that it needs for this check. The page shows <code>Could not read &lt;kind&gt;: &lt;message&gt;</code> for that list. The lists are:<ul>
+<li>For a cluster preset: <code>Environment</code>, <code>CamundaCluster</code>, and <code>CamundaClusterClaim</code>.</li>
+<li>For an Elasticsearch or PostgreSQL preset: <code>Environment</code>, <code>Namespace</code>, <code>PluginRegistration</code>, <code>ElasticsearchCluster</code> or <code>DatabaseServer</code>, <code>CamundaClusterClaim</code>, <code>CamundaManagementClusterClaim</code>, and <code>PluginRequest</code>.</li>
+</ul>
+</li>
+<li>The fleet manager does not have the current version of such a list yet. This occurs just after the page opens and after a lost connection.</li>
+</ul>
+<p>To delete presets from the list:</p>
+<ol>
+<li>Select the check box of each preset to delete. Nothing is selected when the page opens. <strong>Select all unused</strong> selects every preset whose check box is enabled.</li>
+<li>Select the delete button under the table. It reads <strong>Delete the preset</strong> and the name for one preset, or <strong>Delete 3 presets</strong> for three.</li>
+<li>Read the review. The API server checks the delete first, without a change, and the review shows the result. It names each preset.</li>
+<li>Select <strong>Delete</strong>.</li>
+</ol>
+<p>If a preset of the review gets a user, or an environment allows it, the review closes before the delete starts. Nothing is deleted, and the check box of that preset is disabled. The fleet manager checks the users again before the delete, and it refuses the delete of a preset in use or allowed in an environment. A user that is created at the same moment as the delete can be missed.</p>
+<p>In Git mode the button of the review reads <strong>Push the delete to Git</strong>. The delete is a commit that removes the file of each preset. GitOps must prune the presets to delete them from the cluster.</p>
+<p>The operator does not stop a delete of a preset that is in use, for example by <code>kubectl delete</code>. A cluster that still names a deleted preset reports <code>Ready: False</code> with reason <code>InvalidReference</code>, and its workloads keep their last configuration. A claim that names a deleted preset also reports <code>InvalidReference</code>. See <a href="../../crds/camundaclusterpreset/#deletion">CamundaClusterPreset: Deletion</a>.</p>
+<h2 id="the-preset-page">The preset page<a class="headerlink" href="#the-preset-page" title="Permanent link">&para;</a></h2>
+<p>Select a preset in the list to open its page. The header shows the kind, the description, the key facts, the environments that allow it, and each user as <code>&lt;namespace&gt;/&lt;name&gt;</code>. The header shows <strong>Unknown</strong> for the environments or the users in the same cases as the list.</p>
+<h3 id="change-a-preset">Change a preset<a class="headerlink" href="#change-a-preset" title="Permanent link">&para;</a></h3>
+<p>The page edits the preset. The form starts with the <strong>Description</strong>, which is the annotation <code>kubernetes.io/description</code>. A blank description removes the annotation.</p>
+<p>A cluster preset has two sections:</p>
+<ul>
+<li><strong>Settings</strong> has one group of field editors for <strong>General</strong> and one for each process, such as <strong>Brokers</strong> or <strong>Connectors</strong>. A field that the preset sets shows <strong>From preset</strong>. Select <strong>Remove from the preset</strong> to take the field out of the preset. The fields that a preset cannot set have no editor.</li>
+<li><strong>Environment variables</strong> has the same groups as a release: <strong>Every workload</strong> and one for each process. See <a href="#environment-variables">Environment variables</a>.</li>
+</ul>
+<p>An Elasticsearch preset and a PostgreSQL preset have one YAML editor, labelled <code>spec.cluster</code> or <code>spec.server</code>. The editor holds the body of the preset. While the YAML does not parse, the editor shows the error and <strong>Review</strong> stays disabled. The review checks each field against the CRD. A misspelled field gets an error from the API server, and the preset does not change.</p>
+<p>To change a field of a cluster preset, for example the brokers of <code>medium</code>:</p>
+<ol>
+<li>Open the page of the preset from the list.</li>
+<li>In <strong>Settings</strong>, go to the group <strong>Brokers</strong> and type the new value in <code>replicas</code>. A field that the preset does not set yet has an empty editor in its group.</li>
+<li>Select <strong>Review</strong> in the bar at the bottom of the page. The bar counts the unsaved changes. <strong>Discard</strong> starts again.</li>
+<li>Read the diff and the impact on the inheriting resources. See <a href="#the-impact-of-a-change">The impact of a change</a>.</li>
+<li>Select <strong>Save</strong>, or <strong>Push to Git</strong> in Git mode.</li>
+</ol>
+<p>The Secret lists hold the Secrets of the namespaces of the users of the preset. A preset without a user takes the namespaces of the environments that allow it. A Secret key that one of these namespaces does not hold shows as missing. An environment variable of a cluster preset shows <code>Missing in &lt;namespaces&gt;</code> on its row. Every other key shows <code>&lt;name&gt;/&lt;key&gt; is missing in &lt;namespaces&gt;.</code> under the form, for example a key in the YAML of an Elasticsearch preset. Create the Secret in each of these namespaces before a resource there uses the preset. The fleet manager reads the Secret lists when the page opens, so reload the page after you create a Secret. If the fleet manager cannot read a list that it needs to find these namespaces, the page names the list. It then shows no Secret list and no missing key. Reload the page when it can read the list.</p>
+<p>Another tool, for example <code>kubectl apply</code>, can set a field that your change changes or removes. The review names each such field and the tool, and asks before the save takes the field over. Without the take-over, a changed field stops the save, and a field that the save removes stays. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says what the take-over does.</p>
+<h3 id="the-impact-of-a-change">The impact of a change<a class="headerlink" href="#the-impact-of-a-change" title="Permanent link">&para;</a></h3>
+<p>The review lists each resource that inherits the preset, as <code>&lt;namespace&gt;/&lt;name&gt;</code>, with one mark:</p>
+<table>
+<thead>
+<tr>
+<th>Mark</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pods roll</code></td>
+<td>The change rolls the workloads of the cluster. A change of a cluster preset rolls every cluster that inherits it, also a cluster that sets the changed field itself. The only exceptions are <code>auth.basic.passwordRotation</code>, <code>auth.basic.adminEmail</code>, and the fields under <code>connectors.serviceAccount</code>.</td>
+</tr>
+<tr>
+<td><code>Connectors restart</code></td>
+<td>The change restarts only the Connectors pods of the cluster. A value of <code>auth.basic.passwordRotation</code> that the cluster did not apply yet does this for a cluster with basic auth. A change under <code>connectors.serviceAccount</code> does this when it reaches the Connectors pods. A cluster without Connectors never gets this mark.</td>
+</tr>
+<tr>
+<td><code>No roll</code></td>
+<td>The change reaches the cluster but restarts no pods, for example a change of <code>auth.basic.adminEmail</code>.</td>
+</tr>
+<tr>
+<td><code>Unchanged</code></td>
+<td>The change does not reach the resource. For a cluster, this occurs only when the change touches no field of <code>spec.cluster</code> other than the exceptions of <code>Pods roll</code>. A change of the description only is an example. A cluster that sets its own <code>auth.basic</code> does not take a new <code>passwordRotation</code> of the preset.</td>
+</tr>
+<tr>
+<td><code>Pods may roll</code></td>
+<td>The merged spec of an Elasticsearch cluster or a database server changes. The fleet manager cannot tell which of these changes roll pods. A cluster never gets this mark.</td>
+</tr>
+</tbody>
+</table>
+<p>The API server checks the change before the review shows it, and the preset does not change during this check. The marks come from the preset as this check returns it. A field of another tool that stays, because you did not take it over, does not count as a change.</p>
+<p>Under the marks, the review shows a note for each rule that the change touches:</p>
+<ul>
+<li><code>The brokers restart one at a time. The other processes restart.</code> when a cluster rolls.</li>
+<li><code>Connectors pods restart.</code> when the Connectors pods of a cluster restart.</li>
+<li>A note about a smaller storage size, and for a cluster or an Elasticsearch preset a note about a new storage class. A resource that already has larger volumes keeps them, and a resource with existing volumes keeps its storage class.</li>
+<li>For a PostgreSQL preset, a note about a cleared <code>walStorageSize</code>. A running server keeps its write-ahead log volume.</li>
+</ul>
+<p>The rules of each kind are in <a href="../../crds/camundaclusterpreset/#changes">CamundaClusterPreset: Changes</a>, <a href="../../crds/elasticsearchclusterpreset/#changes">ElasticsearchClusterPreset: Changes</a>, and <a href="../../crds/databaseserverpreset/#changes">DatabaseServerPreset: Changes</a>.</p>
+<p>The marks need the list of the resources of the preset kind, and for a cluster preset the lists of releases and platform configs. If the fleet manager cannot read one of these lists, the review shows no mark and <strong>Save</strong> stays disabled. The same applies until the fleet manager has the current version of each list. The review names the lists:</p>
+<blockquote>
+<p>The impact is not known while the fleet manager cannot read CamundaCluster. Save is possible when it can read them.</p>
+</blockquote>
+<h3 id="settings-and-merge-rules">Settings and merge rules<a class="headerlink" href="#settings-and-merge-rules" title="Permanent link">&para;</a></h3>
+<p>Each field that the preset sets has a merge rule. For a cluster preset, the rules show under each group of <strong>Settings</strong>. For an Elasticsearch or a PostgreSQL preset, the page shows each field with its value and its rule under the YAML editor.</p>
+<table>
+<thead>
+<tr>
+<th>Merge rule</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A resource value replaces it</td>
+<td>A resource that sets the field replaces the preset value. A resource that does not set it inherits the preset value.</td>
+</tr>
+<tr>
+<td>Replaces whole</td>
+<td>A block or list that the resource sets replaces the preset block or list as a whole.</td>
+</tr>
+<tr>
+<td>Merged by key</td>
+<td>The entries of the map merge by key. The resource wins on a conflict.</td>
+</tr>
+<tr>
+<td>Merged by name</td>
+<td>The environment variables merge by name. The resource wins on a conflict.</td>
+</tr>
+<tr>
+<td>Resource entries follow</td>
+<td>The entries of the resource come after the entries of the preset.</td>
+</tr>
+<tr>
+<td>Merged by field</td>
+<td>The preset sets an empty block. The block is kept, and each field that a resource sets in it merges by its own rule.</td>
+</tr>
+<tr>
+<td>Replaced with the client</td>
+<td>The client id, the audience, and the client secret go together. A cluster that sets <code>auth.clientId</code> replaces all three values of the preset.</td>
+</tr>
+</tbody>
+</table>
+<p>The merge rules of each kind are in <a href="../../crds/camundaclusterpreset/#merge-rules">CamundaClusterPreset: Merge rules</a>, <a href="../../crds/elasticsearchclusterpreset/#merge-rules">ElasticsearchClusterPreset: Merge rules</a>, and <a href="../../crds/databaseserverpreset/#merge-rules">DatabaseServerPreset: Merge rules</a>.</p>
+<h3 id="fields-a-preset-cannot-set">Fields a preset cannot set<a class="headerlink" href="#fields-a-preset-cannot-set" title="Permanent link">&para;</a></h3>
+<p>The section <strong>Fields a preset cannot set</strong> lists the fields that each resource sets itself. The API server refuses a preset that sets one of them. A resource takes its version from its release, or sets it itself. The lists are:</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Fields a preset cannot set</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cluster</td>
+<td><code>platformConfigRef</code>, <code>presetRef</code>, <code>releaseRef</code>, <code>externalUrl</code>, <code>serviceAccount</code>, <code>storageRef</code>, <code>backupStorageRef</code>, <code>documentStorageRef</code>, <code>monitoring</code>, <code>suspend</code>, <code>pause</code>, <code>version</code>, <code>connectors.version</code>, <code>connectors.serviceAccount.name</code></td>
+</tr>
+<tr>
+<td>Elasticsearch</td>
+<td><code>presetRef</code>, <code>releaseRef</code>, <code>secondaryStorageConfig</code>, <code>suspend</code>, <code>version</code></td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td><code>presetRef</code>, <code>releaseRef</code>, <code>databaseServerConfig</code>, <code>suspend</code>, <code>version</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="inheriting-resources">Inheriting resources<a class="headerlink" href="#inheriting-resources" title="Permanent link">&para;</a></h3>
+<p>The section <strong>Inheriting resources</strong> lists each <code>CamundaCluster</code>, <code>ElasticsearchCluster</code>, or <code>DatabaseServer</code> whose <code>spec.presetRef</code> names the preset. Each row shows the environment of its namespace, the namespace, its own fields, and its <code>Ready</code> condition. A cluster row links to the cluster page. If the fleet manager cannot read the list of that kind, the section shows no row and names the list.</p>
+<p>An own field is a field that the resource sets itself, so its value does not come from the preset. A cluster made from a claim can also get a field from an option that the claim selects. Such a field shows <strong>Filled by</strong> and the label of the section of that option. For example, an option of the section <strong>Volume encryption</strong> sets the storage class, and the row shows <code>zeebe.storageClassName Filled by Volume encryption</code>. The fields that a preset cannot set are not listed as own fields.</p>
+<h3 id="delete-from-the-preset-page">Delete from the preset page<a class="headerlink" href="#delete-from-the-preset-page" title="Permanent link">&para;</a></h3>
+<p>The section <strong>Delete the preset</strong> says why a delete is not possible, or offers it. To delete the preset, type its name and select <strong>Review the delete</strong>. Then select <strong>Delete the preset</strong> in the review, or <strong>Push the delete to Git</strong> in Git mode. After the delete, the page goes back to the list.</p>
+<h3 id="rotate-the-admin-password">Rotate the admin password<a class="headerlink" href="#rotate-the-admin-password" title="Permanent link">&para;</a></h3>
+<p>The page of a cluster preset has the section <strong>Admin password</strong>. Its button rotates the admin password of each cluster that takes the rotation from the preset, for example <strong>Rotate the admin password of 3 clusters</strong>. A cluster counts when its platform config uses basic authentication and it does not set its own <code>auth.basic</code>. A cluster whose platform config uses OIDC does not count.</p>
+<p>The rotation writes the UTC date and time to the minute into the preset:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">auth</span><span class="p">:</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">basic</span><span class="p">:</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">        </span><span class="nt">passwordRotation</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-11-15T10:42Z"</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="c1"># ... the rest of your preset</span>
+</span></code></pre></div>
+<p>The review names each cluster whose password changes and says that a cluster that runs Connectors restarts its Connectors pods. Select <strong>Rotate</strong>, or <strong>Push to Git</strong> in Git mode. The operator never rotates the same value twice. A second rotation in the same minute writes nothing, so <strong>Rotate</strong> stays disabled. When another tool set <code>passwordRotation</code>, the review names it and asks to take it over, as for a change of the preset. Each cluster shows the value in <code>status.adminPassword.rotation</code> when its rotation is complete. See <a href="../../guides/authentication/#rotate-the-password">Authentication: Rotate the password</a>.</p>
+<p>The button is disabled while the form has unsaved changes or shows an error. Save or discard the changes first, or correct the error. While the fleet manager cannot read the clusters or the platform configs, the section offers no rotation and names those lists.</p>
+<h2 id="releases">Releases<a class="headerlink" href="#releases" title="Permanent link">&para;</a></h2>
+<p>Clusters, Elasticsearch clusters, and database servers name a release in <code>spec.releaseRef</code>. A claim, which asks for a cluster, names one too. These resources are the users of the release. The page <strong>Setup &gt; Releases</strong> of the fleet manager lists the releases and edits each one. The <a href="../../crds/camundarelease/">CamundaRelease</a> reference lists the fields.</p>
+<h2 id="the-releases-list">The Releases list<a class="headerlink" href="#the-releases-list" title="Permanent link">&para;</a></h2>
+<p>The list shows one row for each release. The columns are the name, the Camunda version, the Connectors version, the Elasticsearch version, the PostgreSQL version, <strong>Default in</strong>, <strong>Allowed in</strong>, and <strong>Used by</strong>. A dash means that the release does not set that version. Select a name to open the page of the release.</p>
+<p>Each row states facts only. These are the four facts:</p>
+<table>
+<thead>
+<tr>
+<th>Fact</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Unused</code></td>
+<td>No cluster, Elasticsearch cluster, database server, or claim names the release.</td>
+</tr>
+<tr>
+<td><code>Default in &lt;environments&gt;</code></td>
+<td>These environments give the release to a new cluster that names no release.</td>
+</tr>
+<tr>
+<td><code>Allowed in &lt;environments&gt;</code></td>
+<td>A claim in these environments can name the release. The default release of an environment is always one of its allowed releases.</td>
+</tr>
+<tr>
+<td><code>Not offered to new clusters</code></td>
+<td>No environment allows the release, so no new claim can name it.</td>
+</tr>
+</tbody>
+</table>
+<p>To offer a release to new clusters, add it to the allowed releases of an environment on the <a href="../environments/">Environments</a> page.</p>
+<p><strong>Used by</strong> counts the clusters, the Elasticsearch clusters, and the database servers that name the release. A claim names a release before its cluster exists. When only claims name the release, <strong>Used by</strong> counts the claims, such as <code>1 claim</code>. A release that a claim names is not unused.</p>
+<p>An environment shows by its display name, or by its name when it has none.</p>
+<p>Two filters narrow the list. <strong>Environment</strong> shows the releases that an environment allows or has as its default. <strong>Usage</strong> shows the used or the unused releases. The search box matches the name.</p>
+<h2 id="delete-a-release">Delete a release<a class="headerlink" href="#delete-a-release" title="Permanent link">&para;</a></h2>
+<p>You can delete a release only when it is unused and no environment allows it. The list shows a checkbox only on such a row. <strong>Select all that can be deleted</strong> selects every such row that the search and the filters show. Then select <strong>Delete 1 release</strong>, or <strong>Delete 2 releases</strong> for more. The review lists the releases, and <strong>Delete</strong> removes them in one change.</p>
+<p>If a claim or an environment names a selected release while the review is open, the review closes. Start the delete again. The fleet manager checks the users again before the delete, and it refuses the delete of a release in use or allowed in an environment. A user that is created at the same moment as the delete can be missed.</p>
+<p>The fleet manager must read every list of the page to know that a release is unused. When it cannot read one, no release can be deleted and an open delete review closes. The page then names the kinds that it cannot read:</p>
+<blockquote>
+<p>Delete is possible when the fleet manager can read CamundaClusterClaim.</p>
+</blockquote>
+<p>The page also shows this line for a short time after it opens or connects again.</p>
+<p>On the page of a release, the section <strong>Delete the release</strong> offers the same delete. Type the name of the release to confirm it.</p>
+<p>In Git mode, the delete is a commit that removes the files of the releases. GitOps must prune the <code>CamundaRelease</code> objects to delete them from the cluster.</p>
+<h2 id="new-release">New release<a class="headerlink" href="#new-release" title="Permanent link">&para;</a></h2>
+<p>A new release usually starts as a copy of another one. Select <strong>New release</strong> on the list, or <strong>Copy this release</strong> on the page of a release. In <strong>Copy from</strong>, pick the release to copy. The form takes its versions, images, and environment variables. Type the <strong>Release name</strong> and change what differs, then select <strong>Review</strong> and <strong>Create</strong>. A change of <strong>Copy from</strong> replaces the form and keeps the name. The page of the new release opens when the list shows it.</p>
+<p>A new release has no user, and no environment allows it yet, so the list shows it as <code>Unused</code> and <code>Not offered to new clusters</code>.</p>
+<h2 id="release-settings">Release settings<a class="headerlink" href="#release-settings" title="Permanent link">&para;</a></h2>
+<p>The <strong>Settings</strong> tab of a release page edits the release. The fragment below holds each field that the tab edits:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaRelease</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-4</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"8.9.4"</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">connectors</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"8.9.7"</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">elasticsearch</span><span class="p">:</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"9.2.8"</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">databaseServer</span><span class="p">:</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"17"</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">images</span><span class="p">:</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="nt">camunda</span><span class="p">:</span><span class="w"> </span><span class="s">"mirror.example.com/camunda/camunda:8.9.4-patched"</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="nt">extraEnv</span><span class="p">:</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CAMUNDA_SOME_NEW_FLAG</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORDERS_DB_PASSWORD</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">      </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="w">        </span><span class="nt">secretKeyRef</span><span class="p">:</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders-db</span>
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="w">          </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="w">  </span><span class="nt">zeebe</span><span class="p">:</span>
+</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="w">    </span><span class="nt">extraEnvFrom</span><span class="p">:</span>
+</span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">configMapRef</span><span class="p">:</span>
+</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">zeebe-tuning</span>
+</span></code></pre></div>
+<h3 id="versions">Versions<a class="headerlink" href="#versions" title="Permanent link">&para;</a></h3>
+<p><strong>Camunda version</strong> and <strong>Connectors version</strong> take a version such as <code>8.9.4</code>. <strong>Elasticsearch version</strong> takes a version such as <code>9.2.8</code>. <strong>PostgreSQL version</strong> takes a major version such as <code>17</code>. Only the Camunda version is required. If the Connectors version is empty, each cluster sets its own connectors version.</p>
+<h3 id="images">Images<a class="headerlink" href="#images" title="Permanent link">&para;</a></h3>
+<p>The <strong>Images</strong> section shows each image of the release with two values:</p>
+<ul>
+<li><strong>Pinned by the release</strong> is the image that the release pins. A release can pin only the Camunda image and the Connectors image. Leave the field empty to pin nothing.</li>
+<li><strong>Default for the version</strong> is the image that a cluster pulls when the release pins none. The tag of the Camunda and the Optimize image is the Camunda version of the release. The tag of the Connectors image is the Connectors version of the release. The other tags come from the images table that ships with the fleet manager.</li>
+</ul>
+<p>The repository is the one that the images table gives. The platform config of each cluster sets the repository that the cluster pulls from, as <a href="../../crds/camundaplatformconfig/#images">CamundaPlatformConfig</a> describes. If the images table has no entry for the minor of the release, the section says so and offers only the two pinned images.</p>
+<h3 id="environment-variables">Environment variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h3>
+<p>The <strong>Environment variables</strong> section has one group for each place in the spec. <strong>Every workload</strong> is the top level. <strong>Connectors</strong>, <strong>Brokers</strong>, <strong>Gateway</strong>, <strong>Operate</strong>, <strong>Tasklist</strong>, and <strong>Admin</strong> are the blocks <code>connectors</code>, <code>zeebe</code>, <code>gateway</code>, <code>operate</code>, <code>tasklist</code>, and <code>admin</code>. A group with entries is open when the page loads. The number next to the name of a group is its count of entries.</p>
+<p>Each variable is a row with a name and a source. The source is a value, or a key of a Secret. The form never shows the value of a Secret. Only <code>extraEnvFrom</code> is YAML.</p>
+<p>The Secret lists hold the Secrets of the namespaces of the users of the release. A namespace holds a user when a cluster, an Elasticsearch cluster, a database server, or a claim in it names the release. A release without a user takes the namespaces of the environments that allow it. When some of these namespaces do not hold a picked Secret key, the row shows <code>Missing in &lt;namespaces&gt;</code>. Create the Secret in each of these namespaces before a resource there uses the release. The fleet manager reads the Secret lists when the page opens.</p>
+<h2 id="what-a-change-does">What a change does<a class="headerlink" href="#what-a-change-does" title="Permanent link">&para;</a></h2>
+<p>Above the save, the page shows this notice:</p>
+<blockquote>
+<p>A change reaches every resource that uses this release. Their pods roll. A version change moves each user that does not set its own version. The Rollout tab moves clusters one by one.</p>
+</blockquote>
+<p>Every cluster, Elasticsearch cluster, and database server that names the release takes the change, and its pods roll. A resource that sets its own version keeps it. The review of a save names the users and each version that changes. A version line names the kind of resource that runs the version. Clusters run the Camunda and Connectors versions. Elasticsearch clusters run the Elasticsearch version, and database servers run the PostgreSQL version. The rules about a version that a resource refuses are in the <a href="../../crds/camundarelease/#versions">CamundaRelease</a> reference.</p>
+<p>Another tool, for example <code>kubectl apply</code>, can set a field that the save changes or removes. The review names each such field and the tool, and asks before the save takes the field over. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says what the take-over does.</p>
+<h2 id="move-clusters-to-a-release">Move clusters to a release<a class="headerlink" href="#move-clusters-to-a-release" title="Permanent link">&para;</a></h2>
+<p>The <strong>Rollout</strong> tab of a release page lists every cluster. Each row shows the name, the environment, the namespace, the current release, the running version, and one eligibility. The current release is the release of the claim, or the release of the cluster when the claim names none. <strong>Not reported</strong> means that the cluster reports no running version. Two filters narrow the list: <strong>Environment</strong> and <strong>Eligibility</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Eligibility</th>
+<th>Meaning</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Can move</td>
+<td>The move passes every check.</td>
+<td>Select <strong>Move</strong>.</td>
+</tr>
+<tr>
+<td>Not allowed in the environment</td>
+<td>The environment of the cluster does not allow the release. Or the namespace belongs to no environment, or names one that does not exist, and the claim takes no change.</td>
+<td>Allow the release on the <a href="../environments/">Environments</a> page, or add the namespace to an environment. <strong>Open Environments</strong> opens the environment of the cluster, or the Environments page.</td>
+</tr>
+<tr>
+<td>Downgrade</td>
+<td>The release has a lower version than the version that the cluster runs.</td>
+<td>Select <strong>Confirm downgrade</strong>. See <a href="#downgrades">Downgrades</a>.</td>
+</tr>
+<tr>
+<td>Skips a Camunda minor</td>
+<td>The release is more than one minor above the running version. The row names the minor between them.</td>
+<td>Move to a release of the minor between them first. The Releases list shows the version of each release.</td>
+</tr>
+<tr>
+<td>A backup is pending or running</td>
+<td>A backup of the cluster is pending or running. The row names the backup and says which.</td>
+<td>Wait until the backup ends.</td>
+</tr>
+<tr>
+<td>Not managed by the fleet manager</td>
+<td>No claim made the cluster.</td>
+<td>The tab cannot move the cluster. Change the <code>CamundaCluster</code> itself.</td>
+</tr>
+<tr>
+<td>Claim missing</td>
+<td>The cluster names a claim that does not exist.</td>
+<td>The tab cannot move the cluster without its claim. Change the <code>CamundaCluster</code> itself.</td>
+</tr>
+<tr>
+<td>Runs this release</td>
+<td>The claim or the cluster names this release already.</td>
+<td>Nothing.</td>
+</tr>
+<tr>
+<td>Refused by the operator</td>
+<td>The claim names this release, and the operator refused the version change. The row shows the message of the refusal.</td>
+<td>For a downgrade, select <strong>Confirm downgrade</strong>. See <a href="#downgrades">Downgrades</a>. For a skipped minor, move the claim to a release of the minor between them first.</td>
+</tr>
+<tr>
+<td>Checks wait</td>
+<td>The cluster is suspended, or it reports no running version. The tab cannot check the versions.</td>
+<td>You can select <strong>Move</strong>. The operator still refuses a skipped minor or a downgrade, and the cluster then reports <code>Ready: False</code>.</td>
+</tr>
+<tr>
+<td>Lists not read</td>
+<td>The fleet manager cannot read a list that the checks need, or it has not read the list since it connected.</td>
+<td>Wait until the fleet manager can read the list. The tab names it. If the list stays unread, give the fleet manager the right to list that kind.</td>
+</tr>
+</tbody>
+</table>
+<p>The checks compare the release with the version that the cluster runs, not with the version of its current release. A cluster can run another version than its release, for example while a version change rolls. When the operator refuses a skipped minor, the row also shows the message of the <code>VersionSkipRefused</code> condition of the cluster. <a href="../../crds/camundacluster/#a-skipped-minor-is-refused">A skipped minor is refused</a> describes the refusal.</p>
+<h3 id="move-one-cluster-or-many">Move one cluster or many<a class="headerlink" href="#move-one-cluster-or-many" title="Permanent link">&para;</a></h3>
+<p>To move one cluster, select <strong>Move</strong> on its row. To move many clusters, select their checkboxes, or <strong>Select all that can move</strong>, and then <strong>Move selected</strong>. Nothing is selected when the tab opens. Only a row that can move has a checkbox that you can select. A downgrade moves one cluster at a time, with <strong>Confirm downgrade</strong> on its row. If a selected row can no longer move, for example because a backup starts, the row leaves the selection.</p>
+<p>The review shows each cluster and what the move does to it. <strong>Move</strong> writes the change. The move sets <code>spec.releaseRef</code> of each claim and changes nothing else:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-1</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<p>A move of many clusters is one change. In Git mode, it is one commit. The fleet manager checks each claim again before it writes. It writes no claim when a backup of a cluster is pending or running, or when a claim changed since the tab read it. In direct mode, it also checks every claim with the API server, and it writes no claim when one check fails. Then it writes the claims one after another, and it stops at the first claim that fails. The claims before it keep the new release, and the claims after it keep their release.</p>
+<p>When a move fails, the review names the claim that failed. After the review closes, the tab shows <strong>The move did not finish</strong>. It names each cluster of the move: moved, not moved, a downgrade that is not confirmed, or the error of its claim. The note stays until you dismiss it or start a new move. Start a new move for the clusters that did not move.</p>
+<p>Another tool can own <code>spec.releaseRef</code> of a claim, for example <code>kubectl apply</code> or a GitOps tool. In direct mode, the review then lists each such claim under its name, with the tool. It asks one time for all of them, and <strong>Move</strong> stays off until you take the fields over. After the choice, the move writes every selected claim. A claim that no other tool owns moves as usual. To keep the field of the other tool, leave that cluster out of the selection. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says what a take-over does.</p>
+<p>If a backup starts, a list cannot be read, or the version of the release changes while the review is open, the review closes. Start the move again. <strong>Back</strong> closes the review and keeps the selection.</p>
+<h3 id="what-moves-with-a-claim">What moves with a claim<a class="headerlink" href="#what-moves-with-a-claim" title="Permanent link">&para;</a></h3>
+<p>A move restarts the cluster. The brokers restart one at a time, and the other processes restart. A built-in Elasticsearch cluster or database server that the claim made moves to the release too. An attached Optimize moves to the version of the release. The review lists these for each cluster. An Elasticsearch cluster or a database server that no claim made does not move here. A database server that runs another PostgreSQL major version than the release keeps its major version, and the review says so for that server. <a href="../../crds/camundarelease/#versions">CamundaRelease</a> describes this refusal.</p>
+<h3 id="downgrades">Downgrades<a class="headerlink" href="#downgrades" title="Permanent link">&para;</a></h3>
+<p><strong>Confirm downgrade</strong> sets <code>spec.releaseRef</code>, and it sets <code>spec.allowVersionDowngrade</code> to the version of the release. The fleet manager writes both fields on the claim, never on the <code>CamundaCluster</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-1</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">allowVersionDowngrade</span><span class="p">:</span><span class="w"> </span><span class="s">"8.9.1"</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<p>A move to a higher version keeps an <code>allowVersionDowngrade</code> that the claim holds from an earlier downgrade. When the cluster runs the version, the Claim tab of the cluster offers <strong>Clear</strong>, as <a href="../change-a-cluster/#change-the-claim-in-the-claim-tab">Change the claim in the Claim tab</a> describes. <a href="../../crds/camundacluster/#downgrade-on-purpose">Downgrade on purpose</a> tells when a downgrade is safe.</p>
+<h3 id="backups-block-a-move-here">Backups block a move here<a class="headerlink" href="#backups-block-a-move-here" title="Permanent link">&para;</a></h3>
+<p>On the Rollout tab, a pending or a running backup blocks the move. The Claim tab of a cluster only warns, and only for a running backup. The two tabs differ because of what you see before the write. On the Claim tab, you move one cluster and read its warning before you save. A move of many clusters shows no warning for each cluster, so the tab blocks instead. The tab blocks a pending backup too, because it can start while the brokers roll and then fail.</p>
+<h2 id="environments-of-a-release">Environments of a release<a class="headerlink" href="#environments-of-a-release" title="Permanent link">&para;</a></h2>
+<p>The <strong>Environments</strong> card of a release page shows each environment with its state for the release:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default</td>
+<td>A new cluster in the environment that names no release gets this release.</td>
+</tr>
+<tr>
+<td>Allowed</td>
+<td>A claim in the environment can name this release.</td>
+</tr>
+<tr>
+<td>Not allowed</td>
+<td>A claim in the environment cannot name this release.</td>
+</tr>
+</tbody>
+</table>
+<p>Select an environment to open its page and change its releases.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../platform-and-connections/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Platform config and connections">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Platform config and connections
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../registrations/" class="md-footer__link md-footer__link--next" aria-label="Next: Registrations">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Registrations
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+        <script src="../../assets/javascripts/panzoom.min.js"></script>
+      
+        <script src="../../assets/javascripts/zoompan.js"></script>
+      
+    
+  </body>
+</html>

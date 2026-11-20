@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -3024,8 +3144,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>MatchesTemplate</code></td>
 <td><code>TemplateChanged</code></td>
-<td>The fragment no longer matches its template in the registration.</td>
-<td>Wait for the plugin to write the grant again from the new template.</td>
+<td>The fragment is not the template of the registration now. The identity keeps the statement of the fragment.</td>
+<td>After a chart upgrade, wait. The plugin writes the grant from its own template at its next reconcile. If the reason stays, the registration was changed outside the plugin. The plugin keeps its own template, and the old statement stays.</td>
 </tr>
 <tr>
 <td><code>Ready</code></td>

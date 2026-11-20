@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -3289,7 +3409,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span>
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Suspended</span>
 </span></code></pre></div>
-<p><code>suspendedBy</code> is <code>Cluster</code> for the first case, and <code>StorageClaim</code> for the other two. It is empty while the workloads follow their spec. The events of the <code>CamundaOptimize</code> name the cluster: <code>ClusterSuspended</code> or <code>StorageClaimAwaited</code> when the workloads go to zero, and <code>ClusterResumed</code> when they start again.</p>
+<p><code>suspendedBy</code> is <code>Cluster</code> for the first case, and <code>StorageClaim</code> for the other two. It is empty while the workloads follow their spec.</p>
+<p>The events of the <code>CamundaOptimize</code> name the cluster. When the workloads go to zero, <code>ClusterSuspended</code> or <code>StorageClaimAwaited</code> names the case that stops them. When they start again, <code>ClusterResumed</code> or <code>StorageClaimHeld</code> names the case that held them last. If the case changes while the workloads stay at zero, <code>suspendedBy</code> shows the new case and no event is recorded. So a <code>ClusterSuspended</code> event can be followed by <code>StorageClaimHeld</code>, and a <code>StorageClaimAwaited</code> event by <code>ClusterResumed</code>. A <code>CamundaOptimize</code> that waits from its creation, for example one that you create together with its cluster, records only the end event.</p>
 <p>The exporter settings stay on the cluster while it is suspended. Only deletion removes them.</p>
 <h3 id="a-failed-check">A failed check<a class="headerlink" href="#a-failed-check" title="Permanent link">&para;</a></h3>
 <p>When a check of a reference fails, <code>Ready</code> carries the failure reason. The workloads then do this:</p>

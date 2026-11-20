@@ -476,6 +476,14 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -559,6 +567,34 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
   
 
     
@@ -699,6 +735,90 @@
     
   
     Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
   
 
     
@@ -2930,6 +3050,7 @@
 <p>The cluster of this claim is already ready, so the claim creates the Optimize at once.</p>
 </li>
 </ol>
+<p>You can make these changes in the <a href="../../fleet-manager/change-a-cluster/">fleet manager</a> too. <code>kubectl</code> set the fields of this claim. The review of a save in the fleet manager names each such field that the save changes or removes. It asks to take these fields over. <a href="../../fleet-manager/settings/#fields-that-another-tool-set">Fields that another tool set</a> says what a take-over does. After a take-over, <code>kubectl patch</code> still works, because a patch never conflicts. It sets its value again.</p>
 <p>This claim selects no option of <code>backup-storage</code>, so it cannot get a backup schedule. A claim that selects one at creation can set <code>spec.attachments.backupSchedule</code> in the same way.</p>
 <p>The <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a> page describes <a href="../../crds/camundaclusterclaim/#suspend">Suspend</a>, a move to an older release in <a href="../../crds/camundaclusterclaim/#downgrade">Downgrade</a>, and the fields of each attachment in <a href="../../crds/camundaclusterclaim/#attachments">Attachments</a>.</p>
 <h2 id="delete-a-claim">Delete a claim<a class="headerlink" href="#delete-a-claim" title="Permanent link">&para;</a></h2>
