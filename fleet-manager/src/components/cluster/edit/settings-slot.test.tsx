@@ -451,49 +451,6 @@ describe("ComponentSettingsEditor", () => {
     ).toBeNull();
   });
 
-  it("keeps the value of another writer when a field is back at its value at open", async () => {
-    const { view, of, spec } = brokerSlot({ requests: { cpu: "2" } }, {});
-    await openEditors();
-    await userEvent.clear(brokerAmount("CPU request"));
-    const changed = {
-      ...spec,
-      zeebe: { ...spec.zeebe, resources: { requests: { cpu: "5" } } },
-    };
-    view.update({ ...of(changed), claim: claim("42", { cluster: changed }) });
-    await userEvent.type(brokerAmount("CPU request"), "2");
-    expect(claimSpec().cluster.zeebe.resources).toEqual({
-      requests: { cpu: "5" },
-    });
-    expect(
-      screen.queryByRole("region", { name: "Unsaved changes" }),
-    ).toBeNull();
-  });
-
-  it("leaves a key that another writer changed alone on the next keystroke", async () => {
-    const { view, of, spec } = brokerSlot(
-      { requests: { cpu: "2" }, limits: { cpu: "3" } },
-      {},
-    );
-    await openEditors();
-    await userEvent.type(brokerAmount("Memory request"), "1");
-    const changed = {
-      ...spec,
-      zeebe: {
-        ...spec.zeebe,
-        resources: { requests: { cpu: "4" }, limits: { cpu: "3" } },
-      },
-    };
-    view.update({
-      ...of(changed),
-      claim: claim("42", { cluster: changed }),
-    });
-    await userEvent.type(brokerAmount("Memory request"), "2");
-    expect(claimSpec().cluster.zeebe.resources).toEqual({
-      requests: { cpu: "4", memory: "12Gi" },
-      limits: { cpu: "3" },
-    });
-  });
-
   it("closing the editors clears the error that one of them shows", async () => {
     renderSlot(contextOf({ openId: "gateway" }));
     await openEditors();

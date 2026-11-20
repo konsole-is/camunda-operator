@@ -30,7 +30,7 @@ import { SectionPanel } from "./section-panel";
  * pending changes.
  */
 export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
-  const { session, pending, set, reset, discard } = useClusterEdit();
+  const { session, pending, set, reset } = useClusterEdit();
   const [open, setOpen] = useState(false);
   const { generation, own } = useEditorGeneration(pending);
   if (!ctx.openId || !session) return null;
@@ -64,7 +64,6 @@ export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
               session={session}
               set={own(set)}
               reset={own(reset)}
-              discard={own((steps: Step[]) => discard(steps))}
             />
           )
         ))}
@@ -80,14 +79,12 @@ function Editors({
   session,
   set,
   reset,
-  discard,
 }: {
   ctx: ClusterSlotContext;
   openId: ProcessCardId;
   session: Session<ClusterClaim>;
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
-  discard: (steps: Step[]) => void;
 }) {
   const { errors, invalid } = useClusterEdit();
   const namespace = ctx.cluster.metadata?.namespace ?? "";
@@ -130,7 +127,6 @@ function Editors({
           set={set}
           reset={reset}
           invalid={invalid}
-          discard={discard}
         />
       ))}
     </div>

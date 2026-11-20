@@ -39,8 +39,7 @@ import { type Process, runsOwnWorkload } from "./topology";
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the limits of the merged value that are
  * below their request, and undefined when no check of the merged value
- * runs. When mergedErrors is defined, claimed is the value of the claim at
- * the path of the setting, also when that is undefined.
+ * runs.
  */
 export type Setting = {
   key: string;
@@ -58,7 +57,6 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
-  claimed?: unknown;
 };
 
 /**
@@ -180,7 +178,6 @@ export function settingsOf(input: {
               blocks: applies,
             }),
           ),
-          claimed: valueAt(claim, steps(names)),
         }
       : setting;
     if (holder?.field.claimSteps)

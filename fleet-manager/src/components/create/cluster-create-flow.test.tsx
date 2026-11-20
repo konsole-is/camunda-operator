@@ -1799,7 +1799,7 @@ describe("ClusterCreateFlow write", () => {
     await toStep("Cluster settings");
     await userEvent.clear(cpuLimit());
     const message =
-      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
     await waitFor(() =>
       expect(within(brokerResources()).getByRole("alert").textContent).toBe(
         message,
@@ -1828,7 +1828,7 @@ describe("ClusterCreateFlow write", () => {
     );
     await waitFor(() => expect(next().disabled).toBe(true));
     expect(within(brokerResources()).getByRole("alert").textContent).toBe(
-      "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
+      "The CPU limit of 500m is below the CPU request of 1.",
     );
   });
 

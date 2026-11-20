@@ -27,7 +27,6 @@ describe("ResourcesEditor", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       { requests: { cpu: "500m" }, limits: { memory: "2Gi" } },
       [],
-      expect.anything(),
     );
   });
 
@@ -55,7 +54,6 @@ describe("ResourcesEditor", () => {
         limits: { "nvidia.com/gpu": 1 },
       },
       [],
-      expect.anything(),
     );
   });
 
@@ -76,7 +74,6 @@ describe("ResourcesEditor", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       { requests: { cpu: ".5", memory: "1e9" }, limits: { cpu: "1" } },
       [],
-      expect.anything(),
     );
   });
 
@@ -220,7 +217,6 @@ describe("ResourcesEditor quantities", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       { requests: { cpu: "2", memory: "2Gi" }, limits: { cpu: "1" } },
       [],
-      expect.anything(),
     );
   });
 
@@ -236,49 +232,9 @@ describe("ResourcesEditor quantities", () => {
       ),
       "x",
     );
-    expect(onChange).toHaveBeenLastCalledWith(
-      { limits: { cpu: "x" } },
-      [{ path: "limits.cpu", message: "Enter a number" }],
-      expect.anything(),
-    );
-  });
-});
-
-describe("ResourcesEditor edits", () => {
-  const field = (label: string) =>
-    within(screen.getByRole("group", { name: label })).getByRole("textbox", {
-      name: "Amount",
-    });
-
-  it("names the field of each edit and whether it holds its value at open again", async () => {
-    const onChange = vi.fn();
-    render(
-      <ResourcesEditor
-        label="Resources"
-        defaultValue={{ requests: { cpu: 1 } }}
-        onChange={onChange}
-      />,
-    );
-    await userEvent.clear(field("CPU request"));
-    expect(onChange.mock.lastCall?.[2]).toEqual({
-      side: "requests",
-      resource: "cpu",
-      reopened: false,
-      refused: false,
-    });
-    await userEvent.type(field("CPU request"), "1");
-    expect(onChange.mock.lastCall?.[2]).toEqual({
-      side: "requests",
-      resource: "cpu",
-      quantity: "1",
-      reopened: true,
-      refused: false,
-    });
-    await userEvent.type(field("CPU request"), "x");
-    expect(onChange.mock.lastCall?.[2]).toMatchObject({
-      quantity: "1x",
-      refused: true,
-    });
+    expect(onChange).toHaveBeenLastCalledWith({ limits: { cpu: "x" } }, [
+      { path: "limits.cpu", message: "Enter a number" },
+    ]);
   });
 });
 
