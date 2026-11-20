@@ -88,8 +88,8 @@ export type ClaimEditHost<C extends ClaimObject> = {
  * without a session. Two calls in one event handler build on each other.
  * invalid says that the editor of steps shows message: an error that it did
  * not pass on, so that the session can still hold an older value there, or
- * an error of the value that the session holds there; an undefined message
- * clears it. An editor clears its error when it
+ * an error of the merged value that the session holds there; an undefined
+ * message clears it. An editor clears its error when it
  * unmounts. While an editor shows an error, the change bar blocks Review
  * with the message. discard drops every pending change. review opens the
  * review on the next render when a change is pending, errors is empty, and

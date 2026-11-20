@@ -34,9 +34,8 @@ import type { SettingsGroup } from "./settings";
  * counts the entries that the preset and the release put before value.
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key. mergedErrors are the faults of value, the value that
- * the cluster gets, each with a message that names where each part comes
- * from when it is not the claim.
+ * map key by key. mergedErrors are the limits of the merged value that are
+ * below their request.
  */
 export type Setting = {
   key: string;
