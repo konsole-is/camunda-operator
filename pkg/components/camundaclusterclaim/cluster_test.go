@@ -131,18 +131,14 @@ func TestClusterKeepsOnlyItsOwnAnnotationsWhenTheOutputIsMissing(t *testing.T) {
 			{
 				Manager:   "CamundaClusterClaim/cluster/claim-uid",
 				Operation: metav1.ManagedFieldsOperationApply,
-				FieldsV1: &metav1.FieldsV1{
-					Raw: []byte(
-						`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:eks.amazonaws.com/role-arn":{}}}}}`,
-					),
-				},
+				FieldsV1: metav1.NewFieldsV1(
+					`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:eks.amazonaws.com/role-arn":{}}}}}`,
+				),
 			},
 			{
 				Manager:   "other-writer",
 				Operation: metav1.ManagedFieldsOperationApply,
-				FieldsV1: &metav1.FieldsV1{
-					Raw: []byte(`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:team":{}}}}}`),
-				},
+				FieldsV1:  metav1.NewFieldsV1(`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:team":{}}}}}`),
 			},
 		}},
 		Spec: v1.CamundaClusterSpec{ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{
@@ -273,11 +269,9 @@ func ownedDowngrade(uid string) metav1.ManagedFieldsEntry {
 	return metav1.ManagedFieldsEntry{
 		Manager:   "CamundaClusterClaim/cluster/" + uid,
 		Operation: metav1.ManagedFieldsOperationApply,
-		FieldsV1: &metav1.FieldsV1{
-			Raw: []byte(
-				`{"f:metadata":{"f:annotations":{"f:` + clustercomponents.AllowVersionDowngradeAnnotation + `":{}}}}`,
-			),
-		},
+		FieldsV1: metav1.NewFieldsV1(
+			`{"f:metadata":{"f:annotations":{"f:` + clustercomponents.AllowVersionDowngradeAnnotation + `":{}}}}`,
+		),
 	}
 }
 

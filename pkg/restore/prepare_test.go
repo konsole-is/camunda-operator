@@ -629,7 +629,7 @@ func suspendedBy(cluster *v1.CamundaCluster, manager string) {
 		Manager:    manager,
 		Operation:  metav1.ManagedFieldsOperationApply,
 		FieldsType: "FieldsV1",
-		FieldsV1:   &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:suspend":{}}}`)},
+		FieldsV1:   metav1.NewFieldsV1(`{"f:spec":{"f:suspend":{}}}`),
 	})
 }
 

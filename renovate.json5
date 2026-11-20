@@ -57,12 +57,13 @@
   },
   customManagers: [
     {
-      // A variable of an env file or of the Makefile: the marker, then
-      // `NAME=<version>` or `NAME ?= <version>` on the next line.
+      // A variable of an env file or of the Makefile, or a key of
+      // .custom-gcl.yml: the marker, then `NAME=<version>`,
+      // `NAME ?= <version>`, or `key: <version>` on the next line.
       customType: "regex",
-      managerFilePatterns: ["/^test/e2e/matrix/.*\\.env$/", "/^Makefile$/"],
+      managerFilePatterns: ["/^test/e2e/matrix/.*\\.env$/", "/^Makefile$/", "/^\\.custom-gcl\\.yml$/"],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\w+\\s*\\??=\\s*(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\w+\\s*(?:\\??=|:)\\s*(?<currentValue>\\S+)",
       ],
     },
     {
@@ -253,6 +254,20 @@
     {
       matchDepNames: ["golang.org/x/vuln"],
       matchUpdateTypes: ["major", "minor"],
+      enabled: true,
+    },
+    {
+      // The golangci-lint release behind `make lint` is a tool, not an e2e
+      // image pin. The Makefile and .custom-gcl.yml name one release, so one
+      // pull request moves both. It has a group of its own, because a new
+      // release can find new issues that the same pull request must fix.
+      matchDepNames: ["github.com/golangci/golangci-lint/v2"],
+      separateMinorPatch: false,
+      groupName: "golangci-lint",
+    },
+    {
+      matchDepNames: ["github.com/golangci/golangci-lint/v2"],
+      matchUpdateTypes: ["minor"],
       enabled: true,
     },
     {

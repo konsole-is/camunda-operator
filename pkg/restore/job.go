@@ -188,7 +188,7 @@ func isNil(obj client.Object) bool {
 
 	value := reflect.ValueOf(obj)
 
-	return value.Kind() == reflect.Ptr && value.IsNil()
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
 // JobLabels returns the operator labels of a restore Job and its pods: the

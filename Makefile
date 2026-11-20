@@ -257,8 +257,8 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt && "$(GOLANGCI_LINT)" run --fix) || exit 1; done
 
 .PHONY: lint-config
-lint-config: golangci-lint golangci-lint-schema ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify --schema "$(GOLANGCI_LINT_SCHEMA)"
+lint-config: golangci-lint ## Verify the golangci-lint configuration against the JSON schema of its release.
+	"$(GOLANGCI_LINT)" config verify
 
 .PHONY: lint-renovate
 lint-renovate: ## Verify renovate.json5 with the validator of RENOVATE_VERSION. Needs npx.
@@ -440,10 +440,6 @@ ENVTEST ?= $(LOCALBIN)/setup-envtest
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GOVULNCHECK = $(LOCALBIN)/govulncheck
-# The JSON schema that `golangci-lint config verify` checks .golangci.yml against. golangci-lint fetches it itself
-# with a 2 s HTTP timeout and no retry, which fails CI on a slow CDN answer, so lint-config downloads it with
-# retries and passes it in. The file name carries the major.minor of GOLANGCI_LINT_VERSION (v2.8.0 -> v2.8).
-GOLANGCI_LINT_SCHEMA = $(LOCALBIN)/golangci.$(basename $(GOLANGCI_LINT_VERSION)).jsonschema.json
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -463,7 +459,9 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
-GOLANGCI_LINT_VERSION ?= v2.8.0
+# .custom-gcl.yml names the same release. Renovate moves both in one pull request.
+# renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
+GOLANGCI_LINT_VERSION ?= v2.15.0
 # RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
 # against renovate.json5.
 # renovate: datasource=npm depName=renovate
@@ -509,27 +507,24 @@ govulncheck: | $(LOCALBIN) ## Download govulncheck locally if necessary.
 		echo "$$want" > "$(GOVULNCHECK).stamp"; \
 	}
 
-.PHONY: golangci-lint-schema
-golangci-lint-schema: $(GOLANGCI_LINT_SCHEMA) ## Download the golangci-lint JSON schema locally if necessary.
-$(GOLANGCI_LINT_SCHEMA): | $(LOCALBIN)
-	curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 \
-		-o "$@.tmp" "https://golangci-lint.run/jsonschema/$(notdir $@)" && mv -f "$@.tmp" "$@"
-
 # The custom binary with the plugins of .custom-gcl.yml replaces the versioned file, so the link that go-install-tool
-# checks stays in place and a later call builds nothing. The copy of .custom-gcl.yml beside the binary records the
-# config it was built from. A changed config, or a new plain binary from go-install-tool, builds it again.
+# checks stays in place and a later call builds nothing. The stamp beside the binary records the config and the Go
+# that built it, because the binary cannot load the standard library of another Go release. A change of either, or a
+# new plain binary from go-install-tool, builds it again. `custom` builds in a clone outside this repository, where a
+# version manager such as asdf can pick another Go, so GOTOOLCHAIN names the Go of this repository.
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
+golangci-lint: | $(LOCALBIN) ## Download golangci-lint locally if necessary.
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 	@[ ! -f .custom-gcl.yml ] || { \
 		set -e; \
 		built="$(GOLANGCI_LINT)-$(GOLANGCI_LINT_VERSION)"; \
-		if ! cmp -s .custom-gcl.yml "$$built.custom-gcl.yml" || [ "$$built" -nt "$$built.custom-gcl.yml" ]; then \
+		gover="$$(go env GOVERSION)"; \
+		want="$$(cat .custom-gcl.yml; echo "$$gover")"; \
+		if [ "$$(cat "$$built.stamp" 2>/dev/null)" != "$$want" ] || [ "$$built" -nt "$$built.stamp" ]; then \
 			echo "Building custom golangci-lint with plugins..."; \
-			"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name golangci-lint-custom; \
+			GOTOOLCHAIN="$$gover" "$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name golangci-lint-custom; \
 			mv -f "$(LOCALBIN)/golangci-lint-custom" "$$built"; \
-			cp .custom-gcl.yml "$$built.custom-gcl.yml"; \
+			printf '%s\n' "$$want" > "$$built.stamp"; \
 		fi; \
 	}
 

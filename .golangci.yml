@@ -16,7 +16,7 @@ linters:
     - modernize
     - misspell
     - nakedret
-    - prealloc
+    # prealloc is off. It asks to size a slice literal before an append, and only a profile can show that this matters.
     - revive
     - staticcheck
     - unconvert
@@ -32,9 +32,22 @@ linters:
       rules:
         - name: comment-spacings
         - name: import-shadowing
+    goconst:
+      # A test reads best with its expected values written out, not as constants.
+      ignore-tests: true
+      # Call is the default. A table of data, such as RBAC rules or a JSON body, reads best with its values written out.
+      exclude-types:
+        - Call
+        - CompositeLit
     modernize:
       disable:
         - omitzero
+        # One declared target serves several errors.As checks and switch cases. errors.AsType needs a new one at each.
+        - errorsastype
+        # The ObjectMeta of a Kubernetes object stays named in a literal, not set through promoted fields.
+        - embedlit
+        # Under Go 1.27 it asks for strings.CutLast, which Go 1.26 cannot compile.
+        - stringscut
   exclusions:
     generated: lax
     rules:
