@@ -8,6 +8,7 @@ import {
 } from "../../../test/fakes/settings";
 import type { FieldState } from "@/lib/fields";
 import {
+  blockingMergedErrors,
   type Setting,
   settingChange,
   settingsOf,
@@ -386,8 +387,8 @@ describe("settingsOf merged errors", () => {
     expect(
       brokers({ limits: { cpu: "4" } }, { requests: { cpu: "2" } })
         .mergedErrors,
-    ).toBeUndefined();
-    expect(brokers().mergedErrors).toBeUndefined();
+    ).toEqual([]);
+    expect(brokers().mergedErrors).toEqual([]);
   });
 
   it("compares the memory and quantities in other units", () => {
@@ -486,6 +487,36 @@ describe("settingsOf merged errors", () => {
       setting(settingsOf({ group, spec: merged.spec }), "resources")
         .mergedErrors,
     ).toBeUndefined();
+  });
+});
+
+describe("blockingMergedErrors", () => {
+  it("gives each merged error that blocks at the claim path of its setting", () => {
+    const page = {
+      cluster: { gateway: { mode: "Standalone" } },
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+        tasklist: {
+          resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+        },
+      },
+    } as const;
+    const { fields, merged } = settingsFieldsOf(page as SettingsPage);
+    expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([
+      {
+        path: "spec.cluster.zeebe.resources",
+        message:
+          "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+        label: "resources",
+      },
+    ]);
+  });
+
+  it("gives nothing for a merged value that holds", () => {
+    const { fields, merged } = settingsFieldsOf({
+      preset: { zeebe: { resources: { limits: { cpu: "4" } } } },
+    });
+    expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([]);
   });
 });
 

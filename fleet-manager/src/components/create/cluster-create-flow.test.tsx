@@ -1834,6 +1834,25 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
+  it("turns Create off when the preset changes to a limit below the request after step 3", async () => {
+    const initial = data({ accessRequests: [] });
+    const { rerender } = show(initial);
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    live.objects.CamundaClusterPreset = withBrokerResources({
+      requests: { cpu: "2" },
+      limits: { cpu: "1" },
+    }).presets;
+    rerender(flowOf(initial));
+    expect(create().disabled).toBe(true);
+    expect(
+      document.getElementById(create().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe(
+      "Cluster settings: resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    );
+  });
+
   it("refuses the reference while the Secret watch is overdue", async () => {
     const { view, initial } = await pickInTeamA();
     live.objects.Secret = [

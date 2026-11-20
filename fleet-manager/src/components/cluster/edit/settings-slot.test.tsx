@@ -329,7 +329,51 @@ describe("ComponentSettingsEditor", () => {
       within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
         .disabled,
     ).toBe(true);
-    expect(within(bar).getByText(`resources: ${message}`)).toBeTruthy();
+    expect(within(bar).getByText("Fix 1 field before review.")).toBeTruthy();
+    // The row shows the error once, though the edit host gives it too.
+    expect(within(resources()).getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("keeps Review off for a merged error after the editors close", async () => {
+    const spec = {
+      zeebe: {
+        replicas: 3,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { limits: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      }),
+    );
+    await openEditors();
+    await userEvent.clear(
+      within(
+        within(settingRow(group("Brokers"), "resources")).getByRole("group", {
+          name: "CPU limit",
+        }),
+      ).getByRole("textbox", { name: "Amount" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close the editors" }),
+    );
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
   });
 
   it("closing the editors clears the error that one of them shows", async () => {

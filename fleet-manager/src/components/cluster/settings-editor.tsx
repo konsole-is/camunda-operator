@@ -11,7 +11,6 @@ import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
-  type LimitBelowRequest,
   ResourcesEditor,
   type Resources,
 } from "@/components/fleet/resources-editor";
@@ -61,9 +60,10 @@ import type { SettingsGroup } from "./settings";
  * the server, and each shows at the setting whose claim path holds it.
  * invalid gets the error that a setting shows, as SettingRow gives it. A
  * collapsed group starts closed. Its heading counts the settings changed
- * in the claim and, when there are any, the settings with an error. It
- * opens each time that number of errors grows, and settingsSummary is the
- * first line of its body. It holds no session.
+ * in the claim and, when there are any, the settings with an error or a
+ * merged error that blocks. It opens each time that number of errors
+ * grows, and settingsSummary is the first line of its body. It holds no
+ * session.
  */
 export function SettingsEditor({
   group,
@@ -90,7 +90,10 @@ export function SettingsEditor({
   const [open, setOpen] = useState(false);
   const [counted, setCounted] = useState(0);
   const failing = settings.filter(
-    (s) => shown.has(s.key) || settingRowErrors(errors, s).length > 0,
+    (s) =>
+      shown.has(s.key) ||
+      settingRowErrors(errors, s).length > 0 ||
+      Boolean(s.mergedErrors?.some((e) => e.blocks)),
   ).length;
   if (counted !== failing) {
     setCounted(failing);
@@ -176,12 +179,11 @@ export function SettingsEditor({
  * value. errors are field errors from outside the row. The mergedErrors of
  * the setting show under them. onReset runs after a click on the reset
  * link: the caller remounts the rows, so that they show the values below
- * the claim. The row shows an error while its editor shows one or the
- * setting has a merged error that blocks, also before any edit. invalid
- * gets the claim steps of the shown field and "<label>: <error>" while the
- * row shows an error, the first merged error that blocks first, and
- * undefined once the error goes or the row unmounts. onShows gets whether
- * the row shows an error.
+ * the claim. invalid gets the claim steps of the shown field and
+ * "<label>: <error>" while the editor shows an error, also before any
+ * edit, and undefined once the error goes or the row unmounts. onShows
+ * gets whether the editor shows an error. A merged error reaches neither:
+ * the host checks the merged value itself.
  */
 export function SettingRow({
   setting,
@@ -230,8 +232,7 @@ export function SettingRow({
     return () => reportShows.current?.(false);
   }, [editable]);
   const merged = setting.mergedErrors ?? [];
-  const blocking = merged.filter((e) => e.blocks).map((e) => e.message);
-  const rowError = editable ? (blocking[0] ?? editorError) : undefined;
+  const rowError = editable ? editorError : undefined;
   useErrorsReport(
     rowError === undefined ? [] : [{ path: "", message: rowError }],
     ([error]) => {
@@ -259,8 +260,11 @@ export function SettingRow({
     else set(next.steps, next.value);
   });
   const note = setting.state && stateNote(setting.state);
+  // A host can also give a merged error of the setting as a field error.
   const messages = [
-    ...errors.map((e) => ({ text: e.message, blocks: true })),
+    ...errors
+      .filter((e) => !merged.some((m) => m.message === e.message))
+      .map((e) => ({ text: e.message, blocks: true })),
     ...merged.map((e) => ({ text: e.message, blocks: e.blocks })),
   ];
   return (
@@ -281,7 +285,7 @@ export function SettingRow({
           messages.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
         }
         secrets={secrets ?? []}
-        noted={merged.map((e) => e.belowRequest)}
+        limitsChecked={setting.mergedErrors !== undefined}
         onChange={change}
         onRefused={own(() => {})}
         onShown={setEditorError}
@@ -357,7 +361,7 @@ function Editor({
   current,
   replaces,
   describedBy,
-  noted,
+  limitsChecked,
   secrets,
   onChange,
   onRefused,
@@ -370,7 +374,7 @@ function Editor({
   replaces?: boolean;
   describedBy?: string;
   secrets: SecretRefs;
-  noted: readonly LimitBelowRequest[];
+  limitsChecked: boolean;
   onChange: (value: unknown) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
@@ -435,7 +439,7 @@ function Editor({
           label={label}
           defaultValue={initial as Resources}
           describedBy={describedBy}
-          noted={noted}
+          limitsChecked={limitsChecked}
           onChange={valid}
           onErrors={onErrors}
         />

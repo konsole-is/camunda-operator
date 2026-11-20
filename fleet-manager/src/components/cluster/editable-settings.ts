@@ -4,6 +4,7 @@ import {
   limitsBelowRequests,
   type Resources,
 } from "@/components/fleet/resources-editor";
+import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { fieldSchemas } from "@/generated/fieldschema";
 import {
   type ClusterField,
@@ -17,14 +18,15 @@ import {
   optimizeClaimNames,
   overrideEditorOf,
   parameterEditorOf,
+  pathFrom,
   type SchemaRoot,
   type SettingEditor,
   type Step,
 } from "@/lib/fields";
 import { equalJSON } from "@/lib/policy";
 import type { OpenAPISchema } from "@/lib/schema";
-import { valueAt, without, withValue } from "@/lib/session";
-import type { SettingsGroup } from "./settings";
+import { type FieldError, valueAt, without, withValue } from "@/lib/session";
+import { type SettingsGroup, settingsGroupsOf } from "./settings";
 
 /**
  * Setting is one editor of a settings group. steps is where a change goes,
@@ -37,8 +39,9 @@ import type { SettingsGroup } from "./settings";
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the limits of the merged value that are
- * below their request. claimed is the value of the claim at the path of the
- * setting, for a resources setting when settingsOf gets a claim.
+ * below their request, and undefined when no check of the merged value
+ * runs. claimed is the value of the claim at the path of the setting, for a
+ * resources setting when settingsOf gets a claim.
  */
 export type Setting = {
   key: string;
@@ -164,8 +167,10 @@ export function settingsOf(input: {
       : [];
     const checked: Setting = {
       ...setting,
-      ...(merged.length > 0 && { mergedErrors: merged }),
-      ...(keyed && { claimed: valueAt(claim, steps(names)) }),
+      ...(keyed && {
+        mergedErrors: merged,
+        claimed: valueAt(claim, steps(names)),
+      }),
     };
     if (holder?.field.claimSteps)
       return {
@@ -289,6 +294,30 @@ function originOf(
     one: "is already set on the cluster",
     many: "are already set on the cluster",
   };
+}
+
+/**
+ * blockingMergedErrors returns a field error at the claim path of each
+ * setting of a cluster with a merged error that blocks, with the label of
+ * the setting. fields are clusterFields of the cluster, spec the merged
+ * spec, and claim spec.cluster of the claim, as settingsOf takes them.
+ */
+export function blockingMergedErrors(
+  fields: readonly ClusterField[],
+  spec: CamundaClusterSpec,
+  claim: unknown,
+): (FieldError & { label: string })[] {
+  return settingsGroupsOf(fields, spec).flatMap((group) =>
+    settingsOf({ group, spec, claim }).flatMap((setting) =>
+      (setting.mergedErrors ?? [])
+        .filter((e) => e.blocks && setting.steps)
+        .map((e) => ({
+          path: pathFrom("", setting.steps!),
+          message: e.message,
+          label: setting.label,
+        })),
+    ),
+  );
 }
 
 /**

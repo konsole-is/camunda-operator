@@ -62,7 +62,6 @@ const SCALE: Record<string, number> = {
   Pi: 2 ** 50,
   Ei: 2 ** 60,
 };
-const BELOW_REQUEST = "The limit is below the request";
 // The signed number part of a Kubernetes quantity.
 const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 const FIELDS: [Side, Resource, string][] = [
@@ -80,30 +79,29 @@ const FIELDS: [Side, Resource, string][] = [
  * unit. onChange gets the resources and the errors after each edit: an
  * amount that is not a number, a negative amount, and a limit below its
  * request. describedBy names the hint and error elements of the field for
- * each amount and unit. noted are limits below their request. A limit below
- * its request whose request and limit in the editor equal those of a noted
- * entry shows no message, and neither onChange nor onErrors gets it.
- * onErrors gets the errors that it shows, also at mount.
+ * each amount and unit. With limitsChecked, the caller checks each limit
+ * against its request in the value that the cluster gets: the editor then
+ * neither shows nor reports a limit below its request, and passes such an
+ * edit on. onErrors gets the errors that it shows, also at mount.
  */
 export function ResourcesEditor({
   label,
   defaultValue = {},
   describedBy,
-  noted = [],
+  limitsChecked = false,
   onChange,
   onErrors,
 }: {
   label: string;
   defaultValue?: Resources;
   describedBy?: string;
-  noted?: readonly LimitBelowRequest[];
+  limitsChecked?: boolean;
   onChange?: (value: Resources, errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
-  const all = amountErrors(amounts);
-  const errors = editErrors(all, amounts, noted);
+  const errors = amountErrors(amounts, limitsChecked);
   useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
@@ -111,7 +109,7 @@ export function ResourcesEditor({
     setAmounts(next);
     onChange?.(
       toResources(defaultValue, next),
-      editErrors(amountErrors(next), next, noted),
+      amountErrors(next, limitsChecked),
     );
   };
 
@@ -122,7 +120,6 @@ export function ResourcesEditor({
         const path = `${side}.${resource}`;
         const value = amounts[path];
         const error = errors.find((e) => e.path === path)?.message;
-        const invalid = all.some((e) => e.path === path);
         const described =
           [error && `${id}-${path}-error`, describedBy]
             .filter(Boolean)
@@ -145,7 +142,7 @@ export function ResourcesEditor({
                 aria-label="Amount"
                 inputMode="decimal"
                 value={value.amount}
-                aria-invalid={invalid || undefined}
+                aria-invalid={error ? true : undefined}
                 aria-describedby={described}
                 onChange={(event) =>
                   update(path, { ...value, amount: event.target.value })
@@ -220,7 +217,10 @@ function toResources(
   return result;
 }
 
-function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
+function amountErrors(
+  amounts: Record<string, Amount>,
+  limitsChecked: boolean,
+): ValidationError[] {
   const errors: ValidationError[] = [];
   for (const [path, value] of Object.entries(amounts)) {
     if (value.amount === "") continue;
@@ -230,39 +230,14 @@ function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
     else if (value.amount.startsWith("-"))
       errors.push({ path, message: "Enter 0 or more" });
   }
+  if (limitsChecked) return errors;
   for (const resource of ["cpu", "memory"] as const)
     if (isBelow(amounts[`requests.${resource}`], amounts[`limits.${resource}`]))
       errors.push({
         path: `limits.${resource}`,
-        message: BELOW_REQUEST,
+        message: "The limit is below the request",
       });
   return errors;
-}
-
-function editErrors(
-  errors: ValidationError[],
-  amounts: Record<string, Amount>,
-  noted: readonly LimitBelowRequest[],
-): ValidationError[] {
-  return errors.filter((error) => {
-    if (error.message !== BELOW_REQUEST) return true;
-    const resource = error.path.slice("limits.".length);
-    return !noted.some(
-      (n) =>
-        n.resource === resource &&
-        sameQuantity(parse(n.request), amounts[`requests.${resource}`]) &&
-        sameQuantity(parse(n.limit), amounts[`limits.${resource}`]),
-    );
-  });
-}
-
-function sameQuantity(a: Amount, b: Amount): boolean {
-  return (
-    base(a) !== undefined &&
-    base(b) !== undefined &&
-    !isBelow(a, b) &&
-    !isBelow(b, a)
-  );
 }
 
 /**
