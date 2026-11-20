@@ -37,9 +37,9 @@ export type TemplateClaim = {
  * its target account; else requestName and targetServiceAccount give them.
  * parameters are the request parameters that resolve gives under
  * environment, with the selection of the claim, or none. When registration
- * declares releaseRef, a cluster claim gets the parameter releaseRef: its
- * own release, else the default release of environment, else none. outputs
- * is empty, because a template parameter cannot read them. A policy that
+ * declares releaseRef, the release of a cluster claim, its own or else the
+ * default of environment, replaces the parameter releaseRef. outputs is
+ * empty, because a template parameter cannot read them. A policy that
  * resolve refuses gives no parameters.
  */
 export function templateData(input: {

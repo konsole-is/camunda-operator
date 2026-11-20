@@ -144,8 +144,27 @@ describe("templateData", () => {
       environment: Environment | undefined,
       registration = released,
     ) =>
-      templateData({ ...input, claim, environment, registration }).parameters
-        .releaseRef;
+      templateData({
+        ...input,
+        claim,
+        environment,
+        registration,
+        registrations: input.registrations.map((r) =>
+          r.metadata.name === registration.metadata.name ? registration : r,
+        ),
+      }).parameters.releaseRef;
+    const pinned = (
+      releases: Environment["spec"]["releases"],
+    ): Environment => ({
+      ...production,
+      spec: {
+        ...production.spec,
+        releases,
+        parameters: {
+          "aws-connectors-role": { releaseRef: { value: "8.8.0" } },
+        },
+      },
+    });
 
     it("gives a cluster claim its own release", () => {
       expect(releaseOf({ ...orders, releaseRef: "8.9.22" }, production)).toBe(
@@ -168,6 +187,18 @@ describe("templateData", () => {
         }),
       ).toBeUndefined();
       expect(releaseOf(orders, undefined)).toBeUndefined();
+    });
+
+    it("replaces the value of the environment with the release of the claim", () => {
+      const environment = pinned(production.spec.releases);
+      expect(releaseOf({ ...orders, releaseRef: "8.9.22" }, environment)).toBe(
+        "8.9.22",
+      );
+      expect(releaseOf(orders, environment)).toBe("8.9.23");
+    });
+
+    it("keeps the value of the environment when the claim gets no release", () => {
+      expect(releaseOf(orders, pinned(undefined))).toBe("8.8.0");
     });
 
     it("gives no release to a plane claim", () => {
