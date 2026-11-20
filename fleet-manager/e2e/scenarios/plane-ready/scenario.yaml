@@ -1,0 +1,306 @@
+schemaVersion: 1
+description: >-
+  A CamundaManagementCluster in OIDC mode with Console and Web Modeler,
+  made from the CamundaManagementClusterClaim plane-a in the Environment
+  Platform. The claim selects the built-in option for existing
+  DatabaseConfigs. The OIDC platform config and its Secrets are those of
+  claim-ready, under the name oidc-platform. It adds the auth, token,
+  and JWKS URLs and the clients of Management Identity, Optimize,
+  Console, and Web Modeler, with the Secrets of the confidential
+  clients, because a plane in OIDC mode needs them. The
+  DatabaseServerConfig and the DatabaseConfigs are those of plane-
+  create, without keycloak-db, because OIDC mode runs no Keycloak. The
+  Environment has no access section, so the claim types its URLs. The
+  claim selects every cluster with an empty cluster selector. The first
+  state has no cluster, so the plane serves none.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: platform
+      labels:
+        fleet.camunda.io/environment: platform
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: oidc-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: camunda-license
+      namespace: camunda-system
+    stringData:
+      license-key: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: management-identity-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: optimize-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: web-modeler-api-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      name: oidc-platform
+    spec:
+      auth:
+        method: oidc
+        oidc:
+          issuerUrl: "https://login.example.com/realms/camunda"
+          authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
+          tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
+          jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
+          clientId: "camunda-orchestration"
+          audience: "camunda-orchestration"
+          clientSecretRef:
+            name: "oidc-credentials"
+            namespace: "camunda-system"
+            key: "client-secret"
+          management:
+            clients:
+              identity:
+                clientId: "management-identity"
+                clientSecretRef:
+                  name: "management-identity-credentials"
+                  namespace: "camunda-system"
+                  key: "client-secret"
+              optimize:
+                clientId: "optimize"
+                clientSecretRef:
+                  name: "optimize-credentials"
+                  namespace: "camunda-system"
+                  key: "client-secret"
+              console:
+                clientId: "console"
+              webModeler:
+                clientId: "web-modeler"
+              webModelerApi:
+                clientId: "web-modeler-api"
+                clientSecretRef:
+                  name: "web-modeler-api-credentials"
+                  namespace: "camunda-system"
+                  key: "client-secret"
+      licenseSecretRef:
+        name: "camunda-license"
+        namespace: "camunda-system"
+        key: "license-key"
+      images:
+        camunda: "registry.example.com/camunda/camunda"
+        optimize: "registry.example.com/camunda/optimize"
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: Environment
+    metadata:
+      name: platform
+    spec:
+      displayName: Platform
+      platformConfigRef: oidc-platform
+      sections:
+        management-database:
+          required: true
+          allowed: [existing-database-configs]
+          default: existing-database-configs
+      parameters:
+        existing-database-configs:
+          identity:
+            claimEditable: true
+          webModeler:
+            claimEditable: true
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: postgres-admin
+      namespace: platform
+    stringData:
+      username: postgres
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseServerConfig
+    metadata:
+      name: postgres
+      namespace: platform
+    spec:
+      engine: postgres
+      # The generator probes the server. A host name fails with the text of
+      # the local resolver, which differs between machines. Nothing listens
+      # on port 1, so this probe fails with the same text everywhere.
+      host: 127.0.0.1
+      port: 1
+      adminCredentialsSecretRef:
+        name: postgres-admin
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: identity-db
+      namespace: platform
+    stringData:
+      username: identity
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: identity-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: identity
+      credentialsSecretRef:
+        name: identity-db
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: modeler-db
+      namespace: platform
+    stringData:
+      username: modeler
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: modeler-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: web_modeler
+      credentialsSecretRef:
+        name: modeler-db
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: CamundaManagementClusterClaim
+    metadata:
+      name: plane-a
+      namespace: platform
+    spec:
+      environments: [platform]
+      clusterSelector: {}
+      management:
+        identityProvider:
+          oidc: {}
+        identity:
+          externalUrl: https://management.example.com/identity
+          admin:
+            claimName: email
+            claimValue: admin@example.com
+        console:
+          externalUrl: https://management.example.com/console
+        webModeler:
+          externalUrl: https://management.example.com/modeler
+          websocketsExternalUrl: https://management.example.com/modeler-ws
+          mail:
+            fromAddress: modeler@example.com
+            smtpHost: smtp.example.com
+      versions:
+        identity: "8.9.14"
+        console: "8.9.133"
+        webModeler: "8.9.15"
+      plugins:
+        - section: management-database
+          registration: existing-database-configs
+          parameters:
+            identity: identity-db
+            webModeler: modeler-db
+states:
+  - name: serves-a-cluster
+    description: >-
+      Adds the namespace team-orders of the Environment Platform with the
+      CamundaCluster orders, which uses the platform config oidc-platform.
+      The plane lists the cluster. After the cluster holds its backend, it
+      adds the CamundaOptimize orders in that namespace, which reads the
+      contract plane-a and sets an external URL, so the plane shows its
+      callbacks and its reader.
+    apply:
+      - apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: team-orders
+          labels:
+            fleet.camunda.io/environment: platform
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaClusterPreset
+        metadata:
+          name: small
+        spec:
+          cluster:
+            zeebe:
+              replicas: 1
+              partitions: 1
+              replicationFactor: 1
+            gateway:
+              mode: Embedded
+            operate:
+              mode: Embedded
+            tasklist:
+              mode: Embedded
+            admin:
+              mode: Embedded
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaRelease
+        metadata:
+          name: camunda-8-9
+        spec:
+          version: "8.9.23"
+      - apiVersion: v1
+        kind: Secret
+        metadata:
+          name: orders-storage-credentials
+          namespace: team-orders
+        stringData:
+          username: camunda
+          password: scenario
+      - apiVersion: core.camunda.io/v1
+        kind: SecondaryStorageConfig
+        metadata:
+          name: orders-storage
+          namespace: team-orders
+        spec:
+          type: elasticsearch
+          elasticsearch:
+            endpoint: "https://orders-es-http:9200"
+            credentialsSecretRef:
+              name: orders-storage-credentials
+              usernameKey: username
+              passwordKey: password
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaCluster
+        metadata:
+          name: orders
+          namespace: team-orders
+        spec:
+          platformConfigRef: oidc-platform
+          presetRef: small
+          releaseRef: camunda-8-9
+          externalUrl: "https://orders.example.com"
+          storageRef: orders-storage
+    thenApply:
+      - apiVersion: core.camunda.io/v1
+        kind: CamundaOptimize
+        metadata:
+          name: orders
+          namespace: team-orders
+        spec:
+          version: "8.9.23"
+          managementAuthRef: plane-a
+          clusterRef:
+            name: orders
+          externalUrl: "https://orders.example.com/optimize"

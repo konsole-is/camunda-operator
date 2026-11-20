@@ -30,6 +30,33 @@ export const LAST_APPLIED_ANNOTATION =
 /** SECTION_LABEL names the section of a PluginRequest. It is LabelSection of api/plugins/v1alpha1. */
 export const SECTION_LABEL = "plugins.camunda.io/section";
 
+/**
+ * REGISTRATION_LABEL names the PluginRegistration that a request, a Grant,
+ * or an object that a plugin writes belongs to. It is LabelRegistration of
+ * api/plugins/v1alpha1.
+ */
+export const REGISTRATION_LABEL = "plugins.camunda.io/registration";
+
+/**
+ * REQUEST_LABEL names the PluginRequest that a Grant or an object that a
+ * plugin writes belongs to. It is LabelRequest of api/plugins/v1alpha1.
+ */
+export const REQUEST_LABEL = "plugins.camunda.io/request";
+
+/**
+ * REQUEST_NAMESPACE_LABEL holds the namespace of the PluginRequest of a
+ * cluster-scoped object that a plugin writes. It is LabelRequestNamespace
+ * of api/plugins/v1alpha1.
+ */
+export const REQUEST_NAMESPACE_LABEL = "plugins.camunda.io/request-namespace";
+
+/**
+ * PLUGIN_CLUSTER_LABEL on a Grant names the CamundaCluster whose identity
+ * the Grant changes. It is LabelCluster of api/plugins/v1alpha1. The pod
+ * label camunda.io/cluster is CLUSTER_LABEL.
+ */
+export const PLUGIN_CLUSTER_LABEL = "plugins.camunda.io/cluster";
+
 /** ACCESS_SECTION is the section of the access request of a claim. It is SectionAccess of internal/pluginstartup. */
 export const ACCESS_SECTION = "access";
 
@@ -65,6 +92,19 @@ export const OPTIMIZE_COMPONENTS = [
 ] as const;
 
 /**
+ * PLANE_COMPONENTS are the COMPONENT_LABEL values of the pods of a
+ * management plane. They are the Component constants of
+ * pkg/components/camundamanagementcluster.
+ */
+export const PLANE_COMPONENTS = {
+  keycloak: "keycloak",
+  identity: "management-identity",
+  console: "console",
+  webModelerRestapi: "web-modeler-restapi",
+  webModelerWebsockets: "web-modeler-websockets",
+} as const;
+
+/**
  * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
  * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
  */
@@ -76,6 +116,24 @@ export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
  * pkg/labels.
  */
 export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
+
+/**
+ * MANAGEMENT_CLUSTER_LABEL names the CamundaManagementCluster that owns an
+ * object. On the pods of a plane and on its ManagementAuthConfig, its value
+ * is labels.OwnerName of the plane: the plane name, with a hash in place of
+ * its end when the name is longer than 63 characters. It is
+ * ManagementClusterKey of pkg/labels, the same key as
+ * MANAGEMENT_CLUSTER_ANNOTATION.
+ */
+export const MANAGEMENT_CLUSTER_LABEL = "camunda.io/management-cluster";
+
+/**
+ * MANAGEMENT_CLUSTER_NAMESPACE_LABEL holds the namespace of the plane on a
+ * cluster-scoped object that the plane writes. It is
+ * ManagementClusterNamespaceKey of pkg/labels.
+ */
+export const MANAGEMENT_CLUSTER_NAMESPACE_LABEL =
+  "camunda.io/management-cluster-namespace";
 
 /**
  * SUSPENSION_HOLD_PREFIX starts the key of an annotation that suspends a

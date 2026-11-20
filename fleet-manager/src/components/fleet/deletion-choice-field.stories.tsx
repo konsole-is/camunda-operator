@@ -55,3 +55,16 @@ export const DeletionChoiceWithKeepRefused: Story = {
     },
   },
 };
+
+export const DeletionChoiceWithMissingRegistration: Story = {
+  name: "Deletion choice with a missing registration",
+  args: {
+    choice: {
+      defaultPolicy: "Delete",
+      keepAllowed: false,
+      alwaysDeleted: [],
+      missing: [{ section: "access", label: "gateway-access (Access)" }],
+      policy: "Delete",
+    },
+  },
+};

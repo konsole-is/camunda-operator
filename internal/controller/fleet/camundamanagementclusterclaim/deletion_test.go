@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -86,6 +87,82 @@ var _ = Describe("Deleting a plane claim", func() {
 	})
 })
 
+var _ = Describe("A live plane claim", func() {
+	It("writes a policy change on both requests while its check fails", func() {
+		claim := readyClaim(newPlaneClaim())
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.PlatformConfigRef = uniqueName("missing-platform")
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+		expectNotReady(claim, v1.ReasonInvalidReference, Not(BeEmpty()))
+		expectObserved(claim)
+		collectRequests(claim)
+
+		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+	})
+
+	It("reports NotAllowed for Orphan before a failed reference, and keeps Delete on both requests", func() {
+		claim := newPlaneClaim()
+		claim.Spec.Plugins[1] = selection(pluginstartup.SectionManagementDatabase, registrationDeleteOnly)
+		claim = readyClaim(claim)
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.PlatformConfigRef = uniqueName("missing-platform")
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+
+		expectNotReady(claim, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(registrationDeleteOnly))
+		expectObserved(claim)
+		for _, section := range planeSections {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
+	It("reports NotAllowed for Orphan while a selected registration does not exist, and keeps Delete", func() {
+		gone := testRegistration(uniqueName("delete-only"), pluginstartup.SectionManagementDatabase)
+		gone.Spec.DeletionPolicies = []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete}
+		create(gone)
+		plugin.serve(gone.Name, databaseOutputs)
+		environment := planeEnvironment()
+		database := environment.Spec.Sections[pluginstartup.SectionManagementDatabase]
+		database.Allowed = append(database.Allowed, gone.Name)
+		environment.Spec.Sections[pluginstartup.SectionManagementDatabase] = database
+		claim := newClaim(newEnvironmentNamespace(environment), environment.Name)
+		claim.Spec.Plugins[1] = selection(pluginstartup.SectionManagementDatabase, gone.Name)
+		claim = readyClaim(claim)
+		Expect(k8sClient.Delete(ctx, gone)).To(Succeed())
+		expectNotReady(claim, v1.ReasonInvalidReference, ContainSubstring(gone.Name))
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		})
+
+		expectNotReady(claim, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(gone.Name))
+		expectObserved(claim)
+		for _, section := range planeSections {
+			request, err := requestOf(claim, section)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete), section)
+		}
+	})
+
+	It("adds the cleanup finalizer back, also while its check fails", func() {
+		claim := readyClaim(newPlaneClaim())
+
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
+			c.Spec.PlatformConfigRef = uniqueName("missing-platform")
+			controllerutil.RemoveFinalizer(c, fleetv1alpha1.FinalizerCleanup)
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, claim).Finalizers).To(ContainElement(fleetv1alpha1.FinalizerCleanup))
+		}, timeout, interval).Should(Succeed())
+	})
+})
+
 // readyClaim creates claim and waits until its plane exists and the fake
 // plugin holds both of its requests.
 func readyClaim(claim *fleetv1alpha1.CamundaManagementClusterClaim) *fleetv1alpha1.CamundaManagementClusterClaim {
@@ -118,4 +195,28 @@ func expectPoliciesAtDeletion(
 			g.Expect(got).To(Equal(policy), section)
 		}
 	}, timeout, interval).Should(Succeed())
+}
+
+// expectObserved polls until status.observedGeneration of claim is its
+// generation.
+func expectObserved(claim *fleetv1alpha1.CamundaManagementClusterClaim) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		current := latest(g, claim)
+		g.Expect(current.Status.ObservedGeneration).To(Equal(current.Generation))
+	}, timeout, interval).Should(Succeed())
+}
+
+// collectRequests deletes both requests of claim, as the garbage collector
+// does when a GitOps tool deletes the claim with foreground propagation.
+// envtest runs no garbage collector.
+func collectRequests(claim *fleetv1alpha1.CamundaManagementClusterClaim) {
+	GinkgoHelper()
+	for _, section := range planeSections {
+		key := requestKey(claim, section)
+		request := &pluginsv1alpha1.PluginRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+		}
+		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
+	}
 }

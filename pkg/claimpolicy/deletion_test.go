@@ -17,12 +17,16 @@ limitations under the License.
 package claimpolicy
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 func TestCheckDeletionPolicyFixtures(t *testing.T) {
@@ -32,10 +36,73 @@ func TestCheckDeletionPolicyFixtures(t *testing.T) {
 		Policy        pluginsv1alpha1.DeletionPolicy       `json:"policy"`
 		Selections    []fleetv1alpha1.PluginSelection      `json:"selections,omitempty"`
 		Registrations []pluginsv1alpha1.PluginRegistration `json:"registrations,omitempty"`
+		Missing       string                               `json:"missing,omitempty"`
 	}
 
 	runFixtures(t, "check-deletion-policy", func(in input) (any, error) {
-		return struct{}{}, CheckDeletionPolicy(in.Policy, in.Selections, in.Registrations)
+		missing := MissingPasses
+		switch in.Missing {
+		case "":
+		case "Refuses":
+			missing = MissingRefuses
+		default:
+			return nil, fmt.Errorf("unknown missing %q", in.Missing)
+		}
+
+		return struct{}{}, CheckDeletionPolicy(in.Policy, in.Selections, in.Registrations, missing)
+	})
+}
+
+func TestCheckDeletionPolicyWithMissingRefuses(t *testing.T) {
+	t.Parallel()
+
+	selections := []fleetv1alpha1.PluginSelection{
+		{Section: "access", Registration: "ingress"},
+		{Section: "encryption-key", Registration: "kms"},
+	}
+	kms := pluginsv1alpha1.PluginRegistration{
+		ObjectMeta: metav1.ObjectMeta{Name: "kms"},
+		Spec: pluginsv1alpha1.PluginRegistrationSpec{
+			DeletionPolicies: []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+		},
+	}
+
+	t.Run("refuses Orphan for a registration that does not exist, and names it", func(t *testing.T) {
+		t.Parallel()
+
+		err := CheckDeletionPolicy(pluginsv1alpha1.DeletionPolicyOrphan, selections[:1], nil, MissingRefuses)
+
+		var failure *conditions.PreCheckFailure
+		require.ErrorAs(t, err, &failure)
+		assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
+		assert.Equal(
+			t,
+			`the deletion policy is Orphan, and the claim cannot tell that these registrations support it, `+
+				`because they do not exist: PluginRegistration "ingress" of section "access"`,
+			failure.Message,
+		)
+	})
+
+	t.Run("names a missing and an unsupported registration in one refusal", func(t *testing.T) {
+		t.Parallel()
+
+		err := CheckDeletionPolicy(
+			pluginsv1alpha1.DeletionPolicyOrphan,
+			selections,
+			[]pluginsv1alpha1.PluginRegistration{kms},
+			MissingRefuses,
+		)
+
+		var failure *conditions.PreCheckFailure
+		require.ErrorAs(t, err, &failure)
+		assert.Contains(t, failure.Message, `PluginRegistration "kms" of section "encryption-key"`)
+		assert.Contains(t, failure.Message, `do not exist: PluginRegistration "ingress" of section "access"`)
+	})
+
+	t.Run("passes Delete for a registration that does not exist", func(t *testing.T) {
+		t.Parallel()
+
+		assert.NoError(t, CheckDeletionPolicy(pluginsv1alpha1.DeletionPolicyDelete, selections, nil, MissingRefuses))
 	})
 }
 

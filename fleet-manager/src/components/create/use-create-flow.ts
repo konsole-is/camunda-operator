@@ -20,10 +20,10 @@ export type CreateStep<T> = {
  * set returns a new draft with value at path, and leaves the parts off the
  * path shared. undefined deletes the key. errors holds the errors of the
  * current step and of each step before it, and nothing for a later step.
- * next moves on only while the current step has no error. back moves one
- * step back. go moves only to a step before the current one, and ignores
- * any other id. steps can be a new array on each render: the newest check
- * of each step gives the errors.
+ * next moves on only while no step up to the current one has an error.
+ * back moves one step back. go moves only to a step before the current
+ * one, and ignores any other id. steps can be a new array on each render:
+ * the newest check of each step gives the errors.
  */
 export function useCreateFlow<T extends object>(options: {
   steps: readonly CreateStep<T>[];
@@ -69,7 +69,12 @@ export function useCreateFlow<T extends object>(options: {
       setState((s) => {
         const all = latest.current;
         const i = indexOf(all, s.current);
-        if (i >= all.length - 1 || (all[i].check?.(s.draft) ?? []).length) {
+        if (
+          i >= all.length - 1 ||
+          all
+            .slice(0, i + 1)
+            .some((step) => (step.check?.(s.draft) ?? []).length > 0)
+        ) {
           return s;
         }
         return { ...s, current: all[i + 1].id };

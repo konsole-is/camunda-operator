@@ -8,6 +8,7 @@ import {
   MANAGEMENT_CLUSTER_ANNOTATION,
   matchesSelector,
 } from "@/lib/labels";
+import { byCodeUnit } from "@/lib/policy";
 import type { PlaneIssuer } from "./identity";
 
 /** PreviewResult is the attach result that the operator reports for a cluster, with Attach for an attached one. */
@@ -164,8 +165,8 @@ export function servedPreview(input: {
     }))
     .sort((a, b) =>
       a.namespace === b.namespace
-        ? compare(a.name, b.name)
-        : compare(a.namespace, b.namespace),
+        ? byCodeUnit(a.name, b.name)
+        : byCodeUnit(a.namespace, b.namespace),
     );
 }
 
@@ -215,7 +216,10 @@ function predict(
     );
   }
   if (issuer.kind === "new") return refuse(NEW_ISSUER_MESSAGE);
-  if (normalizeIssuer(trusted) !== normalizeIssuer(issuer.url)) {
+  const issuers = [issuer.url, issuer.backendUrl].filter(
+    (u): u is string => !!u,
+  );
+  if (!issuers.some((u) => normalizeIssuer(trusted) === normalizeIssuer(u))) {
     return refuse(
       `This cluster trusts ${trusted}. This plane hands out tokens of ${issuer.url}.`,
     );
@@ -225,8 +229,4 @@ function predict(
 
 function attach(): Pick<PreviewRow, "result" | "label"> {
   return { result: "Attach", label: "Will attach" };
-}
-
-function compare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

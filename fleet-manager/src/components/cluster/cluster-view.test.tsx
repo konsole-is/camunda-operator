@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { cloneElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import {
@@ -10,8 +11,20 @@ import {
   ENVIRONMENT_LABEL,
   OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
+  SECTION_LABEL,
+  ACCESS_SECTION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
+import {
+  coreSections,
+  fixtureClaim,
+  fixtureContract,
+  fixtureGrant,
+  fixtureRegistrations,
+  fixtureRequest,
+  fixtureRequests,
+  fixtureSelections,
+} from "./request-fixtures";
 import {
   ACTION_SLOTS,
   type ActionSlots,
@@ -26,6 +39,8 @@ const live = vi.hoisted(() => ({
   usage: undefined as unknown,
   partitions: undefined as unknown,
   observed: [] as { hook: string; args: string[] }[],
+  stale: [] as string[],
+  overdue: [] as string[],
 }));
 // The App Router keeps useSearchParams in step with history.replaceState, so
 // the fake reads the URL of the window.
@@ -47,6 +62,10 @@ vi.mock("@/lib/k8s/hooks", () => ({
     live.calls.push({ kind, opts });
     return { items: live.objects[kind] ?? initial, error: live.errors[kind] };
   },
+  useWatchesFresh: (lists: readonly { kind: string }[]) =>
+    lists.map((l) => !live.stale.includes(l.kind)),
+  useWatchesOverdue: (lists: readonly { kind: string }[]) =>
+    lists.map((l) => live.overdue.includes(l.kind)),
   useResource: (kind: string, ref: { name: string }, initial?: unknown) => {
     live.calls.push({ kind, opts: ref });
     const items = live.objects[kind] as
@@ -64,6 +83,8 @@ beforeEach(() => {
   live.usage = undefined;
   live.partitions = undefined;
   live.observed = [];
+  live.stale = [];
+  live.overdue = [];
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -156,7 +177,6 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     ],
     releases: [],
     storage: [],
-    accessRequests: [],
     requests: [],
     pods: [brokerPod(0), brokerPod(1), brokerPod(2)],
     podSelector: "camunda.io/cluster=orders",
@@ -175,6 +195,8 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     registrations: [],
     platformConfigs: [],
     managementAuthConfigs: [],
+    grants: [],
+    elasticsearchClusters: [],
     fieldDocs: {},
     ...over,
   };
@@ -362,7 +384,7 @@ describe("ClusterView", () => {
         metadata: {
           namespace: "team-a",
           name: `${kind}-${claimName}-access`,
-          labels: { [CLAIM_LABEL]: claimName },
+          labels: { [CLAIM_LABEL]: claimName, [SECTION_LABEL]: ACCESS_SECTION },
         },
         spec: { claimRef: { kind, name: claimName } },
         status: { links: [{ name, url }] },
@@ -371,7 +393,7 @@ describe("ClusterView", () => {
       view({
         initial: data({
           cluster: cluster({ spec: { externalUrl: undefined } }),
-          accessRequests: [
+          requests: [
             request(
               "CamundaManagementClusterClaim",
               "orders",
@@ -401,6 +423,31 @@ describe("ClusterView", () => {
     ).toEqual([["Operate", "https://o.example.com"]]);
   });
 
+  it("reads no access link from a request of another section", () => {
+    const backup = nsObject(
+      "PluginRequest",
+      "orders-backup-storage",
+      { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
+      { links: [{ name: "operate", url: "https://o.example.com" }] },
+      {
+        labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "backup-storage" },
+      },
+    );
+    render(
+      view({
+        initial: data({
+          cluster: cluster({ spec: { externalUrl: undefined } }),
+          requests: [backup],
+        }),
+      }),
+    );
+    expect(
+      within(screen.getByRole("banner")).queryAllByRole("link", {
+        name: /Operate/,
+      }),
+    ).toEqual([]);
+  });
+
   it("follows a navigation to another tab without a remount", () => {
     const { rerender } = render(view());
     window.history.replaceState(null, "", "?tab=backups");
@@ -422,6 +469,64 @@ describe("ClusterView", () => {
         .getByRole("tab", { name: "Overview" })
         .getAttribute("aria-selected"),
     ).toBe("true");
+  });
+
+  it("follows the Grants and ElasticsearchClusters of the namespace of the cluster", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "Grant",
+      opts: { namespace: "team-a" },
+    });
+    expect(live.calls).toContainEqual({
+      kind: "ElasticsearchCluster",
+      opts: { namespace: "team-a" },
+    });
+  });
+
+  it("names a failed read of the Grants", () => {
+    live.errors.Grant = "forbidden";
+    render(view());
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read Grant: forbidden",
+    );
+  });
+
+  it("names the kind in the Backups and Restores boxes, never that there are none, while their reads failed", async () => {
+    live.errors.LogicalBackupRDBMS = "forbidden";
+    live.errors.PointInTimeRestore = "forbidden";
+    render(view());
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    const backups = screen.getByRole("region", { name: "Backups" });
+    expect(
+      within(backups).getByText(
+        "Not known: the fleet manager has no current list of LogicalBackupRDBMS.",
+      ),
+    ).toBeTruthy();
+    expect(within(backups).queryByText("No backups yet.")).toBeNull();
+    const restores = screen.getByRole("region", { name: "Restores" });
+    expect(
+      within(restores).getByText(
+        "Not known: the fleet manager has no current list of PointInTimeRestore.",
+      ),
+    ).toBeTruthy();
+    expect(within(restores).queryByText("No restores.")).toBeNull();
+  });
+
+  it("names the claim kind, never that the claim is gone, while the read of the claims failed", async () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    render(view({ initial: data({ claims: [] }) }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(screen.queryByText(/is not in this namespace/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
   });
 
   it("shows a failed read with its kind and keeps the page", () => {
@@ -1278,8 +1383,9 @@ describe("Endpoints tab", () => {
       "orders-access",
       { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
       { outputs: { grpcHost: "grpc.orders.example.com:443" } },
+      { labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: ACCESS_SECTION } },
     );
-    render(view({ initial: data({ cluster: c, accessRequests: [access] }) }));
+    render(view({ initial: data({ cluster: c, requests: [access] }) }));
     const table = screen.getByRole("table", { name: "Endpoints" });
     expect(within(table).getByText("grpc.orders.example.com:443")).toBeTruthy();
   });
@@ -1739,5 +1845,455 @@ describe("Component detail", () => {
     );
     render(view());
     expect(components()).toBeTruthy();
+  });
+});
+
+describe("Section components", () => {
+  const components = () => screen.getByRole("region", { name: "Components" });
+  const cardNames = () =>
+    within(components())
+      .getAllByRole("article")
+      .map((a) => a.getAttribute("aria-label"));
+
+  const pluginSection = (name: string, label: string, order: number) =>
+    ({
+      kind: "PluginSection",
+      metadata: { name },
+      spec: { label, order, selection: "One" },
+    }) as unknown as Resource<"PluginSection">;
+
+  const sectionClaim = {
+    ...claim(),
+    spec: {
+      plugins: [
+        { section: "access", registration: "gateway-access" },
+        { section: "backup-storage", registration: "aws-s3" },
+      ],
+    },
+    status: {
+      requests: [
+        {
+          section: "backup-storage",
+          registration: "aws-s3",
+          name: "orders-backup-storage",
+        },
+      ],
+    },
+  } as unknown as Resource<"CamundaClusterClaim">;
+
+  const backupRequest = nsObject(
+    "PluginRequest",
+    "orders-backup-storage",
+    {
+      registration: "aws-s3",
+      section: "backup-storage",
+      claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+    },
+    {
+      summary: [{ label: "Bucket", value: "orders-backups" }],
+      resources: [
+        { kind: "S3Bucket", name: "orders-backups", onOrphan: "Kept" },
+      ],
+    },
+    { labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "backup-storage" } },
+  );
+
+  const withSections = (over: Partial<ClusterPageData> = {}) =>
+    data({
+      claims: [sectionClaim],
+      sections: [
+        pluginSection("access", "Access", 5),
+        pluginSection("backup-storage", "Backup storage", 2),
+      ],
+      requests: [backupRequest],
+      ...over,
+    });
+
+  it("shows a card for each selection of the claim after the process cards", () => {
+    render(view({ initial: withSections() }));
+    expect(cardNames().slice(-2)).toEqual(["Backup storage", "Access"]);
+    const card = within(components()).getByRole("article", {
+      name: "Backup storage",
+    });
+    expect(
+      within(card).getByText("Bucket", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("orders-backups");
+  });
+
+  it("says that the request could not be read, never that it is not made yet, when the requests watch fails", async () => {
+    live.errors.PluginRequest = "forbidden";
+    render(view({ initial: withSections({ requests: [] }) }));
+    const card = within(components()).getByRole("article", {
+      name: "Backup storage",
+    });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Could not read");
+    await userEvent.click(
+      within(card).getByRole("link", { name: "Backup storage" }),
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Backup storage" })).getByText(
+        "Could not read PluginRequest: forbidden",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeNull();
+  });
+
+  it("shows no section card for a cluster without a claim", () => {
+    render(
+      view({
+        initial: withSections({ cluster: cluster({ labels: {} }) }),
+      }),
+    );
+    expect(cardNames()).not.toContain("Backup storage");
+    expect(cardNames()).toContain("Brokers");
+  });
+
+  it("opens a section from an encoded URL", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "?tab=overview&component=section%3Aaccess",
+    );
+    render(view({ initial: withSections() }));
+    expect(screen.getByRole("heading", { name: "Access" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The claim controller has not made the request of this section yet.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "All components" })).toBeTruthy();
+  });
+
+  it("opens a section card in place and writes its encoded id to the URL", async () => {
+    render(view({ initial: withSections() }));
+    await userEvent.click(
+      within(
+        within(components()).getByRole("article", { name: "Backup storage" }),
+      ).getByRole("link", { name: "Backup storage" }),
+    );
+    expect(window.location.search).toBe(
+      "?tab=overview&component=section%3Abackup-storage",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Backup storage" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+  });
+});
+
+describe("The detail of a section", () => {
+  const open = (component: string) =>
+    window.history.replaceState(
+      null,
+      "",
+      `/fleet/clusters/team-a/orders?tab=overview&component=${encodeURIComponent(component)}`,
+    );
+  const detail = (name: string) => screen.getByRole("region", { name });
+  const withClaim = (over: Partial<ClusterPageData> = {}) =>
+    data({
+      claims: [fixtureClaim()],
+      sections: coreSections,
+      registrations: fixtureRegistrations,
+      requests: fixtureRequests,
+      ...over,
+    });
+  // renderOutOfDate renders ui with every watch answered, then again while
+  // the watches of kinds have lost their connection.
+  const renderOutOfDate = (ui: ReactElement, kinds: string[]) => {
+    const page = render(ui);
+    live.stale = kinds;
+    page.rerender(cloneElement(ui));
+  };
+
+  it("shows the Overview blocks of the request of an open section", () => {
+    open("section:backup-storage");
+    render(view({ initial: withClaim() }));
+    const backup = detail("Backup storage");
+    expect(
+      within(within(backup).getByRole("region", { name: "Summary" })).getByText(
+        "orders-backups",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(backup).getByRole("region", { name: "Resources" }),
+    ).toBeTruthy();
+  });
+
+  it("shows the grants of the request of an open section", () => {
+    open("section:backup-storage");
+    render(
+      view({
+        initial: withClaim({
+          grants: [fixtureGrant("orders-read", "backup-storage")],
+        }),
+      }),
+    );
+    expect(
+      within(detail("Grants")).getByLabelText("Statement of orders-read"),
+    ).toBeTruthy();
+  });
+
+  it("shows an existing secondary storage as connected with the Ready of its contract", () => {
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim({ storage: [fixtureContract("orders-storage")] }),
+      }),
+    );
+    expect(
+      within(detail("Connected")).getByRole("row", {
+        name: "SecondaryStorageConfig orders-storage Ready",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("shows the ElasticsearchCluster of a built-in secondary storage", () => {
+    const selections = fixtureSelections.map((s) =>
+      s.section === "secondary-storage"
+        ? { section: s.section, registration: "elasticsearch" }
+        : s,
+    );
+    const request = fixtureRequest("secondary-storage", {
+      resources: [
+        {
+          kind: "ElasticsearchCluster",
+          name: "orders-es",
+          onOrphan: "Deleted",
+        },
+      ],
+    });
+    request.spec.registration = "elasticsearch";
+    const es = {
+      kind: "ElasticsearchCluster",
+      metadata: { namespace: "team-a", name: "orders-es" },
+      spec: {},
+      status: { version: "8.19.2", snapshotRepository: "camunda" },
+    } as unknown as Resource<"ElasticsearchCluster">;
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim({
+          claims: [fixtureClaim(selections)],
+          requests: fixtureRequests.map((r) =>
+            r.spec.section === "secondary-storage" ? request : r,
+          ),
+          elasticsearchClusters: [es],
+        }),
+      }),
+    );
+    const box = detail("ElasticsearchCluster");
+    expect(within(box).getByText("8.19.2")).toBeTruthy();
+    expect(within(box).getByText("camunda")).toBeTruthy();
+  });
+
+  it("shows the parameters of a section in its Settings tab", async () => {
+    open("section:secondary-storage");
+    render(view({ initial: withClaim() }));
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    const table = screen.getByRole("table", {
+      name: "Secondary storage: Existing secondary storage settings",
+    });
+    expect(
+      within(table)
+        .getAllByRole("rowheader")
+        .map((h) => h.textContent),
+    ).toEqual(["name"]);
+  });
+
+  it("names the Grant kind and shows no grant state while the Grants are not read", () => {
+    open("section:cloud-identity");
+    renderOutOfDate(view({ initial: withClaim() }), ["Grant"]);
+    expect(
+      within(detail("Grants")).getByText(
+        "Not known: the fleet manager has no current list of Grant.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows no fate while the claims are not read", () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    open("section:backup-storage");
+    render(view({ initial: withClaim() }));
+    const resources = detail("Resources");
+    expect(within(resources).queryByText("Kept")).toBeNull();
+    expect(within(resources).getAllByText("Not known").length).toBe(2);
+  });
+
+  it("shows nothing of a request that is out of date, and names its kind", () => {
+    open("section:backup-storage");
+    renderOutOfDate(view({ initial: withClaim() }), ["PluginRequest"]);
+    const backup = detail("Backup storage");
+    expect(within(backup).getByText("Ready: Not known")).toBeTruthy();
+    expect(
+      within(backup).getAllByText(
+        "Not known: the fleet manager has no current list of PluginRequest.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(backup).queryByRole("region", { name: "Summary" }),
+    ).toBeNull();
+    expect(within(backup).queryByText("Healthy")).toBeNull();
+  });
+
+  it("shows no state and no headline on a section card while the requests are out of date", () => {
+    renderOutOfDate(view({ initial: withClaim() }), ["PluginRequest"]);
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Not known");
+    expect(within(card).queryByText("orders-backups")).toBeNull();
+  });
+
+  it("shows the read of the server on a section card until the watch of the requests answers", () => {
+    live.stale = ["PluginRequest"];
+    render(view({ initial: withClaim() }));
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(within(card).getByText("orders-backups")).toBeTruthy();
+    expect(within(card).queryByText(/Not known/)).toBeNull();
+  });
+
+  it("says that the first read of the requests failed until their watch answers", () => {
+    live.stale = ["PluginRequest"];
+    const ui = view({
+      initial: withClaim({
+        requests: [],
+        readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
+      }),
+    });
+    const page = render(ui);
+    const card = () =>
+      within(screen.getByRole("region", { name: "Components" })).getByRole(
+        "article",
+        { name: "Backup storage" },
+      );
+    expect(
+      screen.getByText("Could not read PluginRequest: forbidden"),
+    ).toBeTruthy();
+    expect(
+      within(card()).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Could not read");
+
+    live.stale = [];
+    page.rerender(cloneElement(ui));
+    expect(
+      screen.queryByText("Could not read PluginRequest: forbidden"),
+    ).toBeNull();
+  });
+
+  it("shows no parameter in the Settings tab while the claim is out of date, and names its kind", async () => {
+    open("section:secondary-storage");
+    renderOutOfDate(view({ initial: withClaim() }), ["CamundaClusterClaim"]);
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("table", { name: /settings$/ })).toBeNull();
+  });
+
+  it("hides the state and headline of a section card once the requests watch is overdue without an answer", () => {
+    live.stale = ["PluginRequest"];
+    live.overdue = ["PluginRequest"];
+    render(view({ initial: withClaim() }));
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(
+      within(card).getByText("Request", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe("Warning: Not known");
+  });
+
+  it("offers no editor in the Settings tab once the claims watch is overdue without an answer", async () => {
+    live.stale = ["CamundaClusterClaim"];
+    live.overdue = ["CamundaClusterClaim"];
+    open("section:secondary-storage");
+    render(
+      view({
+        initial: withClaim(),
+        slots: { "component.settings.editor": <p>Editor</p> },
+      }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("Editor")).toBeNull();
+  });
+
+  it("names the backup kind, never that there are no backups, while a backup list is out of date", async () => {
+    renderOutOfDate(view({ initial: withClaim() }), ["LogicalBackupRDBMS"]);
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    const backups = screen.getByRole("region", { name: "Backups" });
+    expect(
+      within(backups).getByText(
+        "Not known: the fleet manager has no current list of LogicalBackupRDBMS.",
+      ),
+    ).toBeTruthy();
+    expect(within(backups).queryByText("No backups yet.")).toBeNull();
+  });
+
+  it("shows no claim content and no claim editor while the claim that the page holds is out of date", async () => {
+    renderOutOfDate(
+      view({
+        initial: withClaim(),
+        slots: { "cluster.claim.editor": <p>Claim editor</p> },
+      }),
+      ["CamundaClusterClaim"],
+    );
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Backup storage" });
+    expect(within(card).queryByText("orders-backups")).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Claim editor")).toBeNull();
+  });
+
+  it("offers no editor in the Settings tab while the claim is out of date", async () => {
+    open("section:secondary-storage");
+    renderOutOfDate(
+      view({
+        initial: withClaim(),
+        slots: { "component.settings.editor": <p>Editor</p> },
+      }),
+      ["CamundaClusterClaim"],
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("Editor")).toBeNull();
+  });
+
+  it("shows the Not known line of the Settings tab, not No settings, when the registrations could not be read", async () => {
+    live.errors.PluginRegistration = "forbidden";
+    open("section:secondary-storage");
+    render(view({ initial: withClaim({ registrations: [] }) }));
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.queryByText("No settings.")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of PluginRegistration.",
+      ),
+    ).toBeTruthy();
   });
 });

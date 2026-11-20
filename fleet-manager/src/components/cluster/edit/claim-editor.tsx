@@ -168,6 +168,18 @@ function viewOf(
       sections: context.sections,
       registrations: context.registrations,
     });
+  return claimViewAfter(context, session);
+}
+
+/**
+ * claimViewAfter returns the read view of the claim of session after its
+ * pending changes. A ref that the claim leaves empty shows the value that
+ * the cluster gets after the changes, not the live one.
+ */
+export function claimViewAfter(
+  context: ClusterSlotContext,
+  session: Session<ClusterClaim>,
+): ClaimView {
   const merged = mergedSpecs(changeInputOf(context, session)).after;
   const { releaseRef, platformConfigRef } = merged.spec;
   return claimView({
@@ -183,14 +195,19 @@ function viewOf(
   });
 }
 
-function EditPanel({
+/**
+ * EditPanel is a panel of a Claim tab in edit, with a Done button. It
+ * scrolls into view when scroll is set, takes the focus when focus is set,
+ * and then calls onShown.
+ */
+export function EditPanel({
   def,
   scroll,
   focus,
   onShown,
   onDone,
 }: {
-  def: EditDef;
+  def: Pick<EditDef, "label" | "name" | "render">;
   scroll: boolean;
   focus: boolean;
   onShown: () => void;
@@ -220,7 +237,8 @@ function EditPanel({
   );
 }
 
-function EditButton({
+/** EditButton opens the editor of the panel name. It takes the focus when focus is set, and then calls onFocused. */
+export function EditButton({
   name,
   focus,
   onFocused,

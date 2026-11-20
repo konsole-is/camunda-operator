@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  type DisclosureCount,
+  DisclosureGroup,
+} from "@/components/fleet/disclosure-group";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
+import { useErrorsReport } from "@/components/fleet/errors-report";
 import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
@@ -39,7 +44,11 @@ import {
 import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
-import { type Setting, settingChange } from "./editable-settings";
+import {
+  type Setting,
+  settingChange,
+  settingsSummary,
+} from "./editable-settings";
 import type { SettingsGroup } from "./settings";
 
 /**
@@ -49,14 +58,18 @@ import type { SettingsGroup } from "./settings";
  * settings apply when the app runs standalone. A change with errors is not
  * passed on. errors are the field errors of the claim, such as a refusal of
  * the server, and each shows at the setting whose claim path holds it.
- * invalid gets the error that a setting shows, as SettingRow gives it. It
- * holds no session.
+ * invalid gets the error that a setting shows, as SettingRow gives it. A
+ * collapsed group starts closed. Its heading counts the settings changed
+ * in the claim and, when there are any, the settings with an error. It
+ * opens each time that number of errors grows, and settingsSummary is the
+ * first line of its body. It holds no session.
  */
 export function SettingsEditor({
   group,
   settings,
   secrets,
   errors = [],
+  collapsed = false,
   set,
   reset,
   invalid,
@@ -65,39 +78,91 @@ export function SettingsEditor({
   settings: readonly Setting[];
   secrets: SecretRefs;
   errors?: readonly FieldError[];
+  collapsed?: boolean;
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
 }) {
   const [resets, setResets] = useState(0);
+  // The keys of the settings whose editor shows an error.
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = useState(false);
+  const [counted, setCounted] = useState(0);
+  const failing = settings.filter(
+    (s) => shown.has(s.key) || settingRowErrors(errors, s).length > 0,
+  ).length;
+  if (counted !== failing) {
+    setCounted(failing);
+    if (failing > counted) setOpen(true);
+  }
+  const report = (key: string) => (shows: boolean) =>
+    setShown((keys) => {
+      if (keys.has(key) === shows) return keys;
+      const next = new Set(keys);
+      if (shows) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  const title = group.embedded ? `${group.label} (embedded)` : group.label;
+  const embeddedNote = group.embedded && (
+    <p className="text-sm text-muted">
+      Applies when {group.label} runs standalone. The exception is extraEnv and
+      extraEnvFrom: they apply to the host now.
+    </p>
+  );
+  const rows = (
+    <div className="flex flex-col divide-y divide-divider">
+      {settings.map((setting) => (
+        <SettingRow
+          key={`${setting.key}:${resets}`}
+          setting={setting}
+          secrets={secrets}
+          errors={settingRowErrors(errors, setting)}
+          set={set}
+          reset={reset}
+          invalid={invalid}
+          onShows={collapsed ? report(setting.key) : undefined}
+          onReset={() => setResets((n) => n + 1)}
+        />
+      ))}
+    </div>
+  );
+  if (collapsed) {
+    const changed = settings.filter((s) => s.state?.kind === "claim").length;
+    const counts: DisclosureCount[] = [
+      { text: String(changed), label: `${changed} changed in the claim` },
+    ];
+    if (failing > 0)
+      counts.push({
+        text: failing === 1 ? "1 error" : `${failing} errors`,
+        bad: true,
+      });
+    return (
+      <div className="min-w-0">
+        <DisclosureGroup
+          label={title}
+          role="region"
+          name={`${group.label} settings`}
+          heading
+          counts={counts}
+          open={open}
+          onToggle={setOpen}
+        >
+          <p className="text-sm text-muted">{settingsSummary(settings)}</p>
+          {embeddedNote}
+          {rows}
+        </DisclosureGroup>
+      </div>
+    );
+  }
   return (
     <section
       aria-label={`${group.label} settings`}
       className="flex min-w-0 flex-col gap-1"
     >
-      <h3 className="font-heading text-sm font-semibold">
-        {group.embedded ? `${group.label} (embedded)` : group.label}
-      </h3>
-      {group.embedded && (
-        <p className="text-sm text-muted">
-          Applies when {group.label} runs standalone. The exception is extraEnv
-          and extraEnvFrom: they apply to the host now.
-        </p>
-      )}
-      <div className="flex flex-col divide-y divide-divider">
-        {settings.map((setting) => (
-          <SettingRow
-            key={`${setting.key}:${resets}`}
-            setting={setting}
-            secrets={secrets}
-            errors={errorsAt(errors, setting.steps)}
-            set={set}
-            reset={reset}
-            invalid={invalid}
-            onReset={() => setResets((n) => n + 1)}
-          />
-        ))}
-      </div>
+      <h3 className="font-heading text-sm font-semibold">{title}</h3>
+      {embeddedNote}
+      {rows}
     </section>
   );
 }
@@ -110,8 +175,10 @@ export function SettingsEditor({
  * value. errors are field errors from outside the row. onReset runs after a
  * click on the reset link: the caller remounts the rows, so that they show
  * the values below the claim. invalid gets the claim steps of the shown
- * field and "<label>: <error>" while the editor shows an error, and
- * undefined once the error goes or the row unmounts.
+ * field and "<label>: <error>" after an edit that shows an error, and
+ * undefined once the error goes or the row unmounts. onShows gets whether
+ * the editor shows an error, also for a value from below the claim before
+ * any edit, which invalid does not get.
  */
 export function SettingRow({
   setting,
@@ -120,6 +187,7 @@ export function SettingRow({
   set,
   reset,
   invalid,
+  onShows,
   onReset,
 }: {
   setting: Setting;
@@ -128,6 +196,7 @@ export function SettingRow({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
+  onShows?: (shows: boolean) => void;
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
@@ -145,6 +214,16 @@ export function SettingRow({
     steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
     invalid,
   );
+  const reportShows = useRef(onShows);
+  useEffect(() => {
+    reportShows.current = onShows;
+  });
+  // A locked row and a row that unmounts show no error.
+  const editable = editor !== undefined && steps !== undefined;
+  useEffect(() => {
+    if (!editable) reportShows.current?.(false);
+    return () => reportShows.current?.(false);
+  }, [editable]);
   if (!editor || !steps)
     return (
       <div className="py-3">
@@ -187,6 +266,7 @@ export function SettingRow({
         onInvalid={own((message: string | undefined) =>
           shows(message && `${setting.label}: ${message}`),
         )}
+        onShown={(message) => reportShows.current?.(message !== undefined)}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -246,9 +326,11 @@ function useShownError(
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
 // reported; onInvalid gets its first error, and undefined after a valid
-// change. current is the value before the pending changes. replaces reaches
-// only the editor of a map of strings. describedBy reaches only the editors
-// of resources, storage size, environment, maps of strings, and tolerations.
+// change. For an editor kind that can show an error, onShown gets its
+// first error, or undefined, also at mount. current is the value before
+// the pending changes. replaces reaches only the editor of a map of
+// strings. describedBy reaches only the editors of resources, storage
+// size, environment, maps of strings, and tolerations.
 function Editor({
   label,
   editor,
@@ -259,6 +341,7 @@ function Editor({
   secrets,
   onChange,
   onInvalid,
+  onShown,
 }: {
   label: string;
   editor: SettingEditor;
@@ -269,8 +352,11 @@ function Editor({
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
+  onShown: (message: string | undefined) => void;
 }) {
   const initial = editorValueOf(editor, value);
+  const onErrors = (errors: readonly ValidationError[]) =>
+    onShown(errors[0]?.message);
   const [startsSet] = useState(value !== undefined);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
     onInvalid(errors[0]?.message);
@@ -285,6 +371,7 @@ function Editor({
           defaultValue={initial as number | undefined}
           onChange={onChange}
           onInvalid={onInvalid}
+          onShown={onShown}
         />
       );
     case "text":
@@ -328,6 +415,7 @@ function Editor({
           defaultValue={initial as Resources}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "storageSize":
@@ -341,9 +429,10 @@ function Editor({
               : undefined
           }
           describedBy={describedBy}
+          onErrors={onErrors}
           onChange={(size, errors) =>
             valid(
-              typeof current === "number" && /^\d+$/.test(size ?? "")
+              typeof (current ?? value) === "number" && /^\d+$/.test(size ?? "")
                 ? Number(size)
                 : size,
               errors,
@@ -359,6 +448,7 @@ function Editor({
           defaultValue={initial as EnvVar[]}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "keyValue":
@@ -370,6 +460,7 @@ function Editor({
           emptyMap={replaces && startsSet ? "inherited" : undefined}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "tolerations":
@@ -379,6 +470,7 @@ function Editor({
           defaultValue={initial as Toleration[]}
           describedBy={describedBy}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
     case "secretRef":
@@ -398,6 +490,7 @@ function Editor({
           rows={6}
           defaultValue={initial}
           onChange={valid}
+          onErrors={onErrors}
         />
       );
   }
@@ -431,12 +524,14 @@ function EnvSetting({
   defaultValue,
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue: EnvVar[];
   describedBy?: string;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
+  onErrors: (errors: ValidationError[]) => void;
 }) {
   const { mark, only } = useUserEdit(secrets);
   return (
@@ -447,6 +542,7 @@ function EnvSetting({
         defaultValue={defaultValue}
         describedBy={describedBy}
         onChange={only(onChange)}
+        onErrors={onErrors}
       />
     </div>
   );
@@ -483,18 +579,23 @@ function NumberEditor({
   defaultValue,
   onChange,
   onInvalid,
+  onShown,
 }: {
   label: string;
   editor: Extract<SettingEditor, { kind: "number" }>;
   defaultValue: number | undefined;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
+  onShown: (message: string | undefined) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(
     defaultValue === undefined ? "" : String(defaultValue),
   );
   const error = numberError(text, editor);
+  useErrorsReport(error ? [{ path: "", message: error }] : [], (errors) =>
+    onShown(errors[0]?.message),
+  );
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium text-muted">
@@ -661,6 +762,24 @@ function ChoicesEditor({
         </div>
       ))}
     </fieldset>
+  );
+}
+
+/**
+ * settingRowErrors returns the errors that the row of setting shows: those at
+ * the field that it shows or below it, and those at the field above it
+ * that a layer sets as a whole, which every row of that field shows.
+ */
+export function settingRowErrors(
+  errors: readonly FieldError[],
+  setting: Setting,
+): FieldError[] {
+  const { steps, holder } = setting;
+  if (!steps || !holder) return errorsAt(errors, steps);
+  const block = pathFrom("", steps);
+  return errors.filter(
+    (e) =>
+      e.path === block || errorsAt([e], [...steps, ...holder.rest]).length > 0,
   );
 }
 

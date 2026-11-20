@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package claimdeletion deletes what a deleted claim generated, for both
-// claim kinds: it writes the deletion policy on the requests, then deletes
-// the generated objects in stages, then the requests, and removes the
-// finalizer of the claim when nothing is left.
+// Package claimdeletion keeps the deletion policy of a live claim on its
+// requests, and deletes what a deleted claim generated, for both claim
+// kinds. A deletion writes the deletion policy on the requests, then
+// deletes the generated objects in stages, then the requests, and removes
+// the finalizer of the claim when nothing is left.
 package claimdeletion
 
 import (
@@ -47,7 +48,7 @@ const (
 	eventActionDelete          = "Delete"
 )
 
-// Deleter sends the reads, the writes, and the deletes of a deleted claim.
+// Deleter sends the reads, the writes, and the deletes of a claim.
 type Deleter struct {
 	// Client writes the requests and the claim, deletes, and lists the
 	// PluginRegistrations.
@@ -59,8 +60,8 @@ type Deleter struct {
 	EventRecorder events.EventRecorder
 }
 
-// Input is a deleted claim and what it generated.
-type Input struct {
+// Policy is a claim and the deletion policy of its requests.
+type Policy struct {
 	Claim client.Object
 	// FieldManagerPrefix is the field manager prefix of the claim kind, such
 	// as fleetv1alpha1.FieldManagerPrefixClusterClaim.
@@ -69,6 +70,11 @@ type Input struct {
 	// claimpolicy.DeletionPolicy returns it.
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy
 	Selections     []fleetv1alpha1.PluginSelection
+}
+
+// Input is a deleted claim and what it generated.
+type Input struct {
+	Policy
 	// Stages hold the objects that the claim generated apart from its
 	// requests, in deletion order. Each object names only its name and
 	// namespace. A stage is deleted after every stage before it is gone, and
@@ -96,7 +102,7 @@ func (d Deleter) Finalize(ctx context.Context, in Input) ([]string, error) {
 
 	// A plugin reads the policy when its request gets a deletion timestamp,
 	// so the policy goes on before any delete of this pass.
-	if err := d.writeDeletionPolicy(ctx, in, requests); err != nil {
+	if err := d.writeDeletionPolicy(ctx, in.Policy, requests, claimpolicy.MissingPasses); err != nil {
 		return nil, err
 	}
 
@@ -126,6 +132,31 @@ func (d Deleter) Finalize(ctx context.Context, in Input) ([]string, error) {
 	return d.describe(slices.Concat(stages...))
 }
 
+// Prepare keeps in.Claim, which has no deletion timestamp, ready for a delete
+// that its controller does not see before the garbage collector deletes the
+// requests, such as a delete with foreground propagation. It adds the
+// finalizer fleet.camunda.io/cleanup back with an update when the claim lacks
+// it. Then it writes in.DeletionPolicy on each request that the claim
+// controls and that has no deletion timestamp. It returns a
+// *conditions.PreCheckFailure, and writes no policy, when a selected
+// registration does not support the policy, or when the policy is Orphan and
+// a selected registration does not exist. A write that loses a conflict
+// returns an error that apierrors.IsConflict reports.
+func (d Deleter) Prepare(ctx context.Context, in Policy) error {
+	if controllerutil.AddFinalizer(in.Claim, fleetv1alpha1.FinalizerCleanup) {
+		if err := d.Client.Update(ctx, in.Claim); err != nil {
+			return fmt.Errorf("adding the finalizer: %w", err)
+		}
+	}
+
+	requests, err := d.ownedRequests(ctx, in.Claim)
+	if err != nil {
+		return err
+	}
+
+	return d.writeDeletionPolicy(ctx, in, requests, claimpolicy.MissingRefuses)
+}
+
 // ownedRequests reads the PluginRequests in the namespace of claim that
 // claim controls, without the cache.
 func (d Deleter) ownedRequests(ctx context.Context, claim client.Object) ([]client.Object, error) {
@@ -148,14 +179,20 @@ func (d Deleter) ownedRequests(ctx context.Context, claim client.Object) ([]clie
 
 // writeDeletionPolicy applies in.DeletionPolicy to each of requests that has
 // no deletion timestamp and another policy. It writes nothing and returns
-// the refusal of claimpolicy.CheckDeletionPolicy when a selected
-// registration does not support the policy.
-func (d Deleter) writeDeletionPolicy(ctx context.Context, in Input, requests []client.Object) error {
+// the refusal of claimpolicy.CheckDeletionPolicy with missing, when there is
+// one.
+func (d Deleter) writeDeletionPolicy(
+	ctx context.Context,
+	in Policy,
+	requests []client.Object,
+	missing claimpolicy.Missing,
+) error {
 	var registrations pluginsv1alpha1.PluginRegistrationList
 	if err := d.Client.List(ctx, &registrations); err != nil {
 		return fmt.Errorf("listing the PluginRegistrations: %w", err)
 	}
-	if err := claimpolicy.CheckDeletionPolicy(in.DeletionPolicy, in.Selections, registrations.Items); err != nil {
+	err := claimpolicy.CheckDeletionPolicy(in.DeletionPolicy, in.Selections, registrations.Items, missing)
+	if err != nil {
 		return err
 	}
 

@@ -10,6 +10,8 @@ import {
   type PlaneDraft,
   basicsErrors,
   componentsErrors,
+  mailDraftOf,
+  mailOf,
   planeClaimOf,
   planeCreateChange,
   platformConfigOf,
@@ -877,5 +879,29 @@ describe("planeCreateChange", () => {
     const change = planeCreateChange(ready(), ctx);
     expect(change.apply).toEqual([planeClaimOf(ready(), ctx)]);
     expect(change.create).toHaveLength(1);
+  });
+});
+
+describe("mailDraftOf", () => {
+  it("reads back what mailOf writes", () => {
+    const mail = {
+      smtpHost: "smtp.example.com",
+      smtpPort: 465,
+      fromAddress: "a@example.com",
+      fromName: "Ops",
+      tls: false,
+      credentialsSecret: "smtp",
+    };
+    expect(mailDraftOf(mailOf(mail))).toEqual(mail);
+    expect(mailDraftOf(mailOf(EMPTY_MAIL))).toEqual(EMPTY_MAIL);
+  });
+
+  it("gives the values of EMPTY_MAIL for missing keys", () => {
+    expect(mailDraftOf(undefined)).toEqual(EMPTY_MAIL);
+    expect(mailDraftOf({ smtpHost: "smtp", fromAddress: "a@b.c" })).toEqual({
+      ...EMPTY_MAIL,
+      smtpHost: "smtp",
+      fromAddress: "a@b.c",
+    });
   });
 });

@@ -4,21 +4,17 @@ import { clusterOptimize } from "@/components/cluster/optimize";
 import { clusterFieldsInputOf } from "@/components/cluster/settings";
 import { fieldDocsOf } from "@/lib/fielddocs";
 import { clusterFields } from "@/lib/fields";
-import { listOrEmpty } from "@/lib/k8s/list-or-empty";
-import { get } from "@/lib/k8s/read";
-import {
-  ACCESS_SECTION,
-  CLAIM_LABEL,
-  CLUSTER_LABEL,
-  SECTION_LABEL,
-} from "@/lib/labels";
-import { ownerName } from "@/lib/labels/server";
+import type { KindName } from "@/lib/k8s/kinds";
+import { get, list, type ListOptions } from "@/lib/k8s/read";
+import { CLAIM_LABEL, CLUSTER_LABEL } from "@/lib/labels";
+import { ownerName } from "@/lib/labels/owner-name";
 import { mergeCluster } from "@/lib/merge";
 
 /**
  * loadClusterPage reads the first snapshot of the cluster page from the
  * cache of the server. It returns undefined when the cluster does not exist.
- * A failed read of another kind gives no objects of that kind.
+ * A failed read of another kind gives no objects of that kind and an entry
+ * in readErrors.
  */
 export async function loadClusterPage(
   namespace: string,
@@ -26,6 +22,19 @@ export async function loadClusterPage(
 ): Promise<ClusterPageData | undefined> {
   const cluster = await get("CamundaCluster", namespace, name);
   if (!cluster) return undefined;
+
+  const readErrors: { kind: string; message: string }[] = [];
+  const failed = (kind: KindName) => (err: unknown) => {
+    readErrors.push({
+      kind,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  };
+  const listRecorded = <K extends KindName>(kind: K, opts: ListOptions) =>
+    list(kind, opts).catch((err: unknown) => {
+      failed(kind)(err);
+      return [];
+    });
 
   const inNamespace = { namespace };
   const podSelector = `${CLUSTER_LABEL}=${ownerName(name)}`;
@@ -37,7 +46,6 @@ export async function loadClusterPage(
     presets,
     releases,
     storage,
-    accessRequests,
     requests,
     pods,
     backupsES,
@@ -56,38 +64,41 @@ export async function loadClusterPage(
     registrations,
     platformConfigs,
     managementAuthConfigs,
+    grants,
+    elasticsearchClusters,
   ] = await Promise.all([
-    get("Namespace", undefined, namespace).catch(() => undefined),
-    listOrEmpty("Environment", {}),
-    listOrEmpty("CamundaClusterClaim", inNamespace),
-    listOrEmpty("CamundaClusterPreset", {}),
-    listOrEmpty("CamundaRelease", {}),
-    listOrEmpty("SecondaryStorageConfig", inNamespace),
-    listOrEmpty("PluginRequest", {
-      namespace,
-      labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
+    get("Namespace", undefined, namespace).catch((err: unknown) => {
+      failed("Namespace")(err);
+      return undefined;
     }),
-    listOrEmpty("PluginRequest", {
+    listRecorded("Environment", {}),
+    listRecorded("CamundaClusterClaim", inNamespace),
+    listRecorded("CamundaClusterPreset", {}),
+    listRecorded("CamundaRelease", {}),
+    listRecorded("SecondaryStorageConfig", inNamespace),
+    listRecorded("PluginRequest", {
       namespace,
       labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
     }),
-    listOrEmpty("Pod", { namespace, labelSelector: podSelector }),
-    listOrEmpty("LogicalBackupElasticsearch", inNamespace),
-    listOrEmpty("LogicalBackupRDBMS", inNamespace),
-    listOrEmpty("LogicalRestoreElasticsearch", inNamespace),
-    listOrEmpty("LogicalRestoreRDBMS", inNamespace),
-    listOrEmpty("PointInTimeRestore", inNamespace),
-    listOrEmpty("ObjectStorageConfig", inNamespace),
-    listOrEmpty("DatabaseConfig", inNamespace),
-    listOrEmpty("DatabaseServerConfig", inNamespace),
-    listOrEmpty("DatabaseServer", inNamespace),
-    listOrEmpty("DatabaseServerPreset", {}),
-    listOrEmpty("BackupSchedule", inNamespace),
-    listOrEmpty("CamundaOptimize", inNamespace),
-    listOrEmpty("PluginSection", {}),
-    listOrEmpty("PluginRegistration", {}),
-    listOrEmpty("CamundaPlatformConfig", {}),
-    listOrEmpty("ManagementAuthConfig", {}),
+    listRecorded("Pod", { namespace, labelSelector: podSelector }),
+    listRecorded("LogicalBackupElasticsearch", inNamespace),
+    listRecorded("LogicalBackupRDBMS", inNamespace),
+    listRecorded("LogicalRestoreElasticsearch", inNamespace),
+    listRecorded("LogicalRestoreRDBMS", inNamespace),
+    listRecorded("PointInTimeRestore", inNamespace),
+    listRecorded("ObjectStorageConfig", inNamespace),
+    listRecorded("DatabaseConfig", inNamespace),
+    listRecorded("DatabaseServerConfig", inNamespace),
+    listRecorded("DatabaseServer", inNamespace),
+    listRecorded("DatabaseServerPreset", {}),
+    listRecorded("BackupSchedule", inNamespace),
+    listRecorded("CamundaOptimize", inNamespace),
+    listRecorded("PluginSection", {}),
+    listRecorded("PluginRegistration", {}),
+    listRecorded("CamundaPlatformConfig", {}),
+    listRecorded("ManagementAuthConfig", {}),
+    listRecorded("Grant", inNamespace),
+    listRecorded("ElasticsearchCluster", inNamespace),
   ]);
   const fields = clusterFields(
     clusterFieldsInputOf({
@@ -113,7 +124,6 @@ export async function loadClusterPage(
     presets,
     releases,
     storage,
-    accessRequests,
     requests,
     pods,
     podSelector,
@@ -136,6 +146,9 @@ export async function loadClusterPage(
     registrations,
     platformConfigs,
     managementAuthConfigs,
+    grants,
+    elasticsearchClusters,
     fieldDocs: fieldDocsOf(fields),
+    readErrors,
   };
 }

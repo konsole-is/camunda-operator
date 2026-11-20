@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { accessUrls, planeUrlFields, urlErrors } from "./urls";
+import type { Resource } from "@/lib/k8s/kinds";
+import {
+  accessUrls,
+  PLANE_URL_LABEL,
+  planeExternalUrls,
+  planeUrlFields,
+  urlErrors,
+} from "./urls";
 import type { Running } from "./versions";
 
 const all: Running = { keycloak: true, console: true, webModeler: true };
@@ -145,5 +152,64 @@ describe("urlErrors", () => {
     expect(
       urlErrors({ identity: `${base}/identity` }, planeUrlFields(none)),
     ).toEqual([]);
+  });
+});
+
+describe("planeExternalUrls", () => {
+  const planeOf = (spec: Record<string, unknown>) =>
+    ({ spec }) as unknown as Resource<"CamundaManagementCluster">;
+
+  it("reads the external URL of each app from the plane spec", () => {
+    expect(
+      planeExternalUrls(
+        planeOf({
+          identityProvider: {
+            keycloak: { externalUrl: `${base}/auth` },
+          },
+          identity: { externalUrl: `${base}/identity` },
+          console: { externalUrl: `${base}/console` },
+          webModeler: {
+            externalUrl: `${base}/modeler`,
+            websocketsExternalUrl: `${base}/modeler-ws`,
+          },
+        }),
+      ),
+    ).toEqual({
+      keycloak: `${base}/auth`,
+      identity: `${base}/identity`,
+      console: `${base}/console`,
+      webModeler: `${base}/modeler`,
+      webModelerWebsockets: `${base}/modeler-ws`,
+    });
+  });
+
+  it("gives only the apps that have a URL, and nothing without a plane", () => {
+    expect(
+      planeExternalUrls(
+        planeOf({ identity: { externalUrl: `${base}/identity` } }),
+      ),
+    ).toEqual({ identity: `${base}/identity` });
+    expect(planeExternalUrls(undefined)).toEqual({});
+  });
+
+  it("leaves out a URL that is not a string, and does not throw on a block of the wrong type", () => {
+    expect(
+      planeExternalUrls(
+        planeOf({
+          identity: { externalUrl: 7 },
+          console: null,
+          webModeler: "on",
+          identityProvider: { keycloak: { externalUrl: "" } },
+        }),
+      ),
+    ).toEqual({});
+  });
+});
+
+describe("PLANE_URL_LABEL", () => {
+  it("names the URL fields as planeUrlFields labels them", () => {
+    for (const field of planeUrlFields(all)) {
+      expect(PLANE_URL_LABEL[field.id]).toBe(field.label);
+    }
   });
 });

@@ -1,12 +1,32 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { type Plane, planesOf } from "./plane";
-import { PlaneList } from "./plane-list";
+import { PlaneList, PlaneListLive } from "./plane-list";
 
-afterEach(cleanup);
+const watches = vi.hoisted(() => ({
+  cached: new Map<string, unknown[]>(),
+  fresh: new Set<string>(),
+  overdue: new Set<string>(),
+}));
+vi.mock("@/lib/k8s/hooks", () => ({
+  useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
+    items: watches.cached.get(kind) ?? initial,
+  }),
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map((l) => watches.fresh.has(l.kind)),
+  useWatchesOverdue: (lists: { kind: string }[]) =>
+    lists.map((l) => watches.overdue.has(l.kind)),
+}));
+
+afterEach(() => {
+  cleanup();
+  watches.cached = new Map();
+  watches.fresh = new Set();
+  watches.overdue = new Set();
+});
 
 function cluster(
   namespace: string,
@@ -294,6 +314,105 @@ describe("PlaneList", () => {
       "Could not read Namespace: namespaces: forbidden",
       "Could not read CamundaManagementClusterClaim: timed out",
     ]);
+    expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
+  });
+
+  it("names a list that is not current above the rows", () => {
+    render(<PlaneList planes={keycloakPlane} stale={["Namespace"]} />);
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Namespace.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
+  });
+
+  it("does not say there is no plane while a plane list is not current or not read", () => {
+    render(
+      <PlaneList
+        planes={[]}
+        errors={[{ kind: "CamundaManagementCluster", message: "forbidden" }]}
+        stale={["CamundaManagementClusterClaim"]}
+      />,
+    );
+    expect(screen.queryByText("No management plane yet.")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaManagementCluster, CamundaManagementClusterClaim.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("PlaneList search", () => {
+  it("does not say that no plane matches while a plane list is not current", async () => {
+    render(
+      <PlaneList
+        planes={keycloakPlane}
+        stale={["CamundaManagementClusterClaim"]}
+      />,
+    );
+    await userEvent.type(screen.getByRole("searchbox"), "nothing");
+    expect(
+      screen.queryByText("No rows match the search and the filters."),
+    ).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Not known: the fleet manager has no current list of CamundaManagementClusterClaim.",
+      ),
+    ).toHaveLength(2);
+  });
+});
+
+describe("PlaneListLive", () => {
+  const sources = () => ({
+    clusters: [],
+    claims: [],
+    namespaces: [],
+    environments: [],
+  });
+
+  it("takes an old cached list as not current once its watch is overdue", () => {
+    watches.cached.set("CamundaManagementCluster", []);
+    watches.overdue.add("CamundaManagementCluster");
+    const { rerender } = render(<PlaneListLive initial={sources()} />);
+    expect(screen.queryByText("No management plane yet.")).toBeNull();
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaManagementCluster.",
+      ),
+    ).toBeTruthy();
+    watches.overdue.clear();
+    watches.fresh = new Set([
+      "CamundaManagementCluster",
+      "CamundaManagementClusterClaim",
+      "Namespace",
+      "Environment",
+    ]);
+    rerender(<PlaneListLive initial={sources()} />);
+    expect(screen.getByText("No management plane yet.")).toBeTruthy();
+  });
+
+  it("takes a list that answered and then lost its watch as not current", () => {
+    const initial = {
+      ...sources(),
+      clusters: [
+        cluster("platform", "plane-a", {
+          labels: { [CLAIM_LABEL]: "plane-a" },
+        }),
+      ],
+      claims: [claim("platform", "plane-a", ["production"])],
+    };
+    watches.fresh.add("Namespace");
+    const { rerender } = render(<PlaneListLive initial={initial} />);
+    expect(screen.queryByText(/has no current list/)).toBeNull();
+    watches.fresh.delete("Namespace");
+    rerender(<PlaneListLive initial={initial} />);
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of Namespace.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
   });
 });

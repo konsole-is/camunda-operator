@@ -7,7 +7,9 @@ import type { KindName } from "./kinds";
 import {
   failureKey,
   freshKey,
+  overdueKey,
   REOPEN_DELAY_MS,
+  SNAPSHOT_WAIT_MS,
   sharedWatch,
   watchId,
   watchKey,
@@ -200,6 +202,25 @@ describe("sharedWatch", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
+  it("a failure after a snapshot marks the watch not fresh and overdue until its next snapshot", async () => {
+    sharedWatch(client).subscribe(team);
+    await flush();
+    const source = FakeEventSource.instances[0];
+    source.emit("snapshot", snapshot(team, [pod("team", "a")]));
+
+    source.emit("failure", {
+      watch: watchId(team),
+      kind: "Pod",
+      message: "The fleet manager has no current list of Pod",
+    });
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    expect(client.getQueryData(overdueKey(team))).toBe(true);
+
+    source.emit("snapshot", snapshot(team, [pod("team", "b")]));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    expect(client.getQueryData(overdueKey(team))).toBe(false);
+  });
+
   it("opens a new source after the browser closed the old one", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     sharedWatch(client).subscribe(team);
@@ -251,6 +272,79 @@ describe("sharedWatch", () => {
       .at(-1)!
       .emit("snapshot", snapshot(team, [pod("team", "a", "Running")]));
     expect(client.getQueryData(freshKey(team))).toBe(true);
+  });
+
+  it("keeps a fresh watch fresh when another watch joins and the new connection sends its snapshots in time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    watch.subscribe(other);
+    await flush();
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    FakeEventSource.instances[1].emit("snapshot", snapshot(team, []));
+    FakeEventSource.instances[1].emit("snapshot", snapshot(other, []));
+    vi.advanceTimersByTime(SNAPSHOT_WAIT_MS);
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    expect(client.getQueryData(overdueKey(team))).toBe(false);
+  });
+
+  it("marks a fresh watch not fresh and overdue when the new connection sends no snapshot in time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    watch.subscribe(other);
+    await flush();
+    vi.advanceTimersByTime(SNAPSHOT_WAIT_MS - 1);
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    expect(client.getQueryData(overdueKey(team))).toBe(true);
+    expect(client.getQueryData(overdueKey(other))).toBe(true);
+
+    FakeEventSource.instances[1].emit("snapshot", snapshot(team, []));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+    expect(client.getQueryData(overdueKey(team))).toBe(false);
+  });
+
+  it("keeps the deadline of a watch when the set of watches changes again before its snapshot", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    watch.subscribe(other);
+    await flush();
+    vi.advanceTimersByTime(SNAPSHOT_WAIT_MS - 1_000);
+    watch.subscribe({ kind: "Pod", namespace: "third" });
+    await flush();
+    expect(FakeEventSource.instances).toHaveLength(3);
+    vi.advanceTimersByTime(1_000);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    expect(client.getQueryData(overdueKey(team))).toBe(true);
+  });
+
+  it("marks every watch not fresh and overdue at once on an error of the connection", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const watch = sharedWatch(client);
+    watch.subscribe(team);
+    watch.subscribe(other);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+    FakeEventSource.instances[0].emit("snapshot", snapshot(other, []));
+
+    FakeEventSource.instances[0].fail(0);
+    for (const spec of [team, other]) {
+      expect(client.getQueryData(freshKey(spec))).toBe(false);
+      expect(client.getQueryData(overdueKey(spec))).toBe(true);
+    }
   });
 
   it("marks its watches not fresh on a new connection until their snapshot", async () => {

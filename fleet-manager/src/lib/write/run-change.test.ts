@@ -1,22 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Writer } from "./types";
+import { deleteClaimSteps } from "@/lib/claims/deletion";
+import type { KubeObject, ObjectRef, WriteMode, Writer } from "./types";
 
 const fake = {
-  mode: "direct" as const,
+  mode: "direct" as WriteMode,
   preview: vi.fn<Writer["preview"]>(),
   apply: vi.fn<Writer["apply"]>(),
 };
-vi.mock("./writer", () => ({ getWriter: async () => fake }));
+// readLive answers with the objects of reads, one read after the other,
+// and keeps the last one.
+let reads: (KubeObject | undefined)[] = [];
+const readLive = vi.fn<(ref: ObjectRef) => Promise<KubeObject | undefined>>(
+  async () => (reads.length > 1 ? reads.shift() : reads[0]),
+);
+// listed are the objects that listObjects reads, of every kind.
+let listed: KubeObject[] = [];
+const listObjects = vi.fn(async (kind: string, namespace: string) =>
+  listed.filter((o) => o.kind === kind && o.metadata.namespace === namespace),
+);
+vi.mock("./writer", () => ({
+  getWriter: async () => fake,
+  readLive,
+  listObjects,
+}));
 
 const {
   adminChangeSchema,
   backupChangeSchema,
   changeSchema,
+  claimBatchChangeSchema,
   claimChangeSchema,
+  CLAIM_DELETE_ATTEMPTS,
+  claimDeleteSchema,
   createChangeSchema,
   createClaim,
   namespaceLabelChangeSchema,
+  previewClaimDelete,
   runChange,
+  runClaimDelete,
   runPreview,
 } = await import("./run-change");
 
@@ -41,8 +62,13 @@ const planeClaim = {
 const planeKey = "CamundaManagementClusterClaim/platform/plane-a";
 
 beforeEach(() => {
+  fake.mode = "direct";
   fake.apply.mockReset();
   fake.preview.mockReset();
+  readLive.mockClear();
+  reads = [];
+  listObjects.mockClear();
+  listed = [];
 });
 
 describe("runChange", () => {
@@ -136,7 +162,10 @@ describe("runPreview", () => {
   });
 
   it("uses the schema of the action", async () => {
-    const result = await runPreview(validChange, claimChangeSchema);
+    const result = await runPreview(
+      validChange,
+      claimChangeSchema("CamundaClusterClaim"),
+    );
 
     expect(result.errors).toEqual([
       expect.objectContaining({ code: "Invalid" }),
@@ -162,20 +191,33 @@ describe("claimChangeSchema", () => {
     spec: {},
   };
 
-  it("accepts one claim of either kind to apply, with a precondition", () => {
+  it("accepts one claim of its kind to apply, with a precondition, and refuses a claim of the other kind", () => {
     expect(
-      claimChangeSchema.safeParse({
+      claimChangeSchema("CamundaClusterClaim").safeParse({
         intent: "x",
         apply: [claim],
         preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
       }).success,
     ).toBe(true);
+    const plane = { ...claim, kind: "CamundaManagementClusterClaim" };
     expect(
-      claimChangeSchema.safeParse({
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
         intent: "x",
-        apply: [{ ...claim, kind: "CamundaManagementClusterClaim" }],
+        apply: [plane],
       }).success,
     ).toBe(true);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse({
+        intent: "x",
+        apply: [plane],
+      }).success,
+    ).toBe(false);
+    expect(
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
+        intent: "x",
+        apply: [claim],
+      }).success,
+    ).toBe(false);
   });
 
   it.each([
@@ -210,7 +252,595 @@ describe("claimChangeSchema", () => {
       },
     ],
   ])("refuses %s", (_, input) => {
-    expect(claimChangeSchema.safeParse(input).success).toBe(false);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(input).success,
+    ).toBe(false);
+  });
+});
+
+describe("claimDeleteSchema", () => {
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+  };
+  const remove = {
+    intent: "Delete the cluster orders",
+    apply: [],
+    delete: [ref],
+    uids: { "CamundaClusterClaim/team-a/orders": "uid-1" },
+    generations: { "CamundaClusterClaim/team-a/orders": 3 },
+  };
+
+  it("accepts one delete of a claim of its kind with its UID and generation, and refuses a claim of the other kind", () => {
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(remove).success,
+    ).toBe(true);
+    const planeKey = "CamundaManagementClusterClaim/team-a/orders";
+    const plane = {
+      ...remove,
+      delete: [{ ...ref, kind: "CamundaManagementClusterClaim" }],
+      uids: { [planeKey]: "uid-1" },
+      generations: { [planeKey]: 3 },
+    };
+    expect(
+      claimDeleteSchema("CamundaManagementClusterClaim").safeParse(plane)
+        .success,
+    ).toBe(true);
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(plane).success,
+    ).toBe(false);
+    expect(
+      claimDeleteSchema("CamundaManagementClusterClaim").safeParse(remove)
+        .success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["no UID", { ...remove, uids: undefined }],
+    ["no generation", { ...remove, generations: undefined }],
+    [
+      "a generation that is not a positive integer",
+      {
+        ...remove,
+        generations: { "CamundaClusterClaim/team-a/orders": 0 },
+      },
+    ],
+    [
+      "a resourceVersion precondition",
+      {
+        ...remove,
+        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+      },
+    ],
+    ["another kind", { ...remove, delete: [{ ...ref, kind: "Environment" }] }],
+    [
+      "another apiVersion",
+      { ...remove, delete: [{ ...ref, apiVersion: "core.camunda.io/v1" }] },
+    ],
+    ["no namespace", { ...remove, delete: [{ ...ref, namespace: undefined }] }],
+    [
+      "the name ..",
+      {
+        ...remove,
+        delete: [{ ...ref, name: ".." }],
+        uids: { "CamundaClusterClaim/team-a/..": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/..": 3 },
+      },
+    ],
+    [
+      "the namespace .",
+      {
+        ...remove,
+        delete: [{ ...ref, namespace: "." }],
+        uids: { "CamundaClusterClaim/./orders": "uid-1" },
+        generations: { "CamundaClusterClaim/./orders": 3 },
+      },
+    ],
+    ["two deletes", { ...remove, delete: [ref, { ...ref, name: "payments" }] }],
+    [
+      "an apply",
+      {
+        ...remove,
+        apply: [
+          {
+            apiVersion: ref.apiVersion,
+            kind: ref.kind,
+            metadata: { name: "orders", namespace: "team-a" },
+          },
+        ],
+      },
+    ],
+    [
+      "a generation of another object",
+      {
+        ...remove,
+        generations: { "CamundaClusterClaim/team-a/payments": 3 },
+      },
+    ],
+    ["create", { ...remove, create: ["CamundaClusterClaim/team-a/orders"] }],
+    ["force", { ...remove, force: true }],
+    ["directOnly", { ...remove, directOnly: true }],
+    [
+      "a UID of another object",
+      { ...remove, uids: { "CamundaClusterClaim/team-a/payments": "uid-2" } },
+    ],
+  ])("refuses %s", (_, change) => {
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(change).success,
+    ).toBe(false);
+  });
+
+  it("claimChangeSchema still refuses the delete", () => {
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(remove).success,
+    ).toBe(false);
+  });
+
+  it("accepts the remove step of deleteClaimSteps, and claimChangeSchema accepts its policy step", () => {
+    const steps = deleteClaimSteps(
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        metadata: {
+          namespace: "team-a",
+          name: "orders",
+          resourceVersion: "41",
+          uid: "uid-1",
+          generation: 3,
+        },
+        spec: {},
+      },
+      "Orphan",
+      "Delete the cluster orders",
+    );
+    expect(
+      claimDeleteSchema("CamundaClusterClaim").safeParse(steps.remove).success,
+    ).toBe(true);
+    expect(
+      claimChangeSchema("CamundaClusterClaim").safeParse(steps.policy).success,
+    ).toBe(true);
+  });
+});
+
+describe("runClaimDelete and previewClaimDelete", () => {
+  const key = "CamundaClusterClaim/team-a/orders";
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+  };
+  const remove = {
+    intent: "Delete the cluster orders",
+    apply: [],
+    delete: [ref],
+    uids: { [key]: "uid-1" },
+    generations: { [key]: 3 },
+  };
+  const live = (
+    resourceVersion: string,
+    over: { uid?: string; generation?: number } = {},
+  ): KubeObject => ({
+    apiVersion: ref.apiVersion,
+    kind: ref.kind,
+    metadata: {
+      name: "orders",
+      namespace: "team-a",
+      uid: "uid-1",
+      generation: 3,
+      resourceVersion,
+      ...over,
+    },
+  });
+  const stale = {
+    ok: false as const,
+    errors: [{ code: "Stale" as const, message: "Changed.", ref }],
+  };
+  const NOT_ALLOWED =
+    'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "s3" of section "backup-storage"';
+  // set is a live claim of generation 3 that the operator set up and read:
+  // it has the cleanup finalizer, a recorded policy, its own policy, and
+  // a Ready condition, NotAllowed unless over.ready gives another.
+  const set = (
+    policy: "Delete" | "Orphan",
+    over: {
+      observedGeneration?: number;
+      finalizers?: string[];
+      ready?: { reason: string; message: string };
+    } = {},
+  ): KubeObject => {
+    const c = live("45");
+    return {
+      ...c,
+      metadata: {
+        ...c.metadata,
+        finalizers: over.finalizers ?? ["fleet.camunda.io/cleanup"],
+      },
+      spec: { deletionPolicy: policy },
+      status: {
+        resolvedPolicy: { deletionPolicy: "Delete" },
+        ...("observedGeneration" in over
+          ? over.observedGeneration !== undefined && {
+              observedGeneration: over.observedGeneration,
+            }
+          : { observedGeneration: 3 }),
+        conditions: [
+          {
+            type: "Ready",
+            status: "False",
+            ...(over.ready ?? { reason: "NotAllowed", message: NOT_ALLOWED }),
+          },
+        ],
+      },
+    };
+  };
+  const request = (
+    name: string,
+    policy: "Delete" | "Orphan",
+    over: {
+      uid?: string;
+      deletionTimestamp?: string;
+      controller?: boolean;
+    } = {},
+  ): KubeObject => ({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: {
+      name,
+      namespace: "team-a",
+      ownerReferences: [
+        { controller: over.controller ?? true, uid: over.uid ?? "uid-1" },
+      ],
+      ...(over.deletionTimestamp && {
+        deletionTimestamp: over.deletionTimestamp,
+      }),
+    },
+    spec: { deletionPolicy: policy },
+  });
+
+  it("direct mode deletes a claim with the cleanup finalizer whose requests still have the old policy, also while its precheck fails", async () => {
+    reads = [set("Orphan")];
+    listed = [request("orders-backup-storage", "Delete")];
+    fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+  });
+
+  it("Git mode refuses while a request of the claim does not have its policy, names it, and gives the Ready reason of the claim", async () => {
+    fake.mode = "git";
+    reads = [set("Orphan")];
+    listed = [
+      request("orders-backup-storage", "Delete"),
+      request("orders-access", "Orphan"),
+    ];
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Stale",
+          message: `The request orders-backup-storage does not have the deletion policy of the claim. The operator does not update it while the claim reports NotAllowed: ${NOT_ALLOWED}`,
+          ref,
+        },
+      ],
+    });
+    expect(listObjects).toHaveBeenCalledWith("PluginRequest", "team-a");
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("Git mode refuses while a request lacks the policy of a claim that reports another failed check, without blaming the check", async () => {
+    fake.mode = "git";
+    reads = [
+      set("Orphan", {
+        ready: {
+          reason: "InvalidReference",
+          message: "CamundaRelease r1 does not exist",
+        },
+      }),
+    ];
+    listed = [request("orders-backup-storage", "Delete")];
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Stale",
+          message:
+            "The request orders-backup-storage does not have the deletion policy of the claim. The operator has not updated it yet.",
+          ref,
+        },
+      ],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("names only the requests of the claim that lack its policy, not requests of other claims, requests being deleted, or requests without the controller flag", async () => {
+    fake.mode = "git";
+    reads = [set("Orphan")];
+    listed = [
+      request("orders-backup-storage", "Delete"),
+      request("orders-access", "Delete"),
+      request("payments-backup-storage", "Delete", { uid: "uid-2" }),
+      request("orders-old", "Delete", {
+        deletionTimestamp: "2026-11-16T10:00:00Z",
+      }),
+      request("orders-borrowed", "Delete", { controller: false }),
+    ];
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toMatchObject({
+      ok: false,
+      errors: [
+        {
+          message: expect.stringMatching(
+            /^The requests orders-backup-storage, orders-access do not have/,
+          ),
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["has no observedGeneration but a recorded policy", undefined],
+    ["has an older observedGeneration", 2],
+  ])(
+    "Git mode refuses while the claim %s, also with no request",
+    async (_, observedGeneration) => {
+      fake.mode = "git";
+      reads = [set("Orphan", { observedGeneration })];
+
+      expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The operator has not read the deletion policy of the CamundaClusterClaim orders yet. Try again in a moment.",
+            ref,
+          },
+        ],
+      });
+      expect(fake.apply).not.toHaveBeenCalled();
+    },
+  );
+
+  it("a claim without the cleanup finalizer and without a recorded policy gets the request check in direct mode too", async () => {
+    const bare = live("45");
+    reads = [{ ...bare, spec: { deletionPolicy: "Orphan" } }];
+    listed = [request("orders-backup-storage", "Delete")];
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toMatchObject({
+      ok: false,
+      errors: [{ code: "Stale" }],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("gives Unavailable and deletes nothing when the requests cannot be read", async () => {
+    fake.mode = "git";
+    reads = [set("Orphan")];
+    listObjects.mockRejectedValueOnce(new Error("forbidden"));
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [{ code: "Unavailable", message: "forbidden" }],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("the preview does not wait for the requests, so a policy write that corrects them can follow it", async () => {
+    // An option that cannot keep holds its request at Delete under a claim
+    // that says Orphan.
+    fake.mode = "git";
+    reads = [set("Orphan")];
+    listed = [request("orders-backup-storage", "Delete")];
+    fake.preview.mockResolvedValue({ objects: [], errors: [] });
+
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fake.preview).toHaveBeenCalledWith(remove);
+  });
+
+  it("refuses, and the preview too, in both modes a claim that lost its cleanup finalizer after the operator set it up", async () => {
+    reads = [set("Orphan", { finalizers: [] })];
+    const refusal = {
+      code: "Invalid",
+      message:
+        "The CamundaClusterClaim orders has no finalizer fleet.camunda.io/cleanup now. The operator adds it back on its next pass of the claim. Delete the claim again after that.",
+      ref,
+    };
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      objects: [],
+      errors: [refusal],
+    });
+    fake.mode = "git";
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [refusal],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+    expect(fake.preview).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for the finalizer of a claim that is already being deleted", async () => {
+    const deleting = set("Orphan", { finalizers: [] });
+    deleting.metadata = {
+      ...deleting.metadata,
+      deletionTimestamp: "2026-11-16T10:00:00Z",
+    };
+    reads = [deleting];
+    fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+  });
+
+  it("deletes at the resourceVersion of a fresh read when only the status changed since the review", async () => {
+    reads = [live("45")];
+    fake.apply.mockResolvedValue({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(readLive).toHaveBeenCalledWith(ref);
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+    expect(fake.apply).toHaveBeenCalledWith({
+      ...remove,
+      preconditions: { [key]: "45" },
+    });
+  });
+
+  it.each([
+    ["the spec changed", live("45", { generation: 4 })],
+    ["the claim was made again", live("45", { uid: "uid-2" })],
+    ["the claim is gone", undefined],
+  ])("refuses with Stale and deletes nothing when %s", async (_, object) => {
+    reads = [object];
+
+    const result = await runClaimDelete(remove, "CamundaClusterClaim");
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.apply).not.toHaveBeenCalled();
+  });
+
+  it("reads again after a conflict and deletes at the newer resourceVersion", async () => {
+    reads = [live("45"), live("46")];
+    fake.apply
+      .mockResolvedValueOnce(stale)
+      .mockResolvedValueOnce({ ok: true, mode: "direct" });
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fake.apply.mock.calls.map(([c]) => c.preconditions)).toEqual([
+      { [key]: "45" },
+      { [key]: "46" },
+    ]);
+  });
+
+  it("refuses with Stale after a conflict when the spec changed since the review", async () => {
+    reads = [live("45"), live("46", { generation: 4 })];
+    fake.apply.mockResolvedValue(stale);
+
+    const result = await runClaimDelete(remove, "CamundaClusterClaim");
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops after CLAIM_DELETE_ATTEMPTS conflicts and says that the claim kept changing", async () => {
+    reads = [live("45")];
+    fake.apply.mockResolvedValue(stale);
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Stale",
+          message:
+            "The CamundaClusterClaim orders kept changing during the delete. Delete it again.",
+          ref,
+        },
+      ],
+    });
+    expect(fake.apply).toHaveBeenCalledTimes(CLAIM_DELETE_ATTEMPTS);
+  });
+
+  it("returns a refusal that is not Stale at once", async () => {
+    reads = [live("45")];
+    const forbidden = {
+      ok: false as const,
+      errors: [{ code: "Forbidden" as const, message: "No.", ref }],
+    };
+    fake.apply.mockResolvedValue(forbidden);
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual(
+      forbidden,
+    );
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("Git mode sends the change once without a resourceVersion, so the Git writer checks the generation", async () => {
+    fake.mode = "git";
+    reads = [live("45")];
+    fake.apply.mockResolvedValue(stale);
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual(stale);
+    expect(fake.apply).toHaveBeenCalledTimes(1);
+    expect(fake.apply).toHaveBeenCalledWith(remove);
+  });
+
+  it.each([
+    ["no generation", { ...remove, generations: undefined }],
+    [
+      "a name that is not a path segment",
+      {
+        ...remove,
+        delete: [{ ...ref, name: ".." }],
+        uids: { "CamundaClusterClaim/team-a/..": "uid-1" },
+        generations: { "CamundaClusterClaim/team-a/..": 3 },
+      },
+    ],
+  ])("refuses input with %s as Invalid and reads nothing", async (_, input) => {
+    expect(await runClaimDelete(input, "CamundaClusterClaim")).toMatchObject({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(
+      await previewClaimDelete(input, "CamundaClusterClaim"),
+    ).toMatchObject({
+      objects: [],
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(readLive).not.toHaveBeenCalled();
+  });
+
+  it("returns Unavailable when the read fails", async () => {
+    readLive.mockRejectedValueOnce(new Error("boom"));
+
+    expect(await runClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      ok: false,
+      errors: [{ code: "Unavailable", message: "boom" }],
+    });
+  });
+
+  it("the preview checks the claim as the delete does and dry-runs the change", async () => {
+    reads = [live("45")];
+    fake.preview.mockResolvedValue({ objects: [], errors: [] });
+
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fake.preview).toHaveBeenCalledWith(remove);
+
+    fake.preview.mockClear();
+    reads = [live("46", { generation: 4 })];
+    expect(await previewClaimDelete(remove, "CamundaClusterClaim")).toEqual({
+      objects: [],
+      errors: [expect.objectContaining({ code: "Stale", ref })],
+    });
+    expect(fake.preview).not.toHaveBeenCalled();
   });
 });
 
@@ -782,7 +1412,6 @@ describe("adminChangeSchema", () => {
     intent: "Save staging",
     apply: [environmentObject],
     preconditions: { "Environment//staging": "3" },
-    force: true,
   };
   const remove = {
     intent: "Delete staging",
@@ -804,7 +1433,12 @@ describe("adminChangeSchema", () => {
   const clusters = adminChangeSchema(["CamundaCluster"], ["team-a"]);
 
   it.each([
-    ["an update with its precondition and force", schema, update],
+    ["an update with its precondition", schema, update],
+    [
+      "an update with a kept field",
+      schema,
+      { ...update, keep: { "Environment//staging": ["spec.sections"] } },
+    ],
     ["a delete with its precondition", schema, remove],
     [
       "a delete with its precondition and its UID",
@@ -887,6 +1521,12 @@ describe("adminChangeSchema", () => {
       schema,
       { ...remove, preconditions: undefined },
     ],
+    ["force on an update", schema, { ...update, force: true }],
+    [
+      "a kept field of a create",
+      schema,
+      { ...create, keep: { "Environment//staging": ["spec.sections"] } },
+    ],
     ["force on a create", schema, { ...create, force: true }],
     ["force on a delete", schema, { ...remove, force: true }],
     [
@@ -911,6 +1551,11 @@ describe("adminChangeSchema", () => {
   ])("refuses %s", (_, s, change) =>
     expect(s.safeParse(change).success).toBe(false),
   );
+
+  it("passes keep on to the writer", () => {
+    const keep = { "Environment//staging": ["spec.sections"] };
+    expect(schema.parse({ ...update, keep }).keep).toEqual(keep);
+  });
 });
 
 describe("namespaceLabelChangeSchema", () => {
@@ -987,5 +1632,365 @@ describe("namespaceLabelChangeSchema", () => {
         delete: [environmentRef],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("claimBatchChangeSchema", () => {
+  const claim = (
+    name: string,
+    namespace = "team-a",
+    kind = "CamundaClusterClaim",
+  ) => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind,
+    metadata: { name, namespace },
+    spec: { releaseRef: "camunda-8-9-1" },
+  });
+  const batch = (over: Record<string, unknown> = {}) => ({
+    intent: "Move 2 clusters to the release camunda-8-9-1",
+    apply: [claim("orders"), claim("payments", "team-b")],
+    preconditions: {
+      "CamundaClusterClaim/team-a/orders": "4",
+      "CamundaClusterClaim/team-b/payments": "9",
+    },
+    ...over,
+  });
+
+  it("accepts cluster claims in many namespaces, each with its precondition", () => {
+    expect(claimBatchChangeSchema.safeParse(batch()).success).toBe(true);
+  });
+
+  it("accepts one cluster claim", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({
+          apply: [claim("orders")],
+          preconditions: { "CamundaClusterClaim/team-a/orders": "4" },
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("refuses a claim without a precondition", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({ preconditions: { "CamundaClusterClaim/team-a/orders": "4" } }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("refuses the same claim twice", () => {
+    expect(
+      claimBatchChangeSchema.safeParse(
+        batch({ apply: [claim("orders"), claim("orders")] }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      "a plane claim",
+      {
+        apply: [claim("plane", "team-a", "CamundaManagementClusterClaim")],
+        preconditions: { "CamundaManagementClusterClaim/team-a/plane": "1" },
+      },
+    ],
+    [
+      "a CamundaCluster",
+      {
+        apply: [
+          {
+            ...claim("orders"),
+            apiVersion: "core.camunda.io/v1",
+            kind: "CamundaCluster",
+          },
+        ],
+        preconditions: { "CamundaCluster/team-a/orders": "1" },
+      },
+    ],
+    [
+      "a claim of another apiVersion",
+      {
+        apply: [{ ...claim("orders"), apiVersion: "fleet.camunda.io/v1" }],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "1" },
+      },
+    ],
+    [
+      "a claim without a namespace",
+      {
+        apply: [{ ...claim("orders"), metadata: { name: "orders" } }],
+        preconditions: { "CamundaClusterClaim//orders": "1" },
+      },
+    ],
+    [
+      "a delete",
+      {
+        delete: [
+          {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            namespace: "team-a",
+            name: "old",
+          },
+        ],
+      },
+    ],
+    ["create", { create: ["CamundaClusterClaim/team-a/orders"] }],
+    ["force", { force: true }],
+    ["directOnly", { directOnly: true }],
+  ])("refuses %s", (_, over) => {
+    expect(claimBatchChangeSchema.safeParse(batch(over)).success).toBe(false);
+  });
+});
+
+describe("take-over lists", () => {
+  const envKey = "Environment//prod";
+  const update = {
+    ...validChange,
+    preconditions: { [envKey]: "7" },
+  };
+  const issues = (
+    schema: { safeParse(input: unknown): unknown },
+    input: object,
+  ) => {
+    const result = schema.safeParse(input) as {
+      success: boolean;
+      error?: { issues: { message: string; path: PropertyKey[] }[] };
+    };
+    return result.success
+      ? []
+      : result.error!.issues.map((i) => ({
+          message: i.message,
+          path: i.path.join("."),
+        }));
+  };
+
+  it("changeSchema keeps takeOver and remove", () => {
+    const input = {
+      ...update,
+      takeOver: { [envKey]: ["spec.displayName"] },
+      remove: { [envKey]: ['spec.presets.camundaCluster[="b"]'] },
+    };
+    expect(changeSchema.parse(input)).toEqual(input);
+  });
+
+  it("refuses a list without a precondition, also on a created object", () => {
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        takeOver: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "takeOver",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        create: [envKey],
+        remove: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "remove",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...update,
+        takeOver: { "Environment//other": ["spec.displayName"] },
+      }),
+    ).toEqual([
+      {
+        message: "A take-over names an object that the change updates.",
+        path: "takeOver",
+      },
+    ]);
+  });
+
+  it("refuses force beside a list", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        force: true,
+        remove: { [envKey]: ["spec.displayName"] },
+      }),
+    ).toEqual([
+      { message: "force and a take-over do not go together.", path: "force" },
+    ]);
+  });
+
+  it("refuses a field listed twice", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        takeOver: { [envKey]: ["spec.displayName", "spec.displayName"] },
+      }),
+    ).toEqual([
+      { message: "A take-over lists each field once.", path: "takeOver" },
+    ]);
+  });
+
+  it("words the issues of keep as keep", () => {
+    expect(
+      issues(changeSchema, {
+        ...validChange,
+        keep: { [envKey]: ["spec.sections"] },
+      }),
+    ).toEqual([
+      {
+        message: "keep names an object that the change updates.",
+        path: "keep",
+      },
+    ]);
+    expect(
+      issues(changeSchema, {
+        ...update,
+        keep: { [envKey]: ["spec.sections", "spec.sections"] },
+      }),
+    ).toEqual([{ message: "keep lists each path once.", path: "keep" }]);
+  });
+
+  it("refuses a keep path of a list item", () => {
+    expect(
+      issues(changeSchema, {
+        ...update,
+        keep: { [envKey]: ["spec.sections", "spec.extraEnv[name=TZ]"] },
+      }),
+    ).toEqual([
+      {
+        message: "keep names paths through maps only, not a list item.",
+        path: `keep.${envKey}.1`,
+      },
+    ]);
+  });
+
+  it("refuses more than 64 keep paths for an object", () => {
+    const paths = (n: number) =>
+      Array.from({ length: n }, (_, i) => `spec.sections.s${i}`);
+    expect(
+      changeSchema.safeParse({ ...update, keep: { [envKey]: paths(64) } })
+        .success,
+    ).toBe(true);
+    expect(
+      changeSchema.safeParse({ ...update, keep: { [envKey]: paths(65) } })
+        .success,
+    ).toBe(false);
+  });
+
+  it("refuses an empty list and an empty path", () => {
+    expect(
+      changeSchema.safeParse({ ...update, takeOver: { [envKey]: [] } }).success,
+    ).toBe(false);
+    expect(
+      changeSchema.safeParse({ ...update, remove: { [envKey]: [""] } }).success,
+    ).toBe(false);
+  });
+
+  it("claimChangeSchema accepts a take-over of its claim", () => {
+    expect(
+      claimChangeSchema("CamundaManagementClusterClaim").safeParse({
+        intent: "Move the plane",
+        apply: [planeClaim],
+        preconditions: { [planeKey]: "3" },
+        takeOver: { [planeKey]: ["spec.versions.identity"] },
+        remove: { [planeKey]: ["spec.deletionPolicy"] },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("claimBatchChangeSchema accepts takeOver and refuses remove", () => {
+    const claim = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-a" },
+      spec: { releaseRef: "camunda-8-9-1" },
+    };
+    const key = "CamundaClusterClaim/team-a/orders";
+    const move = {
+      intent: "Move 1 cluster",
+      apply: [claim],
+      preconditions: { [key]: "4" },
+    };
+    expect(
+      claimBatchChangeSchema.safeParse({
+        ...move,
+        takeOver: { [key]: ["spec.releaseRef"] },
+      }).success,
+    ).toBe(true);
+    expect(
+      claimBatchChangeSchema.safeParse({
+        ...move,
+        remove: { [key]: ["spec.allowVersionDowngrade"] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("createChangeSchema, claimDeleteSchema, backupChangeSchema, and namespaceLabelChangeSchema refuse a list", () => {
+    const claimRef = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    };
+    const claimKey = "CamundaClusterClaim/team-a/orders";
+    const remove = {
+      intent: "Delete the cluster orders",
+      apply: [],
+      delete: [claimRef],
+      uids: { [claimKey]: "uid-1" },
+      generations: { [claimKey]: 3 },
+    };
+    const backupKey = "LogicalBackupElasticsearch/team-a/orders-manual-1";
+    const backup = {
+      intent: "Back up orders",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalBackupElasticsearch",
+          metadata: { name: "orders-manual-1", namespace: "team-a" },
+          spec: { clusterRef: { name: "orders" } },
+        },
+      ],
+      create: [backupKey],
+      directOnly: true,
+    };
+    const create = {
+      intent: "Create the plane",
+      apply: [planeClaim],
+      create: [planeKey],
+    };
+    const backups = backupChangeSchema({ namespace: "team-a", name: "orders" });
+    const cases: [
+      { safeParse(input: unknown): { success: boolean } },
+      object,
+      string,
+    ][] = [
+      [createChangeSchema, create, planeKey],
+      [claimDeleteSchema("CamundaClusterClaim"), remove, claimKey],
+      [backups, backup, backupKey],
+      [namespaceLabelChangeSchema, label(STAGING), "Namespace//team-a"],
+    ];
+    for (const [schema, change, key] of cases) {
+      expect(schema.safeParse(change).success).toBe(true);
+      for (const list of ["takeOver", "remove"])
+        expect(
+          schema.safeParse({ ...change, [list]: { [key]: ["spec.x"] } })
+            .success,
+        ).toBe(false);
+    }
+  });
+
+  it("adminChangeSchema accepts both lists on an update", () => {
+    expect(
+      adminChangeSchema(["Environment"]).safeParse({
+        ...update,
+        takeOver: { [envKey]: ["spec.displayName"] },
+        remove: { [envKey]: ["spec.color"] },
+      }).success,
+    ).toBe(true);
   });
 });

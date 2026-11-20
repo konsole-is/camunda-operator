@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
-import { missingInputs, resolveInputs } from "./inputs";
+import { missingInputs, readyOutputs, resolveInputs } from "./inputs";
 
 const esRegistration = {
   metadata: { name: "elasticsearch" },
@@ -114,5 +114,21 @@ describe("resolveInputs", () => {
         [request],
       ),
     ).toEqual({ waiting: ["backup-storage"] });
+  });
+});
+
+describe("readyOutputs", () => {
+  it("gives an empty map for a request that is ready for its generation and has no outputs", () => {
+    const request = {
+      metadata: { namespace: "team-a", name: "orders-backups", generation: 2 },
+      spec: { section: "backups", registration: "acme-s3" },
+      status: {
+        conditions: [
+          { type: "OutputsReady", status: "True", observedGeneration: 2 },
+        ],
+      },
+    } as unknown as PluginRequest;
+
+    expect(readyOutputs([request], "backups", "acme-s3")).toEqual({});
   });
 });

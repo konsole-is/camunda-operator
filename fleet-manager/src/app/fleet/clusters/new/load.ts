@@ -1,14 +1,31 @@
 import "server-only";
 import type { ClusterCreateData } from "@/components/create/cluster-create-flow";
-import { listOrEmpty } from "@/lib/k8s/list-or-empty";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
+import type { ListOptions } from "@/lib/k8s/read";
+import { list } from "@/lib/k8s/read";
+import type { ReadError } from "@/lib/k8s/unread";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 
 /**
  * loadCreateCluster reads the first snapshot of the create cluster page
  * from the cache of the server, in every namespace. A failed read of a kind
- * gives no objects of that kind.
+ * gives no objects of that kind and an entry in readErrors.
  */
 export async function loadCreateCluster(): Promise<ClusterCreateData> {
+  const readErrors: ReadError[] = [];
+  // The steps and the review must tell a failed read of these kinds from an
+  // empty list.
+  const listOrRecord = <K extends KindName>(
+    kind: K,
+    opts: ListOptions = {},
+  ): Promise<Resource<K>[]> =>
+    list(kind, opts).catch((err: unknown) => {
+      readErrors.push({
+        kind,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    });
   const [
     environments,
     namespaces,
@@ -22,21 +39,27 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     databaseServerPresets,
     secondaryStorageConfigs,
     objectStorageConfigs,
+    releases,
+    platformConfigs,
+    managementAuthConfigs,
   ] = await Promise.all([
-    listOrEmpty("Environment", {}),
-    listOrEmpty("Namespace", {}),
-    listOrEmpty("CamundaClusterClaim", {}),
-    listOrEmpty("CamundaCluster", {}),
-    listOrEmpty("CamundaClusterPreset", {}),
-    listOrEmpty("PluginSection", {}),
-    listOrEmpty("PluginRegistration", {}),
-    listOrEmpty("PluginRequest", {
+    listOrRecord("Environment"),
+    listOrRecord("Namespace"),
+    listOrRecord("CamundaClusterClaim"),
+    listOrRecord("CamundaCluster"),
+    listOrRecord("CamundaClusterPreset"),
+    listOrRecord("PluginSection"),
+    listOrRecord("PluginRegistration"),
+    listOrRecord("PluginRequest", {
       labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
     }),
-    listOrEmpty("ElasticsearchClusterPreset", {}),
-    listOrEmpty("DatabaseServerPreset", {}),
-    listOrEmpty("SecondaryStorageConfig", {}),
-    listOrEmpty("ObjectStorageConfig", {}),
+    listOrRecord("ElasticsearchClusterPreset"),
+    listOrRecord("DatabaseServerPreset"),
+    listOrRecord("SecondaryStorageConfig"),
+    listOrRecord("ObjectStorageConfig"),
+    listOrRecord("CamundaRelease"),
+    listOrRecord("CamundaPlatformConfig"),
+    listOrRecord("ManagementAuthConfig"),
   ]);
   return {
     environments,
@@ -51,6 +74,10 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     databaseServerPresets,
     secondaryStorageConfigs,
     objectStorageConfigs,
+    releases,
+    platformConfigs,
+    managementAuthConfigs,
+    readErrors,
   };
 }
 

@@ -7,6 +7,7 @@ import type {
 import type { Resource } from "@/lib/k8s/kinds";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
 import type { FieldPath, Merged } from "@/lib/merge";
+import type { ClaimSection } from "./claim";
 import { PROCESS_LABEL, topologyOf, type Process } from "./topology";
 
 /**
@@ -56,6 +57,50 @@ export function componentSettings(
       embedded: true,
       fields: of(app.process),
     })),
+  ];
+}
+
+/** SettingsBlock is the part of a SettingsGroup that ComponentSettings shows. */
+export type SettingsBlock = Pick<
+  SettingsGroup,
+  "label" | "embedded" | "fields"
+>;
+
+/**
+ * sectionSettings returns the block of the Settings tab of a selection of
+ * the claim: its parameters, labelled "<section label>: <option label>".
+ */
+export function sectionSettings(section: ClaimSection): SettingsBlock[] {
+  return [
+    {
+      label: `${section.sectionLabel}: ${section.optionLabel}`,
+      embedded: false,
+      fields: section.parameters,
+    },
+  ];
+}
+
+/**
+ * settingsGroupsOf returns the settings groups of a whole cluster: "Whole
+ * cluster" with the fields of group "cluster" first, then the groups of
+ * componentSettings for each process that runs, in the order of topologyOf.
+ * Connectors that do not run still have a group, last.
+ */
+export function settingsGroupsOf(
+  fields: readonly ClusterField[],
+  spec: CamundaClusterSpec,
+): SettingsGroup[] {
+  const processes = topologyOf(spec, []).map((box) => box.process);
+  // Their group holds connectors.enabled, the one way to turn them on.
+  if (!processes.includes("connectors")) processes.push("connectors");
+  return [
+    {
+      label: "Whole cluster",
+      component: "cluster",
+      embedded: false,
+      fields: fields.filter((f) => f.group === "cluster"),
+    },
+    ...processes.flatMap((process) => componentSettings(fields, process, spec)),
   ];
 }
 

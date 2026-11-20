@@ -77,6 +77,30 @@ describe("DeletionChoiceField", () => {
     ).toBeTruthy();
   });
 
+  it("disables Keep the resources with the options whose registration does not exist, and says so", () => {
+    render(
+      <DeletionChoiceField
+        subject="cluster"
+        choice={{
+          ...open,
+          keepAllowed: false,
+          missing: [{ section: "access", label: "ingress (Access)" }],
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(radio(/Keep the resources/).disabled).toBe(true);
+    expect(
+      screen.getByText("Some options have a registration that does not exist."),
+    ).toBeTruthy();
+    const item = screen.getByText(/ingress \(Access\)/);
+    expect(
+      within(item.closest("li")!).getByText("Registration does not exist"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Always deleted")).toBeNull();
+  });
+
   it("enables Keep the resources when every option can keep", () => {
     render(
       <DeletionChoiceField

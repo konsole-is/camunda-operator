@@ -95,6 +95,51 @@ kubectl -n camunda-operator-system edit configmap fleet-manager-settings
 
 The fleet manager reads the ConfigMap each time that it needs a setting, so a change takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.
 
+## Fields that another tool set
+
+A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or removes. It shows the tool next to the field. One choice, **Take over these fields**, covers the changed fields and the removed fields together. Each row says what the save does to its field:
+
+```text
+Fields that another tool set
+spec.displayName: kubectl-client-side-apply set it. The save changes it.
+spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
+[ ] Take over these fields
+```
+
+Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it. Outside a list item, an empty string, list, or map that another tool set stays unless you give it a value. The review does not name it. Inside a list item, the review names it with the tool, as other fields.
+
+With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each field that the change leaves out. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example `It gets its default value 7 again.` If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
+
+Another write can change the object after the save gave the new values and before it removed the fields. Then the new values stay, and the fields that the save did not remove stay too. The save shows `The fleet manager saved the <kind> <name>, but did not remove <fields>.` To remove them, open the page again and take them over in a new save. When a save writes more than one object, the objects that it wrote before a failure stay.
+
+The review asks on every save. The fleet manager does not keep the choice for a later save, and no setting turns it on for good.
+
+One review does not ask. When the Environments page adds a namespace to an environment, the labels and annotations that other tools set on the namespace stay.
+
+The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and **Save** stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays. The review names such fields in muted lines, with no choice. Each line names the controllers that set its fields:
+
+```text
+camunda-operator/databaseserver-recovery of the operator sets this field. It stays: spec.pitr.lastRecovery.
+camunda-operator/pointintimerestore-recovery of the operator sets this field. It stays: spec.recovery.
+```
+
+When a GitOps tool such as Argo CD or Flux set the field or manages the object, the review gives a warning. The tool sets its own value again on its next sync. Change the source in Git too. When the fleet manager does not know the tool, the review says `The fleet manager does not know this tool.` next to its name. You can still take the field over.
+
+After a take-over, the other tool can change the field again:
+
+- `kubectl apply --server-side` of an older file fails on each field that the fleet manager took over:
+
+    ```text
+    error: Apply failed with 1 conflict: conflict with "fleet-manager" using fleet.camunda.io/v1alpha1: .spec.displayName
+    ```
+
+    Remove the field from the file, or add `--force-conflicts` to take the field back.
+
+- A plain `kubectl apply` of that file sets the old values again, with no conflict.
+- A field that the save removed has no field manager. The next apply of a file that holds the field adds it again.
+
+In Git mode the review offers no take-over. The file in the repository holds the whole object, and your GitOps tool applies it.
+
 ## Git credentials
 
 The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with `http://`. The Secret of `git.credentialsSecretRef` holds a token or the keys of a GitHub App. When the Secret holds keys of both sets, each save fails. Create the Secret `fleet-git` in the release namespace, as one of the two sections below shows. Then set `git.credentialsSecretRef` to `fleet-git`. Without the setting, the fleet manager connects to the repository without credentials.

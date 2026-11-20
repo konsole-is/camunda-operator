@@ -10,6 +10,7 @@ import type { ListOptions } from "./read";
 import {
   failureKey,
   freshKey,
+  overdueKey,
   sharedWatch,
   watchKey,
   type WatchSpec,
@@ -23,11 +24,14 @@ export interface Ref {
 
 /**
  * useResources returns the objects of kind that opts select. It returns
- * initial, the snapshot of the server render, at once. It then follows
+ * initial, the snapshot of the server render, at once, unless an earlier
+ * hook of the same kind and filter left its list in the cache: it then
+ * returns that list, which can be old, until the next snapshot. It follows
  * /api/watch: each snapshot frame replaces the list, also after a
- * reconnect, and each delta changes it. When the first list of the kind on
- * the server fails, error holds its message and items keep the last list,
- * which can be out of date, until the next snapshot. All hooks under one
+ * reconnect, and each delta changes it. When the server has no current list
+ * of the kind, because its first list failed or its watch failed and did not
+ * start again, error holds its message and items keep the last list, which
+ * can be out of date, until the next snapshot. All hooks under one
  * QueryClientProvider share one connection to /api/watch, and hooks with
  * the same kind and filter share one entry. The hook leaves the connection
  * on unmount. A component that calls it needs a QueryClientProvider above
@@ -48,21 +52,43 @@ export function useResources<K extends KindName>(
 
 /**
  * useWatchesFresh says for each list of lists whether its watch got its
- * snapshot on the current connection, in the order of lists. It is false
- * until then, and again after a reconnect until the next snapshot. It opens
+ * snapshot, in the order of lists. It is false until then, and again after
+ * an error of the connection, a failure of the watch, or a late snapshot
+ * (freshKey) until the next snapshot. It opens
  * no watch of its own, so each list needs useResources with the same kind
- * and options in the same tree.
+ * and options in the same tree, or, for a list without labelSelector,
+ * useResource with the same kind, namespace, and name.
  */
 export function useWatchesFresh(
-  lists: readonly { kind: KindName; opts: ListOptions }[],
+  lists: readonly { kind: KindName; opts: ListOptions & { name?: string } }[],
+): boolean[] {
+  return useWatchFlags(lists, freshKey);
+}
+
+/**
+ * useWatchesOverdue says for each list of lists, in the order of lists,
+ * whether its watch is overdue (overdueKey): its snapshot did not come in
+ * time, or the connection or the watch failed since. It opens no watch of its own, as
+ * useWatchesFresh.
+ */
+export function useWatchesOverdue(
+  lists: readonly { kind: KindName; opts: ListOptions & { name?: string } }[],
+): boolean[] {
+  return useWatchFlags(lists, overdueKey);
+}
+
+function useWatchFlags(
+  lists: readonly { kind: KindName; opts: ListOptions & { name?: string } }[],
+  keyOf: typeof freshKey | typeof overdueKey,
 ): boolean[] {
   const client = useQueryClient();
   return useQueries({
     queries: lists.map(({ kind, opts }) => {
-      const key = freshKey({
+      const key = keyOf({
         kind,
         namespace: opts.namespace,
         labelSelector: opts.labelSelector,
+        name: opts.name,
       });
       return {
         queryKey: key,
@@ -100,7 +126,7 @@ export type GitSync = "waiting" | "applied";
  * useGitSync follows the object of ref and returns "applied" once its
  * annotation REVISION_ANNOTATION equals revision. It returns "waiting" for
  * any other revision, while the object does not exist, while the watch
- * fails, and until the watch got a snapshot on the current connection. It
+ * fails, and while the watch is not fresh (freshKey). It
  * needs a QueryClientProvider above it, as useResource does.
  */
 export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
@@ -118,8 +144,8 @@ export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
  * useGitGone follows the object of a pushed delete and returns "applied"
  * once the object is gone or the cluster deletes it (it has a
  * deletionTimestamp). GitOps has then done its part. It returns "waiting"
- * while the watch fails and until the watch got a snapshot on the current
- * connection. It needs a QueryClientProvider above it, as useResource does.
+ * while the watch fails and while the watch is not fresh (freshKey). It
+ * needs a QueryClientProvider above it, as useResource does.
  */
 export function useGitGone(ref: GitSyncRef): GitSync {
   const { item, error, fresh } = useWatchedObject(ref.kind, ref);

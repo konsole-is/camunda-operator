@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -104,11 +105,13 @@ func newDeleter(t *testing.T, objs ...client.Object) (Deleter, client.Client) {
 
 func input(claim client.Object, stages ...[]client.Object) Input {
 	return Input{
-		Claim:              claim,
-		FieldManagerPrefix: fleetv1alpha1.FieldManagerPrefixPlaneClaim,
-		DeletionPolicy:     pluginsv1alpha1.DeletionPolicyDelete,
-		Selections:         []fleetv1alpha1.PluginSelection{{Section: "access", Registration: "test-access"}},
-		Stages:             stages,
+		Policy: Policy{
+			Claim:              claim,
+			FieldManagerPrefix: fleetv1alpha1.FieldManagerPrefixPlaneClaim,
+			DeletionPolicy:     pluginsv1alpha1.DeletionPolicyDelete,
+			Selections:         []fleetv1alpha1.PluginSelection{{Section: "access", Registration: "test-access"}},
+		},
+		Stages: stages,
 	}
 }
 
@@ -197,4 +200,113 @@ func TestFinalizeRefusesAnOrphanPolicyThatARegistrationDoesNotSupport(t *testing
 	require.True(t, errors.As(err, &failure))
 	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
 	assert.True(t, exists(t, c, plane()), "a refused policy deletes nothing")
+}
+
+// liveClaim returns deletedClaim without its deletion timestamp and
+// without finalizers.
+func liveClaim() *fleetv1alpha1.CamundaManagementClusterClaim {
+	claim := deletedClaim()
+	claim.DeletionTimestamp = nil
+	claim.Finalizers = nil
+
+	return claim
+}
+
+func orphanPolicy(claim client.Object) Policy {
+	in := input(claim).Policy
+	in.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+
+	return in
+}
+
+// keepingRegistration returns registration test-access with both policies.
+func keepingRegistration() *pluginsv1alpha1.PluginRegistration {
+	return registration(pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan)
+}
+
+func policyOf(t *testing.T, c client.Client) pluginsv1alpha1.DeletionPolicy {
+	request := accessRequest()
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(request), request))
+
+	return request.Spec.DeletionPolicy
+}
+
+func TestPrepareWritesThePolicyOnTheRequestsThatTheClaimControls(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access, keepingRegistration())
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	require.NoError(t, err)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyOrphan, policyOf(t, c))
+}
+
+func TestPrepareLeavesARequestThatTheClaimDoesNotControl(t *testing.T) {
+	claim := liveClaim()
+	d, c := newDeleter(t, claim, accessRequest(), keepingRegistration())
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	require.NoError(t, err)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c))
+}
+
+func TestPrepareAddsTheFinalizerBack(t *testing.T) {
+	claim := liveClaim()
+	d, c := newDeleter(t, claim, registration(pluginsv1alpha1.DeletionPolicyDelete))
+
+	err := d.Prepare(context.Background(), input(claim).Policy)
+
+	require.NoError(t, err)
+	current := liveClaim()
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(current), current))
+	assert.Contains(t, current.Finalizers, fleetv1alpha1.FinalizerCleanup)
+}
+
+func TestPrepareRefusesAnOrphanPolicyThatARegistrationDoesNotSupport(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access, registration(pluginsv1alpha1.DeletionPolicyDelete))
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	var failure *conditions.PreCheckFailure
+	require.True(t, errors.As(err, &failure))
+	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c), "a refused policy is not written")
+	current := liveClaim()
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(current), current))
+	assert.Contains(t, current.Finalizers, fleetv1alpha1.FinalizerCleanup, "the finalizer goes back also on a refusal")
+}
+
+func TestPrepareReportsAConflictOfTheFinalizerUpdateAndWritesNoPolicy(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access, keepingRegistration())
+	d.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Update: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.UpdateOption) error {
+			resource := fleetv1alpha1.GroupVersion.WithResource("camundamanagementclusterclaims").GroupResource()
+			return apierrors.NewConflict(resource, obj.GetName(), errors.New("changed"))
+		},
+	})
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	assert.True(t, apierrors.IsConflict(err), "got %v", err)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c))
+}
+
+func TestPrepareRefusesOrphanForARegistrationThatDoesNotExist(t *testing.T) {
+	claim := liveClaim()
+	access := controlledBy(accessRequest(), claim)
+	d, c := newDeleter(t, claim, access)
+
+	err := d.Prepare(context.Background(), orphanPolicy(claim))
+
+	var failure *conditions.PreCheckFailure
+	require.True(t, errors.As(err, &failure))
+	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
+	assert.Contains(t, failure.Message, `PluginRegistration "test-access"`)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, policyOf(t, c), "a refused policy is not written")
 }

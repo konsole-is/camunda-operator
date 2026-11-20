@@ -244,6 +244,7 @@ const RUNNERS: Record<AppRule, Runner> = {
       input.policy,
       input.selections ?? [],
       input.registrations ?? [],
+      input.missing ?? "Passes",
     ),
 };
 

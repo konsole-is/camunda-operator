@@ -1,5 +1,5 @@
-import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
+import { type ReadError, unreadKinds } from "@/lib/k8s/unread";
 import {
   ALLOW_VERSION_DOWNGRADE_ANNOTATION,
   CLAIM_LABEL,
@@ -13,6 +13,7 @@ import {
   equalJSON,
   nameOf,
   own,
+  parseVersion,
   type PluginSelection,
   PRESET_LISTS,
   releaseAllowed,
@@ -71,7 +72,8 @@ export type EnvironmentImpact = {
   warnings: ReferenceWarning[];
   /**
    * unassigned are the namespaces that hold claims and no environment label
-   * when the edit creates the first environment, sorted.
+   * when the edit creates the first environment, sorted. It is not set
+   * while unread is.
    */
   unassigned?: string[];
   /** unread are the kinds of the lists that could not be read or are stale. */
@@ -114,15 +116,12 @@ export function environmentImpact(
   draft: EnvironmentDraft,
   s: EnvironmentSources & {
     errors?: readonly ReadError[];
-    namespacesStale?: boolean;
+    stale?: readonly string[];
   },
 ): EnvironmentImpact {
   const impact: EnvironmentImpact = { clusters: 0, planes: 0, warnings: [] };
-  const unread = IMPACT_KINDS.filter(
-    (kind) =>
-      (kind === "Namespace" && s.namespacesStale) ||
-      (s.errors ?? []).some((e) => e.kind === kind),
-  );
+  const unreadAll = unreadKinds(s);
+  const unread = IMPACT_KINDS.filter((kind) => unreadAll.includes(kind));
   if (unread.length > 0) impact.unread = unread;
   const before: Environment = live ?? {
     apiVersion: "fleet.camunda.io/v1alpha1",
@@ -154,7 +153,7 @@ export function environmentImpact(
       ...storagePresetWarnings(ref, claim, before, edited, s),
     );
   }
-  if (!live && s.environments.length === 0) {
+  if (!live && s.environments.length === 0 && unread.length === 0) {
     const unlabelled = new Set(
       s.namespaces
         .filter((n) => !n.metadata?.labels?.[ENVIRONMENT_LABEL])
@@ -416,11 +415,6 @@ function clusterOf(claim: Claim, s: EnvironmentSources) {
       c.metadata?.namespace === claim.metadata.namespace &&
       c.metadata?.labels?.[CLAIM_LABEL] === claim.metadata.name,
   );
-}
-
-function parseVersion(version: string | undefined): number[] | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
-  return match ? match.slice(1).map(Number) : undefined;
 }
 
 /**

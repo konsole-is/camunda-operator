@@ -11,6 +11,7 @@ import { type ClusterField, parameterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
 import { deletionPolicyOf } from "@/lib/policy";
+import type { ClaimObject } from "@/lib/session";
 
 /**
  * ClaimSection is one selection of the claim: a section with the option
@@ -197,8 +198,10 @@ export function claimConditions(
   );
 }
 
-/** storedYaml returns the claim as YAML, as stored, without metadata.managedFields. */
-export function storedYaml(claim: Resource<"CamundaClusterClaim">): string {
+/** storedYaml returns a claim of either kind as YAML, as stored, without metadata.managedFields. */
+export function storedYaml(
+  claim: ClaimObject & { metadata: { managedFields?: unknown } },
+): string {
   const metadata = { ...claim.metadata };
   delete metadata.managedFields;
   return stringify({ ...claim, metadata });

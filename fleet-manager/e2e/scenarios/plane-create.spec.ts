@@ -56,8 +56,23 @@ test("creates a plane with no access from outside and existing database configs"
 
   // Review
   const create = page.getByRole("button", { name: "Create" });
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Review" }),
+  ).toBeFocused();
   await expect(create).toBeEnabled();
   await checkPage(page, "plane-create-review");
+
+  // Back sits beside Create, right after it in the tab order.
+  const back = page
+    .getByRole("region", { name: "Review" })
+    .getByRole("button", { name: "Back" });
+  const createBox = await create.boundingBox();
+  const backBox = await back.boundingBox();
+  expect(backBox?.y).toBe(createBox?.y);
+  expect(backBox!.x).toBeGreaterThan(createBox!.x);
+  await create.focus();
+  await page.keyboard.press("Tab");
+  await expect(back).toBeFocused();
   await create.click();
 
   // Progress: no controller runs, so each row stays pending.

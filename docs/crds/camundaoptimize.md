@@ -191,7 +191,9 @@ status:
       reason: Suspended
 ```
 
-`suspendedBy` is `Cluster` for the first case, and `StorageClaim` for the other two. It is empty while the workloads follow their spec. The events of the `CamundaOptimize` name the cluster: `ClusterSuspended` or `StorageClaimAwaited` when the workloads go to zero, and `ClusterResumed` when they start again.
+`suspendedBy` is `Cluster` for the first case, and `StorageClaim` for the other two. It is empty while the workloads follow their spec.
+
+The events of the `CamundaOptimize` name the cluster. When the workloads go to zero, `ClusterSuspended` or `StorageClaimAwaited` names the case that stops them. When they start again, `ClusterResumed` or `StorageClaimHeld` names the case that held them last. If the case changes while the workloads stay at zero, `suspendedBy` shows the new case and no event is recorded. So a `ClusterSuspended` event can be followed by `StorageClaimHeld`, and a `StorageClaimAwaited` event by `ClusterResumed`. A `CamundaOptimize` that waits from its creation, for example one that you create together with its cluster, records only the end event.
 
 The exporter settings stay on the cluster while it is suspended. Only deletion removes them.
 

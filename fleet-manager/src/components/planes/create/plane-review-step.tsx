@@ -1,12 +1,13 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCreateReview } from "@/components/create/use-create-review";
 import { ReviewPanel } from "@/components/fleet/review-panel";
+import { useStepperErrors } from "@/components/fleet/wizard-stepper";
 import { objectDiff } from "@/lib/diff";
 import {
-  type PlaneClaim,
   type PlaneContext,
+  type PlaneCreateClaim,
   type PlaneDraft,
 } from "@/lib/planes/draft";
 import {
@@ -31,7 +32,8 @@ export const ATTACH_CAUTION =
  * what change creates, and the confirm. It previews change once for each
  * change, and Create stays disabled until that preview is clean and while
  * a write runs or while blocked. Create sends change to create once and
- * gives the result to onWritten, also when the write is refused.
+ * gives the result to onWritten, also when the write is refused. With
+ * onBack, Back sits beside Create.
  */
 export function PlaneReviewStep({
   change,
@@ -42,10 +44,11 @@ export function PlaneReviewStep({
   preview,
   create,
   onWritten,
-  blocked: held = false,
+  blocked = false,
+  onBack,
 }: {
   change: Change;
-  claim: PlaneClaim;
+  claim: PlaneCreateClaim;
   draft: PlaneDraft;
   ctx: PlaneContext;
   mode: WriteMode;
@@ -53,64 +56,23 @@ export function PlaneReviewStep({
   create: (change: Change) => Promise<WriteResult>;
   onWritten: (result: WriteResult) => void;
   blocked?: boolean;
+  onBack?: () => void;
 }) {
-  const key = JSON.stringify(change);
-  const [previewed, setPreviewed] = useState<{
-    key: string;
-    result: Preview;
-  }>();
-  const [writing, setWriting] = useState(false);
-  // A second click arrives before React disables the button.
-  const writingNow = useRef(false);
-  const previewRef = useRef(preview);
-  useEffect(() => {
-    previewRef.current = preview;
+  const { refusals, pending, confirm } = useCreateReview({
+    change,
+    preview,
+    create,
+    onWritten,
+    blocked,
   });
-
-  useEffect(() => {
-    let current = true;
-    previewRef
-      .current(JSON.parse(key) as Change)
-      .catch((error: unknown): Preview => ({
-        objects: [],
-        errors: [{ code: "Unavailable", message: String(error) }],
-      }))
-      .then((result) => {
-        if (current) setPreviewed({ key, result });
-      });
-    return () => {
-      current = false;
-    };
-  }, [key]);
-
-  const checked = previewed?.key === key ? previewed.result : undefined;
-  const refusals = checked?.errors.map((e) => e.message) ?? [];
-  const blocked = held || !checked || refusals.length > 0;
-
-  async function confirm() {
-    if (writingNow.current || blocked) return;
-    writingNow.current = true;
-    setWriting(true);
-    try {
-      const result = await create(change).catch(
-        (error: unknown): WriteResult => ({
-          ok: false,
-          errors: [{ code: "Unavailable", message: String(error) }],
-        }),
-      );
-      onWritten(result);
-    } finally {
-      writingNow.current = false;
-      setWriting(false);
-    }
-  }
+  const describedBy = useStepperErrors();
 
   return (
     <ReviewPanel
       diffLabel="The claim"
       lines={objectDiff(undefined, claim)}
       effects={effectsOf(draft, ctx, claim)}
-      caution={ATTACH_CAUTION}
+      caution={draft.console ? ATTACH_CAUTION : undefined}
       notices={
         refusals.length > 0 && (
           <div
@@ -131,8 +93,10 @@ export function PlaneReviewStep({
       }
       mode={mode}
       confirmLabel="Create"
-      pending={writing || blocked}
+      pending={pending}
+      describedBy={describedBy}
       onConfirm={confirm}
+      onCancel={onBack}
     />
   );
 }
@@ -140,7 +104,7 @@ export function PlaneReviewStep({
 function effectsOf(
   draft: PlaneDraft,
   ctx: PlaneContext,
-  claim: PlaneClaim,
+  claim: PlaneCreateClaim,
 ): string[] {
   const { name, namespace } = claim.metadata;
   const label = (registration: string | undefined) =>

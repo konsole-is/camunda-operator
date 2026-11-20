@@ -175,18 +175,20 @@ spec:
 
 Without `spec.deletionPolicy`, the claim uses the default that it recorded from its `Environment` at creation, or `Delete`. When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim is refused with `NotAllowed`, and it creates nothing. When you delete such a claim, it deletes nothing and stays, and `Ready` is `False` with reason `NotAllowed`. To continue the deletion, set `spec.deletionPolicy: Delete`.
 
+The claim gives a change of its policy to its requests also while `Ready` reports a failed check, such as `InvalidReference`. It does not give them an `Orphan` policy that a selected registration does not support, or while a selected registration does not exist. `Ready` then has reason `NotAllowed`, and the requests keep the policy that they had. A delete with foreground propagation, as some GitOps tools send, can delete the requests before the claim starts its deletion. Each request then uses the policy that it has at that time. So a request that still has `Delete` deletes the resources of its plugin.
+
 The claim always deletes the `CamundaManagementCluster` `<claim>` first. Then it deletes the requests. The claim stays until each plugin deleted or kept the resources of its request. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. Read it with `kubectl get camundamanagementclusterclaim my-plane -n my-plane-ns -o yaml`.
 
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It only gives its deletion policy to its requests, as [Deletion](#deletion) describes. It also adds the finalizer `fleet.camunda.io/cleanup` back if someone removed it:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |
 | `NoEnvironment` | The namespace has no label `fleet.camunda.io/environment`, and an `Environment` exists. | Label the namespace. |
 | `UnknownEnvironment` | The label names no `Environment`. | Create the `Environment`, or fix the label. |
 | `InvalidReference` | An entry of `spec.environments`, the platform config, a section, or a registration does not exist. The message names each one. | Create the object, or fix the name. |
-| `NotAllowed` | The `Environment` does not allow the preset of the built-in PostgreSQL or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is `Orphan`, and a selected registration does not list `Orphan`. The message names the value. | Pick an allowed value, or change the `Environment`. For `Orphan`, set `spec.deletionPolicy: Delete`, or pick a registration that supports `Orphan`. |
+| `NotAllowed` | The `Environment` does not allow the preset of the built-in PostgreSQL or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is `Orphan`, and a selected registration does not list `Orphan`. After the claim recorded its policy, the same holds for a selected registration that does not exist. The message names the value. | Pick an allowed value, or change the `Environment`. For `Orphan`, set `spec.deletionPolicy: Delete`, or pick a registration that supports `Orphan`. |
 | `SlotConflict` | `spec.management` sets a URL, and the claim selects an option of `access`. | Remove the URL from the claim. |
 | `MissingInput` | The claim selects no option of `management-database`, no platform config applies, or the claim selects no option of `access` and leaves a URL empty. An option can also need an output of a section without an option. The message says which. | Select the option, set `spec.platformConfigRef`, or set the URLs that the message names. |
 | `WiringCycle` | The options read the outputs of each other in a cycle. The message names the sections. | Pick other options. |

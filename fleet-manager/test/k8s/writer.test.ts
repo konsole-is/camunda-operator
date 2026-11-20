@@ -8,7 +8,6 @@ import {
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import { deleteBackupChange } from "@/components/cluster/backup-actions";
 import { type BackupObject, backupRowsOf } from "@/components/cluster/backups";
-import { keptPaths } from "@/components/fleet/change-review";
 import {
   draftOf,
   namespaceLabelChange,
@@ -18,7 +17,8 @@ import { withSectionPolicy } from "@/components/setup/environments/sections";
 import { withParameterPolicy } from "@/components/setup/environments/settings";
 import type { Environment } from "@/generated/crds/environment";
 import { createChangeOf } from "@/lib/write/create";
-import type { KubeObject } from "@/lib/write/types";
+import { withTakeOver } from "@/lib/write/ownership";
+import type { KubeObject, Preview } from "@/lib/write/types";
 import {
   directWriter,
   firstExisting,
@@ -1098,14 +1098,20 @@ describe("the direct writer against envtest", () => {
 });
 
 describe("a save of the Environment editor against envtest", () => {
-  const EXISTING = { sections: ["object-storage"], registrations: ["aws-s3"] };
   const kubectlChoice = { name: "kubectl", label: "Kubectl", value: "k" };
   const appChoice = { name: "app", label: "App", value: "a" };
   const policyOf = (env: Environment) => env.spec.parameters?.["aws-s3"]?.tier;
   const read = async () => (await live(name)) as unknown as Environment;
-  const save = async (draft: Environment["spec"]) => {
-    const change = updateChange(await read(), { name, spec: draft }, EXISTING);
-    return { change, preview: await writer.preview(change) };
+  const clearedOf = (preview: Preview) =>
+    (preview.ownership ?? []).flatMap((o) => o.cleared.map((f) => f.path));
+  // save previews the edit, and with takeOver previews it again with the
+  // take-over lists of that preview, as the review does after the choice.
+  const save = async (draft: Environment["spec"], takeOver = false) => {
+    const change = updateChange(await read(), { name, spec: draft });
+    const preview = await writer.preview(change);
+    if (!takeOver) return { change, preview };
+    const taken = withTakeOver(change, preview.ownership ?? []);
+    return { change: taken, preview: await writer.preview(taken) };
   };
 
   const createByKubectl = (tier: object) =>
@@ -1119,7 +1125,7 @@ describe("a save of the Environment editor against envtest", () => {
       }),
     );
 
-  it("removes the last choice that the app applied, and keeps a choice of kubectl, which the review names", async () => {
+  it("removes the last choice that the app applied, keeps a choice of kubectl, which the review names, and removes it with the take-over", async () => {
     await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
     const withApp = withParameterPolicy(
       draftOf(await read()).spec,
@@ -1146,14 +1152,20 @@ describe("a save of the Environment editor against envtest", () => {
     );
     const { change, preview } = await save(none);
     expect(preview.errors).toEqual([]);
-    expect(keptPaths(change.apply[0], preview.objects[0].after)).toEqual([
-      "spec.parameters.aws-s3.tier.allowed",
-    ]);
+    expect(clearedOf(preview)).toEqual(["spec.parameters.aws-s3.tier.allowed"]);
     expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
     expect(policyOf(await read())?.allowed).toEqual([kubectlChoice]);
+
+    const taken = await save(none, true);
+    expect(taken.preview.errors).toEqual([]);
+    expect(await writer.apply(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(policyOf(await read())).toEqual({ claimEditable: true });
   });
 
-  it("refuses to turn A claim can change it off while kubectl owns a choice", async () => {
+  it("turns A claim can change it off while kubectl owns a choice only with the take-over", async () => {
     await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
     const off = withParameterPolicy(
       draftOf(await read()).spec,
@@ -1161,13 +1173,25 @@ describe("a save of the Environment editor against envtest", () => {
       "tier",
       {},
     );
-    const { preview } = await save(off);
-    expect(preview.errors).toEqual([
-      expect.objectContaining({
-        code: "Invalid",
-        message: expect.stringContaining("allowed needs claimEditable: true"),
-      }),
-    ]);
+    const kept = await save(off);
+    expect(kept.preview.errors).toEqual([]);
+    expect(clearedOf(kept.preview)).toEqual(["spec.parameters"]);
+    expect(await writer.apply(kept.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(policyOf(await read())).toEqual({
+      claimEditable: true,
+      allowed: [kubectlChoice],
+    });
+
+    const taken = await save(off, true);
+    expect(taken.preview.errors).toEqual([]);
+    expect(await writer.apply(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(policyOf(await read())).toBeUndefined();
   });
 
   it("turns Required and A claim can change it off, which kubectl set", async () => {
@@ -1181,10 +1205,18 @@ describe("a save of the Environment editor against envtest", () => {
       "tier",
       {},
     );
-    const { change } = await save(spec);
+    const { change } = await save(spec, true);
+    expect(change.remove).toEqual({
+      [refKey(environmentRef(name))]: [
+        "spec.parameters",
+        "spec.sections.object-storage.required",
+      ],
+    });
     expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
     const saved = await read();
-    expect(saved.spec.sections?.["object-storage"]?.required).toBe(false);
-    expect(policyOf(saved)?.claimEditable).toBe(false);
+    expect(saved.spec.sections?.["object-storage"]).toEqual({
+      allowed: ["aws-s3"],
+    });
+    expect(policyOf(saved)).toBeUndefined();
   });
 });

@@ -8,8 +8,19 @@ import {
 } from "@/components/ui/table";
 import type { EndpointRow } from "./endpoints";
 
-/** EndpointsTab is the content of the Endpoints tab: one row for each route. */
-export function EndpointsTab({ rows }: { rows: EndpointRow[] }) {
+/**
+ * EndpointsTab is the content of the Endpoints tab: one row for each route.
+ * It has a Path column when a row has a path. emptyText shows when there
+ * is no row.
+ */
+export function EndpointsTab({
+  rows,
+  emptyText = "This cluster reports no endpoints yet.",
+}: {
+  rows: EndpointRow[];
+  emptyText?: string;
+}) {
+  const paths = rows.some((row) => row.path !== undefined);
   return (
     <section
       aria-label="Endpoints"
@@ -17,14 +28,13 @@ export function EndpointsTab({ rows }: { rows: EndpointRow[] }) {
     >
       <h2 className="font-heading text-base font-semibold">Endpoints</h2>
       {rows.length === 0 ? (
-        <p className="text-sm text-muted">
-          This cluster reports no endpoints yet.
-        </p>
+        <p className="text-sm text-muted">{emptyText}</p>
       ) : (
         <Table label="Endpoints table" aria-label="Endpoints">
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              {paths && <TableHead>Path</TableHead>}
               <TableHead>Public URL</TableHead>
               <TableHead>Service</TableHead>
               <TableHead>Protocol</TableHead>
@@ -40,12 +50,23 @@ export function EndpointsTab({ rows }: { rows: EndpointRow[] }) {
                 >
                   {row.name}
                 </th>
+                {paths && (
+                  <TableCell>
+                    {row.path === undefined ? (
+                      <span className="text-muted">-</span>
+                    ) : (
+                      <code className="text-xs text-text">{row.path}</code>
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className="min-w-48 break-all whitespace-normal">
                   <PublicUrl row={row} />
                 </TableCell>
                 <TableCell>
                   <code className="text-xs text-text-2">
-                    {row.service}:{row.port}
+                    {row.port === undefined
+                      ? row.service
+                      : `${row.service}:${row.port}`}
                   </code>
                 </TableCell>
                 <TableCell className="text-text-2">{row.protocol}</TableCell>
@@ -71,6 +92,9 @@ export function EndpointsTab({ rows }: { rows: EndpointRow[] }) {
 }
 
 function PublicUrl({ row }: { row: EndpointRow }) {
+  if (row.urlInvalid) {
+    return <span className="text-bad">Not a valid URL</span>;
+  }
   if (row.url === undefined) {
     return <span className="text-muted">No external URL</span>;
   }

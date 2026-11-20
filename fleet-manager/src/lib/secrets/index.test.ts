@@ -5,13 +5,15 @@ import { SETTING_KEYS, type Settings } from "@/lib/settings/keys";
 import type { Change, WriteResult, Writer } from "@/lib/write/types";
 import { getWriter } from "@/lib/write/writer";
 import { externalSecretFor } from "./external-secret";
-import { writeSecretValue } from "./index";
+import { list } from "@/lib/k8s/read";
+import { listSecretRefsIn, writeSecretValue } from "./index";
 
 vi.mock("@/lib/write/writer", async (real) => ({
   ...(await real<typeof import("@/lib/write/writer")>()),
   getWriter: vi.fn(),
 }));
 vi.mock("@/lib/settings", () => ({ getSettings: vi.fn() }));
+vi.mock("@/lib/k8s/read", () => ({ list: vi.fn() }));
 vi.mock("@/lib/k8s/client", async (real) => ({
   ...(await real<typeof import("@/lib/k8s/client")>()),
   getJSON: vi.fn(),
@@ -167,5 +169,36 @@ describe("writeSecretValue checks", () => {
       ],
     });
     expect(directWriter.apply).not.toHaveBeenCalled();
+  });
+});
+
+describe("listSecretRefsIn", () => {
+  it("reads the Secret refs of each namespace, keyed by namespace", async () => {
+    vi.mocked(list).mockImplementation((async (
+      _kind: string,
+      opts?: { namespace?: string },
+    ) =>
+      opts?.namespace === "team-a"
+        ? [{ metadata: { name: "db" }, keys: ["password"] }]
+        : [{ metadata: { name: "smtp" }, keys: ["token"] }]) as never);
+
+    expect(await listSecretRefsIn(["team-a", "team-b"])).toEqual({
+      "team-a": [{ name: "db", keys: ["password"] }],
+      "team-b": [{ name: "smtp", keys: ["token"] }],
+    });
+  });
+
+  it("leaves out a namespace whose read fails", async () => {
+    vi.mocked(list).mockImplementation((async (
+      _kind: string,
+      opts?: { namespace?: string },
+    ) => {
+      if (opts?.namespace === "team-b") throw new Error("forbidden");
+      return [{ metadata: { name: "db" }, keys: ["password"] }];
+    }) as never);
+
+    expect(await listSecretRefsIn(["team-a", "team-b"])).toEqual({
+      "team-a": [{ name: "db", keys: ["password"] }],
+    });
   });
 });

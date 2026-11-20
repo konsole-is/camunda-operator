@@ -20,6 +20,20 @@ describe("ReviewPanel", () => {
     />
   );
 
+  it("describes the confirm with describedBy", () => {
+    render(
+      <>
+        <p id="why">Basics: Choose a namespace</p>
+        {panel({ describedBy: "why" })}
+      </>,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Change the claim" })
+        .getAttribute("aria-describedby"),
+    ).toBe("why");
+  });
+
   it("shows the direct label in direct mode", () => {
     render(panel());
     expect(

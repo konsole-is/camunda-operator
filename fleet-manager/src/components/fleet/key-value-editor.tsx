@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ValidationError } from "@/lib/schema";
 import { isLabelKey, isLabelValue } from "@/lib/labels";
+import { useErrorsReport } from "./errors-report";
 
 type Entry = { id: number; key: string; value: string };
 
@@ -25,7 +26,8 @@ export type EmptyMap = "inherited" | "unset";
  * the user can also set the map to {}, which onChange gets as {}, and a
  * defaultValue of {} starts as that empty map. An error path is
  * "<row>.key" or "<row>.value", counting rows from 0. describedBy names
- * the hint and error elements of the field for each input.
+ * the hint and error elements of the field for each input. onErrors gets
+ * the errors that it shows, also at mount.
  */
 export function KeyValueEditor({
   label,
@@ -36,6 +38,7 @@ export function KeyValueEditor({
   emptyMap,
   describedBy,
   onChange,
+  onErrors,
 }: {
   label: string;
   defaultValue?: Record<string, string>;
@@ -48,6 +51,7 @@ export function KeyValueEditor({
     value: Record<string, string> | undefined,
     errors: ValidationError[],
   ) => void;
+  onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const start = defaultValue ?? {};
@@ -74,6 +78,7 @@ export function KeyValueEditor({
     (empty ? undoButton : setButton).current?.focus();
   }, [empty]);
   const errors = keyValueErrors(entries, format);
+  useErrorsReport(errors, onErrors);
 
   const update = (changed: Entry[], changedEmpty = false) => {
     setEntries(changed);

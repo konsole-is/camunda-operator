@@ -4,7 +4,7 @@ import type {
   Watch,
 } from "@kubernetes/client-node";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ResourceCache, type CacheDeps } from "./cache";
+import { ResourceCache, WATCH_TIMEOUT_SECONDS, type CacheDeps } from "./cache";
 import { KubernetesRequestError } from "./client";
 
 type Callback = (phase: string, object: unknown) => void;
@@ -144,13 +144,13 @@ describe("ResourceCache", () => {
     expect(watch.calls[1].params.resourceVersion).toBe("20");
   });
 
-  it("keeps reconnecting quickly after each timeout of the watch", async () => {
+  it("lists again and watches again at once after each timeout of the watch", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list, timeoutReconnectMs: 1 });
     await cache.objects("Environment");
 
-    // The client ends each watch after a request timeout, also when nothing
-    // changed.
+    // The client ends a watch that sent nothing for its request timeout. A
+    // quiet kind and a silent connection look the same.
     for (let closes = 1; closes <= 6; closes++) {
       const timeout = Object.assign(new Error("timed out"), {
         name: "TimeoutError",
@@ -161,7 +161,7 @@ describe("ResourceCache", () => {
       });
     }
     expect(watch.calls.at(-1)!.params.resourceVersion).toBe("10");
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(list).toHaveBeenCalledTimes(7);
   });
 
   it("reads the kind on the next read after the first watch could not start", async () => {
@@ -204,42 +204,51 @@ describe("ResourceCache", () => {
     expect(watch.calls[1].params.resourceVersion).toBe("10");
   });
 
-  it("doubles the wait after each watch error, and a watch that ran resets it", async () => {
-    const list = vi.fn(async () => listOf([item("a")], "10"));
-    const { cache, watch } = newCache({
-      list,
-      retryDelayMs: 100,
-      timeoutReconnectMs: 1,
-    });
+  it("doubles the wait while the watch cannot start again, and waits retryDelayMs again once the kind is current", async () => {
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      {
+        list: async () => listOf([item("a")], "10"),
+        retryDelayMs: 100,
+        maxRetryDelayMs: 10_000,
+        timeoutReconnectMs: 1,
+        watchRecoveryMs: 60_000,
+      },
+      watch,
+    );
     await cache.objects("Environment");
     vi.useFakeTimers();
     try {
-      const reset = () => new Error("connection reset");
-      // waitsFor fails the watch with close, then checks that the next
-      // watch starts after ms and not before.
-      const waitsFor = async (close: unknown, ms: number) => {
-        const before = watch.calls.length;
-        watch.calls[before - 1].done(close);
+      // A try lists first, one timer after the retry, and the list answers
+      // in later microtasks.
+      const settle = async () => {
+        for (let i = 0; i < 50; i++) await Promise.resolve();
+      };
+      // triesAfter checks that the next watch starts after ms and not before.
+      const triesAfter = async (ms: number) => {
+        const before = watch.tries;
         await vi.advanceTimersByTimeAsync(ms - 1);
-        expect(watch.calls).toHaveLength(before);
-        await vi.advanceTimersByTimeAsync(1);
-        expect(watch.calls).toHaveLength(before + 1);
+        await settle();
+        expect(watch.tries).toBe(before);
+        await vi.advanceTimersByTimeAsync(2);
+        await settle();
+        expect(watch.tries).toBe(before + 1);
       };
 
-      await waitsFor(reset(), 100);
-      await waitsFor(reset(), 200);
-      await waitsFor(reset(), 400);
+      watch.refuse = true;
+      watch.calls[0].done(new Error("connection reset"));
+      await triesAfter(100);
+      await triesAfter(200);
+      await triesAfter(400);
 
-      // A watch that ends at its request timeout ran without an error.
-      watch.calls
-        .at(-1)!
-        .done(Object.assign(new Error("timed out"), { name: "TimeoutError" }));
-      await vi.advanceTimersByTimeAsync(1);
-      await waitsFor(reset(), 100);
+      watch.refuse = false;
+      await triesAfter(800);
+      watch.refuse = true;
+      watch.calls.at(-1)!.done(new Error("connection reset"));
+      await triesAfter(100);
     } finally {
       vi.useRealTimers();
     }
-    expect(list).toHaveBeenCalledTimes(1);
   });
 
   it("opens no watch when it stops while the first list waits", async () => {
@@ -278,16 +287,53 @@ describe("ResourceCache", () => {
     expect(watch.calls).toHaveLength(2);
   });
 
-  it("watches again from the last resourceVersion after a watch error", async () => {
-    const list = vi.fn(async () => listOf([item("a")], "10"));
+  it("lists again after a watch error, and watches from the new list", async () => {
+    const lists = [listOf([item("a")], "10"), listOf([item("a")], "20")];
+    const list = vi.fn(async () => lists.shift()!);
     const { cache, watch } = newCache({ list });
     await cache.objects("Environment");
 
     watch.calls[0].done(new Error("connection reset"));
 
     await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
-    expect(watch.calls[1].params.resourceVersion).toBe("10");
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(watch.calls[1].params.resourceVersion).toBe("20");
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks the API server for bookmarks and to end a quiet watch before the client gives up on it", async () => {
+    const { cache, watch } = newCache({
+      list: async () => listOf([item("a")], "10"),
+    });
+    await cache.objects("Environment");
+
+    expect(watch.calls[0].params).toMatchObject({
+      allowWatchBookmarks: true,
+      timeoutSeconds: WATCH_TIMEOUT_SECONDS,
+    });
+    // The client ends a watch that sends no data for 30 seconds.
+    expect(WATCH_TIMEOUT_SECONDS).toBeLessThan(30);
+  });
+
+  it("never lists again, loses no subscription, and answers each read while the API server ends quiet watches", async () => {
+    const list = vi.fn(async () => listOf([item("a")], "10"));
+    const { cache, watch } = newCache({
+      list,
+      timeoutReconnectMs: 1,
+      watchRecoveryMs: 20,
+    });
+    const lost = vi.fn();
+    await cache.subscribe("Environment", vi.fn(), lost);
+
+    for (let ends = 1; ends <= 4; ends++) {
+      watch.calls[ends - 1].done(null);
+      await vi.waitFor(() => expect(watch.calls).toHaveLength(ends + 1));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+    }
+
+    expect(watch.calls.at(-1)!.params.resourceVersion).toBe("10");
+    expect(list).toHaveBeenCalledOnce();
+    expect(lost).not.toHaveBeenCalled();
   });
 
   it("fails at once when the API server does not serve the kind, and tries again on the next read", async () => {
@@ -361,5 +407,255 @@ describe("ResourceCache", () => {
         metadata: expect.objectContaining({ name: "b" }),
       }),
     );
+  });
+});
+
+// RefusingWatch opens each watch until refuse is set. It then refuses each
+// new watch as the client does for an answer that is not 200: it calls done
+// with the error before the request resolves. With timeout set, it refuses
+// as a request that got no answer in time.
+class RefusingWatch extends FakeWatch {
+  refuse = false;
+  timeout = false;
+  gone = false;
+  refused = 0;
+  tries = 0;
+  override async watch(
+    path: string,
+    params: Record<string, unknown>,
+    callback: Callback,
+    done: (err: unknown) => void,
+  ) {
+    this.tries++;
+    if (!this.refuse) return super.watch(path, params, callback, done);
+    this.refused++;
+    done(
+      this.timeout
+        ? Object.assign(new Error("timed out"), { name: "TimeoutError" })
+        : this.gone
+          ? Object.assign(new Error("Gone"), { statusCode: 410 })
+          : Object.assign(new Error("Forbidden"), { statusCode: 403 }),
+    );
+    return new AbortController();
+  }
+}
+
+describe("ResourceCache after a watch fails", () => {
+  const notCurrent = /no current list of Environment.*Forbidden/;
+
+  it("answers reads while the watch has watchRecoveryMs to start again", async () => {
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      { list: async () => listOf([item("a")], "1"), watchRecoveryMs: 60_000 },
+      watch,
+    );
+    await cache.objects("Environment");
+
+    watch.refuse = true;
+    watch.calls[0].done(new Error("connection reset"));
+    await vi.waitFor(() => expect(watch.refused).toBeGreaterThan(2));
+
+    expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+  });
+
+  it("refuses reads with the kind and the error once the watch did not start again within watchRecoveryMs", async () => {
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      { list: async () => listOf([item("a")], "1"), watchRecoveryMs: 30 },
+      watch,
+    );
+    await cache.objects("Environment");
+
+    watch.refuse = true;
+    watch.calls[0].done(new Error("connection reset"));
+
+    await vi.waitFor(() =>
+      expect(cache.objects("Environment")).rejects.toThrow(notCurrent),
+    );
+  });
+
+  it("counts a watch that gets no answer in time as failed", async () => {
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      {
+        list: async () => listOf([item("a")], "1"),
+        watchRecoveryMs: 30,
+        timeoutReconnectMs: 1,
+      },
+      watch,
+    );
+    await cache.objects("Environment");
+
+    watch.refuse = true;
+    watch.timeout = true;
+    watch.calls[0].done(null);
+
+    await vi.waitFor(() =>
+      expect(cache.objects("Environment")).rejects.toThrow(
+        /no current list of Environment/,
+      ),
+    );
+  });
+
+  it("after a failure, watches again only after a new list, and is current with the objects of that list", async () => {
+    let answer: (list: KubernetesListObject<KubernetesObject>) => void;
+    const lists = [
+      Promise.resolve(listOf([item("a")], "1")),
+      new Promise<KubernetesListObject<KubernetesObject>>(
+        (resolve) => (answer = resolve),
+      ),
+    ];
+    const list = vi.fn(() => lists.shift() ?? Promise.resolve(listOf([], "9")));
+    const { cache, watch } = newCache({
+      list,
+      watchRecoveryMs: 30,
+      syncTimeoutMs: 60_000,
+    });
+    await cache.objects("Environment");
+    watch.calls[0].done(new Error("connection reset"));
+    await vi.waitFor(() =>
+      expect(cache.objects("Environment")).rejects.toThrow(
+        /no current list of Environment/,
+      ),
+    );
+
+    // A watch that the API server accepts does not show what changed in the
+    // meantime. The new list does.
+    await expect(cache.objects("Environment")).rejects.toThrow(
+      /no current list of Environment/,
+    );
+    expect(watch.calls).toHaveLength(1);
+
+    answer!(listOf([item("a"), item("b")], "2"));
+    await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
+
+    expect(names(await cache.objects("Environment"))).toEqual(["a", "b"]);
+    expect(watch.calls[1].params.resourceVersion).toBe("2");
+  });
+
+  it("counts a watch that the API server refuses with 410 Gone as failed, and reads the old list only within the limit", async () => {
+    const lists = [
+      Promise.resolve(listOf([item("a")], "1")),
+      new Promise<KubernetesListObject<KubernetesObject>>(() => {}),
+    ];
+    const list = vi.fn(() => lists.shift()!);
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      {
+        list,
+        watchRecoveryMs: 30,
+        syncTimeoutMs: 60_000,
+        timeoutReconnectMs: 1,
+      },
+      watch,
+    );
+    await cache.objects("Environment");
+
+    watch.refuse = true;
+    watch.gone = true;
+    watch.calls[0].done(null);
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    await vi.waitFor(() =>
+      expect(cache.objects("Environment")).rejects.toThrow(
+        /no current list of Environment/,
+      ),
+    );
+  });
+
+  it.each([
+    ["an ERROR event of 410 Gone", { phase: "ERROR", code: 410 }],
+    ["an ERROR event of another code", { phase: "ERROR", code: 500 }],
+    ["a timeout for no data", { timeout: true }],
+  ])(
+    "counts a watch that ends with %s as failed, and reads the old list only within the limit",
+    async (_, end) => {
+      const lists = [
+        Promise.resolve(listOf([item("a")], "1")),
+        new Promise<KubernetesListObject<KubernetesObject>>(() => {}),
+      ];
+      const list = vi.fn(() => lists.shift()!);
+      const { cache, watch } = newCache({
+        list,
+        watchRecoveryMs: 300,
+        syncTimeoutMs: 60_000,
+        timeoutReconnectMs: 1,
+      });
+      await cache.objects("Environment");
+
+      if ("timeout" in end) {
+        watch.calls[0].done(
+          Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+        );
+      } else {
+        watch.calls[0].callback(end.phase, {
+          code: end.code,
+          message: "the watch broke",
+        });
+        watch.calls[0].done(null);
+      }
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2), {
+        interval: 1,
+      });
+      expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+
+      await vi.waitFor(() =>
+        expect(cache.objects("Environment")).rejects.toThrow(
+          /no current list of Environment/,
+        ),
+      );
+      expect(watch.calls).toHaveLength(1);
+    },
+  );
+
+  it("stays current while each watch ends at its request timeout and starts again", async () => {
+    const { cache, watch } = newCache({
+      list: async () => listOf([item("a")], "1"),
+      watchRecoveryMs: 20,
+      timeoutReconnectMs: 1,
+    });
+    await cache.objects("Environment");
+
+    for (let closes = 1; closes <= 5; closes++) {
+      watch.calls[closes - 1].done(
+        Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+      );
+      await vi.waitFor(() => expect(watch.calls).toHaveLength(closes + 1));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+  });
+
+  it("ends each subscription once with the error, and refuses a new one until a watch starts again", async () => {
+    const watch = new RefusingWatch();
+    const { cache } = newCache(
+      { list: async () => listOf([item("a")], "1"), watchRecoveryMs: 30 },
+      watch,
+    );
+    const listener = vi.fn();
+    const lost = vi.fn();
+    await cache.subscribe("Environment", listener, lost);
+
+    watch.refuse = true;
+    watch.calls[0].done(new Error("connection reset"));
+    await vi.waitFor(() => expect(lost).toHaveBeenCalled());
+    await expect(cache.subscribe("Environment", vi.fn())).rejects.toThrow(
+      notCurrent,
+    );
+
+    watch.refuse = false;
+    await vi.waitFor(() => expect(watch.calls).toHaveLength(2), {
+      timeout: 5_000,
+    });
+    watch.calls[1].callback("ADDED", {
+      metadata: { name: "b", resourceVersion: "2" },
+    });
+    const { snapshot } = await cache.subscribe("Environment", vi.fn());
+
+    expect(lost).toHaveBeenCalledOnce();
+    expect(lost.mock.calls[0][0].message).toMatch(notCurrent);
+    expect(listener).not.toHaveBeenCalled();
+    expect(names(snapshot)).toEqual(["a", "b"]);
   });
 });

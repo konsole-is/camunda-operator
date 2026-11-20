@@ -2,8 +2,21 @@ import "server-only";
 import { z } from "zod";
 import { apiVersionOf, KindMap, type KindName } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { equalJSON } from "@/lib/policy";
-import { existsError } from "./errors";
+import {
+  type BackupLike,
+  CLEANUP_FINALIZER,
+  claimObserved,
+  type ClaimState,
+  deletionPolicyOf,
+  type DeletionPolicy,
+  equalJSON,
+  requestsBehind,
+  type RequestState,
+  requestsWithout,
+  runningBackup,
+} from "@/lib/policy";
+import { existsError, staleError } from "./errors";
+import { MAX_KEEP_PATHS } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -12,9 +25,10 @@ import type {
   KubeObject,
   ObjectRef,
   Preview,
+  WriteMode,
   WriteResult,
 } from "./types";
-import { firstExisting, getWriter, listObjects } from "./writer";
+import { firstExisting, getWriter, listObjects, readLive } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
 export const kubeObjectSchema: z.ZodType<KubeObject> = z.looseObject({
@@ -43,10 +57,69 @@ const refKeySchema = z.templateLiteral([
   z.string(),
 ]);
 
+const fieldListSchema = z
+  .record(refKeySchema, z.array(z.string().min(1)).min(1))
+  .optional();
+
+// A client sends keep, so the schema bounds it.
+const keepListSchema = z
+  .record(
+    refKeySchema,
+    z
+      .array(
+        z
+          .string()
+          .min(1)
+          .refine((path) => !path.includes("["), {
+            message: "keep names paths through maps only, not a list item.",
+          }),
+      )
+      .min(1)
+      .max(MAX_KEEP_PATHS),
+  )
+  .optional();
+
+// takeOverIssues gives the issues of the field list name of c: each key
+// names an applied object with a precondition, no field twice.
+function takeOverIssues(
+  c: Change,
+  name: "takeOver" | "remove" | "keep",
+): { message: string; path: string[] }[] {
+  const lists = c[name];
+  if (lists === undefined) return [];
+  const applied: string[] = c.apply.map((o) => refKey(refOf(o)));
+  const keys = Object.keys(lists) as RefKey[];
+  const issues = [];
+  const keep = name === "keep";
+  if (
+    !keys.every(
+      (key) => applied.includes(key) && c.preconditions?.[key] !== undefined,
+    )
+  )
+    issues.push({
+      message: keep
+        ? "keep names an object that the change updates."
+        : "A take-over names an object that the change updates.",
+      path: [name],
+    });
+  if (keys.some((key) => new Set(lists[key]).size !== lists[key].length))
+    issues.push({
+      message: keep
+        ? "keep lists each path once."
+        : "A take-over lists each field once.",
+      path: [name],
+    });
+  return issues;
+}
+
 /**
  * changeSchema accepts a Change with an intent and at least one object to
  * apply or delete. Each key of create names an applied object that has no
- * precondition. Each key of uids names a deleted object.
+ * precondition. Each key of uids and of generations names a deleted object.
+ * Each key of takeOver, remove, and keep names an applied object with a
+ * precondition, and lists each field once. A change with takeOver or
+ * remove does not set force, not even to false. keep holds at most 64
+ * paths for an object, and no path of a list item.
  */
 export const changeSchema: z.ZodType<Change> = z
   .object({
@@ -55,9 +128,24 @@ export const changeSchema: z.ZodType<Change> = z
     delete: z.array(objectRefSchema).optional(),
     preconditions: z.record(refKeySchema, z.string()).optional(),
     uids: z.record(refKeySchema, z.string().min(1)).optional(),
+    generations: z.record(refKeySchema, z.number().int().positive()).optional(),
     create: z.array(refKeySchema).optional(),
     force: z.boolean().optional(),
+    takeOver: fieldListSchema,
+    remove: fieldListSchema,
+    keep: keepListSchema,
     directOnly: z.boolean().optional(),
+  })
+  .superRefine((c, ctx) => {
+    for (const name of ["takeOver", "remove", "keep"] as const)
+      for (const issue of takeOverIssues(c, name))
+        ctx.addIssue({ code: "custom", ...issue });
+    if (c.force !== undefined && (c.takeOver ?? c.remove) !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        message: "force and a take-over do not go together.",
+        path: ["force"],
+      });
   })
   .refine((c) => c.apply.length + (c.delete?.length ?? 0) > 0, {
     message: "The change has no object to apply or delete.",
@@ -83,6 +171,18 @@ export const changeSchema: z.ZodType<Change> = z
     },
   )
   .refine(
+    (c) => {
+      const deleted: string[] = (c.delete ?? []).map(refKey);
+      return Object.keys(c.generations ?? {}).every((key) =>
+        deleted.includes(key),
+      );
+    },
+    {
+      message: "generations names an object that the change does not delete.",
+      path: ["generations"],
+    },
+  )
+  .refine(
     (c) =>
       (c.create ?? []).every((key) => c.preconditions?.[key] === undefined),
     {
@@ -91,27 +191,383 @@ export const changeSchema: z.ZodType<Change> = z
     },
   );
 
+/** ClaimKind is the kind of the claim of a cluster or of a management plane. */
+export type ClaimKind = "CamundaClusterClaim" | "CamundaManagementClusterClaim";
+
 const CLAIM_KINDS: readonly string[] = [
   "CamundaClusterClaim",
   "CamundaManagementClusterClaim",
-];
+] satisfies ClaimKind[];
 
 /**
- * claimChangeSchema accepts a Change that applies exactly one claim of a
- * cluster or a management plane, with a namespace, and that has no delete,
- * no create, no force, and no directOnly.
+ * claimChangeSchema accepts a Change that applies exactly one claim of
+ * kind, with a namespace, and that has no delete, no create, no force, and
+ * no directOnly. It allows takeOver and remove.
  */
-export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
-  (c) =>
-    c.apply.length === 1 &&
-    CLAIM_KINDS.includes(c.apply[0].kind) &&
-    c.apply[0].metadata.namespace !== undefined &&
-    c.delete === undefined &&
-    c.create === undefined &&
-    c.force === undefined &&
-    c.directOnly === undefined,
-  { message: "The change must apply one claim and nothing else." },
+export function claimChangeSchema(kind: ClaimKind): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) =>
+      c.apply.length === 1 &&
+      c.apply[0].kind === kind &&
+      c.apply[0].metadata.namespace !== undefined &&
+      c.delete === undefined &&
+      c.create === undefined &&
+      c.force === undefined &&
+      c.directOnly === undefined,
+    { message: `The change must apply one ${kind} and nothing else.` },
+  );
+}
+
+/**
+ * claimDeleteSchema accepts a Change that deletes exactly one claim of kind
+ * and nothing else: an empty apply, one delete ref with the kind and its
+ * apiVersion, a namespace, and a name and namespace other than "." and
+ * "..", the UID and the generation of that claim in uids and generations,
+ * and no preconditions, create, force, takeOver, remove, or directOnly. A
+ * delete needs no take-over: field ownership does not gate a delete.
+ */
+export function claimDeleteSchema(kind: ClaimKind): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) => {
+      const ref = c.delete?.[0];
+      return (
+        c.apply.length === 0 &&
+        c.delete?.length === 1 &&
+        ref !== undefined &&
+        ref.kind === kind &&
+        // The direct writer reports a delete that answers 404 as done, so a
+        // wrong apiVersion would report a delete that never happened.
+        ref.apiVersion === apiVersionOf(KindMap[ref.kind as KindName]) &&
+        ref.namespace !== undefined &&
+        // runClaimDelete and previewClaimDelete read the claim by its path
+        // before the writer checks the ref, and pathSegment throws for "."
+        // and "..".
+        ![ref.name, ref.namespace].some(
+          (part) => part === "." || part === "..",
+        ) &&
+        c.uids?.[refKey(ref)] !== undefined &&
+        c.generations?.[refKey(ref)] !== undefined &&
+        c.preconditions === undefined &&
+        c.create === undefined &&
+        c.force === undefined &&
+        c.takeOver === undefined &&
+        c.remove === undefined &&
+        c.directOnly === undefined
+      );
+    },
+    { message: `The change must delete one ${kind} and nothing else.` },
+  );
+}
+
+/**
+ * CLAIM_DELETE_ATTEMPTS is how many deletes runClaimDelete sends before it
+ * refuses a claim whose status keeps changing. A spec change makes the
+ * claim controller write the status once, and once more for each request
+ * that a plugin reports again.
+ */
+export const CLAIM_DELETE_ATTEMPTS = 5;
+
+/**
+ * runClaimDelete is runChange with claimDeleteSchema of kind, for the
+ * delete of a claim. A status write of the claim since the review does not refuse it.
+ * It refuses with Stale, and deletes nothing, when the claim is gone, has
+ * another UID, or has another generation than the change names, that is
+ * when its spec changed since the review. It refuses with Invalid a claim
+ * that is not being deleted and lost its cleanup finalizer after the claim
+ * controller recorded its policy. For a claim that is not being deleted, in
+ * Git mode or without the cleanup finalizer, it refuses with Stale until
+ * the claim controller read the current generation and while a request of
+ * the claim lacks its deletion policy. In direct mode it deletes at the
+ * resourceVersion of a fresh read, and reads again after a conflict, at
+ * most CLAIM_DELETE_ATTEMPTS times. Then it refuses with Stale and says
+ * that the claim kept changing. In Git mode the Git writer checks the UID
+ * and the generation. A failed read gives Unavailable.
+ */
+export async function runClaimDelete(
+  input: unknown,
+  kind: ClaimKind,
+): Promise<WriteResult> {
+  const parsed = claimDeleteSchema(kind).safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  const change = parsed.data;
+  const ref = change.delete![0];
+  try {
+    const writer = await getWriter();
+    for (let attempt = 0; attempt < CLAIM_DELETE_ATTEMPTS; attempt++) {
+      const live = await readLive(ref);
+      const refusal =
+        reviewRefusalOf(change, ref, live) ??
+        (await cleanupRefusalOf(ref, live!, writer.mode));
+      if (refusal !== undefined) return { ok: false, errors: [refusal] };
+      if (writer.mode === "git") return await writer.apply(change);
+      const result = await writer.apply({
+        ...change,
+        preconditions: { [refKey(ref)]: live!.metadata.resourceVersion ?? "" },
+      });
+      if (result.ok || !result.errors.every((e) => e.code === "Stale"))
+        return result;
+    }
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
+  }
+  return {
+    ok: false,
+    errors: [
+      {
+        code: "Stale",
+        message: `The ${ref.kind} ${ref.name} kept changing during the delete. Delete it again.`,
+        ref,
+      },
+    ],
+  };
+}
+
+/**
+ * previewClaimDelete is runPreview with claimDeleteSchema of kind. It gives no
+ * objects and the refusal of runClaimDelete when the claim is gone, has
+ * another UID or generation, or lost its cleanup finalizer.
+ */
+export async function previewClaimDelete(
+  input: unknown,
+  kind: ClaimKind,
+): Promise<Preview> {
+  const parsed = claimDeleteSchema(kind).safeParse(input);
+  if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
+  const change = parsed.data;
+  const ref = change.delete![0];
+  try {
+    const live = await readLive(ref);
+    // A policy write that corrects the requests can follow the preview.
+    const refusal =
+      reviewRefusalOf(change, ref, live) ??
+      (await cleanupRefusalOf(ref, live!, "preview"));
+    if (refusal !== undefined) return { objects: [], errors: [refusal] };
+    return await (await getWriter()).preview(change);
+  } catch (error) {
+    return { objects: [], errors: [unavailable(error)] };
+  }
+}
+
+function reviewRefusalOf(
+  change: Change,
+  ref: ObjectRef,
+  live: KubeObject | undefined,
+): ApiError | undefined {
+  if (live === undefined)
+    return {
+      code: "Stale",
+      message: `The ${ref.kind} ${ref.name} does not exist.`,
+      ref,
+    };
+  const key = refKey(ref);
+  return live.metadata.uid !== change.uids?.[key] ||
+    live.metadata.generation !== change.generations?.[key]
+    ? staleError(ref)
+    : undefined;
+}
+
+// check is "preview" for the dry run, else the mode of the writer.
+async function cleanupRefusalOf(
+  ref: ObjectRef,
+  live: KubeObject,
+  check: "preview" | WriteMode,
+): Promise<ApiError | undefined> {
+  const claim = live as unknown as ClaimState & {
+    metadata: { deletionTimestamp?: string };
+    spec?: { deletionPolicy?: DeletionPolicy | "" };
+  };
+  if (claim.metadata.deletionTimestamp !== undefined) return undefined;
+  const finalized = (claim.metadata.finalizers ?? []).includes(
+    CLEANUP_FINALIZER,
+  );
+  if (claim.status?.resolvedPolicy !== undefined && !finalized)
+    return {
+      code: "Invalid",
+      message: `The ${ref.kind} ${ref.name} has no finalizer ${CLEANUP_FINALIZER} now. The operator adds it back on its next pass of the claim. Delete the claim again after that.`,
+      ref,
+    };
+  // The cleanup finalizer writes the policy of the claim on each request
+  // that is not being deleted, before it deletes any. A claim without its
+  // finalizer gives no policy to its requests on delete.
+  if (check === "preview" || (check === "direct" && finalized))
+    return undefined;
+  if (!claimObserved(claim))
+    return {
+      code: "Stale",
+      message: `The operator has not read the deletion policy of the ${ref.kind} ${ref.name} yet. Try again in a moment.`,
+      ref,
+    };
+  const behind = requestsWithout(
+    claim,
+    (await listObjects(
+      "PluginRequest",
+      ref.namespace!,
+    )) as unknown as RequestState[],
+    deletionPolicyOf(claim.spec?.deletionPolicy, claim.status?.resolvedPolicy),
+  );
+  return behind.length === 0
+    ? undefined
+    : { code: "Stale", message: requestsBehind(claim, behind), ref };
+}
+
+const CLUSTER_CLAIM_API_VERSION = apiVersionOf(KindMap.CamundaClusterClaim);
+
+/**
+ * claimBatchChangeSchema accepts a Change that applies one or more
+ * CamundaClusterClaims, each with a namespace, the apiVersion of the kind,
+ * and a precondition, no claim twice, and that has no delete, no create, no
+ * force, no remove, and no directOnly. It allows takeOver: a move clears no
+ * field.
+ */
+export const claimBatchChangeSchema: z.ZodType<Change> = changeSchema.refine(
+  (c) => {
+    const keys = c.apply.map((o) => refKey(refOf(o)));
+    return (
+      c.apply.every(
+        (o, i) =>
+          o.kind === "CamundaClusterClaim" &&
+          o.apiVersion === CLUSTER_CLAIM_API_VERSION &&
+          o.metadata.namespace !== undefined &&
+          c.preconditions?.[keys[i]] !== undefined,
+      ) &&
+      new Set(keys).size === keys.length &&
+      c.delete === undefined &&
+      c.create === undefined &&
+      c.force === undefined &&
+      c.remove === undefined &&
+      c.directOnly === undefined
+    );
+  },
+  { message: "The change must apply cluster claims and nothing else." },
 );
+
+/**
+ * runClaimMove is runChange with claimBatchChangeSchema, for a move of
+ * cluster claims to a release. It refuses the whole change and writes
+ * nothing when a claim does not exist (Stale), changed since the page read
+ * it (Stale), differs from the live claim outside spec.releaseRef,
+ * spec.allowVersionDowngrade, status, and the metadata that the API server
+ * sets (Invalid), or has a cluster with a backup of either kind that has
+ * not ended (Stale, naming the backup). Each such error names the claim in
+ * ref. When these checks cannot read the claims or the backups, it gives
+ * Unavailable.
+ */
+export async function runClaimMove(input: unknown): Promise<WriteResult> {
+  const parsed = claimBatchChangeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  try {
+    const refusals = await moveRefusalsOf(parsed.data);
+    if (refusals.length > 0) return { ok: false, errors: refusals };
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
+  }
+  return runChange(parsed.data, claimBatchChangeSchema);
+}
+
+/**
+ * previewClaimMove is runPreview with claimBatchChangeSchema. It gives no
+ * objects and the errors of runClaimMove when that refuses the change.
+ */
+export async function previewClaimMove(input: unknown): Promise<Preview> {
+  const parsed = claimBatchChangeSchema.safeParse(input);
+  if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
+  try {
+    const refusals = await moveRefusalsOf(parsed.data);
+    if (refusals.length > 0) return { objects: [], errors: refusals };
+  } catch (error) {
+    return { objects: [], errors: [unavailable(error)] };
+  }
+  return runPreview(parsed.data, claimBatchChangeSchema);
+}
+
+const MOVE_FIELDS = ["releaseRef", "allowVersionDowngrade"];
+
+async function moveRefusalsOf(change: Change): Promise<ApiError[]> {
+  const listed = new Map<string, Promise<KubeObject[]>>();
+  const list = (kind: KindName, namespace: string) => {
+    const key = `${kind}/${namespace}`;
+    if (!listed.has(key)) listed.set(key, listObjects(kind, namespace));
+    return listed.get(key)!;
+  };
+  const errors: ApiError[] = [];
+  for (const claim of change.apply) {
+    const ref = refOf(claim);
+    const namespace = ref.namespace!;
+    const live = (await list("CamundaClusterClaim", namespace)).find(
+      (c) => c.metadata.name === ref.name,
+    );
+    if (live === undefined) {
+      errors.push({
+        code: "Stale",
+        message: `The ${ref.kind} ${ref.name} does not exist.`,
+        ref,
+      });
+      continue;
+    }
+    if (live.metadata.resourceVersion !== change.preconditions?.[refKey(ref)]) {
+      errors.push(staleError(ref));
+      continue;
+    }
+    if (!movesOnly(claim, live)) {
+      errors.push({
+        code: "Invalid",
+        message:
+          "A move can change only spec.releaseRef and spec.allowVersionDowngrade of a claim.",
+        ref,
+      });
+      continue;
+    }
+    const backups = (
+      await Promise.all(
+        (BACKUP_KINDS as KindName[]).map((kind) => list(kind, namespace)),
+      )
+    ).flat() as unknown as BackupLike[];
+    const backup = runningBackup(
+      { metadata: { namespace, name: ref.name } },
+      backups,
+    );
+    if (backup !== undefined) {
+      const phase = backups.find(
+        (b) => b.kind === backup.kind && b.metadata?.name === backup.name,
+      )?.status?.phase;
+      errors.push({
+        code: "Stale",
+        message: `Backup ${backup.name} of the cluster is ${phase === "Running" ? "running" : "pending"}. Move the cluster after it ends.`,
+        ref,
+      });
+    }
+  }
+  return errors;
+}
+
+function movesOnly(claim: KubeObject, live: KubeObject): boolean {
+  const spec = (claim.spec ?? {}) as Record<string, unknown>;
+  const liveSpec = (live.spec ?? {}) as Record<string, unknown>;
+  const downgrade = spec.allowVersionDowngrade;
+  return (
+    typeof spec.releaseRef === "string" &&
+    spec.releaseRef !== "" &&
+    (equalJSON(downgrade, liveSpec.allowVersionDowngrade) ||
+      typeof downgrade === "string") &&
+    equalJSON(outsideMove(claim), outsideMove(live))
+  );
+}
+
+function outsideMove(claim: KubeObject): unknown {
+  const metadata = { ...claim.metadata };
+  for (const key of SERVER_METADATA) delete metadata[key];
+  const spec = { ...((claim.spec ?? {}) as Record<string, unknown>) };
+  for (const field of MOVE_FIELDS) delete spec[field];
+  return { ...claim, status: undefined, metadata, spec };
+}
+
+const SERVER_METADATA = [
+  "managedFields",
+  "resourceVersion",
+  "uid",
+  "creationTimestamp",
+  "generation",
+];
 
 const BACKUP_KINDS: readonly string[] = [
   "LogicalBackupElasticsearch",
@@ -126,8 +582,9 @@ const BACKUP_METADATA: readonly string[] = [
 ];
 
 /**
- * backupChangeSchema accepts a Change with directOnly, no force, and no
- * preconditions that does one of two things for cluster. It creates one
+ * backupChangeSchema accepts a Change with directOnly and no force,
+ * preconditions, takeOver, or remove that does one of two things for
+ * cluster. It creates one
  * backup or restore in the namespace of cluster, listed in create, with
  * only name, namespace, labels, and annotations in its metadata. The spec
  * of a backup of either kind is exactly { clusterRef: { name } }, of a
@@ -148,7 +605,9 @@ export function backupChangeSchema(cluster: {
       const plain =
         c.directOnly === true &&
         c.force === undefined &&
-        c.preconditions === undefined;
+        c.preconditions === undefined &&
+        c.takeOver === undefined &&
+        c.remove === undefined;
       if (!plain) return false;
       if (c.apply.length === 1 && c.delete === undefined) {
         const object = c.apply[0];
@@ -368,7 +827,8 @@ function specFits(kind: string, spec: unknown, cluster: string): boolean {
  * createChangeSchema accepts a Change that applies one claim of either
  * kind with a namespace, optionally after the Namespace of that namespace,
  * whose create lists the key of each applied object, and that has no
- * delete, no preconditions, no force, and no directOnly.
+ * delete, no preconditions, no force, no takeOver, no remove, and no
+ * directOnly. A new object has no other field manager.
  */
 export const createChangeSchema: z.ZodType<Change> = changeSchema.refine(
   (c) => {
@@ -394,6 +854,8 @@ export const createChangeSchema: z.ZodType<Change> = changeSchema.refine(
       c.delete === undefined &&
       c.preconditions === undefined &&
       c.force === undefined &&
+      c.takeOver === undefined &&
+      c.remove === undefined &&
       c.directOnly === undefined
     );
   },
@@ -410,14 +872,15 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
 
 /**
  * adminChangeSchema accepts a Change of a Setup page. It allows deletes,
- * preconditions, create, and force, under these rules. Each object that it
- * applies or deletes has a kind of kinds, with the apiVersion of that
- * kind. An object of a cluster-scoped kind has no namespace, and an object
- * of a namespaced kind has a namespace of namespaces. Each delete, and each
- * apply that create does not list, has a precondition. force is allowed
- * only on a change whose applies are all updates and that deletes nothing.
- * An applied object holds no status, and its metadata holds only name,
- * namespace, labels, and annotations. directOnly is refused.
+ * preconditions, create, takeOver, remove, and keep, under these rules. Each
+ * object that it applies or deletes has a kind of kinds, with the
+ * apiVersion of that kind. An object of a cluster-scoped kind has no
+ * namespace, and an object of a namespaced kind has a namespace of
+ * namespaces. Each delete, and each apply that create does not list, has a
+ * precondition. takeOver, remove, and keep name only updates. An applied object
+ * holds no status, and its metadata holds only name, namespace, labels,
+ * and annotations. force and directOnly are refused: a page takes over a
+ * field of another tool only through the lists.
  */
 export function adminChangeSchema(
   kinds: readonly KindName[],
@@ -453,8 +916,7 @@ export function adminChangeSchema(
             (created.includes(refKey(refOf(o))) || guarded(refKey(refOf(o)))),
         ) &&
         (c.delete ?? []).every((r) => placed(r) && guarded(refKey(r))) &&
-        (c.force === undefined ||
-          (created.length === 0 && (c.delete ?? []).length === 0)) &&
+        c.force === undefined &&
         c.directOnly === undefined
       );
     },
@@ -465,7 +927,7 @@ export function adminChangeSchema(
 /**
  * namespaceLabelChangeSchema accepts a Change that applies exactly one
  * Namespace, with a precondition on that Namespace, with directOnly true,
- * and with no delete and no force. Besides metadata.name, the Namespace
+ * and with no delete, force, takeOver, or remove. Besides metadata.name, the Namespace
  * holds only string maps of labels and annotations. The Namespace may
  * carry the resourceVersion that the page read. The label
  * ENVIRONMENT_LABEL has a non-empty string value.
@@ -478,7 +940,9 @@ export const namespaceLabelChangeSchema: z.ZodType<Change> =
       c.preconditions?.[refKey(refOf(c.apply[0]))] !== undefined &&
       c.directOnly === true &&
       c.delete === undefined &&
-      c.force === undefined,
+      c.force === undefined &&
+      c.takeOver === undefined &&
+      c.remove === undefined,
     {
       message:
         "The change must write only the labels and annotations of one namespace.",
@@ -552,7 +1016,8 @@ export async function runPreview(
   }
 }
 
-function issuesOf(error: z.ZodError): ApiError[] {
+/** issuesOf gives one Invalid error for each issue of a refused input, as runChange and runPreview return them. */
+export function issuesOf(error: z.ZodError): ApiError[] {
   return error.issues.map((issue) => ({
     code: "Invalid",
     message: issue.message,

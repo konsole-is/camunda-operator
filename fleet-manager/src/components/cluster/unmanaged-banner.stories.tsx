@@ -9,3 +9,8 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = { name: "Default" };
+
+export const ManagementPlane: Story = {
+  name: "Management plane",
+  args: { subject: "management plane" },
+};

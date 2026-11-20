@@ -41,6 +41,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
+	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementclusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -81,16 +82,20 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
-// Reconcile converges a CamundaManagementClusterClaim. A failed precheck
-// reports its reason on Ready and writes nothing else. The first pass that
-// passes the precheck adds the finalizer, records status.environment and
-// status.resolvedPolicy, and writes no resource, so no request exists before
-// the policy of the claim does. Later passes apply the requests, then the
-// plane, and set Ready from RequestsReady and ManagementClusterReady. A
-// deleted claim reports Ready=False with reason Deleting until nothing that
-// it generated is left, or with reason NotAllowed while a selected
-// registration does not support its deletion policy. Status is written at
-// most once per reconcile.
+// Reconcile converges a CamundaManagementClusterClaim. Before the precheck, a
+// pass of a live claim that recorded its policy adds the finalizer back when
+// it is missing, and writes the deletion policy on the requests. When the
+// policy is Orphan and a selected registration does not support it or does
+// not exist, the pass reports NotAllowed instead of writing the policy,
+// before every precheck refusal. A failed precheck reports its reason on
+// Ready. The first pass that passes the precheck adds the finalizer and
+// records status.environment and status.resolvedPolicy, or reports NotAllowed
+// for an unsupported deletion policy. It applies no request and no plane.
+// Later passes apply the requests, then the plane, and set Ready from
+// RequestsReady and ManagementClusterReady. A deleted claim reports
+// Ready=False with reason Deleting until nothing that it generated is left,
+// or with reason NotAllowed while a selected registration does not support
+// its deletion policy. Status is written at most once per reconcile.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var claim fleetv1alpha1.CamundaManagementClusterClaim
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &claim); err != nil {
@@ -144,8 +149,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, nil
 	}
 
-	res, err := r.preCheck(ctx, &claim)
+	// When a claim is deleted with foreground propagation, the garbage
+	// collector can delete its requests before this controller sees the
+	// delete. So the requests get the current policy before a check can
+	// stop the pass.
 	var failure *conditions.PreCheckFailure
+	if claim.Status.ResolvedPolicy != nil {
+		err := r.prepareDeletion(ctx, &claim)
+		switch {
+		case apierrors.IsConflict(err):
+			return ctrl.Result{RequeueAfter: ownerstatus.ConflictRequeue}, nil
+		case errors.As(err, &failure):
+			conditions.Stage(&claim, conditions.Failed(&claim, failure))
+			return ctrl.Result{}, nil
+		case err != nil:
+			return ctrl.Result{}, err
+		}
+	}
+
+	res, err := r.preCheck(ctx, &claim)
 	if errors.As(err, &failure) {
 		conditions.Stage(&claim, conditions.Failed(&claim, failure))
 		return ctrl.Result{}, nil
@@ -157,6 +179,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// Record, then act: the flush of this pass writes the policy, and the
 	// next pass reads it back before it writes a request.
 	if claim.Status.ResolvedPolicy == nil {
+		err := claimpolicy.CheckDeletionPolicy(
+			claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, &res.resolution.Policy),
+			claim.Spec.Plugins,
+			res.registrations,
+			claimpolicy.MissingPasses,
+		)
+		if errors.As(err, &failure) {
+			conditions.Stage(&claim, conditions.Failed(&claim, failure))
+			return ctrl.Result{}, nil
+		}
+
 		return ctrl.Result{}, r.recordSnapshot(ctx, &claim, res)
 	}
 

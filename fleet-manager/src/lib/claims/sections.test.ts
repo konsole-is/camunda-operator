@@ -156,6 +156,29 @@ describe("sectionComponents", () => {
     });
   });
 
+  it("gives no condition for a request whose conditions are not a list of conditions", () => {
+    for (const conditions of ["Ready", [null, "Ready"]]) {
+      const broken = request("team-a", "orders-es");
+      broken.status = { conditions } as never;
+      const [component] = sectionComponents({
+        claim: claimOf(
+          [sel("secondary-storage")],
+          [
+            {
+              section: "secondary-storage",
+              registration: "secondary-storage-option",
+              name: "orders-es",
+            },
+          ],
+        ),
+        sections: [section("secondary-storage", "Secondary storage", 50)],
+        requests: [broken],
+      });
+      expect(component.request).toBe(broken);
+      expect(component.condition).toBeUndefined();
+    }
+  });
+
   it("takes the request of each selection of a Many section by its registration", () => {
     const result = sectionComponents({
       claim: claimOf(
