@@ -26,6 +26,7 @@ import {
 import type { OpenAPISchema } from "@/lib/schema";
 import { type FieldError, valueAt, without, withValue } from "@/lib/session";
 import { type SettingsGroup, settingsGroupsOf } from "./settings";
+import { type Process, runsOwnWorkload } from "./topology";
 
 /**
  * Setting is one editor of a settings group. steps is where a change goes,
@@ -63,8 +64,8 @@ export type Setting = {
 
 /**
  * MergedError is a limit below its request in the merged value of a
- * setting. blocks is false when the value does not apply now, such as the
- * resources of an embedded app.
+ * setting. blocks is false when the value does not apply now: the process
+ * runs embedded, or Connectors are not enabled.
  */
 export type MergedError = {
   message: string;
@@ -154,14 +155,19 @@ export function settingsOf(input: {
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
     const keyed = "claim" in input && editor.kind === "resources";
+    // The operator gives the resources of a process only to its own
+    // workload.
+    const applies =
+      !COMPONENTS.includes(group.component) ||
+      runsOwnWorkload(spec as CamundaClusterSpec, group.component as Process);
     const merged: MergedError[] = keyed
       ? limitsBelowRequests((value ?? {}) as Resources).map((below) => ({
-          message: mergedLimitError(below, group, (side) => {
+          message: mergedLimitError(below, group, applies, (side) => {
             const part = [...names, side, below.resource];
             return mine.find(({ names: f }) => sameNames(f, part))?.field.state;
           }),
           belowRequest: below,
-          blocks: !group.embedded,
+          blocks: applies,
         }))
       : [];
     const checked: Setting = {
@@ -202,11 +208,12 @@ export function settingsOf(input: {
 }
 
 // mergedLimitError returns the message of a limit below its request in
-// group. stateOf gives the state of the requests or the limits of the
+// group, whose resources apply now or not. stateOf gives the state of the requests or the limits of the
 // resource.
 function mergedLimitError(
   below: LimitBelowRequest,
   group: SettingsGroup,
+  applies: boolean,
   stateOf: (side: "requests" | "limits") => FieldState | undefined,
 ): string {
   const states = [stateOf("limits"), stateOf("requests")];
@@ -217,9 +224,11 @@ function mergedLimitError(
     states.some((state) => state?.kind === "preset")
       ? " Pick another preset, or ask your admin to correct the preset."
       : "";
-  const later = group.embedded
-    ? ` Correct it before ${group.label} runs standalone.`
-    : "";
+  const later = applies
+    ? ""
+    : group.embedded
+      ? ` Correct it before ${group.label} runs standalone.`
+      : ` Correct it before ${group.label} is turned on.`;
   return faultOf(below, states[0], states[1]) + fixed + later;
 }
 

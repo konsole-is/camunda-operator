@@ -364,6 +364,78 @@ describe("settingsOf merged errors", () => {
     expect(zeebe.mergedErrors).toMatchObject([{ blocks: true }]);
   });
 
+  const FAULT = { requests: { cpu: "2" }, limits: { cpu: "1" } };
+  const BOTH =
+    "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
+
+  it.each([
+    ["brokers", "zeebe", "zeebe", {}, true, ""],
+    [
+      "a standalone gateway",
+      "gateway",
+      "gateway",
+      { gateway: { mode: "Standalone" } },
+      true,
+      "",
+    ],
+    [
+      "a gateway embedded in the brokers",
+      "zeebe",
+      "gateway",
+      { gateway: { mode: "Embedded" } },
+      false,
+      " Correct it before Gateway runs standalone.",
+    ],
+    [
+      "a standalone Tasklist",
+      "tasklist",
+      "tasklist",
+      { tasklist: { mode: "Standalone" } },
+      true,
+      "",
+    ],
+    [
+      "Connectors that are enabled",
+      "connectors",
+      "connectors",
+      { connectors: { enabled: true } },
+      true,
+      "",
+    ],
+    [
+      "Connectors that are not enabled",
+      "connectors",
+      "connectors",
+      {},
+      false,
+      " Correct it before Connectors is turned on.",
+    ],
+  ] as const)(
+    "blocks on the resources of %s only when its workload runs",
+    (_, host, process, cluster, blocks, later) => {
+      const resources = setting(
+        processSettings(host, process, {
+          cluster: cluster as SettingsPage["cluster"],
+          preset: { [process]: { resources: FAULT } } as SettingsPage["preset"],
+        }),
+        "resources",
+      );
+      expect(resources.mergedErrors).toEqual([
+        expect.objectContaining({ message: BOTH + later, blocks }),
+      ]);
+    },
+  );
+
+  it("blocks on the resources of the dump", () => {
+    const dump = setting(
+      clusterSettings({ preset: { backup: { dump: { resources: FAULT } } } }),
+      "backup.dump.resources",
+    );
+    expect(dump.mergedErrors).toEqual([
+      expect.objectContaining({ message: BOTH, blocks: true }),
+    ]);
+  });
+
   it("says that a value that no manager owns is already set on the cluster", () => {
     const resources = setting(
       processSettings("zeebe", "zeebe", {
