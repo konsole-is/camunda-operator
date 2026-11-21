@@ -53,6 +53,8 @@ export type ClaimReviewInput = {
   caution?: ReactNode;
   confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
+  /** blocking are reasons that the save cannot go. Each shows as an alert, and the confirm stays disabled while there is one. */
+  blocking?: string[];
 };
 
 /**
@@ -74,9 +76,10 @@ export type ClaimReviewInput = {
  * cleared field of another tool stays in it until the take-over.
  * In Git mode it notes each reset field that the preview keeps.
  *
- * input gives the impacts, the caution, the confirm, and mergedLines from
- * saved: a session whose change gives the claim that the save leaves, as
- * the diff of the claim shows it.
+ * input gives the impacts, the caution, the confirm, mergedLines, and the
+ * blocking messages from saved: a session whose change gives the claim
+ * that the save leaves, as the diff of the claim shows it. It runs again
+ * when the take-over choice changes saved.
  */
 export function ClaimReview<C extends ClaimObject>({
   session,
@@ -206,8 +209,10 @@ export function ClaimReview<C extends ClaimObject>({
     !previewOutcome ||
     !previewOutcome.ok ||
     takeOverOpen(ownership, chosen) ||
-    (writeOutcome !== undefined && !writeOutcome.ok && writeOutcome.stale);
+    (writeOutcome !== undefined && !writeOutcome.ok && writeOutcome.stale) ||
+    (shown.blocking?.length ?? 0) > 0;
   const alerts = [
+    ...(shown.blocking ?? []),
     ...messagesOf(previewOutcome),
     ...messagesOf(writeOutcome),
     ...(checked && mode === "git" ? keptResets(session, checked) : []),

@@ -167,7 +167,8 @@ export function useClusterEdit(): ClusterEdit {
 
 // clusterReview reads saved, the claim that the save leaves, so a reset
 // field that another tool keeps changes nothing in the impacts and the
-// merged diff.
+// merged diff. validate passed on session, so a merged error of saved
+// comes from a value that another tool keeps.
 function clusterReview(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,
@@ -189,8 +190,17 @@ function clusterReview(
       },
     }),
     mergedLines: merged && objectDiff(merged.before.spec, merged.after.spec),
+    blocking:
+      saved === session
+        ? []
+        : mergedErrorsAfter(context, saved).map(
+            (e) => `${e.message} ${KEPT_CAUSE}`,
+          ),
   };
 }
+
+const KEPT_CAUSE =
+  "A value that another tool keeps causes this error, so take over these fields or go back and change the edit.";
 
 const ALLOW_DOWNGRADE: Step[] = [
   { field: "spec" },

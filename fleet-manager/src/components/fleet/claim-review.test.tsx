@@ -25,6 +25,7 @@ import {
   STALE_CLAIM_MESSAGE,
   type ClaimObject,
   type Session,
+  valueAt,
 } from "@/lib/session";
 import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
@@ -538,6 +539,22 @@ describe("ClaimReview", () => {
     await confirm("Save");
   });
 
+  it("shows each blocking message of input as an alert and keeps the confirm off", async () => {
+    const message = "zeebe.resources: The CPU limit is below the request.";
+    review({ input: inputOf({ blocking: [message] }) });
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    expect(screen.getByRole("alert").textContent).toBe(message);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("an empty list of blocking messages changes nothing", async () => {
+    review({ input: inputOf({ blocking: [] }) });
+    await confirm("Save");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("previews the change of the session with its precondition", async () => {
     review();
 
@@ -742,6 +759,61 @@ describe("ClaimReview with fields of another tool", () => {
       ),
     );
     expect(diff().querySelectorAll("del")).toHaveLength(1);
+  });
+
+  it("blocks on the blocking messages of the claim that the save leaves, again after each choice", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": { "f:cluster": { "f:zeebe": { "f:partitions": {} } } },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [] },
+    ];
+    const kept = "Another tool keeps partitions.";
+    review({
+      session: reset.session,
+      input: (saved) => ({
+        impacts: [],
+        blocking:
+          valueAt(claimAfter(saved), partitions) === undefined ? [] : [kept],
+      }),
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toBe(kept);
+    const save = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Save",
+    });
+    expect(save.disabled).toBe(true);
+
+    fireEvent.click(choice());
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(choice());
+    expect(screen.getByRole("alert").textContent).toBe(kept);
+    expect(save.disabled).toBe(true);
   });
 
   it("with the choice, a reset field that the API server defaults shows its default value in the row and the diff", async () => {

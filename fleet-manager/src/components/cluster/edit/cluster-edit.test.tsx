@@ -63,6 +63,14 @@ const schedule: Step[] = [
   { field: "attachments" },
   { field: "backupSchedule" },
 ];
+const zeebeCpu = (side: "requests" | "limits"): Step[] => [
+  { field: "spec" },
+  { field: "cluster" },
+  { field: "zeebe" },
+  { field: "resources" },
+  { field: side },
+  { field: "cpu" },
+];
 const PRECONDITION = "CamundaClusterClaim/team-a/orders";
 
 // Probe is an editor: it changes the claim only through useClusterEdit.
@@ -100,6 +108,12 @@ function Probe() {
         Missing release
       </button>
       <button onClick={() => edit.set(presetRef, "large")}>Large preset</button>
+      <button onClick={() => edit.reset(zeebeCpu("requests"))}>
+        Clear the CPU request
+      </button>
+      <button onClick={() => edit.set(zeebeCpu("limits"), "1")}>
+        Limit the CPU to 1
+      </button>
       <button
         onClick={() => edit.invalid(replicas, "Replicas: Enter 1 or more")}
       >
@@ -871,6 +885,108 @@ describe("ClusterEditProvider", () => {
           .getAttribute("data-variant"),
       ).toBe("destructive"),
     );
+  });
+
+  describe("a save that keeps a CPU request of another tool", () => {
+    const spec = { zeebe: { replicas: 3, resources: { requests: { cpu: "2" } } } };
+    const kubectl = {
+      name: "kubectl",
+      operation: "Apply",
+      kind: "other" as const,
+      known: true,
+    };
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [],
+        cleared: [
+          {
+            path: "spec.cluster.zeebe.resources.requests.cpu",
+            steps: zeebeCpu("requests") as { field: string }[],
+            managers: [kubectl],
+          },
+        ],
+      },
+    ];
+    // context holds a claim whose CPU request kubectl owns, under a preset
+    // whose CPU request is 1.
+    function context(): ClusterSlotContext {
+      const owned = claim("41", { cluster: spec });
+      owned.metadata.managedFields = [
+        {
+          manager: "kubectl",
+          operation: "Apply",
+          fieldsV1: {
+            "f:spec": {
+              "f:cluster": {
+                "f:zeebe": {
+                  "f:resources": { "f:requests": { "f:cpu": {} } },
+                },
+              },
+            },
+          },
+        },
+      ];
+      return slotContext({
+        cluster: cluster(spec),
+        claim: owned,
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { requests: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      });
+    }
+    const message =
+      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A value that another tool keeps causes this error, so take over these fields or go back and change the edit.";
+    const choice = () =>
+      within(dialog()!).getByRole("checkbox", {
+        name: "Take over these fields",
+      });
+    const save = () =>
+      within(dialog()!).getByRole<HTMLButtonElement>("button", {
+        name: "Save",
+      });
+
+    it("refuses the save and names the kept value", async () => {
+      fakeWriter.previews = [{ objects: [], errors: [], ownership }];
+      page(context());
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() => expect(choice()).toBeTruthy());
+      expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
+      expect(save().disabled).toBe(true);
+    });
+
+    it("saves once the user takes the request over, and refuses again when the choice goes off", async () => {
+      fakeWriter.previews = [
+        { objects: [], errors: [], ownership },
+        { objects: [], errors: [] },
+      ];
+      page(context());
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() => expect(choice()).toBeTruthy());
+      fireEvent.click(choice());
+      await waitFor(() => expect(save().disabled).toBe(false));
+      expect(within(dialog()!).queryByRole("alert")).toBeNull();
+
+      fireEvent.click(choice());
+      expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
+      expect(save().disabled).toBe(true);
+    });
   });
 
   it("a claim update that changes a field with a pending change keeps the pending value and shows the new live value before it", async () => {
