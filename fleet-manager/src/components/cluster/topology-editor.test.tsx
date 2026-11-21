@@ -15,6 +15,7 @@ import {
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Resource } from "@/lib/k8s/kinds";
 import { withValue } from "@/lib/session";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { claim, cluster, slotContext } from "../../../test/fakes/slot-context";
@@ -240,6 +241,43 @@ describe("TopologyEditor", () => {
     expect(within(editorDialog()).getByRole("alert").textContent).toBe(
       "Review is blocked. The change bar says why.",
     );
+  });
+
+  it("blocks the review when a switch to standalone makes a limit of the preset below the request apply", () => {
+    const spec = { tasklist: { resources: { requests: { cpu: "2" } } } };
+    const base = withSpec(spec);
+    editor({
+      ...base,
+      presets: [
+        {
+          kind: "CamundaClusterPreset",
+          metadata: { name: "medium" },
+          spec: {
+            cluster: { tasklist: { resources: { limits: { cpu: "1" } } } },
+          },
+        } as unknown as Resource<"CamundaClusterPreset">,
+      ],
+    });
+    open();
+    pick("Tasklist", "Standalone");
+    fireEvent.click(reviewButton());
+    expect(
+      screen.queryByRole("dialog", { name: "Review the change" }),
+    ).toBeNull();
+    expect(within(editorDialog()).getByRole("alert").textContent).toBe(
+      "Review is blocked. The change bar says why.",
+    );
+    close();
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(
+      within(bar).getByText(
+        "tasklist.resources: The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
   });
 
   it("says when the lines include other pending changes", () => {
