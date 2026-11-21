@@ -186,7 +186,9 @@ While the error shows, also before you change anything, **Review** is disabled. 
 
 For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable **Review**. Correct it before the process runs on its own, because its resources apply only then.
 
-An edit of a CPU or memory amount changes only that amount in the claim. Each other amount keeps its value from the claim or from the preset. When you set an amount back to the value that it had before your unsaved changes, it is no longer a change.
+An edit of a CPU or memory amount changes only that amount in the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount that the saved claim sets, the amount is no longer a change. When the saved claim does not set the amount, the same is true for the amount of the preset.
+
+The bar counts each changed amount as one unsaved change. After **Reset to preset** of the setting, the reset and each amount that you change after it count as one change.
 
 A resource such as `ephemeral-storage` has no field in the editor. When the claim sets a value for such a resource, **Reset to preset** removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 

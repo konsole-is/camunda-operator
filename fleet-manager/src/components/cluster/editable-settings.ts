@@ -1,4 +1,5 @@
 import {
+  amountWrite,
   EDITED_RESOURCES,
   type LimitBelowRequest,
   limitsBelowRequests,
@@ -40,7 +41,9 @@ import { type Process, runsOwnWorkload } from "./topology";
  * map key by key. mergedErrors are the limits of the merged value that are
  * below their request, and undefined when no check of the merged value
  * runs. layers is set for a resources setting whose value merges the claim
- * over the layers below it, and holds the EditedLayers of its editor.
+ * over the layers below it: claim is the block of the claim before the
+ * pending changes, and below the merged block of the layers under the
+ * claim, with the pending changes.
  */
 export type Setting = {
   key: string;
@@ -58,10 +61,7 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
-  layers?: {
-    claim: unknown;
-    before?: { claim: unknown; merged: unknown };
-  };
+  layers?: { claim: unknown; below: unknown };
 };
 
 /**
@@ -80,7 +80,8 @@ export type MergedError = {
  * cluster, and spec.attachments.optimize of the claim for Optimize. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
- * claim only. liveClaim is claim before the pending changes.
+ * claim only. liveClaim is claim before the pending changes, and below is
+ * the merged spec of the layers under the claim, at the root of spec.
  *
  * Each path of componentFieldPaths gives one setting, in that order, also
  * when no layer sets it. Its label is the path without the process name.
@@ -93,9 +94,8 @@ export type MergedError = {
  * setting is a read-only setting of its own, after the others.
  *
  * With claim, spec is a merge of layers, and a resources setting gets
- * mergedErrors: each limit of spec below its request, for any resource. It
- * also gets layers, with before only when the input has live and
- * liveClaim. A setting with a holder gets no layers.
+ * mergedErrors: each limit of spec below its request, for any resource.
+ * With below too, it gets layers. A setting with a holder gets no layers.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -103,6 +103,7 @@ export function settingsOf(input: {
   live?: unknown;
   claim?: unknown;
   liveClaim?: unknown;
+  below?: unknown;
 }): Setting[] {
   const { group, spec, live, claim } = input;
   const optimize = group.component === "optimize";
@@ -202,18 +203,13 @@ export function settingsOf(input: {
           rest: steps(names.slice(holder.names.length)),
         },
       };
-    const layers = keyed && {
-      layers: {
-        claim: valueAt(claim, steps(names)),
-        ...("live" in input &&
-          "liveClaim" in input && {
-            before: {
-              claim: valueAt(input.liveClaim, steps(names)),
-              merged: valueAt(live, steps(names)),
-            },
-          }),
-      },
-    };
+    const layers = keyed &&
+      "below" in input && {
+        layers: {
+          claim: valueAt(input.liveClaim, steps(names)),
+          below: valueAt(input.below, steps(names)),
+        },
+      };
     return {
       ...checked,
       ...layers,
@@ -245,8 +241,8 @@ function mergedLimitError(
   requestState: FieldState | undefined,
 ): string {
   const states = [limitState, requestState];
-  // The editor has no field for this resource, so only a reset removes a
-  // value that the claim holds.
+  // The editor has no field for this resource, so a value that the claim
+  // holds goes only with a reset or an edit in the Claim tab.
   const claimed = states.filter((state) => state?.kind === "claim").length;
   const unedited = !EDITED_RESOURCES.includes(below.resource);
   const fixed =
@@ -441,6 +437,28 @@ export function settingChange(
       ? without(holder.value ?? {}, holder.rest)
       : withValue(holder.value ?? {}, holder.rest, claim);
   return { steps: at, value: isEmpty(value) ? undefined : value };
+}
+
+/**
+ * resourceWrites returns the write of each amount of a resources setting
+ * with layers, as amountWrite decides it: the steps of its key, such as
+ * requests.memory under steps, and its claim value, or undefined for a
+ * reset. amounts maps each path to the quantity that its field shows.
+ */
+export function resourceWrites(
+  setting: Setting,
+  amounts: Readonly<Record<string, string>>,
+): { steps: Step[]; value: unknown }[] {
+  const { claim, below } = setting.layers!;
+  return Object.entries(amounts).map(([path, quantity]) => {
+    const keys = path.split(".");
+    const at = (block: unknown) =>
+      valueAt(block, steps(keys)) as string | number | undefined;
+    return {
+      steps: [...setting.steps!, ...steps(keys)],
+      value: amountWrite(quantity, at(claim), at(below))?.value,
+    };
+  });
 }
 
 /**

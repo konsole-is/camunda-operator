@@ -123,6 +123,7 @@ function ClusterSettingsStepHarness({
         presets={presets.map((p) => p.metadata.name ?? "")}
         fields={fields}
         merged={drafted.merged}
+        below={drafted.below}
         secrets={secrets}
         pick={(field, name) => {
           pick(field, name);

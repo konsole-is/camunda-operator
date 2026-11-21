@@ -306,6 +306,7 @@ export type DraftedCluster = {
   cluster: Resource<"CamundaCluster">;
   claim: ClusterClaimObject;
   merged: Merged<CamundaClusterSpec>;
+  below: CamundaClusterSpec;
 };
 
 // The write takes the deletion choice of step 2, so the draft claim of the
@@ -324,8 +325,9 @@ const DEFAULT_DELETION: DeletionChoice = {
  * fills. Its spec is spec.cluster of the draft with presetRef, releaseOf,
  * and the platform config (the pick, else the Environment default). merged
  * is mergeCluster of the preset and the release under that spec, without a
- * preset or a release that the lists do not hold. claim is clusterClaimOf
- * with no deletion policy.
+ * preset or a release that the lists do not hold. below is the merged spec
+ * of that preset and release alone. claim is clusterClaimOf with no
+ * deletion policy.
  */
 export function draftCluster(
   draft: ClusterDraft,
@@ -359,6 +361,7 @@ export function draftCluster(
     cluster,
     claim: clusterClaimOf(draft, environment, DEFAULT_DELETION),
     merged: mergeCluster(preset?.spec, release?.spec, clusterSpec),
+    below: mergeCluster(preset?.spec, release?.spec, {}).spec,
   };
 }
 

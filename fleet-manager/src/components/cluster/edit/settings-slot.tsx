@@ -8,7 +8,7 @@ import { useResources } from "@/lib/k8s/hooks";
 import { claimAfter, type Session } from "@/lib/session";
 import { isSectionId, type ProcessCardId } from "../cards";
 import { settingsOf } from "../editable-settings";
-import { mergedSpecs } from "../impacts";
+import { belowClaim, mergedSpecs } from "../impacts";
 import { clusterFieldsInputOf, componentSettings } from "../settings";
 import { SettingsEditor } from "../settings-editor";
 import type { ClusterSlotContext } from "../slots";
@@ -89,7 +89,9 @@ function Editors({
   const { errors, invalid } = useClusterEdit();
   const namespace = ctx.cluster.metadata?.namespace ?? "";
   const secrets = secretRefsOf(useResources("Secret", { namespace }, []).items);
-  const { before, after: merged } = mergedSpecs(changeInputOf(ctx, session));
+  const input = changeInputOf(ctx, session);
+  const { before, after: merged } = mergedSpecs(input);
+  const below = belowClaim(input);
   const claim = claimAfter(session);
   const fields = clusterFields(
     clusterFieldsInputOf({
@@ -121,6 +123,7 @@ function Editors({
                   live: before.spec,
                   claim: claim.spec.cluster ?? {},
                   liveClaim: session.claim.spec.cluster ?? {},
+                  below,
                 },
           )}
           secrets={secrets}

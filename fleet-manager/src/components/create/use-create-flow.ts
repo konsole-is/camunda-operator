@@ -18,7 +18,9 @@ export type CreateStep<T> = {
  * the first step.
  *
  * set returns a new draft with value at path, and leaves the parts off the
- * path shared. undefined deletes the key. errors holds the errors of the
+ * path shared. undefined deletes the key. edit replaces the draft with what
+ * change returns for the newest draft, so that edits in one event all
+ * apply. errors holds the errors of the
  * current step and of each step before it, and nothing for a later step.
  * next moves on only while no step up to the current one has an error.
  * back moves one step back. go moves only to a step before the current
@@ -31,6 +33,7 @@ export function useCreateFlow<T extends object>(options: {
 }): {
   draft: T;
   set: (path: DraftPath, value: unknown) => void;
+  edit: (change: (draft: T) => T) => void;
   current: string;
   go: (id: string) => void;
   next: () => void;
@@ -65,6 +68,7 @@ export function useCreateFlow<T extends object>(options: {
     errors,
     set: (path, value) =>
       setState((s) => ({ ...s, draft: setIn(s.draft, path, value) as T })),
+    edit: (change) => setState((s) => ({ ...s, draft: change(s.draft) })),
     next: () =>
       setState((s) => {
         const all = latest.current;

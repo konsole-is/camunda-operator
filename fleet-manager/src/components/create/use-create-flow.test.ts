@@ -62,6 +62,21 @@ describe("useCreateFlow", () => {
     });
   });
 
+  it("applies each edit of one event to the newest draft", () => {
+    const { result } = setup({ name: "orders" });
+    act(() => {
+      result.current.edit((d) => ({ ...d, spec: { ...d.spec, replicas: 3 } }));
+      result.current.edit((d) => ({
+        ...d,
+        spec: { ...d.spec, presetRef: "small" },
+      }));
+    });
+    expect(result.current.draft).toEqual({
+      name: "orders",
+      spec: { replicas: 3, presetRef: "small" },
+    });
+  });
+
   it("deletes a key on undefined", () => {
     const { result } = setup({ name: "orders", spec: { presetRef: "small" } });
     act(() => result.current.set(["spec", "presetRef"], undefined));

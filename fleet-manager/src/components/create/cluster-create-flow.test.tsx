@@ -1846,6 +1846,72 @@ describe("ClusterCreateFlow write", () => {
     });
   });
 
+  // createdCluster clicks Next up to the review, creates the cluster, and
+  // returns spec.cluster of the claim that the create wrote.
+  async function createdCluster(name = "search") {
+    for (let i = 0; i < 4 && !heading("Review"); i++)
+      await userEvent.click(next());
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    await screen.findByRole("heading", {
+      name: `Creating the cluster ${name}`,
+    });
+    const written = fakeWriter.applied[0].apply.at(-1) as unknown as {
+      spec: { cluster?: object };
+    };
+    return written.spec.cluster;
+  }
+  const memoryRequest = () =>
+    within(
+      within(brokerResources()).getByRole("group", { name: "Memory request" }),
+    ).getByRole("textbox", { name: "Amount" });
+  const retypeMemory = async (text: string) => {
+    await userEvent.clear(memoryRequest());
+    await userEvent.type(memoryRequest(), text);
+  };
+
+  it("writes nothing for the preset amount typed again after the step opens again", async () => {
+    show(withBrokerResources({ requests: { memory: "1Gi" } }));
+    await toStep("Cluster settings");
+    await openSettings("Brokers");
+    await retypeMemory("2");
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(next());
+    await openSettings("Brokers");
+    await retypeMemory("1");
+    expect(await createdCluster()).toBeUndefined();
+  });
+
+  it("writes nothing for the amount of a preset picked after an edit", async () => {
+    const preset = (name: string, memory: string) => ({
+      apiVersion: "core.camunda.io/v1" as const,
+      kind: "CamundaClusterPreset" as const,
+      metadata: { name },
+      spec: { cluster: { zeebe: { resources: { requests: { memory } } } } },
+    });
+    const environment = prod();
+    environment.spec.presets = { camundaCluster: ["small", "large"] };
+    show(
+      data({
+        accessRequests: [],
+        environments: [environment],
+        presets: [preset("small", "1Gi"), preset("large", "4Gi")],
+      }),
+    );
+    await toStep("Cluster settings");
+    await openSettings("Brokers");
+    await retypeMemory("2");
+    for (let i = 0; i < 4 && !heading("Environment and name"); i++)
+      await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("radio", { name: /^large/ }));
+    for (let i = 0; i < 4 && !heading("Cluster settings"); i++)
+      await userEvent.click(next());
+    await openSettings("Brokers");
+    expect(memoryRequest()).toHaveProperty("value", "2");
+    await retypeMemory("4");
+    expect(await createdCluster()).toBeUndefined();
+  });
+
   it("compares a merged limit with a request in another unit", async () => {
     show(withBrokerResources({ limits: { cpu: "500m" } }));
     await toStep("Cluster settings");

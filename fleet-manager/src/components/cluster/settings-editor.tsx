@@ -11,7 +11,6 @@ import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
-  type EditedLayers,
   ResourcesEditor,
   type Resources,
 } from "@/components/fleet/resources-editor";
@@ -46,6 +45,7 @@ import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
 import {
+  resourceWrites,
   type Setting,
   settingChange,
   settingsSummary,
@@ -255,11 +255,14 @@ export function SettingRow({
         />
       </div>
     );
-  const change = own((value: unknown) => {
-    const next = settingChange(setting, value);
+  const write = (next: { steps: Step[]; value: unknown }) => {
     if (next.value === undefined) reset(next.steps);
     else set(next.steps, next.value);
-  });
+  };
+  const change = own((value: unknown) => write(settingChange(setting, value)));
+  const changeAmounts = own((amounts: Readonly<Record<string, string>>) =>
+    resourceWrites(setting, amounts).forEach(write),
+  );
   const note = setting.state && stateNote(setting.state);
   const messages = [
     ...errors.map((e) => ({ text: e.message, blocks: true })),
@@ -284,8 +287,8 @@ export function SettingRow({
         }
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
-        layers={setting.layers}
         onChange={change}
+        onAmounts={setting.layers && changeAmounts}
         onRefused={own(() => {})}
         onShown={setEditorError}
       />
@@ -353,7 +356,8 @@ function useShownError(
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
 // size, environment, maps of strings, and tolerations. limitsChecked and
-// layers reach only the editor of resources.
+// onAmounts reach only the editor of resources. With onAmounts, that editor
+// reports the amounts of each valid change to it, in place of onChange.
 function Editor({
   label,
   editor,
@@ -362,9 +366,9 @@ function Editor({
   replaces,
   describedBy,
   limitsChecked,
-  layers,
   secrets,
   onChange,
+  onAmounts,
   onRefused,
   onShown,
 }: {
@@ -376,8 +380,8 @@ function Editor({
   describedBy?: string;
   secrets: SecretRefs;
   limitsChecked: boolean;
-  layers?: Setting["layers"];
   onChange: (value: unknown) => void;
+  onAmounts?: (amounts: Readonly<Record<string, string>>) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
@@ -442,8 +446,14 @@ function Editor({
           defaultValue={initial as Resources}
           describedBy={describedBy}
           limitsChecked={limitsChecked}
-          layers={layers as EditedLayers | undefined}
-          onChange={valid}
+          onChange={onAmounts ? undefined : valid}
+          onAmounts={
+            onAmounts &&
+            ((amounts, errors) => {
+              if (errors.length === 0) onAmounts(amounts);
+              else onRefused();
+            })
+          }
           onErrors={onErrors}
         />
       );

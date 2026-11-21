@@ -465,11 +465,10 @@ export function ClusterCreateFlow({
   useEffect(() => {
     if (unfilled !== flow.draft) flow.set(["claim"], unfilled.claim);
   });
-  const editClaim = (edited: ClusterDraft) => flow.set(["claim"], edited.claim);
   const setClaim = (steps: Step[], value: unknown) =>
-    editClaim(withClaimValue(flow.draft, steps, value));
+    flow.edit((draft) => withClaimValue(draft, steps, value));
   const resetClaim = (steps: Step[]) =>
-    editClaim(withoutClaimValue(flow.draft, steps));
+    flow.edit((draft) => withoutClaimValue(draft, steps));
   const existing =
     flow.draft.namespace?.kind === "existing"
       ? flow.draft.namespace.name
@@ -686,6 +685,7 @@ export function ClusterCreateFlow({
             presets={live.presets.items.map((p) => p.metadata?.name ?? "")}
             fields={fields}
             merged={drafted.merged}
+            below={drafted.below}
             // A Secret that cannot be read cannot be picked, and the alert
             // above names the failure.
             secrets={

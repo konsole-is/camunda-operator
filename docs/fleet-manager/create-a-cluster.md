@@ -42,7 +42,7 @@ A setting also shows an error when the value that the cluster gets is not valid.
 
 **Next** stays off while a setting shows such an error, also when you changed nothing. When the preset changes to such a value after you leave this step, **Create** stays off and names this step. To correct it, set a limit that is not below the request, or a lower request. For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not stop **Next**. Correct it before the process runs on its own, because its resources apply only then.
 
-An edit of a CPU or memory amount writes only that amount into the claim. Each other amount keeps its value from the claim or from the preset.
+An edit of a CPU or memory amount writes only that amount into the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount of the preset, the claim does not set that amount.
 
 A resource such as `ephemeral-storage` has no field in the setting. When the claim sets a value for such a resource, **Reset to preset** removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 

@@ -9,6 +9,7 @@ import {
 import type { FieldState } from "@/lib/fields";
 import {
   blockingMergedErrors,
+  resourceWrites,
   type Setting,
   settingChange,
   settingsOf,
@@ -567,45 +568,66 @@ describe("settingsOf claim layers", () => {
   const preset = { zeebe: { resources: { requests: { cpu: "1" } } } };
   const claimed = { zeebe: { resources: { limits: { cpu: 2 } } } };
 
-  it("gives a resources setting over a claim the block of the claim", () => {
-    const { settings } = settingsGroupOf("zeebe", "zeebe", {
-      preset,
-      claim: { cluster: claimed },
-    });
-    expect(setting(settings, "resources").layers).toEqual({
-      claim: { limits: { cpu: 2 } },
-    });
-  });
-
-  it("adds the claim and the merged value before the pending changes", () => {
+  it("gives a resources setting over a claim the live claim and the value below it", () => {
     const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
-    const { merged } = settingsFieldsOf({
+    const { merged, below } = settingsFieldsOf({
       preset,
       claim: { cluster: claimed },
     });
-    const before = { requests: { cpu: "1" }, limits: { cpu: "3" } };
     const resources = setting(
       settingsOf({
         group,
         spec: merged.spec,
-        live: { zeebe: { resources: before } },
         claim: claimed,
         liveClaim: { zeebe: { resources: { limits: { cpu: "3" } } } },
+        below,
       }),
       "resources",
     );
     expect(resources.layers).toEqual({
-      claim: { limits: { cpu: 2 } },
-      before: { claim: { limits: { cpu: "3" } }, merged: before },
+      claim: { limits: { cpu: "3" } },
+      below: { requests: { cpu: "1" } },
     });
   });
 
   it("gives no layers where no claim merges, as on the preset page", () => {
     const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
-    const { merged } = settingsFieldsOf({ preset });
+    const { merged, below } = settingsFieldsOf({ preset });
     expect(
-      setting(settingsOf({ group, spec: merged.spec }), "resources").layers,
+      setting(settingsOf({ group, spec: merged.spec, below }), "resources")
+        .layers,
     ).toBeUndefined();
+  });
+});
+
+describe("resourceWrites", () => {
+  it("writes each amount at its own key, a value or a reset", () => {
+    const { settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: { zeebe: { resources: { requests: { memory: "1Gi" } } } },
+      claim: { cluster: { zeebe: { resources: { limits: { cpu: 2 } } } } },
+    });
+    const resources = {
+      ...setting(settings, "resources"),
+      layers: {
+        claim: { limits: { cpu: 2 } },
+        below: { requests: { memory: "1Gi" } },
+      },
+    };
+    const at = (...names: string[]) =>
+      steps("spec", "cluster", "zeebe", "resources", ...names);
+    expect(
+      resourceWrites(resources, {
+        "requests.memory": "1024Mi",
+        "limits.cpu": "2000m",
+        "requests.cpu": "3",
+        "limits.memory": "",
+      }),
+    ).toEqual([
+      { steps: at("requests", "memory"), value: undefined },
+      { steps: at("limits", "cpu"), value: 2 },
+      { steps: at("requests", "cpu"), value: "3" },
+      { steps: at("limits", "memory"), value: undefined },
+    ]);
   });
 });
 
