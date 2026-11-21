@@ -786,6 +786,87 @@ describe("settingsOf merged entry errors", () => {
       ]);
   });
 
+  it.each([
+    ["monitoring.serviceMonitor.labels", { enabled: false }, undefined],
+    ["monitoring.serviceMonitor.labels", { enabled: true }, "label"],
+    ["monitoring.serviceMonitor.annotations", {}, undefined],
+    ["monitoring.serviceMonitor.annotations", { enabled: true }, "annotation"],
+  ] as const)(
+    "checks %s of a ServiceMonitor that is %o by the rule %s",
+    (label, monitor, format) => {
+      const map = setting(
+        clusterSettings({
+          claim: {
+            cluster: {
+              monitoring: {
+                serviceMonitor: {
+                  ...monitor,
+                  [label.split(".")[2]]: { "Team Name": "x" },
+                },
+              },
+            },
+          },
+        }),
+        label,
+      );
+      expect(map.editor).toEqual(
+        format ? { kind: "keyValue", format } : { kind: "keyValue" },
+      );
+    },
+  );
+
+  it("checks no annotation key of a ServiceAccount that the operator does not create", () => {
+    const annotations = setting(
+      clusterSettings({
+        claim: {
+          cluster: {
+            serviceAccount: {
+              name: "shared",
+              create: false,
+              annotations: { "bad key": "x" },
+            },
+          },
+        },
+      }),
+      "serviceAccount.annotations",
+    );
+    expect(annotations.editor).toEqual({ kind: "keyValue" });
+  });
+
+  it("warns about an annotation key of the preset on a Connectors ServiceAccount that the operator does not create", () => {
+    const annotations = setting(
+      processSettings("connectors", "connectors", {
+        cluster: { connectors: { enabled: true } },
+        preset: {
+          connectors: {
+            serviceAccount: { create: false, annotations: { "bad key": "x" } },
+          },
+        },
+      }),
+      "serviceAccount.annotations",
+    );
+    expect(annotations.editor).toEqual({ kind: "keyValue" });
+    expect(annotations.mergedErrors).toEqual([
+      expect.objectContaining({
+        message: `The annotation key "bad key" ${PRESET} Correct it before the operator creates the ServiceAccount.`,
+        blocks: false,
+      }),
+    ]);
+  });
+
+  it("keeps the label rule in the editor of the pod labels of an embedded app, and drops the annotation rule", () => {
+    const settings = processSettings("gateway", "tasklist", {
+      cluster: { gateway: { mode: "Standalone" } },
+    });
+    expect(setting(settings, "podLabels").editor).toEqual({
+      kind: "keyValue",
+      format: "label",
+    });
+    expect(setting(settings, "podAnnotations").editor).toEqual({
+      kind: "keyValue",
+    });
+  });
+
   it("has no merged entry errors without the claim, as on the preset page", () => {
     const page = { preset: { zeebe: { podLabels: { "bad key": "x" } } } };
     const { group } = settingsGroupOf("zeebe", "zeebe", page);

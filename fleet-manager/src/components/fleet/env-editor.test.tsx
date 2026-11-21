@@ -233,10 +233,16 @@ describe("EnvEditor", () => {
         <EnvEditor
           label="Env"
           secrets={secrets}
-          defaultValue={[{ name: "TZ", value: "UTC" }]}
+          defaultValue={[
+            { name: "", value: "x" },
+            { name: "TZ", value: "UTC" },
+          ]}
           checkedEntries={checked}
           onChange={onChange}
         />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove variable 1" }),
       );
       await userEvent.click(
         screen.getByRole("button", { name: "Add a variable" }),

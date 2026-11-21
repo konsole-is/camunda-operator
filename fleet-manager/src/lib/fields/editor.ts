@@ -56,7 +56,8 @@ type YamlEditor = Extract<SchemaEditor, { kind: "yaml" }>;
  *     number: a number in its range. A string or an int-or-string: text.
  *  5. An object: a map of strings, with the rules of Kubernetes for the
  *     keys and values of labels for podLabels and labels, and for the
- *     keys of annotations for podAnnotations and annotations.
+ *     keys of annotations for podAnnotations and annotations. With
+ *     openAPI, only podLabels gets a rule.
  *  6. Anything else: YAML, checked against openAPI, else against the type
  *     of the schema when it has one.
  *
@@ -89,7 +90,13 @@ export function editorOf(
     choices,
     openAPI,
     value,
-    format: Object.hasOwn(MAP_FORMATS, last) ? MAP_FORMATS[last] : undefined,
+    format: openAPI
+      ? last === "podLabels"
+        ? "label"
+        : undefined
+      : Object.hasOwn(MAP_FORMATS, last)
+        ? MAP_FORMATS[last]
+        : undefined,
   });
 }
 

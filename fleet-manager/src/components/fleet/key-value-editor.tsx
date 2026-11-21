@@ -87,13 +87,23 @@ export function KeyValueEditor({
   const [initial] = useState(entries);
   const same = (a: { key: string; value: string }, b: Entry) =>
     a.key === b.key && a.value === b.value;
+  // opened says that e is a row of defaultValue that the user did not change.
+  const opened = (e: Entry) => initial.some((i) => i.id === e.id && same(i, e));
   const checked = (e: Entry) =>
-    initial.some((i) => i.id === e.id && same(i, e)) &&
-    checkedEntries.some((c) => same(c, e));
-  const shownErrors = (rows: readonly Entry[]) =>
-    keyValueErrors(rows, format).filter(
+    opened(e) && checkedEntries.some((c) => same(c, e));
+  const shownErrors = (rows: readonly Entry[]) => [
+    ...keyValueErrors(rows, format).filter(
       (error) => !checked(rows[Number(error.path.split(".")[0])]),
-    );
+    ),
+    // keyValueErrors ignores a row with an empty key and an empty value as
+    // one that the user did not fill yet. Such a row that the editor opens
+    // with is an entry with an empty key, which Kubernetes refuses.
+    ...rows.flatMap((e, index) =>
+      e.key === "" && e.value === "" && opened(e) && !checked(e)
+        ? [{ path: `${index}.key`, message: "Enter a key" }]
+        : [],
+    ),
+  ];
   const errors = shownErrors(entries);
   useErrorsReport(errors, onErrors);
 

@@ -276,10 +276,13 @@ describe("KeyValueEditor", () => {
         <KeyValueEditor
           label="Annotations"
           format="annotation"
-          defaultValue={{ note: "a" }}
+          defaultValue={{ "": "x", note: "a" }}
           checkedEntries={[{ key: "", value: "x" }]}
           onChange={onChange}
         />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove entry 1" }),
       );
       await userEvent.click(
         screen.getByRole("button", { name: "Add an entry" }),
@@ -291,6 +294,22 @@ describe("KeyValueEditor", () => {
       );
       expect(onChange).toHaveBeenLastCalledWith({ note: "a" }, [
         { path: "1.key", message: "Enter a key" },
+      ]);
+      expect(screen.getByText("Enter a key")).toBeTruthy();
+    });
+
+    it("shows an empty key that it opens with and that the host does not check", () => {
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Annotations"
+          format="annotation"
+          defaultValue={{ "": "" }}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([
+        { path: "0.key", message: "Enter a key" },
       ]);
       expect(screen.getByText("Enter a key")).toBeTruthy();
     });

@@ -415,37 +415,54 @@ describe("ClaimReview", () => {
     expect((await confirm("Push to Git")).disabled).toBe(false);
   });
 
-  it("Git mode gives input the claim that the sync leaves, with a reset field that the preview keeps", async () => {
+  it("Git mode gives input the claim that the sync leaves, with a field that another tool keeps", async () => {
     fakeWriter.reset("git");
-    fakeWriter.previews = [
-      {
-        objects: [
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
           {
-            ref: {
-              apiVersion: claim.apiVersion,
-              kind: claim.kind,
-              namespace: "team-a",
-              name: "orders",
+            manager: "argocd-controller",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { "f:fleet.camunda.io/revision": {} },
+              },
+              "f:spec": { "f:cluster": { "f:zeebe": { "f:replicas": {} } } },
             },
-            after: claim as KubeObject,
-            diff: [],
+          },
+          {
+            manager: "kubectl",
+            operation: "Apply",
+            fieldsV1: {
+              "f:spec": { "f:cluster": { "f:zeebe": { "f:partitions": {} } } },
+            },
           },
         ],
-        errors: [],
-      },
-    ];
+      } as ClaimObject["metadata"],
+    };
+    const written = setValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      [{ field: "spec" }, { field: "cluster" }, { field: "zeebe" }],
+      { replicas: 3 },
+    );
+    if (!("session" in written)) throw new Error("refused");
     const kept = "Another tool keeps partitions.";
     review({
-      session: session(resetPartitions),
+      session: written.session,
       input: (saved) => ({
         impacts: [],
         blocking:
           valueAt(claimAfter(saved), partitions) === undefined ? [] : [kept],
       }),
     });
-    await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(kept),
-    );
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    expect(screen.getByRole("alert").textContent).toContain(kept);
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Push to Git" })
         .disabled,

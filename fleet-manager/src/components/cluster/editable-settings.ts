@@ -160,18 +160,28 @@ export function settingsOf(input: {
       resetLabel: "Reset to preset",
     };
     if (lock) return { ...setting, lock };
-    const editor = secretRef
+    const schemaEditor = secretRef
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
-    if (!editor) return setting;
+    if (!schemaEditor) return setting;
+    const reach = reachOf(schemaEditor, group, names, spec);
+    // A map that reaches no object now gets no rule of Kubernetes in the
+    // editor, so a value of the claim there does not block. podLabels
+    // keeps its label rule.
+    const editor: SettingEditor =
+      schemaEditor.kind === "keyValue" &&
+      schemaEditor.format !== undefined &&
+      !reach.applies &&
+      names.at(-1) !== "podLabels"
+        ? { kind: "keyValue" }
+        : schemaEditor;
     const checked: Setting =
       "claim" in input
         ? {
             ...setting,
             ...mergedCheckOf({
-              editor,
-              group,
-              spec,
+              editor: schemaEditor,
+              reach,
               value,
               claimValue: valueAt(claim, steps(names)),
               stateAt: (part) =>
@@ -217,31 +227,28 @@ export function settingsOf(input: {
   return [...settings, ...rest];
 }
 
-// mergedCheckOf returns the mergedErrors of a setting with editor in group,
-// or nothing for an editor without a check of the merged value. value is
-// the merged value of the setting and claimValue that of the claim.
+// mergedCheckOf returns the mergedErrors of a setting with editor, or
+// nothing for an editor without a check of the merged value. value is the
+// merged value of the setting and claimValue that of the claim.
 // stateAt gives the state of the field at a path below the setting, and
 // entryStateAt that of the entry at one step below it.
 function mergedCheckOf(input: {
   editor: SettingEditor;
-  group: SettingsGroup;
-  spec: unknown;
+  reach: Reach;
   value: unknown;
   claimValue: unknown;
   stateAt: (part: string[]) => FieldState | undefined;
   entryStateAt: (step: Step) => FieldState | undefined;
 }): Pick<Setting, "mergedErrors"> {
-  const { editor, group, spec, value, claimValue, stateAt, entryStateAt } =
-    input;
+  const { editor, reach, value, claimValue, stateAt, entryStateAt } = input;
+  const { applies, later } = reach;
   if (editor.kind === "resources") {
-    const applies = appliesNow(editor, group, spec);
     return {
       mergedErrors: limitsBelowRequests((value ?? {}) as Resources).map(
         (below) => ({
           message: mergedLimitError(
             below,
-            group,
-            applies,
+            later,
             stateAt(["limits", below.resource]),
             stateAt(["requests", below.resource]),
           ),
@@ -251,7 +258,6 @@ function mergedCheckOf(input: {
     };
   }
   if (editor.kind === "keyValue") {
-    const applies = appliesNow(editor, group, spec);
     const held = isObject(claimValue) ? claimValue : {};
     const entries = Object.entries(isObject(value) ? value : {}).map(
       ([key, v]): MapEntry => ({ key, value: String(v) }),
@@ -271,7 +277,7 @@ function mergedCheckOf(input: {
             message:
               mapEntryFault(entry, field, editor.format, state) +
               remedyOf(state, field === "value" ? entry.key : undefined) +
-              laterOf(group, applies),
+              later,
             blocks: applies,
             entry,
           };
@@ -279,7 +285,6 @@ function mergedCheckOf(input: {
     };
   }
   if (editor.kind === "env") {
-    const applies = appliesNow(editor, group, spec);
     const held = Array.isArray(claimValue) ? (claimValue as EnvVar[]) : [];
     const env = Array.isArray(value) ? (value as EnvVar[]) : [];
     return {
@@ -295,7 +300,7 @@ function mergedCheckOf(input: {
             message:
               `A variable without a name ${entryOrigin(state)}. The claim cannot remove it.` +
               remedyOf(state) +
-              laterOf(group, applies),
+              later,
             blocks: applies,
             entry,
           };
@@ -312,20 +317,53 @@ function entryOrigin(state: FieldState | undefined): string {
   return (originOf(state) ?? ON_CLUSTER).one;
 }
 
-// The operator gives the resources and the pod labels and annotations of a
-// process only to its own workload. It gives the variables of an embedded
-// process to its host, and those of Connectors to their own workload only.
-function appliesNow(
+// Reach says whether a value reaches an object now, and later is the
+// sentence that says when it will, or "" when it does now.
+type Reach = { applies: boolean; later: string };
+
+// reachOf returns the Reach of the setting at names with editor in group
+// of spec.
+function reachOf(
   editor: SettingEditor,
   group: SettingsGroup,
+  names: readonly string[],
   spec: unknown,
-): boolean {
-  if (!COMPONENTS.includes(group.component)) return true;
-  if (editor.kind === "env" && group.component !== "connectors") return true;
-  return runsOwnWorkload(
-    spec as CamundaClusterSpec,
-    group.component as Process,
-  );
+): Reach {
+  const component = group.component as Process;
+  // The operator gives the resources and the pod labels and annotations of
+  // a process only to its own workload. It gives the variables of an
+  // embedded process to its host, and those of Connectors to their own
+  // workload only.
+  if (
+    COMPONENTS.includes(group.component) &&
+    !(editor.kind === "env" && component !== "connectors") &&
+    !runsOwnWorkload(spec as CamundaClusterSpec, component)
+  )
+    return {
+      applies: false,
+      later: group.embedded
+        ? ` Correct it before ${group.label} runs standalone.`
+        : ` Correct it before ${group.label} are turned on.`,
+    };
+  const parent = names.slice(0, -1);
+  // The operator makes a ServiceMonitor only while its enabled is true.
+  if (editor.kind === "keyValue" && parent.at(-1) === "serviceMonitor") {
+    if (valueAt(spec, steps([...parent, "enabled"])) !== true)
+      return {
+        applies: false,
+        later: " Correct it before you turn on the ServiceMonitor.",
+      };
+  }
+  // The operator annotates a ServiceAccount only while its create is not
+  // false.
+  if (editor.kind === "keyValue" && parent.at(-1) === "serviceAccount") {
+    if (valueAt(spec, steps([...parent, "create"])) === false)
+      return {
+        applies: false,
+        later: " Correct it before the operator creates the ServiceAccount.",
+      };
+  }
+  return { applies: true, later: "" };
 }
 
 // entryFaults gives the first error of each entry of errors, whose paths
@@ -382,21 +420,11 @@ function remedyOf(state: FieldState | undefined, key?: string): string {
   return ` ${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
-// laterOf returns the sentence that says when a fault of group must be
-// corrected, or nothing when the value of group applies now.
-function laterOf(group: SettingsGroup, applies: boolean): string {
-  if (applies) return "";
-  return group.embedded
-    ? ` Correct it before ${group.label} runs standalone.`
-    : ` Correct it before ${group.label} are turned on.`;
-}
-
-// mergedLimitError returns the message of a limit below its request in
-// group. applies says whether the resources of group apply now.
+// mergedLimitError returns the message of a limit below its request, with
+// later, the sentence that says when the value applies.
 function mergedLimitError(
   below: LimitBelowRequest,
-  group: SettingsGroup,
-  applies: boolean,
+  later: string,
   limitState: FieldState | undefined,
   requestState: FieldState | undefined,
 ): string {
@@ -412,9 +440,7 @@ function mergedLimitError(
     (unedited && states.some((state) => state?.kind === "preset")
       ? " Pick another preset, or ask your admin to correct the preset."
       : "");
-  return (
-    faultOf(below, limitState, requestState) + fixed + laterOf(group, applies)
-  );
+  return faultOf(below, limitState, requestState) + fixed + later;
 }
 
 // faultOf returns the sentence of a limit below its request. It names

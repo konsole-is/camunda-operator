@@ -385,6 +385,19 @@ describe("overrideEditorOf", () => {
     expect(overrideEditorOf(name, OVERRIDES[name])).toEqual(editor);
   });
 
+  it.each(["labels", "annotations"])(
+    "gives an override map named %s no rule of Kubernetes",
+    (name) => {
+      expect(
+        overrideEditorOf(
+          name,
+          { type: "object", additionalProperties: { type: "string" } },
+          { value: { "cost center": "a b" } },
+        ),
+      ).toEqual({ kind: "keyValue" });
+    },
+  );
+
   it("checks YAML against the registration schema also for a name of fullSchemaOf", () => {
     expect(overrideEditorOf("extraEnvFrom", { type: "array" })).toEqual({
       kind: "yaml",
