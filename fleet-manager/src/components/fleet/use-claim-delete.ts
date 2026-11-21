@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { deleteClaimSteps } from "@/lib/claims/deletion";
+import { DELETION_LABELS } from "@/components/fleet/deletion-choice";
+import { deleteClaimSteps, previewDeleteSteps } from "@/lib/claims/deletion";
 import {
   useGitSync,
   useResource,
@@ -25,10 +26,12 @@ import {
   requestsWithout,
 } from "@/lib/policy";
 import { precheckOf } from "@/lib/session";
+import { offered } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
   ApiError,
   Change,
+  ObjectOwnership,
   Preview,
   WriteMode,
   WriteResult,
@@ -36,12 +39,13 @@ import type {
 
 /**
  * ClaimDeleteActions are the server actions of the delete of a claim: the
- * dry run and the write of the delete, and the write of the deletion
- * policy before it.
+ * dry run and the write of the delete, and the dry run and the write of the
+ * deletion policy before it.
  */
 export type ClaimDeleteActions = {
   preview(change: Change): Promise<Preview>;
   remove(change: Change): Promise<WriteResult>;
+  previewPolicy(change: Change): Promise<Preview>;
   applyPolicy(change: Change): Promise<WriteResult>;
 };
 
@@ -99,13 +103,17 @@ type Sent =
 /**
  * useClaimDelete runs the delete of a claim of either kind with the steps
  * of deleteClaimSteps, on the claim that it follows live from initial.
- * Give remove, apply, and onWritten to a ChangeReview. remove names the UID
- * and the generation of the claim, so the server refuses its delete with
- * Stale after a spec change. Without a policy step, apply sends the change
- * that it gets. With one, apply refuses without a write when the preview
- * of the delete fails, and returns the result of the policy write. The
- * hook then sends the delete itself. It sends nothing for a claim with
- * another UID, and refuses with Stale when another spec change came in.
+ * Give remove, preview, apply, and onWritten to a ChangeReview with
+ * otherWrite. remove names the UID and the generation of the claim, so the
+ * server refuses its delete with Stale after a spec change. In direct mode,
+ * preview adds the dry run of the policy step, as previewDeleteSteps does,
+ * and policyOwned then says what the delete does while another field
+ * manager sets the deletion policy. Without a policy step, apply sends the
+ * change that it gets. With one, apply refuses without a write when the
+ * preview of the delete fails, and returns the result of the policy write,
+ * which takes over the fields of taken. The hook then sends the delete
+ * itself. It sends nothing for a claim with another UID, and refuses with
+ * Stale when another spec change came in.
  * keepRefused names the registrations of the claim that cannot keep while
  * policy is Orphan. For a claim that recorded its policy, it also names the
  * ones that are not in registrations while orphanNeedsLivePass holds on a
@@ -133,8 +141,13 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   remove: Change;
   policyStep: boolean;
   keepRefused?: string;
+  policyOwned?: string;
   reads: { errors: ReadError[]; stale: string[] };
-  apply(change: Change): Promise<WriteResult>;
+  preview(change: Change): Promise<Preview>;
+  apply(
+    change: Change,
+    taken?: readonly ObjectOwnership[],
+  ): Promise<WriteResult>;
   onWritten(): void;
   stopWaiting(): void;
 } {
@@ -199,15 +212,41 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
         (live ?? initial).status?.resolvedPolicy,
       ),
     )?.length === 0;
-  const remove = useMemo(
-    () => deleteClaimSteps(live ?? initial, policy, intent).remove,
+  const steps = useMemo(
+    () => deleteClaimSteps(live ?? initial, policy, intent),
     // A Git preview clones the repository, so a status write of the claim
     // must not start a new one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [uid, generation, finalized, spec, intent, policy, retry, carried],
   );
+  const { remove } = steps;
   const policyStep =
     deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
+  const [owners, setOwners] = useState<{
+    remove: Change;
+    ownership: readonly ObjectOwnership[];
+  }>();
+  const preview = async (change: Change): Promise<Preview> => {
+    // steps keeps the resourceVersion of the claim from before a status
+    // write, and a dry run at that version fails with Stale.
+    const policyWrite =
+      mode === "direct" && change === steps.remove
+        ? deleteClaimSteps(live ?? initial, policy, intent).policy
+        : undefined;
+    const result = await previewDeleteSteps(change, policyWrite, actions);
+    setOwners({ remove: change, ownership: result.ownership ?? [] });
+    return result;
+  };
+  const policyOwned =
+    owners?.remove === remove
+      ? policyOwnedNote(
+          owners.ownership,
+          deletionPolicyOf(
+            (live ?? initial).spec?.deletionPolicy,
+            (live ?? initial).status?.resolvedPolicy,
+          ),
+        )
+      : undefined;
 
   // While the list of the requests is not read, a missing registration does
   // not refuse Keep: the page shows no review then.
@@ -255,7 +294,10 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     original === undefined || claim.metadata.uid === original;
 
   const send = useCallback(
-    async (change: Change): Promise<WriteResult> => {
+    async (
+      change: Change,
+      taken: readonly ObjectOwnership[],
+    ): Promise<WriteResult> => {
       const { live, policy, registrations, livePass, intent, actions } =
         latest.current;
       setSent((s) =>
@@ -268,7 +310,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       const refused = keepRefusal(live, policy, registrations, livePass);
       if (refused)
         return { ok: false, errors: [{ code: "Invalid", message: refused }] };
-      const steps = deleteClaimSteps(live, policy, intent);
+      const steps = deleteClaimSteps(live, policy, intent, taken);
       if (!steps.policy) return actions.remove(change).catch(unavailable);
       // A delete that would be refused must not leave the claim with a
       // new policy.
@@ -298,9 +340,12 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     [],
   );
   const apply = useCallback(
-    async (change: Change): Promise<WriteResult> => {
+    async (
+      change: Change,
+      taken: readonly ObjectOwnership[] = [],
+    ): Promise<WriteResult> => {
       const at = latest.current.live?.metadata.resourceVersion ?? "";
-      const result = await send(change);
+      const result = await send(change, taken);
       if (!result.ok) setRefusal((r) => ({ ...r, at }));
       return result;
     },
@@ -446,10 +491,12 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     remove,
     policyStep,
     ...(keepRefused && { keepRefused }),
+    ...(policyOwned && { policyOwned }),
     reads: {
       errors: error === undefined ? [] : [{ kind, message: error }],
       stale: fresh ? [] : [kind],
     },
+    preview,
     apply,
     onWritten,
     stopWaiting,
@@ -509,6 +556,21 @@ function deleteRefusal(
       "NotAllowed"
     ? `The delete waits, because ${names.join(", ")} cannot keep the resources. Set the deletion policy of the claim to Delete, or add Orphan back to the deletion policies of the registration.`
     : undefined;
+}
+
+// policyOwnedNote says what the delete does while ownership names a field
+// of another field manager that the policy write changes. held is the
+// deletion policy of the claim.
+function policyOwnedNote(
+  ownership: readonly ObjectOwnership[],
+  held: DeletionPolicy,
+): string | undefined {
+  const changed = ownership.flatMap((o) => o.changed);
+  if (changed.length === 0) return undefined;
+  const keep = `${DELETION_LABELS[held]} to delete with the policy that the claim has.`;
+  return changed.every(offered)
+    ? `Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose ${keep}`
+    : `The operator sets the deletion policy of the claim, so the delete cannot change it. Choose ${keep}`;
 }
 
 function writtenOf(s: Written): Written {

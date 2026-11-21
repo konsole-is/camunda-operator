@@ -5,8 +5,15 @@ import {
   controlledBy,
   deleteClaimSteps,
   deletionGroups,
+  previewDeleteSteps,
   requestPolicy,
 } from "./deletion";
+import type {
+  Change,
+  ForeignManager,
+  ObjectOwnership,
+  Preview,
+} from "@/lib/write/types";
 import type { ResourceRow } from "./resources";
 
 const claim = (
@@ -107,6 +114,170 @@ describe("deleteClaimSteps", () => {
       "x",
     ).remove;
     expect(remove).toEqual({ intent: "x", apply: [], delete: [ref] });
+  });
+});
+
+const kubectl: ForeignManager = {
+  name: "kubectl-client-side-apply",
+  operation: "Update",
+  kind: "other",
+  known: true,
+};
+// ownedBy is the ownership of a policy write whose spec.deletionPolicy
+// managers set.
+const ownedBy = (
+  managers: ForeignManager[],
+  at: typeof ref = ref,
+): ObjectOwnership[] => [
+  {
+    ref: at,
+    changed: [
+      {
+        path: "spec.deletionPolicy",
+        steps: [{ field: "spec" }, { field: "deletionPolicy" }],
+        managers,
+      },
+    ],
+    cleared: [],
+  },
+];
+
+describe("deleteClaimSteps with a take-over", () => {
+  it("takes over the offered fields of the claim in the policy write", () => {
+    const { policy, remove } = deleteClaimSteps(
+      claim({ deletionPolicy: "Delete" }),
+      "Orphan",
+      "x",
+      ownedBy([kubectl]),
+    );
+    expect(policy).toMatchObject({
+      apply: [{ spec: { deletionPolicy: "Orphan" } }],
+      preconditions: { [key]: "41" },
+      takeOver: { [key]: ["spec.deletionPolicy"] },
+    });
+    expect(policy).not.toHaveProperty("remove");
+    expect(remove).not.toHaveProperty("takeOver");
+  });
+
+  it("takes over nothing without ownership, for another object, or for a field of the operator", () => {
+    const operator: ForeignManager = {
+      name: "camunda-operator/CamundaClusterClaim/uid-1",
+      operation: "Apply",
+      kind: "operator",
+      known: true,
+    };
+    const other = { ...ref, name: "payments" };
+    for (const ownership of [
+      [],
+      ownedBy([kubectl], other),
+      ownedBy([operator]),
+    ])
+      expect(
+        deleteClaimSteps(
+          claim({ deletionPolicy: "Delete" }),
+          "Orphan",
+          "x",
+          ownership,
+        ).policy,
+      ).not.toHaveProperty("takeOver");
+  });
+
+  it("writes no policy when the claim has the choice, also with ownership", () => {
+    expect(
+      deleteClaimSteps(
+        claim({ deletionPolicy: "Orphan" }),
+        "Orphan",
+        "x",
+        ownedBy([kubectl]),
+      ).policy,
+    ).toBeUndefined();
+  });
+});
+
+describe("previewDeleteSteps", () => {
+  const removed: Preview = {
+    objects: [{ ref, before: claim() as never, diff: [] }],
+    errors: [],
+  };
+  // actions records each change that it previews, and answers remove with
+  // removed and the policy write with policyPreview.
+  const actions = (policyPreview: Preview) => {
+    const seen: { remove: Change[]; policy: Change[] } = {
+      remove: [],
+      policy: [],
+    };
+    return {
+      seen,
+      preview: async (change: Change) => {
+        seen.remove.push(change);
+        return removed;
+      },
+      previewPolicy: async (change: Change) => {
+        seen.policy.push(change);
+        return policyPreview;
+      },
+    };
+  };
+
+  it("is the preview of remove when no policy write comes first", async () => {
+    const a = actions({ objects: [], errors: [] });
+    const steps = deleteClaimSteps(
+      claim({ deletionPolicy: "Orphan" }),
+      "Orphan",
+      "x",
+    );
+    expect(await previewDeleteSteps(steps.remove, steps.policy, a)).toEqual(
+      removed,
+    );
+    expect(a.seen).toEqual({ remove: [steps.remove], policy: [] });
+  });
+
+  it("adds the ownership and the errors of the policy write to the objects of remove", async () => {
+    const conflict = {
+      code: "Conflict" as const,
+      message: "conflict with kubectl-client-side-apply",
+      path: "spec.deletionPolicy",
+      ref,
+    };
+    const a = actions({
+      objects: [],
+      errors: [conflict],
+      ownership: ownedBy([kubectl]),
+    });
+    const steps = deleteClaimSteps(
+      claim({ deletionPolicy: "Delete" }),
+      "Orphan",
+      "x",
+    );
+    expect(await previewDeleteSteps(steps.remove, steps.policy, a)).toEqual({
+      objects: removed.objects,
+      errors: [conflict],
+      ownership: ownedBy([kubectl]),
+    });
+    expect(a.seen).toEqual({ remove: [steps.remove], policy: [steps.policy] });
+  });
+
+  it("gives the errors of a failed dry run of either write", async () => {
+    const a = {
+      preview: async () => {
+        throw new Error("no answer");
+      },
+      previewPolicy: async () => {
+        throw new Error("no answer either");
+      },
+    };
+    const steps = deleteClaimSteps(
+      claim({ deletionPolicy: "Delete" }),
+      "Orphan",
+      "x",
+    );
+    expect(await previewDeleteSteps(steps.remove, steps.policy, a)).toEqual({
+      objects: [],
+      errors: [
+        { code: "Unavailable", message: "Error: no answer" },
+        { code: "Unavailable", message: "Error: no answer either" },
+      ],
+    });
   });
 });
 

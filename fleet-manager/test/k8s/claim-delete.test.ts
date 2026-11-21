@@ -1,16 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { KubeConfig } from "@kubernetes/client-node";
+import { KubeConfig, KubernetesObjectApi } from "@kubernetes/client-node";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import {
+  applyClaimChange,
   applyClaimDelete,
+  previewClaimChange,
   previewClaimDelete,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
   applyPlaneClaimDelete,
   previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
+import { deleteClaimSteps, previewDeleteSteps } from "@/lib/claims/deletion";
+import type { DeletableClaim } from "@/lib/policy";
+import {
+  APP_FIELD_MANAGER,
+  fieldManagers,
+  type ManagedObject,
+} from "@/lib/merge";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { KubeError, kubeRequest } from "../scenarios/kube";
+import { createClientSideApplied } from "./client-side-apply";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -237,6 +247,98 @@ describe("the delete of a claim against envtest", () => {
     });
     expect((await read(claim.metadata.name))?.metadata.uid).toBe(
       again.metadata.uid,
+    );
+  });
+});
+
+describe("the delete of a claim whose deletion policy kubectl apply set, against envtest", () => {
+  const intent = "Delete the cluster";
+  const actions = {
+    preview: previewClaimDelete,
+    previewPolicy: previewClaimChange,
+  };
+  // applied makes a claim with kubectl apply, with the deletion policy
+  // Delete and the cleanup finalizer, and returns it as the API server
+  // answered.
+  async function applied() {
+    const name = `orders-${randomUUID().slice(0, 8)}`;
+    await createClientSideApplied(KubernetesObjectApi.makeApiClient(kc), {
+      apiVersion,
+      kind: "CamundaClusterClaim",
+      metadata: { name, namespace, finalizers: ["fleet.camunda.io/cleanup"] },
+      spec: { presetRef: "medium", deletionPolicy: "Delete" },
+    });
+    return (await read(name)) as unknown as DeletableClaim & KubeObject;
+  }
+
+  it("the review names the field and kubectl, and the policy write without the take-over writes nothing", async () => {
+    const claim = await applied();
+    const steps = deleteClaimSteps(claim, "Orphan", intent);
+
+    const preview = await previewDeleteSteps(
+      steps.remove,
+      steps.policy,
+      actions,
+    );
+
+    expect(preview.ownership).toEqual([
+      expect.objectContaining({
+        changed: [
+          expect.objectContaining({
+            path: "spec.deletionPolicy",
+            managers: [
+              expect.objectContaining({ name: "kubectl-client-side-apply" }),
+            ],
+          }),
+        ],
+        cleared: [],
+      }),
+    ]);
+    expect(preview.objects).toEqual([
+      expect.objectContaining({
+        ref: expect.objectContaining({ name: claim.metadata.name }),
+      }),
+    ]);
+    expect(await applyClaimChange(steps.policy!)).toMatchObject({
+      ok: false,
+      errors: [{ code: "Conflict", path: "spec.deletionPolicy" }],
+    });
+    expect((await read(claim.metadata.name))?.metadata.resourceVersion).toBe(
+      claim.metadata.resourceVersion,
+    );
+  });
+
+  it("with the take-over, the fleet manager owns the policy, and the claim is deleted under it", async () => {
+    const claim = await applied();
+    const steps = deleteClaimSteps(claim, "Orphan", intent);
+    const { ownership = [] } = await previewDeleteSteps(
+      steps.remove,
+      steps.policy,
+      actions,
+    );
+
+    const taken = deleteClaimSteps(claim, "Orphan", intent, ownership).policy!;
+    expect(await applyClaimChange(taken)).toEqual({ ok: true, mode: "direct" });
+    const written = (await read(
+      claim.metadata.name,
+    )) as unknown as DeletableClaim & KubeObject;
+    expect(written.spec?.deletionPolicy).toBe("Orphan");
+    expect(
+      fieldManagers(written as unknown as ManagedObject)["spec.deletionPolicy"],
+    ).toBe(APP_FIELD_MANAGER);
+
+    const after = deleteClaimSteps(written, "Orphan", intent);
+    expect(after.policy).toBeUndefined();
+    expect(await applyClaimDelete(after.remove)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    // The cleanup finalizer holds the claim, with the policy that the
+    // operator reads when it deletes what the claim made.
+    const deleting = await read(claim.metadata.name);
+    expect(deleting?.metadata.deletionTimestamp).toBeDefined();
+    expect((deleting?.spec as { deletionPolicy?: string }).deletionPolicy).toBe(
+      "Orphan",
     );
   });
 });

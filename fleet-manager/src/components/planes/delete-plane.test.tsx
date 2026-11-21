@@ -13,13 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyPlaneClaimChange,
   applyPlaneClaimDelete,
+  previewPlaneClaimChange,
   previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type WatchSpec, watchId } from "@/lib/k8s/shared-watch";
 import { ENVIRONMENT_LABEL, REVISION_ANNOTATION } from "@/lib/labels";
-import type { KubeObject, WriteMode } from "@/lib/write/types";
+import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { DeletePlane } from "./delete-plane";
@@ -154,15 +155,20 @@ const data = (
 const actions = {
   preview: previewPlaneClaimDelete,
   remove: applyPlaneClaimDelete,
+  previewPolicy: previewPlaneClaimChange,
   applyPolicy: applyPlaneClaimChange,
 };
 
-function page(initial: DeletePlaneData = data(), mode: WriteMode = "direct") {
+function page(
+  initial: DeletePlaneData = data(),
+  mode: WriteMode = "direct",
+  given: typeof actions = actions,
+) {
   fakeWriter.objects = [initial.claim as unknown as KubeObject];
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
-        <DeletePlane initial={initial} writeMode={mode} actions={actions} />
+        <DeletePlane initial={initial} writeMode={mode} actions={given} />
       </GitPushesProvider>
     </QueryClientProvider>,
   );
@@ -302,6 +308,73 @@ describe("DeletePlane", () => {
     fakeWriter.objects = [written as unknown as KubeObject];
     // The cleanup finalizer gives the policy to the request of the option
     // on delete, so the request keeps the old policy here.
+    await snapshot(claimWatch, [written]);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    removed(fakeWriter.applied[1]);
+  });
+
+  it("direct mode: a deletion policy that kubectl set is written only after the take-over, and the delete follows once the claim has it", async () => {
+    const initial = data(undefined, {
+      claim: claim({ deletionPolicy: "Delete" }),
+    });
+    const policyPreview: Preview = {
+      objects: [],
+      errors: [],
+      ownership: [
+        {
+          ref,
+          changed: [
+            {
+              path: "spec.deletionPolicy",
+              steps: [{ field: "spec" }, { field: "deletionPolicy" }],
+              managers: [
+                {
+                  name: "kubectl-client-side-apply",
+                  operation: "Update",
+                  kind: "other",
+                  known: true,
+                },
+              ],
+            },
+          ],
+          cleared: [],
+        },
+      ],
+    };
+    page(initial, "direct", {
+      ...actions,
+      previewPolicy: async () => policyPreview,
+    });
+    await readAll(initial);
+    fireEvent.click(radio(/Keep the resources/));
+    const group = await screen.findByRole("group", {
+      name: "Fields that another tool set",
+    });
+    expect(group.textContent).toContain(
+      "spec.deletionPolicy: kubectl-client-side-apply set it. The save changes it.",
+    );
+    fireEvent.change(screen.getByLabelText("Type plane-a to confirm"), {
+      target: { value: "plane-a" },
+    });
+    await act(async () => {});
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Delete the management plane",
+      }).disabled,
+    ).toBe(true);
+    expect(fakeWriter.applied).toEqual([]);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await confirm("Delete the management plane");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    expect(fakeWriter.applied[0]).toMatchObject({
+      apply: [{ spec: { deletionPolicy: "Orphan" } }],
+      takeOver: { [KEY]: ["spec.deletionPolicy"] },
+    });
+    const written = claim({ deletionPolicy: "Orphan", resourceVersion: "8" });
+    fakeWriter.objects = [written as unknown as KubeObject];
     await snapshot(claimWatch, [written]);
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     removed(fakeWriter.applied[1]);

@@ -251,3 +251,67 @@ export const OwnKeycloak: Story = {
     ).toBeVisible();
   },
 };
+
+export const PolicyOfAnotherTool: Story = {
+  name: "Keep picked, and kubectl set the deletion policy",
+  args: {
+    model: deletePlaneModel(data({ claim: claim("Delete") }), "Orphan"),
+    policyStep: true,
+    policyOwned:
+      "Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose Delete the resources to delete with the policy that the claim has.",
+    preview: fn(async () => {
+      const ref = {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
+        namespace: "platform",
+        name: "plane-a",
+      };
+      return {
+        objects: [],
+        errors: [],
+        ownership: [
+          {
+            ref,
+            changed: [
+              {
+                path: "spec.deletionPolicy",
+                steps: [{ field: "spec" }, { field: "deletionPolicy" }],
+                managers: [
+                  {
+                    name: "kubectl-client-side-apply",
+                    operation: "Update",
+                    kind: "other" as const,
+                    known: true,
+                  },
+                ],
+              },
+            ],
+            cleared: [],
+          },
+        ],
+      };
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole("group", {
+        name: "Fields that another tool set",
+      }),
+    ).toHaveTextContent(
+      "spec.deletionPolicy: kubectl-client-side-apply set it.",
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Type plane-a to confirm"),
+      "plane-a",
+    );
+    const confirm = canvas.getByRole("button", {
+      name: "Delete the management plane",
+    });
+    await expect(confirm).toBeDisabled();
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await expect(confirm).toBeEnabled();
+  },
+};

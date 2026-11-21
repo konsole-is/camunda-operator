@@ -6,12 +6,14 @@ import type { WriteMode } from "@/lib/write/types";
 import {
   applyClaimChange,
   applyClaimDelete,
+  previewClaimChange,
   previewClaimDelete,
 } from "../actions";
 
 const actions = {
   preview: previewClaimDelete,
   remove: applyClaimDelete,
+  previewPolicy: previewClaimChange,
   applyPolicy: applyClaimChange,
 };
 

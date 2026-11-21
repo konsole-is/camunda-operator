@@ -232,6 +232,22 @@ The page then says "Volumes kept for a cluster of the same name" next to the `Ca
 
 The backups of the cluster stay, and their artifacts stay in the bucket. When the backup storage option deletes its bucket under your choice, the backups have nowhere to stay. The page then warns "You cannot restore my-cluster after this: the backup bucket goes too."
 
+### A deletion policy that another tool set
+
+In direct mode, another tool can own `spec.deletionPolicy` of the claim, for example `kubectl apply` of a claim file that sets `deletionPolicy`. When your choice differs from that policy, the delete must change the field of that tool. For example, the file sets `Delete`, and you choose **Keep the resources**. The review then names the field and the tool before you confirm, as on the other pages:
+
+```text
+Fields that another tool set
+spec.deletionPolicy: kubectl-client-side-apply set it. The save changes it.
+[ ] Take over these fields
+```
+
+Without the take-over, the delete cannot change the deletion policy, and **Delete the cluster** stays off. The page says "Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose Delete the resources to delete with the policy that the claim has." The page names the policy that the claim has. When you choose that policy, the delete writes no policy, and the review does not ask.
+
+With the take-over, the fleet manager writes your choice to the claim and becomes the only field manager of `spec.deletionPolicy`. Then the delete continues, as [Confirm the delete](#confirm-the-delete) says, with the policy that the review showed. The page asks again on each delete. When a controller of the operator sets the field, the review names the controller and offers no take-over. Choose the policy that the claim has to delete the cluster. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` of the claim file does after it.
+
+In Git mode, the review offers no take-over. The first commit sets the deletion policy in the claim file, as [Delete in Git mode](#delete-in-git-mode) says.
+
 ### Confirm the delete
 
 1. Type the name of the cluster.

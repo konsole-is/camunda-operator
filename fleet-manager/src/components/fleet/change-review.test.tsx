@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   Change,
   KubeObject,
+  ObjectOwnership,
   Preview,
   WriteMode,
   WriteResult,
@@ -117,6 +118,7 @@ function setup({
   hold,
   change: given = change,
   offerTakeOver,
+  otherWrite,
 }: {
   preview?: Preview | ((change: Change) => Preview);
   result?: WriteResult;
@@ -125,12 +127,18 @@ function setup({
   hold?: boolean;
   change?: Change;
   offerTakeOver?: boolean;
+  otherWrite?: boolean;
 } = {}) {
   const props = {
     preview: vi.fn(async (c: Change) =>
       typeof preview === "function" ? preview(c) : preview,
     ),
-    apply: vi.fn<(change: Change) => Promise<WriteResult>>(async () => result),
+    apply: vi.fn<
+      (
+        change: Change,
+        taken?: readonly ObjectOwnership[],
+      ) => Promise<WriteResult>
+    >(async () => result),
     show: vi.fn(),
     onWritten: vi.fn(),
     onCancel: vi.fn(),
@@ -146,6 +154,7 @@ function setup({
       savedMessage="The environment staging is saved."
       hold={hold}
       offerTakeOver={offerTakeOver}
+      otherWrite={otherWrite}
       {...props}
     />
   );
@@ -410,6 +419,43 @@ describe("ChangeReview with fields of another tool", () => {
     expect(preview).toHaveBeenLastCalledWith(withList);
     fireEvent.click(confirm());
     await waitFor(() => expect(apply).toHaveBeenCalledWith(withList));
+  });
+
+  it("with otherWrite, gives apply the ownership that the choice takes over, for a write of another object", async () => {
+    // The delete of a claim previews the delete and gets the ownership of
+    // the policy write before it, so withTakeOver leaves the change as it is.
+    const removed: Change = {
+      intent: "Delete the environment staging",
+      apply: [],
+      delete: [{ ...ref, apiVersion: base.apiVersion }],
+    };
+    const { apply } = setup({
+      change: removed,
+      preview: { ...conflicted, objects: clean.objects },
+      otherWrite: true,
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    expect(confirm()).toHaveProperty("disabled", true);
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    fireEvent.click(confirm());
+    await waitFor(() =>
+      expect(apply).toHaveBeenCalledWith(removed, conflicted.ownership),
+    );
+  });
+
+  it("with otherWrite, gives apply no ownership without the choice", async () => {
+    const { apply } = setup({
+      change: updated,
+      otherWrite: true,
+      preview: {
+        ...clean,
+        ownership: [{ ref, changed: [], cleared: [color] }],
+      },
+    });
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    fireEvent.click(confirm());
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(updated, []));
   });
 
   it("a cleared field only: Save is on, and the note says the field stays", async () => {

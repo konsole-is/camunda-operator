@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { DeletionPolicy } from "@/lib/policy";
+import type { ForeignManager, Preview } from "@/lib/write/types";
 import {
   type DeleteClusterData,
   deleteClusterModel,
@@ -431,4 +432,109 @@ export const Replaced: Story = {
 export const ChangesOff: Story = {
   name: "Changes are off",
   args: { mode: undefined },
+};
+
+// ownedPreview is the preview of a delete whose policy write changes
+// spec.deletionPolicy, which manager set.
+const ownedPreview = (manager: ForeignManager): Preview => {
+  const ref = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    namespace: "team-orders",
+    name: "orders",
+  };
+  return {
+    objects: [],
+    errors: [
+      {
+        code: "Conflict",
+        message: `conflict with "${manager.name}"`,
+        path: "spec.deletionPolicy",
+        manager: manager.name,
+        ref,
+      },
+    ],
+    ownership: [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.deletionPolicy",
+            steps: [{ field: "spec" }, { field: "deletionPolicy" }],
+            managers: [manager],
+          },
+        ],
+        cleared: [],
+      },
+    ],
+  };
+};
+
+export const PolicyOfAnotherTool: Story = {
+  name: "Keep picked, and kubectl set the deletion policy",
+  args: {
+    model: deleteClusterModel(data({ claim: claim("Delete") }), "Orphan"),
+    policyStep: true,
+    policyOwned:
+      "Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose Delete the resources to delete with the policy that the claim has.",
+    preview: fn(async () =>
+      ownedPreview({
+        name: "kubectl-client-side-apply",
+        operation: "Update",
+        kind: "other",
+        known: true,
+      }),
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const group = await canvas.findByRole("group", {
+      name: "Fields that another tool set",
+    });
+    await expect(group).toHaveTextContent(
+      "spec.deletionPolicy: kubectl-client-side-apply set it. The save changes it.",
+    );
+    await userEvent.type(
+      canvas.getByLabelText("Type orders to confirm"),
+      "orders",
+    );
+    const confirm = canvas.getByRole("button", { name: "Delete the cluster" });
+    await expect(confirm).toBeDisabled();
+    await userEvent.click(
+      canvas.getByRole("checkbox", { name: "Take over these fields" }),
+    );
+    await expect(confirm).toBeEnabled();
+  },
+};
+
+export const PolicyOfTheOperator: Story = {
+  name: "Keep picked, and the operator sets the deletion policy",
+  args: {
+    model: deleteClusterModel(data({ claim: claim("Delete") }), "Orphan"),
+    policyStep: true,
+    policyOwned:
+      "The operator sets the deletion policy of the claim, so the delete cannot change it. Choose Delete the resources to delete with the policy that the claim has.",
+    preview: fn(async () =>
+      ownedPreview({
+        name: "camunda-operator/CamundaClusterClaim/8c1f6c1e",
+        operation: "Apply",
+        kind: "operator",
+        known: true,
+      }),
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(/of the operator sets it\./),
+    ).toBeVisible();
+    await expect(canvas.queryByRole("checkbox")).toBeNull();
+    await userEvent.type(
+      canvas.getByLabelText("Type orders to confirm"),
+      "orders",
+    );
+    await expect(
+      canvas.getByRole("button", { name: "Delete the cluster" }),
+    ).toBeDisabled();
+  },
 };

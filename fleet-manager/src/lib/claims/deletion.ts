@@ -9,8 +9,9 @@ import {
   slotOf,
 } from "@/lib/policy";
 import { changeOf, type Session, setValue } from "@/lib/session";
+import { withTakeOver } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
-import type { Change } from "@/lib/write/types";
+import type { Change, ObjectOwnership, Preview } from "@/lib/write/types";
 import { resourceFate, type ResourceRow } from "./resources";
 import {
   type SectionClaim,
@@ -26,13 +27,16 @@ import {
  * claim has none, and claimDeleteSchema then refuses remove. policy is
  * absent when the claim is sure to delete under policy. policy writes
  * spec.deletionPolicy as the whole claim, with the resourceVersion of claim
- * as its precondition. After policy, take remove from the claim that
- * carries the new policy.
+ * as its precondition, and takes over the offered fields of takeOver, as
+ * withTakeOver does. Give takeOver only after the user chose the take-over
+ * of these fields. After policy, take remove from the claim that carries
+ * the new policy.
  */
 export function deleteClaimSteps<C extends DeletableClaim>(
   claim: C,
   policy: DeletionPolicy,
   intent: string,
+  takeOver: readonly ObjectOwnership[] = [],
 ): { policy?: Change; remove: Change } {
   const { apiVersion, kind, metadata, spec, status } = claim;
   const name = metadata.name ?? "";
@@ -66,11 +70,48 @@ export function deleteClaimSteps<C extends DeletableClaim>(
     policy,
   ) as { session: Session<C> };
   return {
-    policy: changeOf(
-      session,
-      `Set the deletion policy of ${name} to ${policy} before the delete`,
+    policy: withTakeOver(
+      changeOf(
+        session,
+        `Set the deletion policy of ${name} to ${policy} before the delete`,
+      ),
+      takeOver,
     ),
     remove,
+  };
+}
+
+/**
+ * previewDeleteSteps returns the preview that the review of a delete
+ * shows: the objects of the dry run of remove, its errors and those of the
+ * dry run of policy, and the ownership of the dry run of policy. A dry run
+ * that throws gives an Unavailable error. Give policy only in direct mode,
+ * because only there the review offers a take-over.
+ */
+export async function previewDeleteSteps(
+  remove: Change,
+  policy: Change | undefined,
+  actions: {
+    preview(change: Change): Promise<Preview>;
+    previewPolicy(change: Change): Promise<Preview>;
+  },
+): Promise<Preview> {
+  const [removed, written] = await Promise.all([
+    actions.preview(remove).catch(failedPreview),
+    policy ? actions.previewPolicy(policy).catch(failedPreview) : undefined,
+  ]);
+  if (!written) return removed;
+  return {
+    objects: removed.objects,
+    errors: [...removed.errors, ...written.errors],
+    ...(written.ownership && { ownership: written.ownership }),
+  };
+}
+
+function failedPreview(error: unknown): Preview {
+  return {
+    objects: [],
+    errors: [{ code: "Unavailable", message: String(error) }],
   };
 }
 
