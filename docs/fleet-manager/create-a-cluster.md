@@ -44,6 +44,8 @@ A setting also shows an error when the value that the cluster gets is not valid.
 
 A resource such as `ephemeral-storage` has no field in the setting. An edit of another amount of the same setting writes its values into the claim too. **Reset to preset** removes them from the claim, together with the other amounts that the claim sets there. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 
+Labels, annotations, and environment variables merge key by key or name by name. The claim can add an entry or change its value, but it cannot remove an entry of the preset. When the preset holds an entry that the setting does not accept, the setting shows an error that names the entry and the preset. An example is `The label key "bad key" comes from the preset`. The error stays when you remove the row, and **Next** stays off. Pick another preset, or ask your admin to correct the preset. When only the value of a label is not valid, you can also set a valid value for that key. For a label or an annotation of an embedded process, or for a variable of Connectors that are off, the error shows as a warning. The variables of an embedded process apply to its host, so their error stops **Next**.
+
 A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 
 A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. A new namespace holds no Secret yet. [A Secret that the namespace does not hold](#a-secret-that-the-namespace-does-not-hold) says what the step shows then.

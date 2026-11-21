@@ -6,6 +6,7 @@ import {
 import type { Process } from "@/components/cluster/topology";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpreset";
+import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
 import { clusterFields, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
@@ -16,9 +17,11 @@ import { mergeCluster } from "@/lib/merge";
  * preset is spec.cluster of its preset. claim is the claim spec beside its
  * presetRef: the cluster spec is claim.cluster with cluster over it, as the
  * claim controller writes it. optimize is the spec of its CamundaOptimize.
+ * release is the spec of its release.
  */
 export type SettingsPage = {
   preset?: CamundaClusterSpec;
+  release?: CamundaReleaseSpec;
   cluster?: CamundaClusterSpec;
   claim?: Record<string, unknown>;
   sections?: Resource<"PluginSection">[];
@@ -38,7 +41,7 @@ export function settingsFieldsOf(page: SettingsPage) {
   };
   const preset =
     page.preset && ({ cluster: page.preset } as CamundaClusterPresetSpec);
-  const merged = mergeCluster(preset, undefined, spec);
+  const merged = mergeCluster(preset, page.release, spec);
   const fields = clusterFields({
     cluster: {
       kind: "CamundaCluster",

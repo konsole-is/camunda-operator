@@ -704,18 +704,6 @@ describe("SettingsEditor collapsed", () => {
       "Enter a key, or use the operator Exists",
     ],
     [
-      "a map of labels",
-      { podLabels: { "bad key!": "a" } },
-      "podLabels",
-      undefined,
-    ],
-    [
-      "environment variables",
-      { extraEnv: [{ name: "", value: "a" }] },
-      "extraEnv",
-      "Enter a name",
-    ],
-    [
       "a storage size",
       { storageSize: "0Gi" },
       "storageSize",
@@ -1154,6 +1142,130 @@ describe("SettingsEditor collapsed", () => {
       "2",
     );
     expect(within(settingRow("resources")).queryByRole("alert")).toBeNull();
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  // EntryHost holds a claim like MergedHost, under a preset that sets
+  // spec.cluster.zeebe to brokers.
+  function EntryHost({
+    brokers,
+    invalid,
+    onClaim,
+  }: {
+    brokers: object;
+    invalid: (at: Step[], message: string | undefined) => void;
+    onClaim: (cluster: object) => void;
+  }) {
+    const [cluster, setCluster] = useState<object>({});
+    onClaim(cluster);
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: { zeebe: brokers } as SettingsPage["preset"],
+      claim: { cluster },
+    });
+    return (
+      <SettingsEditor
+        collapsed
+        group={group}
+        settings={settings}
+        secrets={SECRETS}
+        set={(at, value) => setCluster((c) => withValue(c, at.slice(2), value))}
+        reset={(at) => setCluster((c) => without(c, at.slice(2)))}
+        invalid={invalid}
+      />
+    );
+  }
+  const BAD_KEY =
+    'The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.';
+  const NO_NAME =
+    "A variable without a name comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.";
+
+  it("shows a label key of the preset that is not valid once, in the words of the merge, and leaves the report to the host", () => {
+    const { invalid } = renderClosed({
+      preset: { zeebe: { podLabels: { "bad key": "x" } } },
+    });
+    const labels = settingRow("podLabels");
+    expect(within(labels).getByRole("alert").textContent).toBe(BAD_KEY);
+    expect(within(labels).queryByText(/valid label key/)).toBeNull();
+    expect(isOpen()).toBe(true);
+    expect(row().textContent).toContain("1 error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("keeps the error of a label key of the preset after its row is deleted", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <EntryHost
+        brokers={{ podLabels: { "bad key": "x", team: "a" } }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    await userEvent.click(
+      within(settingRow("podLabels")).getByRole("button", {
+        name: "Remove entry 1",
+      }),
+    );
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { podLabels: { team: "a" } },
+    });
+    expect(within(settingRow("podLabels")).getByRole("alert").textContent).toBe(
+      BAD_KEY,
+    );
+    expect(row().textContent).toContain("1 error");
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it("lets an edit beside a label key of the preset through, without a copy of that key", async () => {
+    const onClaim = vi.fn();
+    render(
+      <EntryHost
+        brokers={{ podLabels: { "bad key": "x", team: "a" } }}
+        invalid={vi.fn()}
+        onClaim={onClaim}
+      />,
+    );
+    const team = within(settingRow("podLabels")).getByRole("group", {
+      name: "Entry 2",
+    });
+    await userEvent.type(
+      within(team).getByRole("textbox", { name: "Value" }),
+      "b",
+    );
+    expect(onClaim).toHaveBeenLastCalledWith({
+      zeebe: { podLabels: { team: "ab" } },
+    });
+    expect(within(settingRow("podLabels")).getByRole("alert").textContent).toBe(
+      BAD_KEY,
+    );
+  });
+
+  it("keeps the error of a variable of the preset without a name after its row is deleted", async () => {
+    const invalid = vi.fn();
+    const onClaim = vi.fn();
+    render(
+      <EntryHost
+        brokers={{
+          extraEnv: [
+            { name: "", value: "x" },
+            { name: "TZ", value: "UTC" },
+          ],
+        }}
+        invalid={invalid}
+        onClaim={onClaim}
+      />,
+    );
+    const env = () => settingRow("extraEnv");
+    expect(within(env()).getByRole("alert").textContent).toBe(NO_NAME);
+    expect(within(env()).queryByText("Enter a name")).toBeNull();
+    await userEvent.click(
+      within(env()).getByRole("button", { name: "Remove variable 1" }),
+    );
+    // The editor leaves the variable out of what it writes, so its delete
+    // changes nothing.
+    expect(onClaim).toHaveBeenLastCalledWith({});
+    expect(within(env()).getByRole("alert").textContent).toBe(NO_NAME);
+    expect(row().textContent).toContain("1 error");
     expect(invalid).not.toHaveBeenCalled();
   });
 

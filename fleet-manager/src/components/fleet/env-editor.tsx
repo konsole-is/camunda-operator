@@ -38,6 +38,9 @@ type Row =
  * the hint and error elements of the field for each control of a row.
  * missingIn gives the namespaces that lack a picked Secret key, and the row
  * names them. onErrors gets the errors that it shows, also at mount.
+ * checkedEntries are entries that the host checks itself, in a value below
+ * the entries of onChange that keeps them: a row equal to one shows no
+ * error, does not refuse a change, and is left out of the entries.
  */
 export function EnvEditor({
   label,
@@ -45,6 +48,7 @@ export function EnvEditor({
   defaultValue = [],
   describedBy,
   missingIn,
+  checkedEntries = [],
   onChange,
   onErrors,
 }: {
@@ -53,6 +57,7 @@ export function EnvEditor({
   defaultValue?: EnvVar[];
   describedBy?: string;
   missingIn?: (name: string, key: string) => readonly string[];
+  checkedEntries?: readonly EnvVar[];
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
@@ -61,9 +66,15 @@ export function EnvEditor({
   const [rows, setRows] = useState<Row[]>(() =>
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
-  const errors = rowErrors(rows);
+  const checked = checkedEntries.map((entry, i) =>
+    JSON.stringify(toEnv(toRow(entry, i))),
+  );
+  const isChecked = (row: Row) => checked.includes(JSON.stringify(toEnv(row)));
+  const errors = rowErrors(rows).filter(
+    (error) => !isChecked(rows[Number(error.path.split(".")[0])]),
+  );
   useErrorsReport(errors, onErrors);
-  const env = rows.map(toEnv);
+  const env = rows.filter((row) => !isChecked(row)).map(toEnv);
   const report = JSON.stringify([env, errors]);
   const reported = useRef(report);
   useEffect(() => {
@@ -247,6 +258,14 @@ function toEnv(row: Row): EnvVar {
         valueFrom: { secretKeyRef: { name: row.ref.name, key: row.ref.key } },
       }
     : { name: row.name };
+}
+
+/**
+ * envErrors returns the errors that EnvEditor shows for env, with the paths
+ * "<entry>.name" and "<entry>.secret", counting entries from 0.
+ */
+export function envErrors(env: readonly EnvVar[]): ValidationError[] {
+  return rowErrors(env.map(toRow));
 }
 
 function rowErrors(rows: Row[]): ValidationError[] {

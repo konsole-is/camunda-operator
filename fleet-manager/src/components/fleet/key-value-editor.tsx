@@ -27,7 +27,10 @@ export type EmptyMap = "inherited" | "unset";
  * defaultValue of {} starts as that empty map. An error path is
  * "<row>.key" or "<row>.value", counting rows from 0. describedBy names
  * the hint and error elements of the field for each input. onErrors gets
- * the errors that it shows, also at mount.
+ * the errors that it shows, also at mount. checkedEntries are entries that
+ * the host checks itself, in a value below the map of onChange that keeps
+ * them: a row with the key and the value of one shows no error, does not
+ * refuse a change, and is left out of the map.
  */
 export function KeyValueEditor({
   label,
@@ -37,6 +40,7 @@ export function KeyValueEditor({
   format,
   emptyMap,
   describedBy,
+  checkedEntries = [],
   onChange,
   onErrors,
 }: {
@@ -47,6 +51,7 @@ export function KeyValueEditor({
   format?: "label";
   emptyMap?: EmptyMap;
   describedBy?: string;
+  checkedEntries?: readonly { key: string; value: string }[];
   onChange?: (
     value: Record<string, string> | undefined,
     errors: ValidationError[],
@@ -77,18 +82,27 @@ export function KeyValueEditor({
     moveFocus.current = false;
     (empty ? undoButton : setButton).current?.focus();
   }, [empty]);
-  const errors = keyValueErrors(entries, format);
+  const checked = (e: Entry) =>
+    checkedEntries.some((c) => c.key === e.key && c.value === e.value);
+  // checkedErrors leaves out the errors of the checked rows of rows.
+  const checkedErrors = (rows: readonly Entry[]) =>
+    keyValueErrors(rows, format).filter(
+      (error) => !checked(rows[Number(error.path.split(".")[0])]),
+    );
+  const errors = checkedErrors(entries);
   useErrorsReport(errors, onErrors);
 
   const update = (changed: Entry[], changedEmpty = false) => {
     setEntries(changed);
     setEmpty(changedEmpty);
     const map = Object.fromEntries(
-      changed.filter((e) => e.key !== "").map((e) => [e.key, e.value]),
+      changed
+        .filter((e) => e.key !== "" && !checked(e))
+        .map((e) => [e.key, e.value]),
     );
     onChange?.(
       changedEmpty || Object.keys(map).length > 0 ? map : undefined,
-      keyValueErrors(changed, format),
+      checkedErrors(changed),
     );
   };
   const setEmptyMap = (on: boolean) => {

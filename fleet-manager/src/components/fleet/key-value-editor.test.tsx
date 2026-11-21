@@ -246,6 +246,59 @@ describe("KeyValueEditor", () => {
 });
 
 describe("keyValueErrors", () => {
+  describe("with checkedEntries", () => {
+    const checked = [{ key: "bad key", value: "x" }];
+
+    it("shows no error for an equal row and leaves it out of the map", async () => {
+      const onChange = vi.fn();
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x", team: "a" }}
+          checkedEntries={checked}
+          onChange={onChange}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([]);
+      expect(screen.queryByText(/valid label key/)).toBeNull();
+      const team = screen.getByRole("group", { name: "Entry 2" });
+      await userEvent.type(
+        within(team).getByRole("textbox", { name: "Value" }),
+        "b",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ team: "ab" }, []);
+    });
+
+    it("checks the row again once the user changes it", async () => {
+      const onChange = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x" }}
+          checkedEntries={checked}
+          onChange={onChange}
+        />,
+      );
+      const row = screen.getByRole("group", { name: "Entry 1" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "y",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ "bad key": "xy" }, [
+        {
+          path: "0.key",
+          message:
+            "Use a valid label key, for example team or example.com/team",
+        },
+      ]);
+      expect(screen.getByText(/valid label key/)).toBeTruthy();
+    });
+  });
+
   it("gives the errors that the editor shows, by row", () => {
     expect(
       keyValueErrors(

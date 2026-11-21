@@ -888,7 +888,9 @@ describe("ClusterEditProvider", () => {
   });
 
   describe("a save that keeps a CPU request of another tool", () => {
-    const spec = { zeebe: { replicas: 3, resources: { requests: { cpu: "2" } } } };
+    const spec = {
+      zeebe: { replicas: 3, resources: { requests: { cpu: "2" } } },
+    };
     const kubectl = {
       name: "kubectl",
       operation: "Apply",
