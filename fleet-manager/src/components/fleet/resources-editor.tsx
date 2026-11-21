@@ -7,6 +7,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { useErrorsReport } from "./errors-report";
 
@@ -24,6 +25,18 @@ export type LimitBelowRequest = {
   resource: string;
   request: string;
   limit: string;
+};
+
+/**
+ * EditedLayers are the layers below a ResourcesEditor whose value merges a
+ * claim over a preset. claim is the block of the claim now, and before
+ * holds the block of the claim and the merged value before the pending
+ * changes. Without before, the editor takes claim and its defaultValue as
+ * they were at its mount.
+ */
+export type EditedLayers = {
+  claim: Resources | undefined;
+  before?: { claim: Resources | undefined; merged: Resources | undefined };
 };
 
 /** EDITED_RESOURCES are the resources that ResourcesEditor has fields for. */
@@ -83,12 +96,16 @@ const FIELDS: [Side, Resource, string][] = [
  * against its request in the value that the cluster gets: the editor then
  * neither shows nor reports a limit below its request, and passes such an
  * edit on. onErrors gets the errors that it shows, also at mount.
+ *
+ * With layers, a change gives claimResourcesOf of the fields that the user
+ * typed in since the mount. Without layers, it gives the whole value.
  */
 export function ResourcesEditor({
   label,
   defaultValue = {},
   describedBy,
   limitsChecked = false,
+  layers,
   onChange,
   onErrors,
 }: {
@@ -96,19 +113,43 @@ export function ResourcesEditor({
   defaultValue?: Resources;
   describedBy?: string;
   limitsChecked?: boolean;
+  layers?: EditedLayers;
   onChange?: (value: Resources, errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
+  const [typed, setTyped] = useState<ReadonlySet<string>>(new Set());
+  const [atMount] = useState(() => ({
+    claim: layers?.claim,
+    base: layers?.before ? layers.before.claim : layers?.claim,
+    merged: defaultValue,
+  }));
   const errors = amountErrors(amounts, limitsChecked);
   useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
     const next = { ...amounts, [path]: amount };
+    const nextTyped = new Set(typed).add(path);
     setAmounts(next);
+    setTyped(nextTyped);
+    const before = layers?.before ?? {
+      claim: atMount.base,
+      merged: atMount.merged,
+    };
     onChange?.(
-      toResources(defaultValue, next),
+      layers
+        ? claimResourcesOf(
+            {
+              base: before.claim,
+              merged: before.merged,
+              atMount: { claim: atMount.claim, base: atMount.base },
+            },
+            Object.fromEntries(
+              [...nextTyped].map((p) => [p, quantityOf(next[p])]),
+            ),
+          )
+        : toResources(defaultValue, next),
       amountErrors(next, limitsChecked),
     );
   };
@@ -199,6 +240,10 @@ function parse(quantity: string | number | undefined, emptyUnit = ""): Amount {
     : { amount: String(quantity), unit: "" };
 }
 
+function quantityOf(value: Amount): string {
+  return value.amount === "" ? "" : `${value.amount}${value.unit}`;
+}
+
 function toResources(
   original: Resources,
   amounts: Record<string, Amount>,
@@ -207,14 +252,101 @@ function toResources(
   for (const side of ["requests", "limits"] as const) {
     const map: Record<string, string | number> = { ...original[side] };
     for (const resource of ["cpu", "memory"] as const) {
-      const value = amounts[`${side}.${resource}`];
-      if (value.amount === "") delete map[resource];
-      else map[resource] = `${value.amount}${value.unit}`;
+      const quantity = quantityOf(amounts[`${side}.${resource}`]);
+      if (quantity === "") delete map[resource];
+      else map[resource] = quantity;
     }
     if (Object.keys(map).length) result[side] = map;
     else delete result[side];
   }
   return result;
+}
+
+/**
+ * ClaimLayers are the resources that decide what an edit writes to a claim
+ * whose value merges over the layers below it. base is the block of the
+ * claim before the pending changes, and merged is the value that the
+ * cluster gets with base. atMount holds the block of the claim with the
+ * pending changes and base, both as they were when the editor mounted.
+ */
+export type ClaimLayers = {
+  base: Resources | undefined;
+  merged: Resources | undefined;
+  atMount: { claim: Resources | undefined; base: Resources | undefined };
+};
+
+/**
+ * claimResourcesOf returns the block that an edit writes to the claim.
+ * edits maps each amount field that the user typed in, such as
+ * requests.memory, to the quantity that it shows, or to "" when it is
+ * empty. An edit equal in value to the amount of layers.merged, such as 1
+ * and 1000m, takes the key as layers.base has it, so that it leaves no
+ * pending change. Any other edit writes its quantity, and an empty one
+ * removes the key. Every other key, also one that the editor has no field
+ * for, keeps the pending change that it had at the mount, and otherwise
+ * takes its value in layers.base. An empty requests or limits is left out.
+ */
+export function claimResourcesOf(
+  layers: ClaimLayers,
+  edits: Readonly<Record<string, string>>,
+): Resources {
+  const { base, atMount } = layers;
+  const result = kept(base, atMount.claim, atMount.base);
+  for (const side of ["requests", "limits"] as const) {
+    const map = kept(base?.[side], atMount.claim?.[side], atMount.base?.[side]);
+    for (const resource of ["cpu", "memory"] as const) {
+      const edit = edits[`${side}.${resource}`];
+      if (edit === undefined) continue;
+      const value = sameAmount(
+        parse(edit),
+        parse(layers.merged?.[side]?.[resource]),
+      )
+        ? base?.[side]?.[resource]
+        : edit === ""
+          ? undefined
+          : edit;
+      if (value === undefined) delete map[resource];
+      else map[resource] = value;
+    }
+    if (Object.keys(map).length) result[side] = map;
+    else delete result[side];
+  }
+  return result as Resources;
+}
+
+// kept returns each key of now and of claimAtMount: the value of
+// claimAtMount where it differs from baseAtMount, the value of now where
+// it does not.
+function kept(
+  now: object | undefined,
+  claimAtMount: object | undefined,
+  baseAtMount: object | undefined,
+): Record<string, unknown> {
+  const at = (o: object | undefined, key: string): unknown =>
+    (o as Record<string, unknown> | undefined)?.[key];
+  const result: Record<string, unknown> = {};
+  for (const key of new Set([
+    ...Object.keys(now ?? {}),
+    ...Object.keys(claimAtMount ?? {}),
+  ])) {
+    const value = equalJSON(at(claimAtMount, key), at(baseAtMount, key))
+      ? at(now, key)
+      : at(claimAtMount, key);
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}
+
+// sameAmount says whether a and b are one quantity. Two empty amounts are
+// one, and an amount that is not a number equals only the same text.
+function sameAmount(a: Amount, b: Amount): boolean {
+  if (a.amount === "" || b.amount === "") return a.amount === b.amount;
+  const x = base(a);
+  const y = base(b);
+  if (x === undefined || y === undefined)
+    return a.amount + a.unit === b.amount + b.unit;
+  // Float scales make equal quantities differ in the last digit.
+  return Math.abs(x - y) <= Math.abs(y) * 1e-12;
 }
 
 function amountErrors(

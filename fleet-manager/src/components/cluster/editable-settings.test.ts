@@ -563,6 +563,52 @@ describe("settingsOf merged errors", () => {
   });
 });
 
+describe("settingsOf claim layers", () => {
+  const preset = { zeebe: { resources: { requests: { cpu: "1" } } } };
+  const claimed = { zeebe: { resources: { limits: { cpu: 2 } } } };
+
+  it("gives a resources setting over a claim the block of the claim", () => {
+    const { settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset,
+      claim: { cluster: claimed },
+    });
+    expect(setting(settings, "resources").layers).toEqual({
+      claim: { limits: { cpu: 2 } },
+    });
+  });
+
+  it("adds the claim and the merged value before the pending changes", () => {
+    const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
+    const { merged } = settingsFieldsOf({
+      preset,
+      claim: { cluster: claimed },
+    });
+    const before = { requests: { cpu: "1" }, limits: { cpu: "3" } };
+    const resources = setting(
+      settingsOf({
+        group,
+        spec: merged.spec,
+        live: { zeebe: { resources: before } },
+        claim: claimed,
+        liveClaim: { zeebe: { resources: { limits: { cpu: "3" } } } },
+      }),
+      "resources",
+    );
+    expect(resources.layers).toEqual({
+      claim: { limits: { cpu: 2 } },
+      before: { claim: { limits: { cpu: "3" } }, merged: before },
+    });
+  });
+
+  it("gives no layers where no claim merges, as on the preset page", () => {
+    const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
+    const { merged } = settingsFieldsOf({ preset });
+    expect(
+      setting(settingsOf({ group, spec: merged.spec }), "resources").layers,
+    ).toBeUndefined();
+  });
+});
+
 describe("blockingMergedErrors", () => {
   it("gives each merged error that blocks with the path of its setting", () => {
     const page = {

@@ -11,6 +11,7 @@ import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
+  type EditedLayers,
   ResourcesEditor,
   type Resources,
 } from "@/components/fleet/resources-editor";
@@ -283,6 +284,7 @@ export function SettingRow({
         }
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
+        layers={setting.layers}
         onChange={change}
         onRefused={own(() => {})}
         onShown={setEditorError}
@@ -350,8 +352,8 @@ function useShownError(
 // after each change. current is the value before
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
-// size, environment, maps of strings, and tolerations. limitsChecked
-// reaches only the editor of resources.
+// size, environment, maps of strings, and tolerations. limitsChecked and
+// layers reach only the editor of resources.
 function Editor({
   label,
   editor,
@@ -360,6 +362,7 @@ function Editor({
   replaces,
   describedBy,
   limitsChecked,
+  layers,
   secrets,
   onChange,
   onRefused,
@@ -373,6 +376,7 @@ function Editor({
   describedBy?: string;
   secrets: SecretRefs;
   limitsChecked: boolean;
+  layers?: Setting["layers"];
   onChange: (value: unknown) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
@@ -438,6 +442,7 @@ function Editor({
           defaultValue={initial as Resources}
           describedBy={describedBy}
           limitsChecked={limitsChecked}
+          layers={layers as EditedLayers | undefined}
           onChange={valid}
           onErrors={onErrors}
         />

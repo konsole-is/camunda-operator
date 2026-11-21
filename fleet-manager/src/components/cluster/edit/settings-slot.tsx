@@ -120,6 +120,7 @@ function Editors({
                   spec: merged.spec,
                   live: before.spec,
                   claim: claim.spec.cluster ?? {},
+                  liveClaim: session.claim.spec.cluster ?? {},
                 },
           )}
           secrets={secrets}

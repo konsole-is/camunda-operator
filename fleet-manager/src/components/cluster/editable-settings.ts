@@ -39,7 +39,8 @@ import { type Process, runsOwnWorkload } from "./topology";
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the limits of the merged value that are
  * below their request, and undefined when no check of the merged value
- * runs.
+ * runs. layers is set for a resources setting whose value merges the claim
+ * over the layers below it, and holds the EditedLayers of its editor.
  */
 export type Setting = {
   key: string;
@@ -57,6 +58,10 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
+  layers?: {
+    claim: unknown;
+    before?: { claim: unknown; merged: unknown };
+  };
 };
 
 /**
@@ -75,7 +80,7 @@ export type MergedError = {
  * cluster, and spec.attachments.optimize of the claim for Optimize. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
- * claim only.
+ * claim only. liveClaim is claim before the pending changes.
  *
  * Each path of componentFieldPaths gives one setting, in that order, also
  * when no layer sets it. Its label is the path without the process name.
@@ -88,13 +93,16 @@ export type MergedError = {
  * setting is a read-only setting of its own, after the others.
  *
  * With claim, spec is a merge of layers, and a resources setting gets
- * mergedErrors: each limit of spec below its request, for any resource.
+ * mergedErrors: each limit of spec below its request, for any resource. It
+ * also gets layers, with before only when the input has live and
+ * liveClaim. A setting with a holder gets no layers.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
   spec: unknown;
   live?: unknown;
   claim?: unknown;
+  liveClaim?: unknown;
 }): Setting[] {
   const { group, spec, live, claim } = input;
   const optimize = group.component === "optimize";
@@ -194,7 +202,24 @@ export function settingsOf(input: {
           rest: steps(names.slice(holder.names.length)),
         },
       };
-    return { ...checked, editor, steps: [...base, ...steps(names)] };
+    const layers = keyed && {
+      layers: {
+        claim: valueAt(claim, steps(names)),
+        ...("live" in input &&
+          "liveClaim" in input && {
+            before: {
+              claim: valueAt(input.liveClaim, steps(names)),
+              merged: valueAt(live, steps(names)),
+            },
+          }),
+      },
+    };
+    return {
+      ...checked,
+      ...layers,
+      editor,
+      steps: [...base, ...steps(names)],
+    };
   });
   const rest = group.fields
     .filter((field) => !used.has(field.key))
@@ -220,8 +245,8 @@ function mergedLimitError(
   requestState: FieldState | undefined,
 ): string {
   const states = [limitState, requestState];
-  // The editor has no field for this resource. An edit of another amount
-  // writes the whole block, so the claim can hold copies of these values.
+  // The editor has no field for this resource, so only a reset removes a
+  // value that the claim holds.
   const claimed = states.filter((state) => state?.kind === "claim").length;
   const unedited = !EDITED_RESOURCES.includes(below.resource);
   const fixed =
