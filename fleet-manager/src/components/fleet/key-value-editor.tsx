@@ -84,12 +84,11 @@ export function KeyValueEditor({
   }, [empty]);
   const checked = (e: Entry) =>
     checkedEntries.some((c) => c.key === e.key && c.value === e.value);
-  // checkedErrors leaves out the errors of the checked rows of rows.
-  const checkedErrors = (rows: readonly Entry[]) =>
+  const shownErrors = (rows: readonly Entry[]) =>
     keyValueErrors(rows, format).filter(
       (error) => !checked(rows[Number(error.path.split(".")[0])]),
     );
-  const errors = checkedErrors(entries);
+  const errors = shownErrors(entries);
   useErrorsReport(errors, onErrors);
 
   const update = (changed: Entry[], changedEmpty = false) => {
@@ -102,7 +101,7 @@ export function KeyValueEditor({
     );
     onChange?.(
       changedEmpty || Object.keys(map).length > 0 ? map : undefined,
-      checkedErrors(changed),
+      shownErrors(changed),
     );
   };
   const setEmptyMap = (on: boolean) => {
