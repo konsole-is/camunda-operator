@@ -119,7 +119,7 @@ export function ChangeReview({
   );
 
   // withTakeOver gives change itself when the ownership belongs to another
-  // write, so with otherWrite the choice previews change again with it.
+  // write.
   const retaken = effective !== change || (otherWrite && chosen);
 
   useEffect(() => previewOnce(previewRef, change, setPreviewed), [change]);
@@ -302,8 +302,8 @@ function missingIn(sent: unknown, kept: unknown, path: string): string[] {
   );
 }
 
-// previewOnce previews change, with taken when it is given, and hands the
-// result to set, unless the returned cleanup ran first.
+// previewOnce previews change and hands the result to set, unless the
+// returned cleanup ran first.
 function previewOnce(
   previewRef: {
     current: (

@@ -107,16 +107,15 @@ type Sent =
  * otherWrite. remove names the UID and the generation of the claim, so the
  * server refuses its delete with Stale after a spec change. In direct mode,
  * preview adds the dry run of the policy step that takes over the fields of
- * taken, as previewDeleteSteps does, and policyOwned then says what the
- * delete does while another field manager sets the deletion policy. There,
- * with a policy step, remove is new for each version of the claim, so the
- * review starts again. Without a policy step, apply sends the change that it
- * gets. With one, apply refuses without a write when the preview of the
- * delete fails, and returns the result of the policy write, which takes
- * over the fields of taken. The hook then sends the delete itself. It sends
- * nothing for a claim with another UID, and refuses with Stale when another
- * spec change came in. apply refuses with Stale, and writes nothing, when
- * taken is not empty and the claim changed since the review of change.
+ * taken, and policyOwned then says what the delete does while another field
+ * manager sets the deletion policy. Without a policy step, apply sends the
+ * change that it gets. With one, apply refuses without a write when the
+ * preview of the delete fails, and returns the result of the policy write,
+ * which takes over the fields of taken. The hook then sends the delete
+ * itself. It sends nothing for a claim with another UID, and refuses with
+ * Stale when another spec change came in. apply refuses with Stale, and
+ * writes nothing, when taken is not empty and the claim changed since the
+ * review of change.
  * keepRefused names the registrations of the claim that cannot keep while
  * policy is Orphan. For a claim that recorded its policy, it also names the
  * ones that are not in registrations while orphanNeedsLivePass holds on a

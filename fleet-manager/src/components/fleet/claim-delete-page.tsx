@@ -206,7 +206,6 @@ export function ClaimDeleteView({
   onStopWaiting(): void;
 }): ReactNode {
   const [writing, setWriting] = useState(false);
-  // The note on the deletion policy points at the review below.
   const reviewed = writing || (unread.length === 0 && !keepRefused);
   const takes = (
     <section aria-label="What the delete takes">
