@@ -43,7 +43,7 @@ export function DeletePlaneView({
   keepRefused?: string;
   policyOwned?: string;
   onPick(policy: DeletionPolicy): void;
-  preview(change: Change): Promise<Preview>;
+  preview(change: Change, taken?: readonly ObjectOwnership[]): Promise<Preview>;
   apply(
     change: Change,
     taken?: readonly ObjectOwnership[],

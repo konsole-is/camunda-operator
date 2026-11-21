@@ -35,7 +35,8 @@ import {
  * remove. Set otherWrite when preview gives the ownership of a write other
  * than change, such as the policy write before the delete of a claim. apply
  * then also gets the ownership that the choice takes over, which is empty
- * without the choice.
+ * without the choice. While the choice is on, preview gets that ownership
+ * too.
  *
  * A confirm writes once, and Back is hidden while it runs. An ok write goes
  * to show with savedMessage, then onWritten. A refused write shows its
@@ -71,7 +72,10 @@ export function ChangeReview({
   offerTakeOver?: boolean;
   otherWrite?: boolean;
   savedMessage: string;
-  preview: (change: Change) => Promise<Preview>;
+  preview: (
+    change: Change,
+    taken?: readonly ObjectOwnership[],
+  ) => Promise<Preview>;
   apply: (
     change: Change,
     taken?: readonly ObjectOwnership[],
@@ -114,22 +118,29 @@ export function ChangeReview({
     [chosen, change, ownership],
   );
 
+  // withTakeOver gives change itself when the ownership belongs to another
+  // write, so with otherWrite the choice previews change again with it.
+  const retaken = effective !== change || (otherWrite && chosen);
+
   useEffect(() => previewOnce(previewRef, change, setPreviewed), [change]);
   useEffect(() => {
-    if (effective === change) return;
-    return previewOnce(previewRef, effective, setTakenPreview);
-  }, [effective, change]);
+    if (!retaken) return;
+    return previewOnce(
+      previewRef,
+      effective,
+      setTakenPreview,
+      otherWrite ? ownership : undefined,
+    );
+  }, [retaken, effective, otherWrite, ownership]);
 
-  const checked =
-    effective === change
-      ? given
-      : takenPreview?.change === effective
-        ? takenPreview.result
-        : undefined;
-  const previewErrors =
-    effective === change
-      ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
-      : (checked?.errors ?? []);
+  const checked = !retaken
+    ? given
+    : takenPreview?.change === effective
+      ? takenPreview.result
+      : undefined;
+  const previewErrors = !retaken
+    ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
+    : (checked?.errors ?? []);
   const writeErrors = refused?.change === change ? refused.errors : [];
   const changesNothing =
     checked !== undefined &&
@@ -217,7 +228,7 @@ export function ChangeReview({
               ownership={ownership}
               chosen={chosen}
               onChoose={(next) => setChoice({ change, chosen: next })}
-              taken={effective === change ? undefined : checked}
+              taken={retaken ? checked : undefined}
             />
           )}
           {kept.length > 0 && (
@@ -291,16 +302,21 @@ function missingIn(sent: unknown, kept: unknown, path: string): string[] {
   );
 }
 
-// previewOnce previews change and hands the result to set, unless the
-// returned cleanup ran first.
+// previewOnce previews change, with taken when it is given, and hands the
+// result to set, unless the returned cleanup ran first.
 function previewOnce(
-  previewRef: { current: (change: Change) => Promise<Preview> },
+  previewRef: {
+    current: (
+      change: Change,
+      taken?: readonly ObjectOwnership[],
+    ) => Promise<Preview>;
+  },
   change: Change,
   set: (previewed: { change: Change; result: Preview }) => void,
+  taken?: readonly ObjectOwnership[],
 ): () => void {
   let current = true;
-  previewRef
-    .current(change)
+  (taken ? previewRef.current(change, taken) : previewRef.current(change))
     .catch((error: unknown): Preview => ({
       objects: [],
       errors: [{ code: "Unavailable", message: String(error) }],

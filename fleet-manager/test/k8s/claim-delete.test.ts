@@ -13,11 +13,8 @@ import {
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
 import { deleteClaimSteps, previewDeleteSteps } from "@/lib/claims/deletion";
 import type { DeletableClaim } from "@/lib/policy";
-import {
-  APP_FIELD_MANAGER,
-  fieldManagers,
-  type ManagedObject,
-} from "@/lib/merge";
+import type { ManagedFieldsEntry } from "@/lib/merge";
+import { takenFields } from "@/lib/write/ownership";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { KubeError, kubeRequest } from "../scenarios/kube";
 import { createClientSideApplied } from "./client-side-apply";
@@ -257,6 +254,17 @@ describe("the delete of a claim whose deletion policy kubectl apply set, against
     preview: previewClaimDelete,
     previewPolicy: previewClaimChange,
   };
+  // ownedBy reports whether an entry of manager owns spec.<field> of object.
+  const ownedBy = (object: KubeObject, manager: string, field: string) =>
+    ((object.metadata.managedFields ?? []) as ManagedFieldsEntry[]).some(
+      (entry) => {
+        const spec = (entry.fieldsV1 as Record<string, unknown> | undefined)?.[
+          "f:spec"
+        ] as Record<string, unknown> | undefined;
+        return entry.manager === manager && spec?.[`f:${field}`] !== undefined;
+      },
+    );
+
   // applied makes a claim with kubectl apply, with the deletion policy
   // Delete and the cleanup finalizer, and returns it as the API server
   // answered.
@@ -323,9 +331,20 @@ describe("the delete of a claim whose deletion policy kubectl apply set, against
       claim.metadata.name,
     )) as unknown as DeletableClaim & KubeObject;
     expect(written.spec?.deletionPolicy).toBe("Orphan");
+    // The forced write took only the deletion policy from kubectl.
     expect(
-      fieldManagers(written as unknown as ManagedObject)["spec.deletionPolicy"],
-    ).toBe(APP_FIELD_MANAGER);
+      takenFields(claim, written).map((f) => [
+        f.path,
+        f.managers.map((m) => m.name),
+      ]),
+    ).toEqual([["spec.deletionPolicy", ["kubectl-client-side-apply"]]]);
+    expect(ownedBy(written, "kubectl-client-side-apply", "presetRef")).toBe(
+      true,
+    );
+    expect(
+      ownedBy(written, "kubectl-client-side-apply", "deletionPolicy"),
+    ).toBe(false);
+    expect(ownedBy(written, "fleet-manager", "deletionPolicy")).toBe(true);
 
     const after = deleteClaimSteps(written, "Orphan", intent);
     expect(after.policy).toBeUndefined();

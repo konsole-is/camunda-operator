@@ -3,7 +3,12 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import { deleteClaimSteps } from "@/lib/claims/deletion";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { DeletionPolicy } from "@/lib/policy";
-import type { ForeignManager, Preview } from "@/lib/write/types";
+import type {
+  Change,
+  ForeignManager,
+  ObjectOwnership,
+  Preview,
+} from "@/lib/write/types";
 import {
   type DeleteClusterData,
   deleteClusterModel,
@@ -477,13 +482,16 @@ export const PolicyOfAnotherTool: Story = {
     policyStep: true,
     policyOwned:
       "Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose Delete the resources to delete with the policy that the claim has.",
-    preview: fn(async () =>
-      ownedPreview({
-        name: "kubectl-client-side-apply",
-        operation: "Update",
-        kind: "other",
-        known: true,
-      }),
+    // With the take-over, the dry run of the policy write has no conflict.
+    preview: fn(async (_change: Change, taken?: readonly ObjectOwnership[]) =>
+      taken?.length
+        ? { objects: [], errors: [] }
+        : ownedPreview({
+            name: "kubectl-client-side-apply",
+            operation: "Update",
+            kind: "other",
+            known: true,
+          }),
     ),
   },
   play: async ({ canvasElement }) => {

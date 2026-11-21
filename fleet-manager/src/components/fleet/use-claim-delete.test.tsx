@@ -262,7 +262,7 @@ afterEach(() => {
 });
 
 describe("useClaimDelete", () => {
-  it("gives the remove step of the live claim with its UID and generation, a new one for each pick and spec change but not for a status write", async () => {
+  it("gives the remove step of the live claim with its UID and generation, a new one for each pick and spec change but not for a status write without a policy step", async () => {
     const { hook } = mount(claim());
     await live(claim());
     await waitFor(() =>
@@ -270,16 +270,16 @@ describe("useClaimDelete", () => {
     );
     const first = hook.result.current.remove;
     expect(first).toEqual(reviewOf());
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.remove).toBe(first);
     hook.rerender({ policy: "Orphan" });
     const picked = hook.result.current.remove;
     expect(picked).not.toBe(first);
     expect(picked).toEqual(reviewOf());
     expect(hook.result.current.policyStep).toBe(true);
-    await live(claim({ metadata: { resourceVersion: "42" } }));
-    await waitFor(() =>
-      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
-    );
-    expect(hook.result.current.remove).toBe(picked);
     const edited = claim({
       metadata: { resourceVersion: "44", generation: 2 },
     });
@@ -287,6 +287,29 @@ describe("useClaimDelete", () => {
     await live(edited);
     await waitFor(() => expect(hook.result.current.remove).not.toBe(picked));
     expect(hook.result.current.remove).toEqual(reviewOf(2));
+  });
+
+  it("direct mode with a policy step gives a new remove step for each new version of the claim, so that the review of the policy write starts again", async () => {
+    const { hook } = mount(claim(), { policy: "Orphan" });
+    const first = hook.result.current.remove;
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+    expect(hook.result.current.remove).toEqual(reviewOf());
+  });
+
+  it("Git mode keeps the remove step with a policy step across a status write, because its preview clones the repository", async () => {
+    fakeWriter.reset("git");
+    const { hook } = mount(claim(), { policy: "Orphan", mode: "git" });
+    await live(claim());
+    await waitFor(() =>
+      expect(hook.result.current.reads).toEqual({ errors: [], stale: [] }),
+    );
+    const first = hook.result.current.remove;
+    await live(claim({ metadata: { resourceVersion: "42" } }));
+    await waitFor(() =>
+      expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+    );
+    expect(hook.result.current.remove).toBe(first);
   });
 
   it("gives a new remove step when the generation moved and the spec is back to the one before", async () => {
@@ -813,13 +836,77 @@ describe("useClaimDelete", () => {
       expect(fakeWriter.previewed).toEqual([reviewOf()]);
     });
 
-    it("previews the policy write at the resourceVersion of the live claim, also after a status write that kept the remove step", async () => {
+    it("previews the policy write again at the version of a status write that came after the page loaded", async () => {
       const policy = previewing({ objects: [], errors: [] });
       const { hook } = mount(owned, {
         policy: "Orphan",
         actions: { previewPolicy: policy.previewPolicy },
       });
       const first = hook.result.current.remove;
+      await act(() => hook.result.current.preview(first));
+      await live(
+        claim({
+          metadata: { resourceVersion: "42" },
+          spec: { deletionPolicy: "Delete" },
+        }),
+      );
+      await waitFor(() => expect(hook.result.current.remove).not.toBe(first));
+      await act(() => hook.result.current.preview(hook.result.current.remove));
+      expect(policy.seen).toEqual([
+        expect.objectContaining({ preconditions: { [key]: "41" } }),
+        expect.objectContaining({ preconditions: { [key]: "42" } }),
+      ]);
+    });
+
+    it("previews the policy write with the take-over of taken, so that the review shows the forced write before the confirm", async () => {
+      const policy = previewing({ objects: [], errors: [] });
+      const { hook } = mount(owned, {
+        policy: "Orphan",
+        actions: { previewPolicy: policy.previewPolicy },
+      });
+      const { preview, remove } = hook.result.current;
+      await act(() => preview(remove, ownedBy(kubectl)));
+      expect(policy.seen).toEqual([
+        expect.objectContaining({
+          takeOver: { [key]: ["spec.deletionPolicy"] },
+        }),
+      ]);
+    });
+
+    it("refuses with Stale and writes nothing when a take-over was chosen for a review of an older version of the claim, and the new review names the new owner", async () => {
+      // At 41 kubectl owns the field and the user takes it over. At 42 a
+      // GitOps tool also owns it, with the same value, so the spec and the
+      // generation stay.
+      const argocd: ForeignManager = {
+        name: "argocd-controller",
+        operation: "Apply",
+        kind: "gitops",
+        known: true,
+      };
+      let owners = ownedBy(kubectl);
+      const { hook } = mount(owned, {
+        policy: "Orphan",
+        actions: {
+          previewPolicy: async () => ({
+            objects: [],
+            errors: [],
+            ownership: owners,
+          }),
+        },
+      });
+      const reviewed = hook.result.current.remove;
+      await act(() => hook.result.current.preview(reviewed));
+      owners = [
+        {
+          ...ownedBy(kubectl)[0],
+          changed: [
+            {
+              ...ownedBy(kubectl)[0].changed[0],
+              managers: [argocd, kubectl],
+            },
+          ],
+        },
+      ];
       await live(
         claim({
           metadata: { resourceVersion: "42" },
@@ -827,13 +914,99 @@ describe("useClaimDelete", () => {
         }),
       );
       await waitFor(() =>
-        expect(hook.result.current.claim?.metadata.resourceVersion).toBe("42"),
+        expect(hook.result.current.remove).not.toBe(reviewed),
       );
-      expect(hook.result.current.remove).toBe(first);
-      await act(() => hook.result.current.preview(first));
-      expect(policy.seen).toEqual([
-        expect.objectContaining({ preconditions: { [key]: "42" } }),
-      ]);
+      const { apply } = hook.result.current;
+      expect(await act(() => apply(reviewed, ownedBy(kubectl)))).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The claim plane-a changed after the review. Review the delete again.",
+          },
+        ],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+      const again = await act(() =>
+        hook.result.current.preview(hook.result.current.remove),
+      );
+      expect(again.ownership?.[0].changed[0].managers).toContainEqual(argocd);
+    });
+
+    it("drops the note when the other tool no longer owns the field at the new version", async () => {
+      let owners = ownedBy(kubectl);
+      const { hook } = mount(owned, {
+        policy: "Orphan",
+        actions: {
+          previewPolicy: async () => ({
+            objects: [],
+            errors: [],
+            ownership: owners,
+          }),
+        },
+      });
+      await act(() => hook.result.current.preview(hook.result.current.remove));
+      expect(hook.result.current.policyOwned).toBeDefined();
+      owners = [];
+      await live(
+        claim({
+          metadata: { resourceVersion: "42" },
+          spec: { deletionPolicy: "Delete" },
+        }),
+      );
+      await waitFor(() =>
+        expect(hook.result.current.policyOwned).toBeUndefined(),
+      );
+      await act(() => hook.result.current.preview(hook.result.current.remove));
+      expect(hook.result.current.policyOwned).toBeUndefined();
+      expect(await confirm(hook)).toEqual({ ok: true, mode: "direct" });
+      expect(fakeWriter.applied[0]).not.toHaveProperty("takeOver");
+      expect(fakeWriter.applied[0].preconditions).toEqual({ [key]: "42" });
+    });
+
+    it("keeps the note of the current review when the preview of an older review answers last", async () => {
+      const answers: ((p: Preview) => void)[] = [];
+      const { hook } = mount(owned, {
+        policy: "Orphan",
+        actions: {
+          previewPolicy: () =>
+            new Promise<Preview>((resolve) => answers.push(resolve)),
+        },
+      });
+      const older = hook.result.current.remove;
+      let first: Promise<Preview> = Promise.resolve({
+        objects: [],
+        errors: [],
+      });
+      act(() => {
+        first = hook.result.current.preview(older);
+      });
+      await live(
+        claim({
+          metadata: { resourceVersion: "42" },
+          spec: { deletionPolicy: "Delete" },
+        }),
+      );
+      await waitFor(() => expect(hook.result.current.remove).not.toBe(older));
+      let second: Promise<Preview> = Promise.resolve({
+        objects: [],
+        errors: [],
+      });
+      act(() => {
+        second = hook.result.current.preview(hook.result.current.remove);
+      });
+      await waitFor(() => expect(answers).toHaveLength(2));
+      await act(async () => {
+        answers[1]({ objects: [], errors: [], ownership: ownedBy(kubectl) });
+        await second;
+      });
+      expect(hook.result.current.policyOwned).toBeDefined();
+      await act(async () => {
+        answers[0]({ objects: [], errors: [] });
+        await first;
+      });
+      expect(hook.result.current.policyOwned).toBeDefined();
     });
 
     it("previews only the delete when no policy write comes first, and in Git mode", async () => {

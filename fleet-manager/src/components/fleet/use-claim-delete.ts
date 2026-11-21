@@ -26,7 +26,7 @@ import {
   requestsWithout,
 } from "@/lib/policy";
 import { precheckOf } from "@/lib/session";
-import { offered } from "@/lib/write/ownership";
+import { offered, withTakeOver } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type {
   ApiError,
@@ -106,14 +106,17 @@ type Sent =
  * Give remove, preview, apply, and onWritten to a ChangeReview with
  * otherWrite. remove names the UID and the generation of the claim, so the
  * server refuses its delete with Stale after a spec change. In direct mode,
- * preview adds the dry run of the policy step, as previewDeleteSteps does,
- * and policyOwned then says what the delete does while another field
- * manager sets the deletion policy. Without a policy step, apply sends the
- * change that it gets. With one, apply refuses without a write when the
- * preview of the delete fails, and returns the result of the policy write,
- * which takes over the fields of taken. The hook then sends the delete
- * itself. It sends nothing for a claim with another UID, and refuses with
- * Stale when another spec change came in.
+ * preview adds the dry run of the policy step that takes over the fields of
+ * taken, as previewDeleteSteps does, and policyOwned then says what the
+ * delete does while another field manager sets the deletion policy. There,
+ * with a policy step, remove is new for each version of the claim, so the
+ * review starts again. Without a policy step, apply sends the change that it
+ * gets. With one, apply refuses without a write when the preview of the
+ * delete fails, and returns the result of the policy write, which takes
+ * over the fields of taken. The hook then sends the delete itself. It sends
+ * nothing for a claim with another UID, and refuses with Stale when another
+ * spec change came in. apply refuses with Stale, and writes nothing, when
+ * taken is not empty and the claim changed since the review of change.
  * keepRefused names the registrations of the claim that cannot keep while
  * policy is Orphan. For a claim that recorded its policy, it also names the
  * ones that are not in registrations while orphanNeedsLivePass holds on a
@@ -143,7 +146,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   keepRefused?: string;
   policyOwned?: string;
   reads: { errors: ReadError[]; stale: string[] };
-  preview(change: Change): Promise<Preview>;
+  preview(change: Change, taken?: readonly ObjectOwnership[]): Promise<Preview>;
   apply(
     change: Change,
     taken?: readonly ObjectOwnership[],
@@ -203,49 +206,55 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
           held,
         )
       : undefined;
-  const carried =
-    !guarded ||
-    without(
-      live ?? initial,
-      deletionPolicyOf(
-        (live ?? initial).spec?.deletionPolicy,
-        (live ?? initial).status?.resolvedPolicy,
-      ),
-    )?.length === 0;
+  const held = deletionPolicyOf(
+    (live ?? initial).spec?.deletionPolicy,
+    (live ?? initial).status?.resolvedPolicy,
+  );
+  const carried = !guarded || without(live ?? initial, held)?.length === 0;
+  const current = deleteClaimSteps(live ?? initial, policy, intent);
+  const policyStep = current.policy !== undefined;
+  // In direct mode the review of a policy write starts again for each new
+  // version of the claim, because the fields of other tools that the write
+  // takes over can change with it. A Git preview clones the repository, so
+  // there a status write must not start a new one.
+  const reviewed = mode === "direct" && policyStep ? version : undefined;
   const steps = useMemo(
-    () => deleteClaimSteps(live ?? initial, policy, intent),
-    // A Git preview clones the repository, so a status write of the claim
-    // must not start a new one.
+    () => ({ ...current, version }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [uid, generation, finalized, spec, intent, policy, retry, carried],
+    [
+      uid,
+      generation,
+      finalized,
+      spec,
+      intent,
+      policy,
+      retry,
+      carried,
+      reviewed,
+    ],
   );
   const { remove } = steps;
-  const policyStep =
-    deleteClaimSteps(live ?? initial, policy, intent).policy !== undefined;
   const [owners, setOwners] = useState<{
     remove: Change;
     ownership: readonly ObjectOwnership[];
   }>();
-  const preview = async (change: Change): Promise<Preview> => {
-    // steps keeps the resourceVersion of the claim from before a status
-    // write, and a dry run at that version fails with Stale.
+  const preview = async (
+    change: Change,
+    taken: readonly ObjectOwnership[] = [],
+  ): Promise<Preview> => {
     const policyWrite =
-      mode === "direct" && change === steps.remove
-        ? deleteClaimSteps(live ?? initial, policy, intent).policy
+      mode === "direct" && change === steps.remove && steps.policy
+        ? withTakeOver(steps.policy, taken)
         : undefined;
     const result = await previewDeleteSteps(change, policyWrite, actions);
-    setOwners({ remove: change, ownership: result.ownership ?? [] });
+    // The preview of an older review can answer after the current one.
+    if (taken.length === 0 && change === latest.current.steps.remove)
+      setOwners({ remove: change, ownership: result.ownership ?? [] });
     return result;
   };
   const policyOwned =
     owners?.remove === remove
-      ? policyOwnedNote(
-          owners.ownership,
-          deletionPolicyOf(
-            (live ?? initial).spec?.deletionPolicy,
-            (live ?? initial).status?.resolvedPolicy,
-          ),
-        )
+      ? policyOwnedNote(owners.ownership, held)
       : undefined;
 
   // While the list of the requests is not read, a missing registration does
@@ -268,6 +277,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
 
   const latest = useRef({
     live,
+    steps,
     policy,
     registrations,
     livePass,
@@ -279,6 +289,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
   useEffect(() => {
     latest.current = {
       live,
+      steps,
       policy,
       registrations,
       livePass,
@@ -298,7 +309,7 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       change: Change,
       taken: readonly ObjectOwnership[],
     ): Promise<WriteResult> => {
-      const { live, policy, registrations, livePass, intent, actions } =
+      const { live, steps, policy, registrations, livePass, intent, actions } =
         latest.current;
       setSent((s) =>
         s.kind === "choose" && s.written
@@ -307,27 +318,35 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
       );
       if (!live || !isOriginal(live))
         return { ok: false, errors: [gone(name)] };
+      // The take-over names the fields of the review that the user saw, so
+      // it must not reach a claim that changed since.
+      if (
+        taken.length > 0 &&
+        (change !== steps.remove ||
+          live.metadata.resourceVersion !== steps.version)
+      )
+        return { ok: false, errors: [changed(name)] };
       const refused = keepRefusal(live, policy, registrations, livePass);
       if (refused)
         return { ok: false, errors: [{ code: "Invalid", message: refused }] };
-      const steps = deleteClaimSteps(live, policy, intent, taken);
-      if (!steps.policy) return actions.remove(change).catch(unavailable);
+      const write = deleteClaimSteps(live, policy, intent, taken);
+      if (!write.policy) return actions.remove(change).catch(unavailable);
       // A delete that would be refused must not leave the claim with a
       // new policy.
       const checked = await actions
-        .preview(steps.remove)
+        .preview(write.remove)
         .catch((e: unknown) => ({
           errors: [{ code: "Unavailable" as const, message: String(e) }],
         }));
       if (checked.errors.length > 0)
         return { ok: false, errors: checked.errors };
-      const result = await actions.applyPolicy(steps.policy).catch(unavailable);
+      const result = await actions.applyPolicy(write.policy).catch(unavailable);
       if (!result.ok) return result;
       setSent({
         kind: "waiting",
         policy,
         before: live.spec,
-        spec: steps.policy.apply[0].spec,
+        spec: write.policy.apply[0].spec,
         seen: false,
         ...(result.mode === "git" && {
           revision: result.revisions[refKey(claimRef)] ?? "",

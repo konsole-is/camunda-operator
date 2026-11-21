@@ -343,7 +343,8 @@ describe("DeletePlane", () => {
     };
     page(initial, "direct", {
       ...actions,
-      previewPolicy: async () => policyPreview,
+      previewPolicy: async (change) =>
+        change.takeOver ? { ...policyPreview, ownership: [] } : policyPreview,
     });
     await readAll(initial);
     fireEvent.click(radio(/Keep the resources/));

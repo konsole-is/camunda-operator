@@ -120,7 +120,8 @@ function setup({
   offerTakeOver,
   otherWrite,
 }: {
-  preview?: Preview | ((change: Change) => Preview);
+  preview?:
+    Preview | ((change: Change, taken?: readonly ObjectOwnership[]) => Preview);
   result?: WriteResult;
   mode?: WriteMode;
   gitLabel?: string;
@@ -130,8 +131,8 @@ function setup({
   otherWrite?: boolean;
 } = {}) {
   const props = {
-    preview: vi.fn(async (c: Change) =>
-      typeof preview === "function" ? preview(c) : preview,
+    preview: vi.fn(async (c: Change, taken?: readonly ObjectOwnership[]) =>
+      typeof preview === "function" ? preview(c, taken) : preview,
     ),
     apply: vi.fn<
       (
@@ -431,7 +432,10 @@ describe("ChangeReview with fields of another tool", () => {
     };
     const { apply } = setup({
       change: removed,
-      preview: { ...conflicted, objects: clean.objects },
+      preview: (_c, taken) =>
+        taken
+          ? { ...clean, ownership: conflicted.ownership }
+          : { ...conflicted, objects: clean.objects },
       otherWrite: true,
     });
     await waitFor(() => expect(choice()).toBeTruthy());
@@ -442,6 +446,41 @@ describe("ChangeReview with fields of another tool", () => {
     await waitFor(() =>
       expect(apply).toHaveBeenCalledWith(removed, conflicted.ownership),
     );
+  });
+
+  it("with otherWrite, previews the change again with the ownership of the choice, and an error of that preview keeps the confirm off", async () => {
+    const removed: Change = {
+      intent: "Delete the environment staging",
+      apply: [],
+      delete: [{ ...ref, apiVersion: base.apiVersion }],
+    };
+    const unlisted = {
+      code: "Conflict" as const,
+      message: "The take-over would also take spec.color.",
+      ref,
+    };
+    const { preview, apply } = setup({
+      change: removed,
+      otherWrite: true,
+      preview: (_c, taken) =>
+        taken
+          ? { ...clean, errors: [unlisted], ownership: conflicted.ownership }
+          : { ...conflicted, objects: clean.objects },
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    expect(preview).toHaveBeenCalledWith(removed);
+    fireEvent.click(choice());
+    await waitFor(() =>
+      expect(preview).toHaveBeenLastCalledWith(removed, conflicted.ownership),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "The take-over would also take spec.color.",
+      ),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+    fireEvent.click(confirm());
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("with otherWrite, gives apply no ownership without the choice", async () => {

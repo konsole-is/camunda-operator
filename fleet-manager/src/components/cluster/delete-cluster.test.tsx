@@ -393,7 +393,7 @@ describe("DeleteCluster", () => {
     ];
     // ownedPage renders the page of a claim with the deletion policy
     // Delete, whose policy write the API server answers with a Conflict on
-    // the field of manager.
+    // the field of manager, and without one after the take-over.
     const ownedPage = (manager: ForeignManager) => {
       const initial = data({ claim: claim({ deletionPolicy: "Delete" }) });
       const policyPreview: Preview = {
@@ -410,7 +410,13 @@ describe("DeleteCluster", () => {
         ownership: ownedBy(manager),
       };
       pageWith(
-        { ...actions, previewPolicy: async () => policyPreview },
+        {
+          ...actions,
+          previewPolicy: async (change) =>
+            change.takeOver
+              ? { objects: [], errors: [], ownership: ownedBy(manager) }
+              : policyPreview,
+        },
         initial,
       );
       return initial;
@@ -466,6 +472,35 @@ describe("DeleteCluster", () => {
       );
       await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
       expect(fakeWriter.applied[1]).toEqual(remove("42"));
+    });
+
+    it("direct mode: a new version of the claim during the review starts the review again, without the take-over, and the confirm goes off", async () => {
+      const initial = ownedPage(kubectl);
+      await readAll(initial);
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      await group();
+      const choice = () =>
+        screen.getByRole("checkbox", { name: "Take over these fields" });
+      fireEvent.click(choice());
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+      await liveClaim(
+        claim({ deletionPolicy: "Delete", resourceVersion: "42" }),
+      );
+      await waitFor(() =>
+        expect(choice().getAttribute("aria-checked")).toBe("false"),
+      );
+      expect(confirmButton().disabled).toBe(true);
+      expect(
+        screen.getByText(
+          "Take over the fields to save, or go back and leave them as they are.",
+        ),
+      ).toBeTruthy();
+      expect(fakeWriter.applied).toEqual([]);
     });
 
     it("direct mode: a deletion policy of an operator controller offers no take-over, names the controller, and keeps the confirm off", async () => {
