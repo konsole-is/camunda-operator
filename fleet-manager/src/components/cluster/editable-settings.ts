@@ -312,10 +312,9 @@ function entryOrigin(state: FieldState | undefined): string {
   return (originOf(state) ?? ON_CLUSTER).one;
 }
 
-// appliesNow says whether a value of editor in group applies now. The
-// operator gives the resources and the pod labels and annotations of a
+// The operator gives the resources and the pod labels and annotations of a
 // process only to its own workload. It gives the variables of an embedded
-// process to its host, and those of Connectors only while they run.
+// process to its host, and those of Connectors to their own workload only.
 function appliesNow(
   editor: SettingEditor,
   group: SettingsGroup,

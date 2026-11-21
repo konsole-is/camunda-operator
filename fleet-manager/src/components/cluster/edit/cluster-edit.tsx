@@ -167,8 +167,9 @@ export function useClusterEdit(): ClusterEdit {
 
 // clusterReview reads saved, the claim that the save leaves, so a reset
 // field that another tool keeps changes nothing in the impacts and the
-// merged diff. validate passed on session, so a merged error of saved
-// comes from a cleared field that the save keeps or sets to its default.
+// merged diff. While no write runs, validate passed on session, so a
+// merged error of saved comes from a cleared field that the save keeps or
+// sets to its default.
 function clusterReview(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,

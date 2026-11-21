@@ -184,8 +184,9 @@ export function SettingsEditor({
  * "<label>: <error>" while the editor shows an error, also before any
  * edit, and undefined once the error goes or the row unmounts. onShows
  * gets whether the editor shows an error. A merged error reaches neither:
- * the host checks the merged value itself. The editor does not check the
- * entry of a merged error, and leaves it out of the value that it writes.
+ * the host checks the merged value itself. While its row is unchanged, the
+ * editor does not check the entry of a merged error, and leaves it out of
+ * the value that it writes.
  */
 export function SettingRow({
   setting,

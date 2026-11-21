@@ -75,8 +75,7 @@ export type ClaimReviewInput = {
  * previews the change of withTakeOver, and the confirm writes that change.
  * The diff of the claim then shows the claim that the save leaves: a
  * cleared field of another tool stays in it until the take-over.
- * In Git mode it notes each reset field that the preview keeps, and the
- * diff of the claim shows that field as it stays.
+ * In Git mode it notes each reset field that the preview keeps.
  *
  * input gives the impacts, the caution, the confirm, mergedLines, and the
  * blocking messages from saved: a session whose change gives the claim
