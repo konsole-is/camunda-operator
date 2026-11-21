@@ -49,14 +49,14 @@ export const RefusedByThePage: Story = {
   name: "Refused by the page",
   args: {
     blocking: [
-      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A value that another tool keeps causes this error, so take over these fields or go back and change the edit.",
+      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.",
     ],
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await waitFor(() => expect(args.preview).toHaveBeenCalled());
     await expect(canvas.getByRole("alert")).toHaveTextContent(
-      "A value that another tool keeps causes this error",
+      "A field that you cleared stays in the claim that the save leaves",
     );
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
   },

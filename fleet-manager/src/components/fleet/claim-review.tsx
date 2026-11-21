@@ -13,6 +13,7 @@ import {
   valueAt,
   type ClaimObject,
   type FieldError,
+  type PendingChange,
   type Session,
   type WriteOutcome,
 } from "@/lib/session";
@@ -74,7 +75,8 @@ export type ClaimReviewInput = {
  * previews the change of withTakeOver, and the confirm writes that change.
  * The diff of the claim then shows the claim that the save leaves: a
  * cleared field of another tool stays in it until the take-over.
- * In Git mode it notes each reset field that the preview keeps.
+ * In Git mode it notes each reset field that the preview keeps, and the
+ * diff of the claim shows that field as it stays.
  *
  * input gives the impacts, the caution, the confirm, mergedLines, and the
  * blocking messages from saved: a session whose change gives the claim
@@ -156,13 +158,17 @@ export function ClaimReview<C extends ClaimObject>({
   // another tool stays until the take-over.
   const saved = useMemo(
     () =>
-      savedSession(
-        session,
-        ownershipOf(ownership, session),
-        chosen,
-        taken && claimOf(taken, session),
-      ),
-    [session, ownership, chosen, taken],
+      mode === "git"
+        ? given
+          ? withoutKeptResets(session, given)
+          : session
+        : savedSession(
+            session,
+            ownershipOf(ownership, session),
+            chosen,
+            taken && claimOf(taken, session),
+          ),
+    [mode, given, session, ownership, chosen, taken],
   );
   const shown = input(saved);
 
@@ -352,27 +358,46 @@ function messagesOf(outcome: WriteOutcome | undefined): string[] {
 // preview still holds. Server-side apply keeps a field that another field
 // manager owns, so such a reset changes nothing.
 function keptResets(s: Session, preview: Preview): string[] {
+  return keptResetEntries(s, preview).map(
+    (entry) =>
+      `Another tool keeps ${entry.path}, so the reset does not remove it.`,
+  );
+}
+
+// withoutKeptResets returns s without the resets of keptResetEntries: a
+// session whose change gives the claim that the apply of the preview
+// leaves.
+function withoutKeptResets<C extends ClaimObject>(
+  s: Session<C>,
+  preview: Preview,
+): Session<C> {
+  const kept = new Set(keptResetEntries(s, preview).map((e) => e.path));
+  if (kept.size === 0) return s;
+  return {
+    ...s,
+    pending: new Map([...s.pending].filter(([path]) => !kept.has(path))),
+  };
+}
+
+// keptResetEntries returns each pending reset of s whose field the claim
+// of the preview still holds.
+function keptResetEntries(s: Session, preview: Preview): PendingChange[] {
   const after = claimOf(preview, s);
   if (!after) return [];
   const intended = claimAfter(s);
-  return [...s.pending.values()]
-    .filter((entry) => {
-      if (!("reset" in entry)) return false;
-      const steps = keyedSteps(s.claim, entry.steps);
-      if (steps) return valueAt(after, steps) !== undefined;
-      // A list item without keys has no name that stays after the reset,
-      // so its list must read as the session wants it.
-      const list = entry.steps.slice(0, keylessAt(s.claim, entry.steps));
-      const named = keyedSteps(s.claim, list);
-      return (
-        named !== undefined &&
-        !equalJSON(valueAt(after, named), valueAt(intended, named))
-      );
-    })
-    .map(
-      (entry) =>
-        `Another tool keeps ${entry.path}, so the reset does not remove it.`,
+  return [...s.pending.values()].filter((entry) => {
+    if (!("reset" in entry)) return false;
+    const steps = keyedSteps(s.claim, entry.steps);
+    if (steps) return valueAt(after, steps) !== undefined;
+    // A list item without keys has no name that stays after the reset,
+    // so its list must read as the session wants it.
+    const list = entry.steps.slice(0, keylessAt(s.claim, entry.steps));
+    const named = keyedSteps(s.claim, list);
+    return (
+      named !== undefined &&
+      !equalJSON(valueAt(after, named), valueAt(intended, named))
     );
+  });
 }
 
 // keyedSteps names each list item of steps by its keys in claim, because a

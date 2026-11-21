@@ -950,7 +950,7 @@ describe("ClusterEditProvider", () => {
       });
     }
     const message =
-      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A value that another tool keeps causes this error, so take over these fields or go back and change the edit.";
+      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.";
     const choice = () =>
       within(dialog()!).getByRole("checkbox", {
         name: "Take over these fields",
@@ -969,6 +969,31 @@ describe("ClusterEditProvider", () => {
       await waitFor(() => expect(choice()).toBeTruthy());
       expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
       expect(save().disabled).toBe(true);
+    });
+
+    it("in Git mode, refuses the push when the dry run keeps the request", async () => {
+      fakeWriter.reset("git");
+      const kept = { ...context(), writeMode: "git" as const };
+      fakeWriter.previews = [
+        {
+          objects: [{ ref, after: kept.claim as KubeObject, diff: [] }],
+          errors: [],
+        },
+      ];
+      page(kept);
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() =>
+        expect(within(dialog()!).getByRole("alert").textContent).toContain(
+          message,
+        ),
+      );
+      expect(
+        within(dialog()!).getByRole<HTMLButtonElement>("button", {
+          name: "Push to Git",
+        }).disabled,
+      ).toBe(true);
     });
 
     it("saves once the user takes the request over, and refuses again when the choice goes off", async () => {

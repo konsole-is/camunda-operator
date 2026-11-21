@@ -38,9 +38,10 @@ type Row =
  * the hint and error elements of the field for each control of a row.
  * missingIn gives the namespaces that lack a picked Secret key, and the row
  * names them. onErrors gets the errors that it shows, also at mount.
- * checkedEntries are entries that the host checks itself, in a value below
- * the entries of onChange that keeps them: a row equal to one shows no
- * error, does not refuse a change, and is left out of the entries.
+ * checkedEntries are entries of defaultValue that the host checks itself,
+ * and that a value below the entries keeps. While its row is unchanged,
+ * such an entry shows no error, refuses no change, and is not in the
+ * entries that onChange gets.
  */
 export function EnvEditor({
   label,
@@ -66,10 +67,18 @@ export function EnvEditor({
   const [rows, setRows] = useState<Row[]>(() =>
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
+  const [initial] = useState(rows);
   const checked = checkedEntries.map((entry, i) =>
     JSON.stringify(toEnv(toRow(entry, i))),
   );
-  const isChecked = (row: Row) => checked.includes(JSON.stringify(toEnv(row)));
+  const isChecked = (row: Row) => {
+    const env = JSON.stringify(toEnv(row));
+    return (
+      initial.some(
+        (r) => r.id === row.id && JSON.stringify(toEnv(r)) === env,
+      ) && checked.includes(env)
+    );
+  };
   const errors = rowErrors(rows).filter(
     (error) => !isChecked(rows[Number(error.path.split(".")[0])]),
   );

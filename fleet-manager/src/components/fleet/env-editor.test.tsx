@@ -227,6 +227,35 @@ describe("EnvEditor", () => {
       );
     });
 
+    it("checks a row that the user adds, also when it equals a checked entry", async () => {
+      const onChange = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[{ name: "TZ", value: "UTC" }]}
+          checkedEntries={checked}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add a variable" }),
+      );
+      const row = screen.getByRole("group", { name: "Variable 2" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "x",
+      );
+      expect(onChange).toHaveBeenLastCalledWith(
+        [
+          { name: "TZ", value: "UTC" },
+          { name: "", value: "x" },
+        ],
+        [{ path: "1.name", message: "Enter a name" }],
+      );
+      expect(screen.getByText("Enter a name")).toBeTruthy();
+    });
+
     it("checks the row again once the user changes it", async () => {
       const onChange = vi.fn();
       render(

@@ -51,7 +51,16 @@ describe("editorOf", () => {
     ["zeebe.storageSize", { kind: "storageSize" }],
     ["extraEnv", { kind: "env" }],
     ["podLabels", { kind: "keyValue", format: "label" }],
-    ["podAnnotations", { kind: "keyValue" }],
+    ["podAnnotations", { kind: "keyValue", format: "annotation" }],
+    [
+      "connectors.serviceAccount.annotations",
+      { kind: "keyValue", format: "annotation" },
+    ],
+    ["monitoring.serviceMonitor.labels", { kind: "keyValue", format: "label" }],
+    [
+      "monitoring.serviceMonitor.annotations",
+      { kind: "keyValue", format: "annotation" },
+    ],
     ["zeebe.scheduling.tolerations", { kind: "tolerations" }],
     [
       "zeebe.scheduling.nodeAffinity",

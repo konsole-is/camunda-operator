@@ -638,6 +638,28 @@ describe("settingsOf merged entry errors", () => {
     ]);
   });
 
+  it("reports an annotation key of the preset that is not valid", () => {
+    const annotations = brokerSetting("podAnnotations", {
+      preset: { zeebe: { podAnnotations: { "bad key": "x" } } },
+    });
+    expect(annotations.mergedErrors?.map((e) => e.message)).toEqual([
+      `The annotation key "bad key" ${PRESET}`,
+    ]);
+  });
+
+  it("reports an empty key of the preset with an empty value, which the editor ignores", () => {
+    const annotations = brokerSetting("podAnnotations", {
+      preset: { zeebe: { podAnnotations: { "": "" } } },
+    });
+    expect(annotations.mergedErrors).toEqual([
+      {
+        message: `An empty annotation key ${PRESET}`,
+        blocks: true,
+        entry: { key: "", value: "" },
+      },
+    ]);
+  });
+
   it("reports an empty annotation key of the Connectors ServiceAccount", () => {
     const annotations = setting(
       processSettings("connectors", "connectors", {

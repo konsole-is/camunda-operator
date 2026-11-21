@@ -243,9 +243,7 @@ describe("KeyValueEditor", () => {
         }),
       ).toBeTruthy();
   });
-});
 
-describe("keyValueErrors", () => {
   describe("with checkedEntries", () => {
     const checked = [{ key: "bad key", value: "x" }];
 
@@ -270,6 +268,31 @@ describe("keyValueErrors", () => {
         "b",
       );
       expect(onChange).toHaveBeenLastCalledWith({ team: "ab" }, []);
+    });
+
+    it("checks a row that the user adds, also when it equals a checked entry", async () => {
+      const onChange = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Annotations"
+          format="annotation"
+          defaultValue={{ note: "a" }}
+          checkedEntries={[{ key: "", value: "x" }]}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      const row = screen.getByRole("group", { name: "Entry 2" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "x",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ note: "a" }, [
+        { path: "1.key", message: "Enter a key" },
+      ]);
+      expect(screen.getByText("Enter a key")).toBeTruthy();
     });
 
     it("checks the row again once the user changes it", async () => {
@@ -298,7 +321,9 @@ describe("keyValueErrors", () => {
       expect(screen.getByText(/valid label key/)).toBeTruthy();
     });
   });
+});
 
+describe("keyValueErrors", () => {
   it("gives the errors that the editor shows, by row", () => {
     expect(
       keyValueErrors(
@@ -321,6 +346,28 @@ describe("keyValueErrors", () => {
           "Use at most 63 letters, digits, '-', '_', or '.', starting and ending with a letter or digit",
       },
       { path: "3.key", message: "Enter a key" },
+    ]);
+  });
+
+  it("checks an annotation key as Kubernetes does, in lower case, and not its value", () => {
+    expect(
+      keyValueErrors(
+        [
+          { key: "Example.com/Note", value: "any text, even with spaces" },
+          { key: "bad key", value: "x" },
+          { key: "-x", value: "y" },
+        ],
+        "annotation",
+      ),
+    ).toEqual([
+      {
+        path: "1.key",
+        message: "Use a valid annotation key, for example example.com/note",
+      },
+      {
+        path: "2.key",
+        message: "Use a valid annotation key, for example example.com/note",
+      },
     ]);
   });
 

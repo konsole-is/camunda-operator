@@ -168,7 +168,7 @@ export function useClusterEdit(): ClusterEdit {
 // clusterReview reads saved, the claim that the save leaves, so a reset
 // field that another tool keeps changes nothing in the impacts and the
 // merged diff. validate passed on session, so a merged error of saved
-// comes from a value that another tool keeps.
+// comes from a cleared field that the save keeps or sets to its default.
 function clusterReview(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,
@@ -200,7 +200,7 @@ function clusterReview(
 }
 
 const KEPT_CAUSE =
-  "A value that another tool keeps causes this error, so take over these fields or go back and change the edit.";
+  "A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.";
 
 const ALLOW_DOWNGRADE: Step[] = [
   { field: "spec" },

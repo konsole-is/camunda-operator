@@ -18,6 +18,7 @@ import {
   type FieldState,
   fieldSchemaOf,
   itemStep,
+  type KeyValueFormat,
   optimizeClaimNames,
   overrideEditorOf,
   parameterEditorOf,
@@ -255,8 +256,13 @@ function mergedCheckOf(input: {
     const entries = Object.entries(isObject(value) ? value : {}).map(
       ([key, v]): MapEntry => ({ key, value: String(v) }),
     );
+    const faults = entryFaults(keyValueErrors(entries, editor.format));
+    // The editor ignores a row with an empty key and an empty value, as a
+    // row that the user did not fill yet. Kubernetes refuses the empty key.
+    const blank = entries.findIndex((e) => e.key === "" && e.value === "");
+    if (blank >= 0) faults.push({ index: blank, field: "key" });
     return {
-      mergedErrors: entryFaults(keyValueErrors(entries, editor.format))
+      mergedErrors: faults
         .filter(({ index }) => !Object.hasOwn(held, entries[index].key))
         .map(({ index, field }) => {
           const entry = entries[index];
@@ -303,7 +309,7 @@ function mergedCheckOf(input: {
 // from. The claim does not hold the entry, so without a known layer it is
 // only known to be on the cluster.
 function entryOrigin(state: FieldState | undefined): string {
-  return (originOf(state) ?? originOf({ kind: "default" }))!.one;
+  return (originOf(state) ?? ON_CLUSTER).one;
 }
 
 // appliesNow says whether a value of editor in group applies now. The
@@ -343,10 +349,10 @@ function entryFaults(
 function mapEntryFault(
   entry: MapEntry,
   field: string,
-  format: "label" | undefined,
+  format: KeyValueFormat | undefined,
   state: FieldState | undefined,
 ): string {
-  const noun = format === "label" ? "label" : "annotation";
+  const noun = format ?? "map";
   const from = entryOrigin(state);
   if (field === "value")
     return `The value of the ${noun} "${entry.key}" ${from} and is not valid.`;
@@ -478,11 +484,13 @@ function originOf(
     case "default":
       break;
   }
-  return {
-    one: "is already set on the cluster",
-    many: "are already set on the cluster",
-  };
+  return ON_CLUSTER;
 }
+
+const ON_CLUSTER = {
+  one: "is already set on the cluster",
+  many: "are already set on the cluster",
+};
 
 /**
  * blockingMergedErrors returns each merged error that blocks of a cluster,

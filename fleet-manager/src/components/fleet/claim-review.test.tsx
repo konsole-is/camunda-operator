@@ -415,6 +415,43 @@ describe("ClaimReview", () => {
     expect((await confirm("Push to Git")).disabled).toBe(false);
   });
 
+  it("Git mode gives input the claim that the sync leaves, with a reset field that the preview keeps", async () => {
+    fakeWriter.reset("git");
+    fakeWriter.previews = [
+      {
+        objects: [
+          {
+            ref: {
+              apiVersion: claim.apiVersion,
+              kind: claim.kind,
+              namespace: "team-a",
+              name: "orders",
+            },
+            after: claim as KubeObject,
+            diff: [],
+          },
+        ],
+        errors: [],
+      },
+    ];
+    const kept = "Another tool keeps partitions.";
+    review({
+      session: session(resetPartitions),
+      input: (saved) => ({
+        impacts: [],
+        blocking:
+          valueAt(claimAfter(saved), partitions) === undefined ? [] : [kept],
+      }),
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(kept),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Push to Git" })
+        .disabled,
+    ).toBe(true);
+  });
+
   it("Git mode shows a note when the preview keeps a reset field of a list item named by index", async () => {
     fakeWriter.reset("git");
     const env = { name: "TZ", value: "UTC" };

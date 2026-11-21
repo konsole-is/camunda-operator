@@ -1256,6 +1256,7 @@ describe("SettingsEditor collapsed", () => {
       />,
     );
     const env = () => settingRow("extraEnv");
+    expect(isOpen()).toBe(true);
     expect(within(env()).getByRole("alert").textContent).toBe(NO_NAME);
     expect(within(env()).queryByText("Enter a name")).toBeNull();
     await userEvent.click(

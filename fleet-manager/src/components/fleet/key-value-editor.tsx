@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { KeyValueFormat } from "@/lib/fields";
 import type { ValidationError } from "@/lib/schema";
 import { isLabelKey, isLabelValue } from "@/lib/labels";
 import { useErrorsReport } from "./errors-report";
@@ -21,16 +22,17 @@ export type EmptyMap = "inherited" | "unset";
  * KeyValueEditor edits a map of strings, such as pod labels or annotations,
  * as rows of key and value. A row with an empty key and an empty value is
  * ignored. With format "label", keys and values must be valid Kubernetes
- * labels. onChange gets the map and the errors after each edit, and
+ * labels. With format "annotation", keys must be valid Kubernetes
+ * annotation keys. onChange gets the map and the errors after each edit, and
  * undefined in place of the map while no row has a key. With emptyMap,
  * the user can also set the map to {}, which onChange gets as {}, and a
  * defaultValue of {} starts as that empty map. An error path is
  * "<row>.key" or "<row>.value", counting rows from 0. describedBy names
  * the hint and error elements of the field for each input. onErrors gets
- * the errors that it shows, also at mount. checkedEntries are entries that
- * the host checks itself, in a value below the map of onChange that keeps
- * them: a row with the key and the value of one shows no error, does not
- * refuse a change, and is left out of the map.
+ * the errors that it shows, also at mount. checkedEntries are entries of
+ * defaultValue that the host checks itself, and that a value below the map
+ * keeps. While its row is unchanged, such an entry shows no error, refuses
+ * no change, and is not in the map that onChange gets.
  */
 export function KeyValueEditor({
   label,
@@ -48,7 +50,7 @@ export function KeyValueEditor({
   defaultValue?: Record<string, string>;
   keyLabel?: string;
   valueLabel?: string;
-  format?: "label";
+  format?: KeyValueFormat;
   emptyMap?: EmptyMap;
   describedBy?: string;
   checkedEntries?: readonly { key: string; value: string }[];
@@ -82,8 +84,12 @@ export function KeyValueEditor({
     moveFocus.current = false;
     (empty ? undoButton : setButton).current?.focus();
   }, [empty]);
+  const [initial] = useState(entries);
+  const same = (a: { key: string; value: string }, b: Entry) =>
+    a.key === b.key && a.value === b.value;
   const checked = (e: Entry) =>
-    checkedEntries.some((c) => c.key === e.key && c.value === e.value);
+    initial.some((i) => i.id === e.id && same(i, e)) &&
+    checkedEntries.some((c) => same(c, e));
   const shownErrors = (rows: readonly Entry[]) =>
     keyValueErrors(rows, format).filter(
       (error) => !checked(rows[Number(error.path.split(".")[0])]),
@@ -239,7 +245,7 @@ export function KeyValueEditor({
  */
 export function keyValueErrors(
   entries: readonly { key: string; value: string }[],
-  format?: "label",
+  format?: KeyValueFormat,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   const seen = new Set<string>();
@@ -256,6 +262,12 @@ export function keyValueErrors(
       errors.push({
         path: `${index}.key`,
         message: "Use a valid label key, for example team or example.com/team",
+      });
+    // Kubernetes checks an annotation key in lower case.
+    else if (format === "annotation" && !isLabelKey(entry.key.toLowerCase()))
+      errors.push({
+        path: `${index}.key`,
+        message: "Use a valid annotation key, for example example.com/note",
       });
     if (format === "label" && !isLabelValue(entry.value))
       errors.push({
