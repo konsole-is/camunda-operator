@@ -578,7 +578,11 @@ describe("settingsOf claim layers", () => {
 });
 
 describe("resourceWrites", () => {
-  const preset = { zeebe: { resources: { requests: { memory: "1Gi" } } } };
+  const preset = {
+    zeebe: {
+      resources: { requests: { memory: "1Gi" }, limits: { cpu: "500m" } },
+    },
+  };
   const saved = { zeebe: { resources: { limits: { cpu: 2 } } } };
   const at = (...names: string[]) =>
     steps("spec", "cluster", "zeebe", "resources", ...names);
@@ -605,12 +609,16 @@ describe("resourceWrites", () => {
 
   it("writes each amount at its own key, a value or a reset", () => {
     expect(
-      resourceWrites(resources([]), {
-        "requests.memory": "1024Mi",
-        "limits.cpu": "2000m",
-        "requests.cpu": "3",
-        "limits.memory": "",
-      }),
+      resourceWrites(
+        resources([]),
+        {
+          "requests.memory": "1024Mi",
+          "limits.cpu": "2000m",
+          "requests.cpu": "3",
+          "limits.memory": "",
+        },
+        [],
+      ),
     ).toEqual([
       { steps: at("requests", "memory"), value: undefined },
       { steps: at("limits", "cpu"), value: 2 },
@@ -621,7 +629,7 @@ describe("resourceWrites", () => {
 
   it("resets an amount equal to the preset under a pending change of the block", () => {
     expect(
-      resourceWrites(resources([at()]), { "requests.memory": "1Gi" }),
+      resourceWrites(resources([at()]), { "requests.memory": "1Gi" }, []),
     ).toEqual([{ steps: at("requests", "memory"), value: undefined }]);
   });
 
@@ -631,9 +639,21 @@ describe("resourceWrites", () => {
       steps("spec", "cluster", "gateway", "resources"),
     ]);
     expect(setting.layers?.pending).toEqual([at("requests", "cpu")]);
-    expect(resourceWrites(setting, { "limits.cpu": "2" })).toEqual([
+    expect(resourceWrites(setting, { "limits.cpu": "2" }, [])).toEqual([
       { steps: at("limits", "cpu"), value: 2 },
     ]);
+  });
+
+  it("holds an amount for a pending change of the block when the row mounted", () => {
+    expect(
+      resourceWrites(resources([]), { "limits.cpu": "500m" }, [at()]),
+    ).toEqual([{ steps: at("limits", "cpu"), value: undefined }]);
+  });
+
+  it("holds no amount for a row mounted with nothing pending", () => {
+    expect(resourceWrites(resources([]), { "limits.cpu": "500m" }, [])).toEqual(
+      [{ steps: at("limits", "cpu"), value: "500m" }],
+    );
   });
 });
 

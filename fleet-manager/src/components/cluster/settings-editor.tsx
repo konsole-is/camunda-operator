@@ -206,6 +206,7 @@ export function SettingRow({
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
+  const [mountedPending] = useState(setting.layers?.pending ?? []);
   // The error that the editor shows, which it reports after it renders.
   const [editorError, setEditorError] = useState<string>();
   const errorId = useId();
@@ -261,7 +262,7 @@ export function SettingRow({
   };
   const change = own((value: unknown) => write(settingChange(setting, value)));
   const changeAmounts = own((amounts: Readonly<Record<string, string>>) =>
-    resourceWrites(setting, amounts).forEach(write),
+    resourceWrites(setting, amounts, mountedPending).forEach(write),
   );
   const note = setting.state && stateNote(setting.state);
   const messages = [

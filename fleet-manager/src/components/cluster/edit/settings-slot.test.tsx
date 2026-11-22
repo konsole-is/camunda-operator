@@ -911,6 +911,98 @@ describe("ComponentSettingsEditor", () => {
       });
     });
 
+    describe("a hold that the keystrokes of the user drop", () => {
+      const overwrite = async (label: string, text: string) => {
+        await userEvent.tripleClick(brokerAmount(label));
+        await userEvent.keyboard(text);
+      };
+
+      it("writes nothing for the preset memory after the keystrokes passed the saved amount", async () => {
+        renderSlot(
+          resourcesAt("41", { requests: { memory: "1Gi" } }, [
+            preset("medium", { requests: { memory: "10Gi" } }),
+          ]),
+        );
+        await openEditors();
+        await resetBlock();
+        expect(brokerAmount("Memory request")).toHaveProperty("value", "10");
+        await overwrite("Memory request", "10");
+        expect(claimSpec().cluster.zeebe.resources).toBeUndefined();
+        expect(unsaved()).toContain("1 unsaved change");
+      });
+
+      it("writes nothing for the preset CPU after the keystrokes passed the saved amount", async () => {
+        renderSlot(
+          resourcesAt("41", { requests: { cpu: "50m" } }, [
+            preset("medium", { requests: { cpu: "500m" } }),
+          ]),
+        );
+        await openEditors();
+        await resetBlock();
+        await overwrite("CPU request", "500");
+        expect(claimSpec().cluster.zeebe.resources).toBeUndefined();
+        expect(unsaved()).toContain("1 unsaved change");
+      });
+
+      it("ends with no change after the saved amount, a backspace, and the saved amount again", async () => {
+        renderSlot(
+          resourcesAt("41", { requests: { cpu: "1500m" } }, [
+            preset("medium", { requests: { cpu: "500m" } }),
+          ]),
+        );
+        await openEditors();
+        await resetBlock();
+        await retype("CPU request", "1500");
+        await userEvent.type(brokerAmount("CPU request"), "{Backspace}");
+        await userEvent.type(brokerAmount("CPU request"), "0");
+        expect(unsaved()).toBeUndefined();
+      });
+
+      it("writes the preset amount over a saved key in a row shown with nothing pending", async () => {
+        renderSlot(
+          resourcesAt("41", { requests: { cpu: "2" } }, [
+            preset("medium", { requests: { cpu: "500m" } }),
+          ]),
+        );
+        await openEditors();
+        await retype("CPU request", "");
+        await userEvent.selectOptions(
+          within(
+            within(settingRow(group("Brokers"), "resources")).getByRole(
+              "group",
+              { name: "CPU request" },
+            ),
+          ).getByRole("combobox", { name: "Unit" }),
+          "m",
+        );
+        await userEvent.type(brokerAmount("CPU request"), "500");
+        expect(claimSpec().cluster.zeebe.resources).toEqual({
+          requests: { cpu: "500m" },
+        });
+      });
+
+      it("holds no amount once the editors open again with nothing pending", async () => {
+        renderSlot(
+          resourcesAt("41", { requests: { cpu: "1500m" } }, [
+            preset("medium", { requests: { cpu: "500m" } }),
+          ]),
+        );
+        await openEditors();
+        await resetBlock();
+        await retype("CPU request", "1500");
+        expect(unsaved()).toBeUndefined();
+        await userEvent.click(
+          screen.getByRole("button", { name: "Close the editors" }),
+        );
+        await openEditors();
+        await retype("CPU request", "500");
+        expect(claimSpec().cluster.zeebe.resources).toEqual({
+          requests: { cpu: "500m" },
+        });
+        expect(unsaved()).toContain("1 unsaved change");
+      });
+    });
+
     it("counts two changed amounts of one block as two changes", async () => {
       renderSlot(resourcesAt("41", {}, [medium]));
       await openEditors();

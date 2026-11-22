@@ -453,10 +453,13 @@ export function settingChange(
  * with layers, as amountWrite decides it: the steps of its key, such as
  * requests.memory under steps, and its claim value, or undefined for a
  * reset. amounts maps each path to the quantity that its field shows.
+ * mounted are layers.pending of the setting when its row mounted: a key
+ * that they hold stays held for the life of the row.
  */
 export function resourceWrites(
   setting: Setting,
   amounts: Readonly<Record<string, string>>,
+  mounted: readonly Step[][],
 ): { steps: Step[]; value: unknown }[] {
   const { saved, below, pending } = setting.layers!;
   return Object.entries(amounts).map(([path, quantity]) => {
@@ -464,7 +467,7 @@ export function resourceWrites(
     const at = (block: unknown) =>
       valueAt(block, steps(keys)) as string | number | undefined;
     const key = [...setting.steps!, ...steps(keys)];
-    const held = pending.some(
+    const held = [...pending, ...mounted].some(
       (above) => above.length < key.length && startsWithSteps(key, above),
     );
     return {
