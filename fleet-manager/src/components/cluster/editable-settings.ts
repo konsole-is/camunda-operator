@@ -102,9 +102,9 @@ export type MapEntry = { key: string; value: string };
  *
  * With claim, spec is a merge of layers, and a setting of resources, of a
  * map of strings, or of variables gets mergedErrors. For resources, they
- * are each limit of spec below its request, for any resource. For a map,
- * they are the entries of spec that fail the rule of the editor, and for
- * variables those that the claim does not hold, one for each entry.
+ * are each limit of spec below its request, for any resource. For a map
+ * or variables, they are the entries of spec that fail the rule of the
+ * editor, one for each entry.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
