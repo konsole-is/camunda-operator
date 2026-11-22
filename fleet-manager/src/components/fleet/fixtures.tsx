@@ -45,8 +45,8 @@ export const scaleDiff = objectDiff(ordersClaim, {
 /**
  * ClaimReviewHarness shows ClaimReview over a session of claim with changes,
  * where an undefined value is a reset, and shows the toast of the write
- * under it, as a page does. The impacts, the caution, the confirm, and
- * mergedLines are the input of the review.
+ * under it, as a page does. The impacts, the caution, the confirm,
+ * mergedLines, and blocking are the input of the review.
  */
 export function ClaimReviewHarness({
   claim,
@@ -56,6 +56,7 @@ export function ClaimReviewHarness({
   caution,
   confirm,
   mergedLines,
+  blocking,
   ...props
 }: Omit<ComponentProps<typeof ClaimReview>, "session" | "intent" | "input"> &
   ClaimReviewInput & {
@@ -83,7 +84,7 @@ export function ClaimReviewHarness({
     <div className="flex flex-col gap-4">
       <ClaimReview
         {...props}
-        input={() => ({ impacts, caution, confirm, mergedLines })}
+        input={() => ({ impacts, caution, confirm, mergedLines, blocking })}
         session={session}
         intent={`Change the claim ${claim.metadata.name}`}
         show={(result, message) => {

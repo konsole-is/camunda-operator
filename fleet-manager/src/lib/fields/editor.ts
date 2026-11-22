@@ -12,10 +12,17 @@ export type SettingEditor =
   | { kind: "resources" }
   | { kind: "storageSize" }
   | { kind: "env" }
-  | { kind: "keyValue"; format?: "label" }
+  | { kind: "keyValue"; format?: KeyValueFormat }
   | { kind: "tolerations" }
   | { kind: "secretRef" }
   | { kind: "yaml"; schema?: OpenAPISchema };
+
+/**
+ * KeyValueFormat is the rule of Kubernetes for a map of strings: "label"
+ * for the keys and values of labels, "annotation" for the keys of
+ * annotations.
+ */
+export type KeyValueFormat = "label" | "annotation";
 
 /** SchemaEditor is an editor that a schema picks: any but a Secret reference. */
 export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
@@ -47,7 +54,10 @@ type YamlEditor = Extract<SchemaEditor, { kind: "yaml" }>;
  *     schema.
  *  4. An enum: a select of its values. A boolean: a toggle. An integer or a
  *     number: a number in its range. A string or an int-or-string: text.
- *  5. An object: a map of strings, with label rules for podLabels.
+ *  5. An object: a map of strings, with the rules of Kubernetes for the
+ *     keys and values of labels for podLabels and labels, and for the
+ *     keys of annotations for podAnnotations and annotations. With
+ *     openAPI, only podLabels gets a rule.
  *  6. Anything else: YAML, checked against openAPI, else against the type
  *     of the schema when it has one.
  *
@@ -80,7 +90,13 @@ export function editorOf(
     choices,
     openAPI,
     value,
-    labels: last === "podLabels",
+    format: openAPI
+      ? last === "podLabels"
+        ? "label"
+        : undefined
+      : Object.hasOwn(MAP_FORMATS, last)
+        ? MAP_FORMATS[last]
+        : undefined,
   });
 }
 
@@ -121,20 +137,29 @@ export function overrideEditorOf(
   });
 }
 
+// The maps of the operator CRDs that land in the labels or annotations of
+// an object, which Kubernetes checks.
+const MAP_FORMATS: Partial<Record<string, KeyValueFormat>> = {
+  podLabels: "label",
+  labels: "label",
+  podAnnotations: "annotation",
+  annotations: "annotation",
+};
+
 // schemaEditorOf picks the editor by rules 1 and 4 to 6 of editorOf, with
-// label rules for a map of strings when labels is set.
+// the rules of format for a map of strings.
 function schemaEditorOf(
   schema: FieldSchema | undefined,
   {
     choices,
     openAPI,
     value,
-    labels,
+    format,
   }: {
     choices?: readonly string[];
     openAPI?: OpenAPISchema;
     value?: unknown;
-    labels?: boolean;
+    format?: KeyValueFormat;
   },
 ): ParameterEditor | undefined {
   if (choices)
@@ -156,7 +181,7 @@ function schemaEditorOf(
     return kept({ kind: "text" }, value, yaml);
   if (schema.type === "object")
     return kept(
-      labels ? { kind: "keyValue", format: "label" } : { kind: "keyValue" },
+      format ? { kind: "keyValue", format } : { kind: "keyValue" },
       value,
       yaml,
     );

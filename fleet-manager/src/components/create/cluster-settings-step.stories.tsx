@@ -61,8 +61,7 @@ const teamSecrets: SecretRefs = [
 
 // ClusterSettingsStep holds no draft, so the harness holds the draft and
 // derives the draft cluster and its fields as the create flow does.
-// brokerResources replaces the resources of the brokers in the preset
-// medium.
+// presetBrokers replaces fields of the brokers in the preset medium.
 function ClusterSettingsStepHarness({
   initial,
   secrets,
@@ -70,19 +69,19 @@ function ClusterSettingsStepHarness({
   set,
   reset,
   errors,
-  brokerResources,
+  presetBrokers,
 }: {
   initial: ClusterDraft;
   secrets: SecretRefs;
   errors?: ComponentProps<typeof ClusterSettingsStep>["errors"];
-  brokerResources?: object;
+  presetBrokers?: object;
   pick: ComponentProps<typeof ClusterSettingsStep>["pick"];
   set: ComponentProps<typeof ClusterSettingsStep>["set"];
   reset: ComponentProps<typeof ClusterSettingsStep>["reset"];
 }) {
   const [draft, setDraft] = useState(initial);
   const offered =
-    brokerResources === undefined
+    presetBrokers === undefined
       ? presets
       : presets.map((p) =>
           p.metadata.name === "medium"
@@ -91,10 +90,7 @@ function ClusterSettingsStepHarness({
                 spec: {
                   cluster: {
                     ...p.spec.cluster,
-                    zeebe: {
-                      ...p.spec.cluster.zeebe,
-                      resources: brokerResources,
-                    },
+                    zeebe: { ...p.spec.cluster.zeebe, ...presetBrokers },
                   },
                 },
               }
@@ -291,7 +287,11 @@ export const MissingSecret: Story = {
 
 export const PresetLimitBelowRequest: Story = {
   name: "Preset limit below the request",
-  args: { brokerResources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+  args: {
+    presetBrokers: {
+      resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+    },
+  },
   play: async ({ canvasElement }) => {
     const { group, row } = brokers(canvasElement);
     await expect(row).toHaveAttribute("aria-expanded", "true");
@@ -312,6 +312,27 @@ export const PresetLimitBelowRequest: Story = {
     await expect(limit).toHaveAccessibleDescription(
       "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
     );
+    await expect(row).toHaveAccessibleName(/ 1 error$/);
+  },
+};
+
+export const PresetLabelKeyNotValid: Story = {
+  name: "Preset label key that is not valid",
+  args: { presetBrokers: { podLabels: { "bad key": "x", team: "payments" } } },
+  play: async ({ canvasElement }) => {
+    const { group, row } = brokers(canvasElement);
+    await expect(row).toHaveAttribute("aria-expanded", "true");
+    await expect(row).toHaveAccessibleName(/ 1 error$/);
+    const labels = within(group).getAllByRole("group", {
+      name: "podLabels",
+    })[0];
+    const message =
+      'The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.';
+    await expect(within(labels).getByRole("alert")).toHaveTextContent(message);
+    await userEvent.click(
+      within(labels).getByRole("button", { name: "Remove entry 1" }),
+    );
+    await expect(within(labels).getByRole("alert")).toHaveTextContent(message);
     await expect(row).toHaveAccessibleName(/ 1 error$/);
   },
 };

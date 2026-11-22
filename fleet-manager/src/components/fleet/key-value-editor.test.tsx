@@ -243,6 +243,149 @@ describe("KeyValueEditor", () => {
         }),
       ).toBeTruthy();
   });
+
+  describe("with openedUnchecked", () => {
+    it("shows no error for a row that it opens with, and checks a row that the user adds or changes", async () => {
+      const onChange = vi.fn();
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x", "": "" }}
+          openedUnchecked
+          onChange={onChange}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([]);
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        within(screen.getByRole("group", { name: "Entry 3" })).getByRole(
+          "textbox",
+          { name: "Key" },
+        ),
+        "-x",
+      );
+      expect(onChange.mock.lastCall![1]).toEqual([
+        {
+          path: "2.key",
+          message:
+            "Use a valid label key, for example team or example.com/team",
+        },
+      ]);
+      await userEvent.type(
+        within(screen.getByRole("group", { name: "Entry 1" })).getByRole(
+          "textbox",
+          { name: "Value" },
+        ),
+        "y",
+      );
+      expect(onChange.mock.lastCall![1]).toContainEqual({
+        path: "0.key",
+        message: "Use a valid label key, for example team or example.com/team",
+      });
+    });
+  });
+
+  describe("with checkedEntries", () => {
+    const checked = [{ key: "bad key", value: "x" }];
+
+    it("shows no error for an equal row and leaves it out of the map", async () => {
+      const onChange = vi.fn();
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x", team: "a" }}
+          checkedEntries={checked}
+          onChange={onChange}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([]);
+      expect(screen.queryByText(/valid label key/)).toBeNull();
+      const team = screen.getByRole("group", { name: "Entry 2" });
+      await userEvent.type(
+        within(team).getByRole("textbox", { name: "Value" }),
+        "b",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ team: "ab" }, []);
+    });
+
+    it("checks a row that the user adds, also when it equals a checked entry", async () => {
+      const onChange = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Annotations"
+          format="annotation"
+          defaultValue={{ "": "x", note: "a" }}
+          checkedEntries={[{ key: "", value: "x" }]}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove entry 1" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      const row = screen.getByRole("group", { name: "Entry 2" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "x",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ note: "a" }, [
+        { path: "1.key", message: "Enter a key" },
+      ]);
+      expect(screen.getByText("Enter a key")).toBeTruthy();
+    });
+
+    it("shows an empty key that it opens with and that the host does not check", () => {
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Annotations"
+          format="annotation"
+          defaultValue={{ "": "" }}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([
+        { path: "0.key", message: "Enter a key" },
+      ]);
+      expect(screen.getByText("Enter a key")).toBeTruthy();
+    });
+
+    it("checks the row again once the user changes it", async () => {
+      const onChange = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x" }}
+          checkedEntries={checked}
+          onChange={onChange}
+        />,
+      );
+      const row = screen.getByRole("group", { name: "Entry 1" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "y",
+      );
+      expect(onChange).toHaveBeenLastCalledWith({ "bad key": "xy" }, [
+        {
+          path: "0.key",
+          message:
+            "Use a valid label key, for example team or example.com/team",
+        },
+      ]);
+      expect(screen.getByText(/valid label key/)).toBeTruthy();
+    });
+  });
 });
 
 describe("keyValueErrors", () => {
@@ -269,6 +412,34 @@ describe("keyValueErrors", () => {
       },
       { path: "3.key", message: "Enter a key" },
     ]);
+  });
+
+  it("checks an annotation key as Kubernetes does, in lower case, and not its value", () => {
+    expect(
+      keyValueErrors(
+        [
+          { key: "Example.com/Note", value: "any text, even with spaces" },
+          { key: "bad key", value: "x" },
+          { key: "-x", value: "y" },
+        ],
+        "annotation",
+      ),
+    ).toEqual([
+      {
+        path: "1.key",
+        message: "Use a valid annotation key, for example example.com/note",
+      },
+      {
+        path: "2.key",
+        message: "Use a valid annotation key, for example example.com/note",
+      },
+    ]);
+  });
+
+  it("accepts an annotation key that Kubernetes accepts after it lowers the case, such as one with a dotted capital I", () => {
+    expect(
+      keyValueErrors([{ key: "\u0130tem", value: "x" }], "annotation"),
+    ).toEqual([]);
   });
 
   it("checks no label rule without the label format", () => {

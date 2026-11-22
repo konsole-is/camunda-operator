@@ -45,6 +45,7 @@ import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
 import {
+  type MapEntry,
   resourceWrites,
   type Setting,
   settingChange,
@@ -184,7 +185,9 @@ export function SettingsEditor({
  * "<label>: <error>" while the editor shows an error, also before any
  * edit, and undefined once the error goes or the row unmounts. onShows
  * gets whether the editor shows an error. A merged error reaches neither:
- * the host checks the merged value itself.
+ * the host checks the merged value itself. While its row is unchanged, the
+ * editor does not check the entry of a merged error, and leaves it out of
+ * the value that it writes.
  */
 export function SettingRow({
   setting,
@@ -288,6 +291,8 @@ export function SettingRow({
         }
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
+        checkedEntries={merged.flatMap((e) => (e.entry ? [e.entry] : []))}
+        openedUnchecked={setting.openedUnchecked === true}
         onChange={change}
         onAmounts={setting.layers && changeAmounts}
         onRefused={own(() => {})}
@@ -359,6 +364,8 @@ function useShownError(
 // size, environment, maps of strings, and tolerations. limitsChecked and
 // onAmounts reach only the editor of resources. With onAmounts, that editor
 // reports the amounts of each valid change to it, in place of onChange.
+// checkedEntries and openedUnchecked reach only the editors of environment
+// and maps of strings.
 function Editor({
   label,
   editor,
@@ -367,6 +374,8 @@ function Editor({
   replaces,
   describedBy,
   limitsChecked,
+  checkedEntries,
+  openedUnchecked,
   secrets,
   onChange,
   onAmounts,
@@ -381,6 +390,8 @@ function Editor({
   describedBy?: string;
   secrets: SecretRefs;
   limitsChecked: boolean;
+  checkedEntries: readonly (MapEntry | EnvVar)[];
+  openedUnchecked: boolean;
   onChange: (value: unknown) => void;
   onAmounts?: (amounts: Readonly<Record<string, string>>) => void;
   onRefused: () => void;
@@ -487,6 +498,8 @@ function Editor({
           secrets={secrets}
           defaultValue={initial as EnvVar[]}
           describedBy={describedBy}
+          checkedEntries={checkedEntries as EnvVar[]}
+          openedUnchecked={openedUnchecked}
           onChange={valid}
           onErrors={onErrors}
         />
@@ -499,6 +512,8 @@ function Editor({
           defaultValue={initial as Record<string, string> | undefined}
           emptyMap={replaces && startsSet ? "inherited" : undefined}
           describedBy={describedBy}
+          checkedEntries={checkedEntries as MapEntry[]}
+          openedUnchecked={openedUnchecked}
           onChange={valid}
           onErrors={onErrors}
         />
@@ -563,6 +578,8 @@ function EnvSetting({
   secrets,
   defaultValue,
   describedBy,
+  checkedEntries,
+  openedUnchecked,
   onChange,
   onErrors,
 }: {
@@ -570,6 +587,8 @@ function EnvSetting({
   secrets: SecretRefs;
   defaultValue: EnvVar[];
   describedBy?: string;
+  checkedEntries: readonly EnvVar[];
+  openedUnchecked: boolean;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors: (errors: ValidationError[]) => void;
 }) {
@@ -581,6 +600,8 @@ function EnvSetting({
         secrets={secrets}
         defaultValue={defaultValue}
         describedBy={describedBy}
+        checkedEntries={checkedEntries}
+        openedUnchecked={openedUnchecked}
         onChange={only(onChange)}
         onErrors={onErrors}
       />

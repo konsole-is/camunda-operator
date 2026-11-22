@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn, waitFor, within } from "storybook/test";
 import type { Step } from "@/lib/fields";
 import { STALE_CLAIM_MESSAGE } from "@/lib/session";
 import type { Preview } from "@/lib/write/types";
@@ -42,6 +42,23 @@ export const WithCaution: Story = {
   name: "With caution",
   args: {
     caution: "A backup of orders runs now. The rollout makes it fail.",
+  },
+};
+
+export const RefusedByThePage: Story = {
+  name: "Refused by the page",
+  args: {
+    blocking: [
+      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.",
+    ],
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(args.preview).toHaveBeenCalled());
+    await expect(canvas.getByRole("alert")).toHaveTextContent(
+      "A field that you cleared stays in the claim that the save leaves",
+    );
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
   },
 };
 

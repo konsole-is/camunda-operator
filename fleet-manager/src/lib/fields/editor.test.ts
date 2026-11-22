@@ -51,7 +51,16 @@ describe("editorOf", () => {
     ["zeebe.storageSize", { kind: "storageSize" }],
     ["extraEnv", { kind: "env" }],
     ["podLabels", { kind: "keyValue", format: "label" }],
-    ["podAnnotations", { kind: "keyValue" }],
+    ["podAnnotations", { kind: "keyValue", format: "annotation" }],
+    [
+      "connectors.serviceAccount.annotations",
+      { kind: "keyValue", format: "annotation" },
+    ],
+    ["monitoring.serviceMonitor.labels", { kind: "keyValue", format: "label" }],
+    [
+      "monitoring.serviceMonitor.annotations",
+      { kind: "keyValue", format: "annotation" },
+    ],
     ["zeebe.scheduling.tolerations", { kind: "tolerations" }],
     [
       "zeebe.scheduling.nodeAffinity",
@@ -375,6 +384,19 @@ describe("overrideEditorOf", () => {
   ])("reads the registration schema of the override %s", (name, editor) => {
     expect(overrideEditorOf(name, OVERRIDES[name])).toEqual(editor);
   });
+
+  it.each(["labels", "annotations"])(
+    "gives an override map named %s no rule of Kubernetes",
+    (name) => {
+      expect(
+        overrideEditorOf(
+          name,
+          { type: "object", additionalProperties: { type: "string" } },
+          { value: { "cost center": "a b" } },
+        ),
+      ).toEqual({ kind: "keyValue" });
+    },
+  );
 
   it("checks YAML against the registration schema also for a name of fullSchemaOf", () => {
     expect(overrideEditorOf("extraEnvFrom", { type: "array" })).toEqual({

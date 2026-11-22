@@ -380,6 +380,69 @@ describe("ComponentSettingsEditor", () => {
     expect(within(resources()).getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("keeps Review off for a label key of the preset after its row is deleted and the editors close", async () => {
+    const spec = { zeebe: { replicas: 3 }, gateway: { mode: "Standalone" } };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { podLabels: { "bad key": "x", team: "a" } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      }),
+    );
+    await openEditors();
+    const message =
+      'The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.';
+    const labels = () => settingRow(group("Brokers"), "podLabels");
+    await userEvent.click(
+      within(labels()).getByRole("button", { name: "Remove entry 1" }),
+    );
+    expect(within(labels()).getByRole("alert").textContent).toBe(message);
+    const review = () =>
+      within(
+        screen.getByRole("region", { name: "Unsaved changes" }),
+      ).getByRole<HTMLButtonElement>("button", { name: "Review" });
+    expect(review().disabled).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close the editors" }),
+    );
+    expect(review().disabled).toBe(true);
+    expect(
+      within(screen.getByRole("region", { name: "Unsaved changes" })).getByText(
+        `zeebe.podLabels: ${message}`,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("refuses an annotation key that Kubernetes refuses for an embedded Tasklist", async () => {
+    renderSlot(contextOf({ openId: "gateway" }));
+    await openEditors();
+    const annotations = () => settingRow(group("Tasklist"), "podAnnotations");
+    await userEvent.click(
+      within(annotations()).getByRole("button", { name: "Add an entry" }),
+    );
+    await userEvent.type(
+      within(annotations()).getByRole("textbox", { name: "Key" }),
+      "bad key",
+    );
+    expect(
+      within(annotations()).getByText(
+        "Use a valid annotation key, for example example.com/note",
+      ),
+    ).toBeTruthy();
+    expect(
+      claimSpec().cluster.tasklist?.podAnnotations ?? {},
+    ).not.toHaveProperty("bad key");
+  });
+
   it("keeps Review off for a merged error after the editors close", async () => {
     const spec = {
       zeebe: {

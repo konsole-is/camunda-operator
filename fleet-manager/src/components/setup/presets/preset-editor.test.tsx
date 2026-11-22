@@ -81,6 +81,31 @@ describe("PresetEditor of a cluster preset", () => {
     ).toBeNull();
   });
 
+  it("refuses an annotation key that Kubernetes refuses, for a web app that the preset does not run standalone", async () => {
+    const { drafts } = setup(fixtures.clusterPresets[0]);
+    const tasklist = screen.getByRole("region", { name: "Tasklist settings" });
+    const annotations = within(tasklist).getAllByRole("group", {
+      name: "podAnnotations",
+    })[0];
+    fireEvent.click(
+      within(annotations).getByRole("button", { name: "Add an entry" }),
+    );
+    fireEvent.change(
+      within(annotations).getAllByRole("textbox", { name: "Key" }).at(-1)!,
+      { target: { value: "bad key" } },
+    );
+    expect(
+      within(annotations).getByText(
+        "Use a valid annotation key, for example example.com/note",
+      ),
+    ).toBeTruthy();
+    expect(
+      drafts.mock.calls.some(([d]) =>
+        JSON.stringify(d.body).includes("bad key"),
+      ),
+    ).toBe(false);
+  });
+
   it("removes a field from the preset with its reset link", async () => {
     const { last } = setup(fixtures.clusterPresets[0]);
     const brokers = screen.getByRole("region", { name: "Brokers settings" });
