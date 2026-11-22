@@ -129,6 +129,22 @@ function Probe() {
         Reset the resources
       </button>
       <button
+        onClick={() =>
+          edit.set(
+            [
+              { field: "spec" },
+              { field: "cluster" },
+              { field: "monitoring" },
+              { field: "serviceMonitor" },
+              { field: "enabled" },
+            ],
+            true,
+          )
+        }
+      >
+        Turn on the ServiceMonitor
+      </button>
+      <button
         onClick={() => edit.invalid(replicas, "Replicas: Enter 1 or more")}
       >
         Show replicas error
@@ -1027,6 +1043,46 @@ describe("ClusterEditProvider", () => {
       fireEvent.click(choice());
       expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
       expect(save().disabled).toBe(true);
+    });
+  });
+
+  describe("a label key of the claim that is not valid, with no editor open", () => {
+    const review = () =>
+      within(bar()!).getByRole<HTMLButtonElement>("button", {
+        name: "Review",
+      });
+    const withCluster = (spec: object) =>
+      slotContext({
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: { zeebe: { replicas: 3 }, ...spec } }),
+      });
+
+    it("lets a change through while the ServiceMonitor is off, and blocks Review once the change turns it on", () => {
+      page(
+        withCluster({
+          monitoring: {
+            serviceMonitor: { enabled: false, labels: { "bad key": "x" } },
+          },
+        }),
+      );
+      click("Scale");
+      expect(review().disabled).toBe(false);
+      click("Turn on the ServiceMonitor");
+      expect(review().disabled).toBe(true);
+      expect(bar()!.textContent).toContain(
+        'monitoring.serviceMonitor.labels: The label key "bad key" is not valid. Correct it, or remove its row.',
+      );
+    });
+
+    it("blocks Review for a label key of the pod labels of the brokers", () => {
+      page(
+        withCluster({ zeebe: { replicas: 3, podLabels: { "bad key": "x" } } }),
+      );
+      click("Scale");
+      expect(review().disabled).toBe(true);
+      expect(bar()!.textContent).toContain(
+        'zeebe.podLabels: The label key "bad key" is not valid. Correct it, or remove its row.',
+      );
     });
   });
 

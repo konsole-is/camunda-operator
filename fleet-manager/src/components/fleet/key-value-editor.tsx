@@ -32,7 +32,9 @@ export type EmptyMap = "inherited" | "unset";
  * the errors that it shows, also at mount. checkedEntries are entries of
  * defaultValue that the host checks itself, and that a value below the map
  * keeps. While its row is unchanged, such an entry shows no error, refuses
- * no change, and is not in the map that onChange gets.
+ * no change, and is not in the map that onChange gets. With
+ * openedUnchecked, a row of defaultValue shows no error and refuses no
+ * change while it is unchanged.
  */
 export function KeyValueEditor({
   label,
@@ -43,6 +45,7 @@ export function KeyValueEditor({
   emptyMap,
   describedBy,
   checkedEntries = [],
+  openedUnchecked = false,
   onChange,
   onErrors,
 }: {
@@ -54,6 +57,7 @@ export function KeyValueEditor({
   emptyMap?: EmptyMap;
   describedBy?: string;
   checkedEntries?: readonly { key: string; value: string }[];
+  openedUnchecked?: boolean;
   onChange?: (
     value: Record<string, string> | undefined,
     errors: ValidationError[],
@@ -91,15 +95,16 @@ export function KeyValueEditor({
   const opened = (e: Entry) => initial.some((i) => i.id === e.id && same(i, e));
   const checked = (e: Entry) =>
     opened(e) && checkedEntries.some((c) => same(c, e));
+  const unchecked = (e: Entry) => checked(e) || (openedUnchecked && opened(e));
   const shownErrors = (rows: readonly Entry[]) => [
     ...keyValueErrors(rows, format).filter(
-      (error) => !checked(rows[Number(error.path.split(".")[0])]),
+      (error) => !unchecked(rows[Number(error.path.split(".")[0])]),
     ),
     // keyValueErrors ignores a row with an empty key and an empty value as
     // one that the user did not fill yet. Such a row that the editor opens
     // with is an entry with an empty key, which Kubernetes refuses.
     ...rows.flatMap((e, index) =>
-      e.key === "" && e.value === "" && opened(e) && !checked(e)
+      e.key === "" && e.value === "" && opened(e) && !unchecked(e)
         ? [{ path: `${index}.key`, message: "Enter a key" }]
         : [],
     ),

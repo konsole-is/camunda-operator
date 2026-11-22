@@ -44,7 +44,8 @@ import { type Process, runsOwnWorkload } from "./topology";
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the faults of the merged value that the
  * editor does not own, and undefined when no check of the merged value
- * runs.
+ * runs. openedUnchecked says that the editor of a map does not check a row
+ * that it opens with until the user changes it.
  */
 export type Setting = {
   key: string;
@@ -62,14 +63,15 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
+  openedUnchecked?: true;
 };
 
 /**
  * MergedError is a fault of the merged value of a setting: a limit below
- * its request, or an entry of a map or a list of variables that fails the
- * rule of its editor and that the claim does not hold. entry is that entry,
- * as the editor holds it. blocks is false when the value does not apply
- * now: the process runs embedded, or Connectors are not enabled.
+ * its request, an entry of a map that fails the rule of its editor, or an
+ * entry of a list of variables that fails it and that the claim does not
+ * hold. entry is that entry, as the editor holds it, when the claim does
+ * not hold it. blocks is false when the value reaches no object now.
  */
 export type MergedError = {
   message: string;
@@ -100,9 +102,9 @@ export type MapEntry = { key: string; value: string };
  *
  * With claim, spec is a merge of layers, and a setting of resources, of a
  * map of strings, or of variables gets mergedErrors. For resources, they
- * are each limit of spec below its request, for any resource. For a map or
- * variables, they are the entries of spec that the claim does not hold
- * and that fail the rule of the editor, one for each entry.
+ * are each limit of spec below its request, for any resource. For a map,
+ * they are the entries of spec that fail the rule of the editor, and for
+ * variables those that the claim does not hold, one for each entry.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -160,27 +162,23 @@ export function settingsOf(input: {
       resetLabel: "Reset to preset",
     };
     if (lock) return { ...setting, lock };
-    const schemaEditor = secretRef
+    const editor = secretRef
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
-    if (!schemaEditor) return setting;
-    const reach = reachOf(schemaEditor, group, names, spec);
-    // A map that reaches no object now gets no rule of Kubernetes in the
-    // editor, so a value of the claim there does not block. podLabels
-    // keeps its label rule.
-    const editor: SettingEditor =
-      schemaEditor.kind === "keyValue" &&
-      schemaEditor.format !== undefined &&
-      !reach.applies &&
-      names.at(-1) !== "podLabels"
-        ? { kind: "keyValue" }
-        : schemaEditor;
+    if (!editor) return setting;
+    const reach = reachOf(editor, group, names, spec);
+    // The check of the merged value covers each entry of a map, and on
+    // Optimize nothing checks a map that reaches no object.
+    const openedUnchecked =
+      editor.kind === "keyValue" &&
+      ("claim" in input || (optimize && !reach.applies));
     const checked: Setting =
       "claim" in input
         ? {
             ...setting,
+            ...(openedUnchecked && { openedUnchecked: true as const }),
             ...mergedCheckOf({
-              editor: schemaEditor,
+              editor,
               reach,
               value,
               claimValue: valueAt(claim, steps(names)),
@@ -196,7 +194,10 @@ export function settingsOf(input: {
                 )?.field.state ?? (state?.kind === "claim" ? undefined : state),
             }),
           }
-        : setting;
+        : {
+            ...setting,
+            ...(openedUnchecked && { openedUnchecked: true as const }),
+          };
     if (holder?.field.claimSteps)
       return {
         ...checked,
@@ -268,20 +269,23 @@ function mergedCheckOf(input: {
     const blank = entries.findIndex((e) => e.key === "" && e.value === "");
     if (blank >= 0) faults.push({ index: blank, field: "key" });
     return {
-      mergedErrors: faults
-        .filter(({ index }) => !Object.hasOwn(held, entries[index].key))
-        .map(({ index, field }) => {
-          const entry = entries[index];
-          const state = entryStateAt({ field: entry.key });
+      mergedErrors: faults.map(({ index, field }): MergedError => {
+        const entry = entries[index];
+        if (Object.hasOwn(held, entry.key))
           return {
-            message:
-              mapEntryFault(entry, field, editor.format, state) +
-              remedyOf(state, field === "value" ? entry.key : undefined) +
-              later,
+            message: heldEntryFault(entry, field, editor.format) + later,
             blocks: applies,
-            entry,
           };
-        }),
+        const state = entryStateAt({ field: entry.key });
+        return {
+          message:
+            mapEntryFault(entry, field, editor.format, state) +
+            remedyOf(state, field === "value" ? entry.key : undefined) +
+            later,
+          blocks: applies,
+          entry,
+        };
+      }),
     };
   }
   if (editor.kind === "env") {
@@ -398,6 +402,21 @@ function mapEntryFault(
       ? `An empty ${noun} key`
       : `The ${noun} key "${entry.key}"`;
   return `${key} ${from}. The claim cannot remove it.`;
+}
+
+function heldEntryFault(
+  entry: MapEntry,
+  field: string,
+  format: KeyValueFormat | undefined,
+): string {
+  const noun = format ?? "map";
+  if (field === "value")
+    return `The value of the ${noun} "${entry.key}" is not valid. Correct it.`;
+  const key =
+    entry.key === ""
+      ? `An empty ${noun} key`
+      : `The ${noun} key "${entry.key}"`;
+  return `${key} is not valid. Correct it, or remove its row.`;
 }
 
 // remedyOf returns what the user can do about an entry of the layer of

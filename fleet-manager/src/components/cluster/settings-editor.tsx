@@ -287,6 +287,7 @@ export function SettingRow({
         secrets={secrets ?? []}
         limitsChecked={setting.mergedErrors !== undefined}
         checkedEntries={merged.flatMap((e) => (e.entry ? [e.entry] : []))}
+        openedUnchecked={setting.openedUnchecked === true}
         onChange={change}
         onRefused={own(() => {})}
         onShown={setEditorError}
@@ -355,8 +356,9 @@ function useShownError(
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
 // size, environment, maps of strings, and tolerations. limitsChecked
-// reaches only the editor of resources, and checkedEntries only the
-// editors of environment and maps of strings.
+// reaches only the editor of resources, checkedEntries only the editors of
+// environment and maps of strings, and openedUnchecked only the editor of
+// maps of strings.
 function Editor({
   label,
   editor,
@@ -366,6 +368,7 @@ function Editor({
   describedBy,
   limitsChecked,
   checkedEntries,
+  openedUnchecked,
   secrets,
   onChange,
   onRefused,
@@ -380,6 +383,7 @@ function Editor({
   secrets: SecretRefs;
   limitsChecked: boolean;
   checkedEntries: readonly (MapEntry | EnvVar)[];
+  openedUnchecked: boolean;
   onChange: (value: unknown) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
@@ -492,6 +496,7 @@ function Editor({
           emptyMap={replaces && startsSet ? "inherited" : undefined}
           describedBy={describedBy}
           checkedEntries={checkedEntries as MapEntry[]}
+          openedUnchecked={openedUnchecked}
           onChange={valid}
           onErrors={onErrors}
         />

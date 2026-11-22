@@ -405,6 +405,27 @@ describe("ComponentSettingsEditor", () => {
     ).toBeTruthy();
   });
 
+  it("refuses an annotation key that Kubernetes refuses for an embedded Tasklist", async () => {
+    renderSlot(contextOf({ openId: "gateway" }));
+    await openEditors();
+    const annotations = () => settingRow(group("Tasklist"), "podAnnotations");
+    await userEvent.click(
+      within(annotations()).getByRole("button", { name: "Add an entry" }),
+    );
+    await userEvent.type(
+      within(annotations()).getByRole("textbox", { name: "Key" }),
+      "bad key",
+    );
+    expect(
+      within(annotations()).getByText(
+        "Use a valid annotation key, for example example.com/note",
+      ),
+    ).toBeTruthy();
+    expect(
+      claimSpec().cluster.tasklist?.podAnnotations ?? {},
+    ).not.toHaveProperty("bad key");
+  });
+
   it("keeps Review off for a merged error after the editors close", async () => {
     const spec = {
       zeebe: {

@@ -280,6 +280,25 @@ describe("TopologyEditor", () => {
     ).toBe(true);
   });
 
+  it("blocks the review when a switch to standalone makes an annotation key of the claim apply", () => {
+    editor(withSpec({ tasklist: { podAnnotations: { "bad key": "x" } } }));
+    open();
+    pick("Tasklist", "Standalone");
+    fireEvent.click(reviewButton());
+    expect(
+      screen.queryByRole("dialog", { name: "Review the change" }),
+    ).toBeNull();
+    close();
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(bar.textContent).toContain(
+      'tasklist.podAnnotations: The annotation key "bad key" is not valid. Correct it, or remove its row.',
+    );
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+  });
+
   it("says when the lines include other pending changes", () => {
     const note =
       "These lines include the other pending changes of this cluster.";

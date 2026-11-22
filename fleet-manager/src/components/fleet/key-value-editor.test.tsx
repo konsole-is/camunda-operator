@@ -244,6 +244,52 @@ describe("KeyValueEditor", () => {
       ).toBeTruthy();
   });
 
+  describe("with openedUnchecked", () => {
+    it("shows no error for a row that it opens with, and checks a row that the user adds or changes", async () => {
+      const onChange = vi.fn();
+      const onErrors = vi.fn();
+      render(
+        <KeyValueEditor
+          label="Labels"
+          format="label"
+          defaultValue={{ "bad key": "x", "": "" }}
+          openedUnchecked
+          onChange={onChange}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([]);
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        within(screen.getByRole("group", { name: "Entry 3" })).getByRole(
+          "textbox",
+          { name: "Key" },
+        ),
+        "-x",
+      );
+      expect(onChange.mock.lastCall![1]).toEqual([
+        {
+          path: "2.key",
+          message:
+            "Use a valid label key, for example team or example.com/team",
+        },
+      ]);
+      await userEvent.type(
+        within(screen.getByRole("group", { name: "Entry 1" })).getByRole(
+          "textbox",
+          { name: "Value" },
+        ),
+        "y",
+      );
+      expect(onChange.mock.lastCall![1]).toContainEqual({
+        path: "0.key",
+        message: "Use a valid label key, for example team or example.com/team",
+      });
+    });
+  });
+
   describe("with checkedEntries", () => {
     const checked = [{ key: "bad key", value: "x" }];
 

@@ -594,12 +594,18 @@ describe("settingsOf merged entry errors", () => {
     ]);
   });
 
-  it("leaves an entry that the claim holds to the editor", () => {
+  it("reports an entry that the claim holds as one that the claim can correct, with no entry for the editor to leave out", () => {
     const labels = brokerSetting("podLabels", {
       preset: { zeebe: { podLabels: { "bad key": "x" } } },
       claim: { cluster: { zeebe: { podLabels: { "bad key": "y" } } } },
     });
-    expect(labels.mergedErrors).toEqual([]);
+    expect(labels.mergedErrors).toEqual([
+      {
+        message:
+          'The label key "bad key" is not valid. Correct it, or remove its row.',
+        blocks: true,
+      },
+    ]);
   });
 
   it("says that the claim can set a valid value for a label value of the preset that is not valid", () => {
@@ -786,51 +792,102 @@ describe("settingsOf merged entry errors", () => {
       ]);
   });
 
-  it.each([
-    ["monitoring.serviceMonitor.labels", { enabled: false }, undefined],
-    ["monitoring.serviceMonitor.labels", { enabled: true }, "label"],
-    ["monitoring.serviceMonitor.annotations", {}, undefined],
-    ["monitoring.serviceMonitor.annotations", { enabled: true }, "annotation"],
-  ] as const)(
-    "checks %s of a ServiceMonitor that is %o by the rule %s",
-    (label, monitor, format) => {
-      const map = setting(
-        clusterSettings({
-          claim: {
-            cluster: {
-              monitoring: {
-                serviceMonitor: {
-                  ...monitor,
-                  [label.split(".")[2]]: { "Team Name": "x" },
-                },
-              },
-            },
-          },
-        }),
-        label,
-      );
-      expect(map.editor).toEqual(
-        format ? { kind: "keyValue", format } : { kind: "keyValue" },
-      );
-    },
-  );
-
-  it("checks no annotation key of a ServiceAccount that the operator does not create", () => {
-    const annotations = setting(
+  // monitorLabels returns the setting monitoring.serviceMonitor.labels of
+  // a claim whose ServiceMonitor is enabled as given and holds a label key
+  // that is not valid.
+  const monitorLabels = (enabled: boolean) =>
+    setting(
       clusterSettings({
         claim: {
           cluster: {
-            serviceAccount: {
-              name: "shared",
-              create: false,
-              annotations: { "bad key": "x" },
+            monitoring: {
+              serviceMonitor: { enabled, labels: { "bad key": "x" } },
             },
           },
         },
       }),
-      "serviceAccount.annotations",
+      "monitoring.serviceMonitor.labels",
     );
-    expect(annotations.editor).toEqual({ kind: "keyValue" });
+  const HELD_KEY =
+    'The label key "bad key" is not valid. Correct it, or remove its row.';
+
+  it("warns about a label key of the claim that is not valid in a ServiceMonitor that is off", () => {
+    expect(monitorLabels(false).mergedErrors).toEqual([
+      {
+        message: `${HELD_KEY} Correct it before you turn on the ServiceMonitor.`,
+        blocks: false,
+      },
+    ]);
+  });
+
+  it("warns, and does not block, about an empty key of the claim in a ServiceMonitor that is off", () => {
+    const labels = setting(
+      clusterSettings({
+        claim: {
+          cluster: {
+            monitoring: {
+              serviceMonitor: { enabled: false, labels: { "": "" } },
+            },
+          },
+        },
+      }),
+      "monitoring.serviceMonitor.labels",
+    );
+    expect(labels.openedUnchecked).toBe(true);
+    expect(labels.mergedErrors).toEqual([
+      {
+        message:
+          "An empty label key is not valid. Correct it, or remove its row. Correct it before you turn on the ServiceMonitor.",
+        blocks: false,
+      },
+    ]);
+  });
+
+  it("blocks on a label key of the claim that is not valid in a ServiceMonitor that is on", () => {
+    expect(monitorLabels(true).mergedErrors).toEqual([
+      { message: HELD_KEY, blocks: true },
+    ]);
+  });
+
+  it("keeps the rule of Kubernetes in the editor of a map that reaches no object, and leaves the rows it opens with to the merged check", () => {
+    const labels = monitorLabels(false);
+    expect(labels.editor).toEqual({ kind: "keyValue", format: "label" });
+    expect(labels.openedUnchecked).toBe(true);
+  });
+
+  it("blocks on a label key of the claim that is not valid in the pod labels of a process that runs", () => {
+    const labels = brokerSetting("podLabels", {
+      claim: { cluster: { zeebe: { podLabels: { "bad key": "x" } } } },
+    });
+    expect(labels.mergedErrors).toEqual([{ message: HELD_KEY, blocks: true }]);
+  });
+
+  it("says that the value of a label of the claim that is not valid needs a correction", () => {
+    const labels = brokerSetting("podLabels", {
+      claim: { cluster: { zeebe: { podLabels: { team: "not valid" } } } },
+    });
+    expect(labels.mergedErrors).toEqual([
+      {
+        message: 'The value of the label "team" is not valid. Correct it.',
+        blocks: true,
+      },
+    ]);
+  });
+
+  it("checks every row of a map in the editor without the claim, as on the preset page", () => {
+    const page = {
+      preset: {
+        monitoring: { serviceMonitor: { labels: { "bad key": "x" } } },
+      },
+    };
+    const { group } = settingsGroupOf("cluster", "cluster", page);
+    const { merged } = settingsFieldsOf(page);
+    const labels = setting(
+      settingsOf({ group, spec: merged.spec }),
+      "monitoring.serviceMonitor.labels",
+    );
+    expect(labels.editor).toEqual({ kind: "keyValue", format: "label" });
+    expect(labels.openedUnchecked).toBeUndefined();
   });
 
   it("warns about an annotation key of the preset on a Connectors ServiceAccount that the operator does not create", () => {
@@ -845,26 +902,12 @@ describe("settingsOf merged entry errors", () => {
       }),
       "serviceAccount.annotations",
     );
-    expect(annotations.editor).toEqual({ kind: "keyValue" });
     expect(annotations.mergedErrors).toEqual([
       expect.objectContaining({
         message: `The annotation key "bad key" ${PRESET} Correct it before the operator creates the ServiceAccount.`,
         blocks: false,
       }),
     ]);
-  });
-
-  it("keeps the label rule in the editor of the pod labels of an embedded app, and drops the annotation rule", () => {
-    const settings = processSettings("gateway", "tasklist", {
-      cluster: { gateway: { mode: "Standalone" } },
-    });
-    expect(setting(settings, "podLabels").editor).toEqual({
-      kind: "keyValue",
-      format: "label",
-    });
-    expect(setting(settings, "podAnnotations").editor).toEqual({
-      kind: "keyValue",
-    });
   });
 
   it("has no merged entry errors without the claim, as on the preset page", () => {

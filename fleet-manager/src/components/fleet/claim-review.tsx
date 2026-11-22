@@ -76,9 +76,9 @@ export type ClaimReviewInput = {
  * The diff of the claim then shows the claim that the save leaves: a
  * cleared field of another tool stays in it until the take-over.
  * In Git mode it notes each reset field that the preview keeps. With
- * keptByDryRun, saved in Git mode is the claim of the preview with each
- * field that the change removes and the preview still holds, and the
- * notes name each such field.
+ * keptByDryRun, saved in Git mode is the claim after the change with each
+ * field that the change removes and the preview still holds, as the
+ * preview holds it, and the notes name each such field.
  *
  * input gives the impacts, the caution, the confirm, mergedLines, and the
  * blocking messages from saved: a session whose change gives the claim
