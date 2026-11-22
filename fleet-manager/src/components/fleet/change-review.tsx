@@ -227,7 +227,12 @@ export function ChangeReview({
             <TakeOverChoice
               ownership={ownership}
               chosen={chosen}
-              onChoose={(next) => setChoice({ change, chosen: next })}
+              onChoose={(next) => {
+                // With otherWrite the preview of the choice has the key of
+                // change, so a new choice must not find the one before.
+                if (!next) setTakenPreview(undefined);
+                setChoice({ change, chosen: next });
+              }}
               taken={retaken ? checked : undefined}
             />
           )}

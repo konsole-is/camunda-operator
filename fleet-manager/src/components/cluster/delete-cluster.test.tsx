@@ -503,6 +503,43 @@ describe("DeleteCluster", () => {
       expect(fakeWriter.applied).toEqual([]);
     });
 
+    it("direct mode: a dry run of the policy write that the claim made stale turns the confirm on once the next version of the claim comes in", async () => {
+      const initial = data({ claim: claim({ deletionPolicy: "Delete" }) });
+      const stale: Preview = {
+        objects: [],
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The CamundaClusterClaim orders changed since you opened it.",
+            ref,
+          },
+        ],
+      };
+      let answer = stale;
+      pageWith({ ...actions, previewPolicy: async () => answer }, initial);
+      await readAll(initial);
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      expect(
+        await screen.findByText(
+          "The CamundaClusterClaim orders changed since you opened it.",
+        ),
+      ).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await act(async () => {});
+      expect(confirmButton().disabled).toBe(true);
+      answer = { objects: [], errors: [] };
+      await liveClaim(
+        claim({ deletionPolicy: "Delete", resourceVersion: "42" }),
+      );
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+      expect(fakeWriter.applied).toEqual([]);
+    });
+
     it("direct mode: a deletion policy of an operator controller offers no take-over, names the controller, and keeps the confirm off", async () => {
       await readAll(ownedPage(operator));
       fireEvent.click(

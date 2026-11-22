@@ -483,6 +483,29 @@ describe("ChangeReview with fields of another tool", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("with otherWrite, a new choice waits for a new preview with the ownership, not for the one of the choice before", async () => {
+    const removed: Change = {
+      intent: "Delete the environment staging",
+      apply: [],
+      delete: [{ ...ref, apiVersion: base.apiVersion }],
+    };
+    setup({
+      change: removed,
+      otherWrite: true,
+      preview: (_c, taken) =>
+        taken
+          ? { ...clean, ownership: conflicted.ownership }
+          : { ...conflicted, objects: clean.objects },
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    fireEvent.click(choice());
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", true));
+    fireEvent.click(choice());
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
   it("with otherWrite, gives apply no ownership without the choice", async () => {
     const { apply } = setup({
       change: updated,

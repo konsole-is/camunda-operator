@@ -486,10 +486,6 @@ export function useClaimDelete<C extends DeletableClaim>(input: {
     };
   else {
     const { written, ...rest } = sent;
-    const held = deletionPolicyOf(
-      live.spec?.deletionPolicy,
-      live.status?.resolvedPolicy,
-    );
     stage = written
       ? {
           ...rest,
