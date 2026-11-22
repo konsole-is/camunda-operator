@@ -439,85 +439,102 @@ describe("amountWrite", () => {
   const rows: {
     name: string;
     quantity: string;
-    claim?: string | number;
-    below?: string | number;
     saved?: string | number;
+    below?: string | number;
+    held?: true;
     want: AmountWrite;
   }[] = [
     {
-      name: "writes a changed amount over the preset",
-      quantity: "2Gi",
-      below: "1Gi",
-      want: { value: "2Gi" },
-    },
-    {
-      name: "resets a claim key whose field the user emptied",
+      name: "resets an emptied field",
       quantity: "",
-      claim: "3",
+      saved: "3",
       below: "1",
       want: undefined,
     },
     {
-      name: "writes nothing for an emptied field that only the preset gives",
+      name: "resets an emptied field under a held change",
       quantity: "",
-      below: "1",
+      saved: "3",
+      held: true,
       want: undefined,
     },
     {
-      name: "resets a field that the user emptied where no layer gives a value",
-      quantity: "",
-      want: undefined,
-    },
-    {
-      name: "writes the claim value back after a delete and a retype",
+      name: "writes the saved value back as it is",
       quantity: "1",
-      claim: "1",
+      saved: 1,
       below: "2",
-      want: { value: "1" },
-    },
-    {
-      name: "resets after a retype of the preset amount",
-      quantity: "1",
-      below: "1",
-      want: undefined,
-    },
-    {
-      name: "keeps a number of the claim that the user typed again",
-      quantity: "1",
-      claim: 1,
       want: { value: 1 },
     },
     {
-      name: "compares amounts by value, not by spelling",
-      quantity: "2000m",
-      claim: 2,
-      want: { value: 2 },
+      name: "writes the saved value back when it is equal to the preset",
+      quantity: "1000m",
+      saved: "1",
+      below: "1",
+      want: { value: "1" },
     },
     {
-      name: "compares with the preset in another unit",
+      name: "writes the preset amount when the saved claim sets another one",
+      quantity: "1Gi",
+      saved: "3Gi",
+      below: "1Gi",
+      want: { value: "1Gi" },
+    },
+    {
+      name: "resets the preset amount where the saved claim sets none",
       quantity: "1024Mi",
       below: "1Gi",
       want: undefined,
     },
     {
-      name: "writes the preset amount when the claim sets another one",
-      quantity: "1Gi",
-      claim: "3Gi",
+      name: "writes an amount that is neither saved nor below",
+      quantity: "2Gi",
+      saved: "3Gi",
       below: "1Gi",
-      want: { value: "1Gi" },
+      want: { value: "2Gi" },
     },
     {
-      name: "resets the preset amount when a pending reset removed the saved key",
-      quantity: "1Gi",
-      below: "1Gi",
-      saved: "3Gi",
+      name: "writes an amount where no layer gives a value",
+      quantity: "5",
+      want: { value: "5" },
+    },
+    {
+      name: "resets the preset amount under a held change",
+      quantity: "500m",
+      saved: "2",
+      below: "500m",
+      held: true,
       want: undefined,
     },
     {
-      name: "writes the saved value as it is when a pending reset removed it",
-      quantity: "1",
-      saved: 1,
-      want: { value: 1 },
+      name: "resets the preset amount under a held change also when it is saved",
+      quantity: "500m",
+      saved: "500m",
+      below: "500m",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "resets the preset amount under a held change where the saved claim sets none",
+      quantity: "512Mi",
+      below: "512Mi",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "writes the saved value as it is under a held change",
+      quantity: "1500m",
+      saved: "1.5",
+      below: "500m",
+      held: true,
+      want: { value: "1.5" },
+    },
+    {
+      name: "writes any other amount under a held change",
+      quantity: "750m",
+      saved: "2",
+      below: "500m",
+      held: true,
+      want: { value: "750m" },
     },
     {
       name: "writes an amount that is not a number as it is",
@@ -527,9 +544,9 @@ describe("amountWrite", () => {
     },
   ];
 
-  it.each(rows)("$name", ({ quantity, claim, below, saved, want }) => {
+  it.each(rows)("$name", ({ quantity, saved, below, held, want }) => {
     expect(
-      amountWrite(quantity, claim, below, saved === undefined ? claim : saved),
+      amountWrite(quantity, { saved, below, held: held ?? false }),
     ).toEqual(want);
   });
 });
