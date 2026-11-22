@@ -586,6 +586,28 @@ describe("settingsOf claim layers", () => {
     );
     expect(resources.layers).toEqual({
       claim: { limits: { cpu: "3" } },
+      saved: { limits: { cpu: "3" } },
+      below: { requests: { cpu: "1" } },
+    });
+  });
+
+  it("compares with the claim after the pending changes of whole blocks", () => {
+    const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
+    const { merged, below } = settingsFieldsOf({ preset });
+    const resources = setting(
+      settingsOf({
+        group,
+        spec: merged.spec,
+        claim: {},
+        liveClaim: { zeebe: { resources: { limits: { cpu: "3" } } } },
+        blockClaim: {},
+        below,
+      }),
+      "resources",
+    );
+    expect(resources.layers).toEqual({
+      claim: undefined,
+      saved: { limits: { cpu: "3" } },
       below: { requests: { cpu: "1" } },
     });
   });
@@ -610,6 +632,7 @@ describe("resourceWrites", () => {
       ...setting(settings, "resources"),
       layers: {
         claim: { limits: { cpu: 2 } },
+        saved: { limits: { cpu: 2 } },
         below: { requests: { memory: "1Gi" } },
       },
     };

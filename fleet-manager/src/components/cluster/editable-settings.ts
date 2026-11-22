@@ -41,9 +41,9 @@ import { type Process, runsOwnWorkload } from "./topology";
  * map key by key. mergedErrors are the limits of the merged value that are
  * below their request, and undefined when no check of the merged value
  * runs. layers is set for a resources setting whose value merges the claim
- * over the layers below it: claim is the block of the claim before the
- * pending changes, and below the merged block of the layers under the
- * claim, with the pending changes.
+ * over the layers below it: saved is the block of the claim before the
+ * pending changes, claim that block in blockClaim of settingsOf, and below
+ * the merged block of the layers under the claim, with the pending changes.
  */
 export type Setting = {
   key: string;
@@ -61,7 +61,7 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
-  layers?: { claim: unknown; below: unknown };
+  layers?: { claim: unknown; saved: unknown; below: unknown };
 };
 
 /**
@@ -80,8 +80,10 @@ export type MergedError = {
  * cluster, and spec.attachments.optimize of the claim for Optimize. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
- * claim only. liveClaim is claim before the pending changes, and below is
- * the merged spec of the layers under the claim, at the root of spec.
+ * claim only. liveClaim is claim before the pending changes, and blockClaim
+ * liveClaim with each pending change that is not inside a resources block,
+ * liveClaim when it is left out. below is the merged spec of the layers
+ * under the claim, at the root of spec.
  *
  * Each path of componentFieldPaths gives one setting, in that order, also
  * when no layer sets it. Its label is the path without the process name.
@@ -103,6 +105,7 @@ export function settingsOf(input: {
   live?: unknown;
   claim?: unknown;
   liveClaim?: unknown;
+  blockClaim?: unknown;
   below?: unknown;
 }): Setting[] {
   const { group, spec, live, claim } = input;
@@ -206,7 +209,11 @@ export function settingsOf(input: {
     const layers = keyed &&
       "below" in input && {
         layers: {
-          claim: valueAt(input.liveClaim, steps(names)),
+          claim: valueAt(
+            "blockClaim" in input ? input.blockClaim : input.liveClaim,
+            steps(names),
+          ),
+          saved: valueAt(input.liveClaim, steps(names)),
           below: valueAt(input.below, steps(names)),
         },
       };
@@ -449,14 +456,14 @@ export function resourceWrites(
   setting: Setting,
   amounts: Readonly<Record<string, string>>,
 ): { steps: Step[]; value: unknown }[] {
-  const { claim, below } = setting.layers!;
+  const { claim, saved, below } = setting.layers!;
   return Object.entries(amounts).map(([path, quantity]) => {
     const keys = path.split(".");
     const at = (block: unknown) =>
       valueAt(block, steps(keys)) as string | number | undefined;
     return {
       steps: [...setting.steps!, ...steps(keys)],
-      value: amountWrite(quantity, at(claim), at(below))?.value,
+      value: amountWrite(quantity, at(claim), at(below), at(saved))?.value,
     };
   });
 }

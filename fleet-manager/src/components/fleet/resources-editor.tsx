@@ -247,21 +247,26 @@ function toResources(
 /**
  * amountWrite returns what an edit of one amount writes. quantity is what
  * the field shows, "" when it is empty. claim is the value of the key in
- * the claim before the pending changes, and below is its merged value in
- * the layers under the claim. A quantity equal in value to the amount
- * without a change of the claim, claim or else below (1, "1" and 1000m are
- * equal), writes claim as it is, or a reset when claim is undefined, so
- * that it leaves no change. An empty quantity writes a reset. Any other
- * quantity writes itself.
+ * the claim without a pending change of the key itself, below is its
+ * merged value in the layers under the claim, and saved its value in the
+ * claim before the pending changes. A quantity equal in value to claim, or
+ * to below when claim is undefined (1, "1" and 1000m are equal), writes
+ * claim as it is, or a reset when claim is undefined, so that it leaves no
+ * change. An empty quantity writes a reset. A quantity equal in value to
+ * saved writes saved as it is. Any other quantity writes itself.
  */
 export function amountWrite(
   quantity: string,
   claim: string | number | undefined,
   below: string | number | undefined,
+  saved: string | number | undefined,
 ): AmountWrite {
   if (sameAmount(parse(quantity), parse(claim ?? below)))
     return claim === undefined ? undefined : { value: claim };
-  return quantity === "" ? undefined : { value: quantity };
+  if (quantity === "") return undefined;
+  if (saved !== undefined && sameAmount(parse(quantity), parse(saved)))
+    return { value: saved };
+  return { value: quantity };
 }
 
 // sameAmount says whether a and b are one quantity. Two empty amounts are

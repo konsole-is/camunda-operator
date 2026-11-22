@@ -436,14 +436,12 @@ describe("limitsBelowRequests", () => {
 });
 
 describe("amountWrite", () => {
-  // Each row gives the quantity that the field shows, the value of the key
-  // in the claim before the pending changes, its value in the layers under
-  // the claim, and what the edit writes.
   const rows: {
     name: string;
     quantity: string;
     claim?: string | number;
     below?: string | number;
+    saved?: string | number;
     want: AmountWrite;
   }[] = [
     {
@@ -509,6 +507,19 @@ describe("amountWrite", () => {
       want: { value: "1Gi" },
     },
     {
+      name: "resets the preset amount when a pending reset removed the saved key",
+      quantity: "1Gi",
+      below: "1Gi",
+      saved: "3Gi",
+      want: undefined,
+    },
+    {
+      name: "writes the saved value as it is when a pending reset removed it",
+      quantity: "1",
+      saved: 1,
+      want: { value: 1 },
+    },
+    {
       name: "writes an amount that is not a number as it is",
       quantity: "2x",
       below: "2",
@@ -516,7 +527,9 @@ describe("amountWrite", () => {
     },
   ];
 
-  it.each(rows)("$name", ({ quantity, claim, below, want }) => {
-    expect(amountWrite(quantity, claim, below)).toEqual(want);
+  it.each(rows)("$name", ({ quantity, claim, below, saved, want }) => {
+    expect(
+      amountWrite(quantity, claim, below, saved === undefined ? claim : saved),
+    ).toEqual(want);
   });
 });

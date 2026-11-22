@@ -5,7 +5,7 @@ import { secretRefsOf } from "@/components/fleet/secret-ref-picker";
 import { Button } from "@/components/ui/button";
 import { clusterFields, type Step } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
-import { claimAfter, type Session } from "@/lib/session";
+import { claimAfter, type PendingChange, type Session } from "@/lib/session";
 import { isSectionId, type ProcessCardId } from "../cards";
 import { settingsOf } from "../editable-settings";
 import { belowClaim, mergedSpecs } from "../impacts";
@@ -93,6 +93,15 @@ function Editors({
   const { before, after: merged } = mergedSpecs(input);
   const below = belowClaim(input);
   const claim = claimAfter(session);
+  // An amount compares with the claim after the pending changes outside the
+  // resources blocks: a pending reset or set of a whole block or of a field
+  // above it counts, and a pending change of one amount does not.
+  const blockClaim = claimAfter({
+    ...session,
+    pending: new Map(
+      [...session.pending].filter(([, change]) => !insideResources(change)),
+    ),
+  });
   const fields = clusterFields(
     clusterFieldsInputOf({
       cluster: ctx.cluster,
@@ -123,6 +132,7 @@ function Editors({
                   live: before.spec,
                   claim: claim.spec.cluster ?? {},
                   liveClaim: session.claim.spec.cluster ?? {},
+                  blockClaim: blockClaim.spec.cluster ?? {},
                   below,
                 },
           )}
@@ -135,4 +145,12 @@ function Editors({
       ))}
     </div>
   );
+}
+
+// insideResources says whether change is below a resources block, such as
+// spec.cluster.zeebe.resources.requests.memory.
+function insideResources(change: PendingChange): boolean {
+  return change.steps
+    .slice(0, -1)
+    .some((step) => "field" in step && step.field === "resources");
 }

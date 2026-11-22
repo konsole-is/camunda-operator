@@ -188,7 +188,7 @@ For an embedded process, such as Tasklist, or for Connectors that are off, the e
 
 An edit of a CPU or memory amount changes only that amount in the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount that the saved claim sets, the amount is no longer a change. When the saved claim does not set the amount, the same is true for the amount of the preset.
 
-The bar counts each changed amount as one unsaved change. After **Reset to preset** of the setting, the reset and each amount that you change after it count as one change.
+The bar counts each changed amount as one unsaved change. After **Reset to preset** of the setting, the reset and the amounts that you change after it count together as one change.
 
 A resource such as `ephemeral-storage` has no field in the editor. When the claim sets a value for such a resource, **Reset to preset** removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
 
