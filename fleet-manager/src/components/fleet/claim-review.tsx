@@ -9,7 +9,7 @@ import {
   changeOf,
   claimAfter,
   outcomeOf,
-  savedOf,
+  dryRunKept,
   savedSession,
   valueAt,
   type ClaimObject,
@@ -75,7 +75,10 @@ export type ClaimReviewInput = {
  * previews the change of withTakeOver, and the confirm writes that change.
  * The diff of the claim then shows the claim that the save leaves: a
  * cleared field of another tool stays in it until the take-over.
- * In Git mode it notes each reset field that the preview keeps.
+ * In Git mode it notes each reset field that the preview keeps. With
+ * keptByDryRun, saved in Git mode is the claim of the preview with each
+ * field that the change removes and the preview still holds, and the
+ * notes name each such field.
  *
  * input gives the impacts, the caution, the confirm, mergedLines, and the
  * blocking messages from saved: a session whose change gives the claim
@@ -93,6 +96,7 @@ export function ClaimReview<C extends ClaimObject>({
   onWritten,
   onRefused,
   onCancel,
+  keptByDryRun = false,
 }: {
   session: Session<C>;
   mode: WriteMode;
@@ -105,6 +109,7 @@ export function ClaimReview<C extends ClaimObject>({
   onWritten?: () => void;
   onRefused?: (fields: FieldError[]) => void;
   onCancel?: () => void;
+  keptByDryRun?: boolean;
 }) {
   const [previewed, setPreviewed] = useState<{
     session: Session<C>;
@@ -153,19 +158,27 @@ export function ClaimReview<C extends ClaimObject>({
     effective !== base && takenPreview?.change === effective
       ? takenPreview.result
       : undefined;
+  const dryRun =
+    mode === "git" && keptByDryRun && given
+      ? claimOf(given, session)
+      : undefined;
+  const kept = useMemo(
+    () => (dryRun ? dryRunKept(session, dryRun) : undefined),
+    [session, dryRun],
+  );
   // The diff shows the claim that the save leaves: a cleared field of
-  // another tool stays, in direct mode until the take-over.
-  const saved = useMemo(() => {
-    if (mode !== "git")
-      return savedSession(
+  // another tool stays until the take-over.
+  const saved = useMemo(
+    () =>
+      kept?.applied ??
+      savedSession(
         session,
         ownershipOf(ownership, session),
         chosen,
         taken && claimOf(taken, session),
-      );
-    const { kept, applied } = savedOf(session, mode);
-    return kept.length > 0 ? applied : session;
-  }, [mode, session, ownership, chosen, taken]);
+      ),
+    [kept, session, ownership, chosen, taken],
+  );
   const shown = input(saved);
 
   useEffect(() => {
@@ -217,7 +230,14 @@ export function ClaimReview<C extends ClaimObject>({
     ...(shown.blocking ?? []),
     ...messagesOf(previewOutcome),
     ...messagesOf(writeOutcome),
-    ...(checked && mode === "git" ? keptResets(session, checked) : []),
+    ...(kept
+      ? kept.kept.map(
+          (path) =>
+            `Another tool keeps ${path}, so the push does not remove it.`,
+        )
+      : checked && mode === "git"
+        ? keptResets(session, checked)
+        : []),
   ];
 
   async function confirm() {

@@ -8,6 +8,7 @@ import {
 import type { ForeignManager, ObjectOwnership } from "@/lib/write/types";
 import {
   appliedSession,
+  dryRunKept,
   keptFields,
   savedOf,
   saveManager,
@@ -20,6 +21,7 @@ import {
   setValue,
   type ClaimObject,
 } from "./session";
+import { valueAt } from "./steps";
 
 const at = (...names: string[]): Step[] => names.map((field) => ({ field }));
 
@@ -290,5 +292,103 @@ describe("savedSession", () => {
     const s = dropped();
     expect(savedSession(s, undefined, false)).toBe(s);
     expect(savedSession(s, { ...cleared(), cleared: [] }, true)).toBe(s);
+  });
+});
+
+describe("dryRunKept", () => {
+  // clusterClaim returns a cluster claim with spec.cluster set to cluster.
+  const clusterClaim = (cluster: object): ClaimObject => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: { name: "mgmt", namespace: "team-a", resourceVersion: "1" },
+    spec: { cluster },
+  });
+  const zeebe = at("spec", "cluster", "zeebe");
+  const resources = at("spec", "cluster", "zeebe", "resources");
+  const change = (
+    cluster: object,
+    edit: (s: ReturnType<typeof session>) => unknown,
+  ) => {
+    const result = edit(session(clusterClaim(cluster))) as
+      { session: ReturnType<typeof session> } | object;
+    if (!("session" in result)) throw new Error("refused");
+    return result.session;
+  };
+
+  it("keeps a field that a write of the whole block leaves out and the dry run holds", () => {
+    const s = change(
+      { zeebe: { resources: { requests: { cpu: "2" } } } },
+      (x) => setValue(x, resources, { limits: { cpu: "1" } }),
+    );
+    const { kept, applied } = dryRunKept(
+      s,
+      clusterClaim({
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      }),
+    );
+    expect(kept).toEqual(["spec.cluster.zeebe.resources.requests.cpu"]);
+    expect(valueAt(claimAfter(applied), resources)).toEqual({
+      limits: { cpu: "1" },
+      requests: { cpu: "2" },
+    });
+  });
+
+  it("names only the fields of a reset block that the dry run holds", () => {
+    const s = change(
+      {
+        zeebe: {
+          resources: { limits: { cpu: "1" }, requests: { memory: "1Gi" } },
+        },
+      },
+      (x) => resetValue(x, resources),
+    );
+    const { kept, applied } = dryRunKept(
+      s,
+      clusterClaim({ zeebe: { resources: { requests: { memory: "1Gi" } } } }),
+    );
+    expect(kept).toEqual(["spec.cluster.zeebe.resources.requests.memory"]);
+    expect(valueAt(claimAfter(applied), resources)).toEqual({
+      requests: { memory: "1Gi" },
+    });
+  });
+
+  it("names a field of a list item by the keys of the item, and a list item without keys by its index", () => {
+    const from = [
+      { configMapRef: { name: "a" } },
+      { configMapRef: { name: "b" } },
+    ];
+    const s = change(
+      {
+        zeebe: { replicas: 3 },
+        extraEnv: [{ name: "TZ", value: "UTC" }],
+        extraEnvFrom: from,
+      },
+      (x) =>
+        setValue(x, at("spec", "cluster"), {
+          zeebe: { replicas: 3 },
+          extraEnv: [{ name: "TZ" }],
+          extraEnvFrom: [from[0]],
+        }),
+    );
+    const { kept } = dryRunKept(
+      s,
+      clusterClaim({
+        zeebe: { replicas: 3 },
+        extraEnv: [{ name: "TZ", value: "UTC" }],
+        extraEnvFrom: from,
+      }),
+    );
+    expect(kept).toEqual([
+      "spec.cluster.extraEnv[name=TZ].value",
+      "spec.cluster.extraEnvFrom[1]",
+    ]);
+  });
+
+  it("keeps nothing when the dry run removes what the change removes, and gives s", () => {
+    const s = change({ zeebe: { replicas: 3, partitions: 3 } }, (x) =>
+      setValue(x, zeebe, { replicas: 3 }),
+    );
+    const result = dryRunKept(s, clusterClaim({ zeebe: { replicas: 3 } }));
+    expect(result).toEqual({ kept: [], applied: s });
   });
 });

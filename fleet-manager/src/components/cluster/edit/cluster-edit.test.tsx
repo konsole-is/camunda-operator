@@ -985,6 +985,31 @@ describe("ClusterEditProvider", () => {
       expect(save().disabled).toBe(true);
     });
 
+    it("in Git mode, refuses the push when the dry run keeps the request", async () => {
+      fakeWriter.reset("git");
+      const kept = { ...context(), writeMode: "git" as const };
+      fakeWriter.previews = [
+        {
+          objects: [{ ref, after: kept.claim as KubeObject, diff: [] }],
+          errors: [],
+        },
+      ];
+      page(kept);
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() =>
+        expect(within(dialog()!).getByRole("alert").textContent).toContain(
+          message,
+        ),
+      );
+      expect(
+        within(dialog()!).getByRole<HTMLButtonElement>("button", {
+          name: "Push to Git",
+        }).disabled,
+      ).toBe(true);
+    });
+
     it("saves once the user takes the request over, and refuses again when the choice goes off", async () => {
       fakeWriter.previews = [
         { objects: [], errors: [], ownership },

@@ -42,7 +42,8 @@ export type ClusterEdit = ClaimEdit<ClusterClaim>;
  * validateClusterClaim and the merged errors that block as its
  * validation. Review adds the reset of allowVersionDowngrade once the
  * downgrade is done, and shows the impacts, cautions, confirm, and merged
- * diff of the cluster. It needs a GitPushesProvider above it.
+ * diff of the cluster. In Git mode, the review reads the claim that the
+ * dry run of the push leaves. It needs a GitPushesProvider above it.
  */
 export function ClusterEditProvider({
   context,
@@ -122,6 +123,7 @@ export function ClusterEditProvider({
     writeMode: context.writeMode,
     locks,
     validate,
+    keptByDryRun: true,
     prepare: (s) => withDowngradeReset(s, cluster),
     review: (s, review) => clusterReview(context, s, review),
   };

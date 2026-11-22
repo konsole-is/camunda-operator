@@ -65,7 +65,8 @@ export type { ClaimReviewInput } from "./claim-review";
  * session that it returns. review runs only while the review is open, and
  * close closes it. saved is a session whose change gives the claim that
  * the save leaves with the take-over choice of the review: a cleared field
- * of another tool stays in it until the take-over.
+ * of another tool stays in it until the take-over. keptByDryRun goes to
+ * ClaimReview.
  */
 export type ClaimEditHost<C extends ClaimObject> = {
   claim: C | undefined;
@@ -74,6 +75,7 @@ export type ClaimEditHost<C extends ClaimObject> = {
   locks: LockProvider;
   validate(s: Session<C>): readonly FieldError[];
   prepare?(s: Session<C>): Session<C>;
+  keptByDryRun?: boolean;
   review(
     s: Session<C>,
     review: { mode: WriteMode; close(): void; saved: Session<C> },
@@ -458,6 +460,7 @@ export function ClaimEditProvider<C extends ClaimObject>({
             {reviewing && (
               <ReviewOf
                 review={host.review}
+                keptByDryRun={host.keptByDryRun}
                 session={session}
                 mode={host.writeMode}
                 actions={{ preview: actions.preview, apply }}
@@ -503,6 +506,7 @@ export function useClaimEdit<
 
 function ReviewOf<C extends ClaimObject>({
   review,
+  keptByDryRun,
   session,
   mode,
   actions,
@@ -513,6 +517,7 @@ function ReviewOf<C extends ClaimObject>({
   onWritten,
 }: {
   review: ClaimEditHost<C>["review"];
+  keptByDryRun?: boolean;
   session: Session<C>;
   mode: WriteMode;
   actions: ClaimActions;
@@ -534,6 +539,7 @@ function ReviewOf<C extends ClaimObject>({
       onRefused={onRefused}
       onCancel={onCancel}
       onWritten={onWritten}
+      keptByDryRun={keptByDryRun}
     />
   );
 }
