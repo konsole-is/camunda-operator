@@ -166,8 +166,10 @@ export function ClaimReview<C extends ClaimObject>({
     () => (dryRun ? dryRunKept(session, dryRun) : undefined),
     [session, dryRun],
   );
-  // The diff shows the claim that the save leaves: a cleared field of
-  // another tool stays until the take-over.
+  // The diff shows the claim that the save leaves. A field that the change
+  // clears stays in direct mode while another tool holds it, until the
+  // take-over, and in Git mode with keptByDryRun while the preview still
+  // holds it.
   const saved = useMemo(
     () =>
       kept?.applied ??

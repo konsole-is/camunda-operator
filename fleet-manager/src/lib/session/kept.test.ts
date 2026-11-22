@@ -384,6 +384,38 @@ describe("dryRunKept", () => {
     ]);
   });
 
+  it("puts back a default that the dry run gives a removed field, and names no other tool for it", () => {
+    const retained = at("spec", "attachments", "backupSchedule", "retained");
+    const live: ClaimObject = {
+      ...clusterClaim({ zeebe: { replicas: 3 } }),
+      spec: {
+        cluster: { zeebe: { replicas: 3 } },
+        attachments: {
+          backupSchedule: { retained: { completed: 10, failed: 3 } },
+        },
+      },
+    };
+    const reset = resetValue(session(live), [
+      ...retained,
+      { field: "completed" },
+    ]);
+    if (!("session" in reset)) throw new Error("refused");
+    const { kept, applied } = dryRunKept(reset.session, {
+      ...live,
+      spec: {
+        ...live.spec,
+        attachments: {
+          backupSchedule: { retained: { completed: 7, failed: 3 } },
+        },
+      },
+    });
+    expect(kept).toEqual([]);
+    expect(valueAt(claimAfter(applied), retained)).toEqual({
+      completed: 7,
+      failed: 3,
+    });
+  });
+
   it("keeps nothing when the dry run removes what the change removes, and gives s", () => {
     const s = change({ zeebe: { replicas: 3, partitions: 3 } }, (x) =>
       setValue(x, zeebe, { replicas: 3 }),

@@ -356,9 +356,8 @@ function useShownError(
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
 // size, environment, maps of strings, and tolerations. limitsChecked
-// reaches only the editor of resources, checkedEntries only the editors of
-// environment and maps of strings, and openedUnchecked only the editor of
-// maps of strings.
+// reaches only the editor of resources, and checkedEntries and
+// openedUnchecked only the editors of environment and maps of strings.
 function Editor({
   label,
   editor,
@@ -483,6 +482,7 @@ function Editor({
           defaultValue={initial as EnvVar[]}
           describedBy={describedBy}
           checkedEntries={checkedEntries as EnvVar[]}
+          openedUnchecked={openedUnchecked}
           onChange={valid}
           onErrors={onErrors}
         />
@@ -562,6 +562,7 @@ function EnvSetting({
   defaultValue,
   describedBy,
   checkedEntries,
+  openedUnchecked,
   onChange,
   onErrors,
 }: {
@@ -570,6 +571,7 @@ function EnvSetting({
   defaultValue: EnvVar[];
   describedBy?: string;
   checkedEntries: readonly EnvVar[];
+  openedUnchecked: boolean;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors: (errors: ValidationError[]) => void;
 }) {
@@ -582,6 +584,7 @@ function EnvSetting({
         defaultValue={defaultValue}
         describedBy={describedBy}
         checkedEntries={checkedEntries}
+        openedUnchecked={openedUnchecked}
         onChange={only(onChange)}
         onErrors={onErrors}
       />

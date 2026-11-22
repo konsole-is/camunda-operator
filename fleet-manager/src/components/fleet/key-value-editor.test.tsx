@@ -436,6 +436,12 @@ describe("keyValueErrors", () => {
     ]);
   });
 
+  it("accepts an annotation key that Kubernetes accepts after it lowers the case, such as one with a dotted capital I", () => {
+    expect(
+      keyValueErrors([{ key: "\u0130tem", value: "x" }], "annotation"),
+    ).toEqual([]);
+  });
+
   it("checks no label rule without the label format", () => {
     expect(keyValueErrors([{ key: "-x", value: "-y" }])).toEqual([]);
   });

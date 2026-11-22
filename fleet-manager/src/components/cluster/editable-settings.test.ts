@@ -227,6 +227,30 @@ describe("settingsOf", () => {
     expect(clusterRef.editor).toBeUndefined();
   });
 
+  it.each([
+    [false, true],
+    [true, undefined],
+  ])(
+    "leaves the rows that the editor opens with unchecked in the labels of the ServiceMonitor of Optimize only while it is off (enabled: %s)",
+    (enabled, unchecked) => {
+      const attachment = {
+        managementAuthConfigRef: "keycloak",
+        monitoring: { serviceMonitor: { enabled, labels: { "bad key": "x" } } },
+      };
+      const { fields } = settingsFieldsOf({
+        claim: { attachments: { optimize: attachment } },
+        optimize: { clusterRef: { name: "orders" }, ...attachment },
+      });
+      const [group] = componentSettings(fields, "optimize", {});
+      const labels = setting(
+        settingsOf({ group, spec: attachment }),
+        "monitoring.serviceMonitor.labels",
+      );
+      expect(labels.openedUnchecked).toBe(unchecked);
+      expect(labels.mergedErrors).toBeUndefined();
+    },
+  );
+
   it("a change inside a block keeps the pending changes of the block", () => {
     const pending = {
       managementAuthConfigRef: "keycloak",
@@ -697,12 +721,18 @@ describe("settingsOf merged entry errors", () => {
     ]);
   });
 
-  it("leaves a variable without a name that the claim holds to the editor", () => {
+  it("reports a variable without a name that the claim holds, with no entry for the editor to leave out", () => {
     const env = brokerSetting("extraEnv", {
       preset: { zeebe: { extraEnv: [{ name: "", value: "x" }] } },
       claim: { cluster: { zeebe: { extraEnv: [{ name: "", value: "y" }] } } },
     });
-    expect(env.mergedErrors).toEqual([]);
+    expect(env.mergedErrors).toEqual([
+      {
+        message: "A variable without a name is not valid. Remove its row.",
+        blocks: true,
+      },
+    ]);
+    expect(env.openedUnchecked).toBe(true);
   });
 
   it("asks the admin to correct a variable of the release", () => {

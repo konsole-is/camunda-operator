@@ -8,6 +8,7 @@ import {
   type LiveObject,
   type ManagedObject,
 } from "@/lib/merge";
+import { equalJSON } from "@/lib/policy";
 import { offered, withoutFields, withValuesOf } from "@/lib/write/ownership";
 import type { ObjectOwnership, WriteMode } from "@/lib/write/types";
 import {
@@ -73,11 +74,12 @@ export function savedSession<C extends ClaimObject>(
 /**
  * dryRunKept returns each field of the spec of the claim of s that the
  * change of s removes and that dryRun, the claim of a dry run of that
- * change, still holds, in the order of the claim. A field is a map key at
- * the deepest level where dryRun still holds a value, or a list item that
- * the change removes whole. applied is a session whose change gives the
- * claim after the change with those fields back, as dryRun holds them, or
- * s when no field stays.
+ * change, still holds with the value of the claim, in the order of the
+ * claim. A field is a map key at the deepest level where dryRun still
+ * holds a value, or a list item that the change removes whole. applied is
+ * a session whose change gives the claim after the change with each
+ * removed field that dryRun holds back, as dryRun holds it, or s when
+ * dryRun holds none.
  */
 export function dryRunKept<C extends ClaimObject>(
   s: Session<C>,
@@ -85,7 +87,7 @@ export function dryRunKept<C extends ClaimObject>(
 ): { kept: FieldPath[]; applied: Session<C> } {
   const intended = claimAfter(s).spec;
   const dry = (dryRun as { spec?: unknown }).spec;
-  const kept: Step[][] = [];
+  const restored: Step[][] = [];
   const visit = (
     live: unknown,
     after: unknown,
@@ -125,16 +127,20 @@ export function dryRunKept<C extends ClaimObject>(
       });
       return;
     }
-    if (after === undefined) kept.push(at);
+    if (after === undefined) restored.push(at);
   };
   visit(s.claim.spec, intended, dry, [{ field: "spec" }], false);
-  if (kept.length === 0) return { kept: [], applied: s };
-  const spec = kept.reduce(
+  if (restored.length === 0) return { kept: [], applied: s };
+  const spec = restored.reduce(
     (claim, steps) => withValue(claim, steps, valueAt(dryRun, steps)),
     { spec: intended } as object,
   );
   return {
-    kept: kept.map((steps) => pathFrom("", steps)),
+    kept: restored
+      .filter((steps) =>
+        equalJSON(valueAt(dryRun, steps), valueAt(s.claim, steps)),
+      )
+      .map((steps) => pathFrom("", steps)),
     applied: specSession(s, (spec as { spec?: object }).spec),
   };
 }

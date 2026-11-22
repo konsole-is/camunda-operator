@@ -41,7 +41,8 @@ type Row =
  * checkedEntries are entries of defaultValue that the host checks itself,
  * and that a value below the entries keeps. While its row is unchanged,
  * such an entry shows no error, refuses no change, and is not in the
- * entries that onChange gets.
+ * entries that onChange gets. With openedUnchecked, a row of defaultValue
+ * shows no error and refuses no change while it is unchanged.
  */
 export function EnvEditor({
   label,
@@ -50,6 +51,7 @@ export function EnvEditor({
   describedBy,
   missingIn,
   checkedEntries = [],
+  openedUnchecked = false,
   onChange,
   onErrors,
 }: {
@@ -59,6 +61,7 @@ export function EnvEditor({
   describedBy?: string;
   missingIn?: (name: string, key: string) => readonly string[];
   checkedEntries?: readonly EnvVar[];
+  openedUnchecked?: boolean;
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
@@ -71,17 +74,18 @@ export function EnvEditor({
   const checked = checkedEntries.map((entry, i) =>
     JSON.stringify(toEnv(toRow(entry, i))),
   );
-  const isChecked = (row: Row) => {
-    const env = JSON.stringify(toEnv(row));
-    return (
-      initial.some(
-        (r) => r.id === row.id && JSON.stringify(toEnv(r)) === env,
-      ) && checked.includes(env)
+  const opened = (row: Row) =>
+    initial.some(
+      (r) =>
+        r.id === row.id &&
+        JSON.stringify(toEnv(r)) === JSON.stringify(toEnv(row)),
     );
-  };
-  const errors = rowErrors(rows).filter(
-    (error) => !isChecked(rows[Number(error.path.split(".")[0])]),
-  );
+  const isChecked = (row: Row) =>
+    opened(row) && checked.includes(JSON.stringify(toEnv(row)));
+  const errors = rowErrors(rows).filter((error) => {
+    const row = rows[Number(error.path.split(".")[0])];
+    return !isChecked(row) && !(openedUnchecked && opened(row));
+  });
   useErrorsReport(errors, onErrors);
   const env = rows.filter((row) => !isChecked(row)).map(toEnv);
   const report = JSON.stringify([env, errors]);

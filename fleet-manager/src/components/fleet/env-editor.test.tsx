@@ -195,6 +195,33 @@ describe("EnvEditor", () => {
     ]);
   });
 
+  it("shows no error for a row that it opens with when openedUnchecked, and checks a row that the user changes", async () => {
+    const onChange = vi.fn();
+    const onErrors = vi.fn();
+    render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[{ name: "", value: "x" }]}
+        openedUnchecked
+        onChange={onChange}
+        onErrors={onErrors}
+      />,
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+    await userEvent.type(
+      within(screen.getByRole("group", { name: "Variable 1" })).getByRole(
+        "textbox",
+        { name: "Value" },
+      ),
+      "y",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "", value: "xy" }],
+      [{ path: "0.name", message: "Enter a name" }],
+    );
+  });
+
   describe("with checkedEntries", () => {
     const checked = [{ name: "", value: "x" }];
 

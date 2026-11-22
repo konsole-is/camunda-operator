@@ -278,8 +278,12 @@ export function keyValueErrors(
         path: `${index}.key`,
         message: "Use a valid label key, for example team or example.com/team",
       });
-    // Kubernetes checks an annotation key in lower case.
-    else if (format === "annotation" && !isLabelKey(entry.key.toLowerCase()))
+    // Kubernetes checks an annotation key in lower case, and Go lowers the
+    // dotted capital I to a plain i, where JavaScript adds a dot above.
+    else if (
+      format === "annotation" &&
+      !isLabelKey(entry.key.replaceAll("\u0130", "i").toLowerCase())
+    )
       errors.push({
         path: `${index}.key`,
         message: "Use a valid annotation key, for example example.com/note",

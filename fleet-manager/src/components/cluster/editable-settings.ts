@@ -44,8 +44,8 @@ import { type Process, runsOwnWorkload } from "./topology";
  * whole. Only then does a map of {} hide that value: the preset merges a
  * map key by key. mergedErrors are the faults of the merged value that the
  * editor does not own, and undefined when no check of the merged value
- * runs. openedUnchecked says that the editor of a map does not check a row
- * that it opens with until the user changes it.
+ * runs. openedUnchecked says that the editor of a map or of variables does
+ * not check a row that it opens with until the user changes it.
  */
 export type Setting = {
   key: string;
@@ -167,11 +167,13 @@ export function settingsOf(input: {
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
     const reach = reachOf(editor, group, names, spec);
-    // The check of the merged value covers each entry of a map, and on
-    // Optimize nothing checks a map that reaches no object.
+    // The check of the merged value covers each entry of a map and of the
+    // variables, and on Optimize nothing checks a map that reaches no
+    // object.
     const openedUnchecked =
-      editor.kind === "keyValue" &&
-      ("claim" in input || (optimize && !reach.applies));
+      (editor.kind === "keyValue" &&
+        ("claim" in input || (optimize && !reach.applies))) ||
+      (editor.kind === "env" && "claim" in input);
     const checked: Setting =
       "claim" in input
         ? {
@@ -293,12 +295,18 @@ function mergedCheckOf(input: {
     const env = Array.isArray(value) ? (value as EnvVar[]) : [];
     return {
       mergedErrors: entryFaults(envErrors(env))
-        .filter(({ index }) => !held.some((e) => e.name === env[index].name))
         // The merge keeps one entry for each name, and the editor reads an
         // entry from a Secret only with its key, so only a missing name
         // fails here.
-        .map(({ index }) => {
+        .map(({ index }): MergedError => {
           const entry = env[index];
+          if (held.some((e) => e.name === entry.name))
+            return {
+              message:
+                "A variable without a name is not valid. Remove its row." +
+                later,
+              blocks: applies,
+            };
           const state = entryStateAt(itemStep(entry, index));
           return {
             message:
