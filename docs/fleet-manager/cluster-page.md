@@ -85,7 +85,7 @@ The delete always removes the claim, and the `CamundaCluster`, Optimize, and bac
 
 ### Volumes and backups
 
-By default, the broker volumes go with the cluster, and the page says "Volumes deleted". To keep them for a later cluster of the same name, open the **Settings** tab of the brokers. Set `persistentVolumeClaimRetentionPolicy` to `whenDeleted: Retain`, and save. Do this before you open the delete page. The claim then holds:
+By default, the broker volumes go with the cluster, and the page says "Volumes deleted". To keep them for a later cluster of the same name, set `whenDeleted: Retain` in the claim before you open the delete page. In Git mode, change the claim file in Git and wait until GitOps applied it:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
