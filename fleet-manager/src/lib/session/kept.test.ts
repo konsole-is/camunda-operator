@@ -416,6 +416,88 @@ describe("dryRunKept", () => {
     });
   });
 
+  it("reads a map key named constructor as absent unless the map holds it", () => {
+    const labels = at("spec", "cluster", "zeebe", "podLabels");
+    const s = change(
+      { zeebe: { podLabels: { constructor: "not valid", team: "a" } } },
+      (x) => setValue(x, labels, { team: "a" }),
+    );
+    const { kept, applied } = dryRunKept(
+      s,
+      clusterClaim({
+        zeebe: { podLabels: { constructor: "not valid", team: "a" } },
+      }),
+    );
+    expect(kept).toEqual(["spec.cluster.zeebe.podLabels.constructor"]);
+    expect(valueAt(claimAfter(applied), labels)).toEqual({
+      constructor: "not valid",
+      team: "a",
+    });
+  });
+
+  it("puts a list item back where the dry run holds it", () => {
+    const env = at("spec", "cluster", "extraEnv");
+    const s = change(
+      {
+        zeebe: { replicas: 3 },
+        extraEnv: [
+          { name: "A", value: "1" },
+          { name: "B", value: "2" },
+        ],
+      },
+      (x) => setValue(x, env, [{ name: "B", value: "2" }]),
+    );
+    const { applied } = dryRunKept(
+      s,
+      clusterClaim({
+        zeebe: { replicas: 3 },
+        extraEnv: [
+          { name: "A", value: "1" },
+          { name: "B", value: "2" },
+        ],
+      }),
+    );
+    expect(valueAt(claimAfter(applied), env)).toEqual([
+      { name: "A", value: "1" },
+      { name: "B", value: "2" },
+    ]);
+  });
+
+  it("puts a list item back where the dry run holds it, and keeps an item that the change edits and one that it adds", () => {
+    const env = at("spec", "cluster", "extraEnv");
+    const s = change(
+      {
+        zeebe: { replicas: 3 },
+        extraEnv: [
+          { name: "A", value: "1" },
+          { name: "B", value: "2" },
+        ],
+      },
+      (x) =>
+        setValue(x, env, [
+          { name: "B", value: "20" },
+          { name: "C", value: "3" },
+        ]),
+    );
+    const { kept, applied } = dryRunKept(
+      s,
+      clusterClaim({
+        zeebe: { replicas: 3 },
+        extraEnv: [
+          { name: "A", value: "1" },
+          { name: "B", value: "20" },
+          { name: "C", value: "3" },
+        ],
+      }),
+    );
+    expect(kept).toEqual(["spec.cluster.extraEnv[name=A]"]);
+    expect(valueAt(claimAfter(applied), env)).toEqual([
+      { name: "A", value: "1" },
+      { name: "B", value: "20" },
+      { name: "C", value: "3" },
+    ]);
+  });
+
   it("keeps nothing when the dry run removes what the change removes, and gives s", () => {
     const s = change({ zeebe: { replicas: 3, partitions: 3 } }, (x) =>
       setValue(x, zeebe, { replicas: 3 }),

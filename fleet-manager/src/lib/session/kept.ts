@@ -88,6 +88,9 @@ export function dryRunKept<C extends ClaimObject>(
   const intended = claimAfter(s).spec;
   const dry = (dryRun as { spec?: unknown }).spec;
   const restored: Step[][] = [];
+  // A list inside an item comes before the list of that item, whose new
+  // order can move the item that an index names.
+  const reordered: Step[][] = [];
   const visit = (
     live: unknown,
     after: unknown,
@@ -102,19 +105,20 @@ export function dryRunKept<C extends ClaimObject>(
       !(item && after === undefined)
     ) {
       if (after !== undefined && !isPlainObject(after)) return;
-      for (const key of Object.keys(live))
+      for (const key of Object.keys(live)) {
+        const step = { field: key };
         visit(
           live[key],
-          after === undefined
-            ? undefined
-            : (after as Record<string, unknown>)[key],
-          held[key],
-          [...at, { field: key }],
+          valueAt(after, [step]),
+          valueAt(held, [step]),
+          [...at, step],
           false,
         );
+      }
       return;
     }
     if (Array.isArray(live) && Array.isArray(after) && Array.isArray(held)) {
+      const before = restored.length;
       live.forEach((entry, index) => {
         const step = itemStep(entry, index);
         visit(
@@ -125,24 +129,48 @@ export function dryRunKept<C extends ClaimObject>(
           true,
         );
       });
+      if (
+        restored.slice(before).some((steps) => steps.length === at.length + 1)
+      )
+        reordered.push(at);
       return;
     }
     if (after === undefined) restored.push(at);
   };
   visit(s.claim.spec, intended, dry, [{ field: "spec" }], false);
   if (restored.length === 0) return { kept: [], applied: s };
-  const spec = restored.reduce(
-    (claim, steps) => withValue(claim, steps, valueAt(dryRun, steps)),
+  let claim = restored.reduce(
+    (to, steps) => withValue(to, steps, valueAt(dryRun, steps)),
     { spec: intended } as object,
   );
+  for (const at of reordered)
+    claim = withValue(
+      claim,
+      at,
+      inDryRunOrder(valueAt(claim, at), valueAt(dryRun, at)),
+    );
   return {
     kept: restored
       .filter((steps) =>
         equalJSON(valueAt(dryRun, steps), valueAt(s.claim, steps)),
       )
       .map((steps) => pathFrom("", steps)),
-    applied: specSession(s, (spec as { spec?: object }).spec),
+    applied: specSession(s, (claim as { spec?: object }).spec),
   };
+}
+
+// inDryRunOrder returns the items of list in the order of the same items in
+// dryRun, with the items that dryRun does not hold at the end.
+function inDryRunOrder(list: unknown, dryRun: unknown): unknown {
+  if (!Array.isArray(list) || !Array.isArray(dryRun)) return list;
+  const keyOf = (item: unknown, index: number) =>
+    JSON.stringify(itemStep(item, index));
+  const keys = list.map(keyOf);
+  const ordered = dryRun.flatMap((item, index) => {
+    const at = keys.indexOf(keyOf(item, index));
+    return at >= 0 ? [list[at]] : [];
+  });
+  return [...ordered, ...list.filter((item) => !ordered.includes(item))];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -244,6 +244,61 @@ describe("KeyValueEditor", () => {
       ).toBeTruthy();
   });
 
+  describe("a key that the user renames to the key of a row that the editor does not check", () => {
+    async function renameFirst(key: string) {
+      const first = within(screen.getByRole("group", { name: "Entry 1" }));
+      const input = first.getByRole("textbox", { name: "Key" });
+      await userEvent.clear(input);
+      await userEvent.type(input, key);
+      return first;
+    }
+
+    it.each([
+      ["openedUnchecked", { openedUnchecked: true }],
+      [
+        "checkedEntries",
+        { checkedEntries: [{ key: "team", value: "second" }] },
+      ],
+    ])(
+      "shows that the key is set twice on the renamed row, with %s",
+      async (_, props) => {
+        const onChange = vi.fn();
+        render(
+          <KeyValueEditor
+            label="Labels"
+            format="label"
+            defaultValue={{ owner: "first", team: "second" }}
+            onChange={onChange}
+            {...props}
+          />,
+        );
+        const first = await renameFirst("team");
+        expect(onChange.mock.lastCall![1]).toContainEqual({
+          path: "0.key",
+          message: "team is set twice",
+        });
+        expect(first.getByText("team is set twice")).toBeTruthy();
+      },
+    );
+  });
+
+  it("keeps an empty key of a row that it does not check off an earlier row that the user empties", async () => {
+    const onErrors = vi.fn();
+    render(
+      <KeyValueEditor
+        label="Labels"
+        format="label"
+        defaultValue={{ a: "1", "": "x" }}
+        openedUnchecked
+        onErrors={onErrors}
+      />,
+    );
+    const first = within(screen.getByRole("group", { name: "Entry 1" }));
+    await userEvent.clear(first.getByRole("textbox", { name: "Key" }));
+    await userEvent.clear(first.getByRole("textbox", { name: "Value" }));
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+  });
+
   describe("with openedUnchecked", () => {
     it("shows no error for a row that it opens with, and checks a row that the user adds or changes", async () => {
       const onChange = vi.fn();

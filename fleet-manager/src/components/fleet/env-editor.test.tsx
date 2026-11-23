@@ -222,6 +222,62 @@ describe("EnvEditor", () => {
     );
   });
 
+  it.each([
+    ["openedUnchecked", { openedUnchecked: true }],
+    ["checkedEntries", { checkedEntries: [{ name: "SECOND", value: "2" }] }],
+  ])(
+    "shows that a name is set twice on the renamed row, with %s",
+    async (_, props) => {
+      const onChange = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[
+            { name: "FIRST", value: "1" },
+            { name: "SECOND", value: "2" },
+          ]}
+          onChange={onChange}
+          {...props}
+        />,
+      );
+      const first = within(screen.getByRole("group", { name: "Variable 1" }));
+      const name = first.getByRole("textbox", { name: "Name" });
+      await userEvent.clear(name);
+      await userEvent.type(name, "SECOND");
+      expect(onChange.mock.lastCall![1]).toContainEqual({
+        path: "0.name",
+        message: "SECOND is set twice",
+      });
+      expect(first.getByText("SECOND is set twice")).toBeTruthy();
+    },
+  );
+
+  it("keeps an empty name of a row that it does not check off an earlier row that the user empties", async () => {
+    const onErrors = vi.fn();
+    render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[
+          { name: "A", value: "1" },
+          { name: "", value: "x" },
+        ]}
+        openedUnchecked
+        onErrors={onErrors}
+      />,
+    );
+    await userEvent.clear(
+      within(screen.getByRole("group", { name: "Variable 1" })).getByRole(
+        "textbox",
+        { name: "Name" },
+      ),
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([
+      { path: "0.name", message: "Enter a name" },
+    ]);
+  });
+
   describe("with checkedEntries", () => {
     const checked = [{ name: "", value: "x" }];
 
