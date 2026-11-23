@@ -27,7 +27,7 @@ Some settings show their value and a reason, with no editor:
 
 ### What a change writes
 
-A change writes the setting in `spec.cluster` of the claim. When you set `replicas` of Tasklist to 2, the claim gets:
+A change writes the setting in `spec.cluster` of the claim. The settings of Optimize go into `spec.attachments.optimize`. When you set `replicas` of Tasklist to 2, the claim gets:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1

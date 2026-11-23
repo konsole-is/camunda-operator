@@ -88,7 +88,7 @@ kubectl -n camunda-operator-system rollout restart deployment/camunda-operator-f
 !!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"
     A person who has one of these rights in the release namespace can reach the fleet manager and use every right of it. The fleet manager can create and change the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets of the Kubernetes cluster.
 
-The chart adds a NetworkPolicy that allows no traffic from other pods to the fleet manager. Another NetworkPolicy that selects this pod, such as one that allows all traffic in the namespace, lets other pods in again. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager.
+The chart adds a NetworkPolicy that allows no traffic from other pods to the fleet manager. Another NetworkPolicy that selects this pod, such as one that allows all traffic in the namespace, lets other pods in again. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager. A NetworkPolicy has an effect only when the network plugin of the Kubernetes cluster enforces it.
 
 ## Size
 

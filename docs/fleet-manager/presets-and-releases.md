@@ -47,7 +47,7 @@ The review lists each cluster that uses the preset, with one mark:
 | `Unchanged` | The change does not reach the cluster. |
 | `Pods may roll` | The change reaches an Elasticsearch cluster or a database server, and its pods can restart. |
 
-A change of a cluster preset rolls every cluster that uses it, also a cluster that sets the changed field itself. A smaller storage size does not shrink a volume.
+A change with the mark `Pods roll` rolls every cluster that uses the preset, also a cluster that sets the changed field itself. A smaller storage size does not shrink a volume.
 
 A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example **Merged by key** for labels. The [Merge rules](../crds/camundaclusterpreset.md#merge-rules) of `CamundaClusterPreset` list the rules.
 

@@ -80,7 +80,7 @@ spec:
         name: my-cluster-storage
 ```
 
-The Kubernetes API checks the claim before you create it. If it refuses the claim, the review shows the message, and **Create** stays off.
+The Kubernetes API checks the claim before you create it. If it refuses the claim, the review shows the message, and **Create** stays off. The API cannot check a claim in a namespace that does not exist yet, so for a new namespace the check comes at **Create**.
 
 **Permissions the options ask for** lists the cloud permissions of the options, for example an IAM policy for a bucket. A value that does not exist yet shows as a placeholder, such as `<bucket ARN from Backup storage>`.
 
