@@ -70,7 +70,7 @@ With Podman, use `podman exec`.
 
 Each step shows a manifest. Save it to a file and apply it with `kubectl apply -f <file>`.
 
-The [fleet manager](fleet-manager/management-planes.md#a-plane-that-no-claim-made) shows the management plane of this guide, but does not change it, because no claim made it. You can change the presets, the release, and the platform config of this guide on the [Presets and releases](fleet-manager/presets-and-releases.md) and [Platform config](fleet-manager/platform-and-connections.md#platform-config) pages.
+The [fleet manager](fleet-manager/management-planes.md#planes-made-outside-the-fleet-manager) shows the management plane of this guide, but does not change it, because no claim made it. You can change the presets, the release, and the platform config of this guide on the [Presets and releases](fleet-manager/presets-and-releases.md) and [Platform config](fleet-manager/platform-and-connections.md#platform-config) pages.
 
 ## 1. Create the namespaces
 
