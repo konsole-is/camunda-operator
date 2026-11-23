@@ -31,6 +31,7 @@ import type { DeletionChoice, DeletionPolicy } from "@/lib/policy";
 import type {
   ApiError,
   Change,
+  ObjectOwnership,
   Preview,
   WriteMode,
   WriteResult,
@@ -147,8 +148,10 @@ export function useDeleteStage(
  * While keepRefused is set, it shows keepRefused in place of the review,
  * unless a write runs. keepRefusedOnDelete says that the claim keeps its
  * resources and an option cannot. policyStep says that the delete writes
- * the deletion policy first. deletedText is the line once the claim is
- * gone.
+ * the deletion policy first. policyOwned says what the delete does while
+ * another field manager sets the deletion policy. apply gets the ownership
+ * that the take-over of the review chose. deletedText is the line once the
+ * claim is gone.
  */
 export function ClaimDeleteView({
   subject,
@@ -167,6 +170,7 @@ export function ClaimDeleteView({
   remove,
   policyStep,
   keepRefused,
+  policyOwned,
   onPick,
   preview,
   apply,
@@ -190,14 +194,19 @@ export function ClaimDeleteView({
   remove: Change;
   policyStep: boolean;
   keepRefused?: string;
+  policyOwned?: string;
   onPick(policy: DeletionPolicy): void;
-  preview(change: Change): Promise<Preview>;
-  apply(change: Change): Promise<WriteResult>;
+  preview(change: Change, taken?: readonly ObjectOwnership[]): Promise<Preview>;
+  apply(
+    change: Change,
+    taken?: readonly ObjectOwnership[],
+  ): Promise<WriteResult>;
   show(result: WriteResult, message: string): void;
   onWritten(): void;
   onStopWaiting(): void;
 }): ReactNode {
   const [writing, setWriting] = useState(false);
+  const reviewed = writing || (unread.length === 0 && !keepRefused);
   const takes = (
     <section aria-label="What the delete takes">
       <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-text-2">
@@ -273,6 +282,9 @@ export function ClaimDeleteView({
           {keepRefusedOnDelete && choice.policy !== "Orphan" && (
             <p className="-mt-3 text-sm text-warn">{KEEP_REFUSED_ON_DELETE}</p>
           )}
+          {policyOwned && mode === "direct" && reviewed && (
+            <p className="text-sm text-warn">{policyOwned}</p>
+          )}
           {mode === "git" && (
             <p className="text-sm text-text-2">{PRUNE_NOTE}</p>
           )}
@@ -324,6 +336,7 @@ export function ClaimDeleteView({
                     ? `Pushed the deletion policy of ${name}. The delete follows when GitOps applies it.`
                     : `Pushed the delete of ${name}.`
               }
+              otherWrite
               preview={preview}
               apply={apply}
               show={show}

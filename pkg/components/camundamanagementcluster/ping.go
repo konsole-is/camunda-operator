@@ -144,8 +144,7 @@ func PingCollisions(cluster *v1.CamundaCluster, clusterVersion string) []PingCol
 	// a caller removing them has not reached yet.
 	names := pingEnvNamesFor(clusterVersion)
 	var collisions []PingCollision
-	for i := len(cluster.Spec.ExtraEnv) - 1; i >= 0; i-- {
-		entry := cluster.Spec.ExtraEnv[i]
+	for i, entry := range slices.Backward(cluster.Spec.ExtraEnv) {
 		if entry.ValueFrom == nil || !names.holds(entry.Name) {
 			continue
 		}

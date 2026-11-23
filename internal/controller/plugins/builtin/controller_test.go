@@ -100,7 +100,9 @@ var _ = Describe("Built-in requests", func() {
 		)
 		live := expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
 		Expect(live.Status.Summary).To(HaveExactElements(pluginsv1alpha1.SummaryItem{
-			Label: "ObjectStorageConfig", Value: contract.Name + ", not Ready", Severity: pluginsv1alpha1.SeverityWarning,
+			Label:    "ObjectStorageConfig",
+			Value:    contract.Name + ", not Ready",
+			Severity: pluginsv1alpha1.SeverityWarning,
 		}))
 
 		// The controller of the contract does not run in this suite, so the

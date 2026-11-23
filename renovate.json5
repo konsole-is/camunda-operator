@@ -4,7 +4,8 @@
 // land together, and a major update arrives when it is 7 days old. Go modules,
 // .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
 // go through the standard managers. The fleet manager under fleet-manager/
-// goes through the npm and nodenv managers.
+// goes through the npm and nodenv managers. A custom manager below reads the
+// Node.js release of its Dockerfile.
 //
 // The image pins of the e2e suite are the env files under test/e2e/matrix/
 // (one per supported Camunda minor), Go constants, YAML image fields of the
@@ -57,12 +58,13 @@
   },
   customManagers: [
     {
-      // A variable of an env file or of the Makefile: the marker, then
-      // `NAME=<version>` or `NAME ?= <version>` on the next line.
+      // A variable of an env file or of the Makefile, or a key of
+      // .custom-gcl.yml: the marker, then `NAME=<version>`,
+      // `NAME ?= <version>`, or `key: <version>` on the next line.
       customType: "regex",
-      managerFilePatterns: ["/^test/e2e/matrix/.*\\.env$/", "/^Makefile$/"],
+      managerFilePatterns: ["/^test/e2e/matrix/.*\\.env$/", "/^Makefile$/", "/^\\.custom-gcl\\.yml$/"],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\w+\\s*\\??=\\s*(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\w+\\s*(?:\\??=|:)\\s*(?<currentValue>\\S+)",
       ],
     },
     {
@@ -96,6 +98,19 @@
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*version:\\s*\"(?<currentValue>[^\"]+)\"",
       ],
     },
+    {
+      // The Node.js release of the build stage of fleet-manager/Dockerfile:
+      // `FROM node:<version>-<variant> AS build`. This manager reads the
+      // release from nodejs.org, as the managers of the other Node.js pins of
+      // the fleet manager do. So all four pins have one release date and wait
+      // the same minimum release age. The Docker image of a release can come
+      // a day or more after the release, and the 7 days cover that time.
+      customType: "regex",
+      managerFilePatterns: ["/^fleet-manager/Dockerfile$/"],
+      matchStrings: ["FROM node:(?<currentValue>\\d+\\.\\d+\\.\\d+)-\\S+ AS build"],
+      datasourceTemplate: "node-version",
+      depNameTemplate: "node",
+    },
   ],
   packageRules: [
     {
@@ -119,7 +134,7 @@
       // These images give no release date, so the minimum release age cannot
       // apply to them.
       matchDatasources: ["docker"],
-      matchDepNames: ["amazon/aws-cli", "docker.elastic.co/elasticsearch/elasticsearch", "node"],
+      matchDepNames: ["amazon/aws-cli", "docker.elastic.co/elasticsearch/elasticsearch"],
       minimumReleaseAge: null,
     },
     {
@@ -169,8 +184,10 @@
     },
     {
       // Every e2e image pin stays on its minor. A new Camunda minor is a
-      // supported-version decision the operator makes on purpose.
+      // supported-version decision the operator makes on purpose. The custom
+      // manager of fleet-manager/Dockerfile is not an e2e pin.
       matchManagers: ["custom.regex"],
+      matchFileNames: ["!fleet-manager/**"],
       matchUpdateTypes: ["major", "minor"],
       enabled: false,
     },
@@ -183,6 +200,7 @@
       // without it the minor and the patch share one update, and the rule
       // above drops it whole.
       matchManagers: ["custom.regex"],
+      matchFileNames: ["!fleet-manager/**"],
       separateMinorPatch: true,
       groupName: "e2e-image-pins",
     },
@@ -256,6 +274,20 @@
       enabled: true,
     },
     {
+      // The golangci-lint release behind `make lint` is a tool, not an e2e
+      // image pin. The Makefile and .custom-gcl.yml name one release, so one
+      // pull request moves both. It has a group of its own, because a new
+      // release can find new issues that the same pull request must fix.
+      matchDepNames: ["github.com/golangci/golangci-lint/v2"],
+      separateMinorPatch: false,
+      groupName: "golangci-lint",
+    },
+    {
+      matchDepNames: ["github.com/golangci/golangci-lint/v2"],
+      matchUpdateTypes: ["minor"],
+      enabled: true,
+    },
+    {
       // Helm is pinned in .tool-versions, in the Makefile for install-helm,
       // and in the setup-helm steps of the workflows. One pull request moves
       // all of them, so a contributor and CI run the same Helm.
@@ -311,14 +343,27 @@
     {
       // The fleet manager pins one Node.js release in fleet-manager/.node-version,
       // in engines of fleet-manager/package.json, in the build stage of
-      // fleet-manager/Dockerfile, and in .tool-versions. Each manager names the
-      // dependency node, so one pull request moves all of them. A new major is
-      // a change by hand, also of the distroless runtime image nodejs<major>.
-      // The node-version datasource writes its versions with a leading v.
+      // fleet-manager/Dockerfile, and in .tool-versions. pnpm refuses any
+      // other release. Each pin goes through a manager of the node-version
+      // datasource with the dependency name node, so one pull request moves
+      // all of them. A new major is a change by hand, also of the distroless
+      // runtime image nodejs<major>. The node-version datasource writes its
+      // versions with a leading v.
       matchFileNames: ["fleet-manager/**", ".tool-versions"],
       matchDepNames: ["node"],
       groupName: "fleet-manager-node",
       allowedVersions: "/^v?26\\./",
+    },
+    {
+      // Without this, the Docker manager proposes the build stage image with
+      // the release date of Docker Hub, or with none. The other three pins
+      // take the release date from nodejs.org, so a pull request can move
+      // some of the four pins and not all. The custom manager of
+      // fleet-manager/Dockerfile reads that pin instead.
+      matchManagers: ["dockerfile"],
+      matchFileNames: ["fleet-manager/Dockerfile"],
+      matchDepNames: ["node"],
+      enabled: false,
     },
     {
       // packageManager in fleet-manager/package.json pins pnpm, and the fleet-*

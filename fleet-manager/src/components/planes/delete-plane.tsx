@@ -130,8 +130,9 @@ export function DeletePlane({
         remove={run.remove}
         policyStep={run.policyStep}
         keepRefused={run.keepRefused}
+        policyOwned={run.policyOwned}
         onPick={setPicked}
-        preview={actions.preview}
+        preview={run.preview}
         apply={run.apply}
         show={show}
         onWritten={run.onWritten}

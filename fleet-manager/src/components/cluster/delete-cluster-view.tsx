@@ -20,6 +20,7 @@ import type { ReadError } from "@/lib/k8s/unread";
 import type { DeletionPolicy } from "@/lib/policy";
 import type {
   Change,
+  ObjectOwnership,
   Preview,
   WriteMode,
   WriteResult,
@@ -44,9 +45,13 @@ export function DeleteClusterView({
   remove: Change;
   policyStep: boolean;
   keepRefused?: string;
+  policyOwned?: string;
   onPick(policy: DeletionPolicy): void;
-  preview(change: Change): Promise<Preview>;
-  apply(change: Change): Promise<WriteResult>;
+  preview(change: Change, taken?: readonly ObjectOwnership[]): Promise<Preview>;
+  apply(
+    change: Change,
+    taken?: readonly ObjectOwnership[],
+  ): Promise<WriteResult>;
   show(result: WriteResult, message: string): void;
   onWritten(): void;
   onStopWaiting(): void;
