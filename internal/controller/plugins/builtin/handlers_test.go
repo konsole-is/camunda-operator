@@ -44,16 +44,26 @@ func TestExistingRegistrationsReadTheirContracts(t *testing.T) {
 		want                 []adapter.ContractRef
 	}{
 		{
-			pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`,
-			[]adapter.ContractRef{{
-				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "my-bucket",
-			}},
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":"my-bucket"}`,
+			[]adapter.ContractRef{
+				{
+					Output: pluginstartup.OutputObjectStorageConfig,
+					Kind:   adapter.KindObjectStorageConfig,
+					Name:   "my-bucket",
+				},
+			},
 		},
 		{
-			pluginstartup.RegistrationExistingSecondaryStorage, `{"name":"my-es"}`,
-			[]adapter.ContractRef{{
-				Output: pluginstartup.OutputSecondaryStorageConfig, Kind: adapter.KindSecondaryStorageConfig, Name: "my-es",
-			}},
+			pluginstartup.RegistrationExistingSecondaryStorage,
+			`{"name":"my-es"}`,
+			[]adapter.ContractRef{
+				{
+					Output: pluginstartup.OutputSecondaryStorageConfig,
+					Kind:   adapter.KindSecondaryStorageConfig,
+					Name:   "my-es",
+				},
+			},
 		},
 		{
 			pluginstartup.RegistrationExistingDatabaseConfigs, `{"webModeler":"wm","keycloak":"kc"}`,

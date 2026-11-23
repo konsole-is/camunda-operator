@@ -801,10 +801,12 @@ func denyWriterLeases() {
 					},
 				}},
 			},
-			Validations: []admissionregistrationv1.Validation{{
-				Expression: "!has(object.metadata.labels) || !('" + labels.ComponentKey + "' in object.metadata.labels) || " +
-					"object.metadata.labels['" + labels.ComponentKey + "'] != '" + storagewriter.Component + "'",
-			}},
+			Validations: []admissionregistrationv1.Validation{
+				{
+					Expression: "!has(object.metadata.labels) || !('" + labels.ComponentKey + "' in object.metadata.labels) || " +
+						"object.metadata.labels['" + labels.ComponentKey + "'] != '" + storagewriter.Component + "'",
+				},
+			},
 		},
 	}
 	binding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{

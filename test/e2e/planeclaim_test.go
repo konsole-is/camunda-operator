@@ -136,7 +136,11 @@ var _ = Describe("CamundaManagementClusterClaim", Ordered, Label(utils.LabelPlan
 		By("running the database server on CloudNativePG")
 		var current v1.DatabaseServer
 		Expect(utils.Get(dsResource, server, planeClaimNamespace, &current)).To(Succeed())
-		exists, err := utils.Exists("clusters.postgresql.cnpg.io", dscomponents.ClusterName(&current), planeClaimNamespace)
+		exists, err := utils.Exists(
+			"clusters.postgresql.cnpg.io",
+			dscomponents.ClusterName(&current),
+			planeClaimNamespace,
+		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(exists).To(BeTrue(), "no CloudNativePG cluster runs the database server")
 
