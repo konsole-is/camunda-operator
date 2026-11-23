@@ -97,9 +97,20 @@ export function KeyValueEditor({
     opened(e) && checkedEntries.some((c) => same(c, e));
   const unchecked = (e: Entry) => checked(e) || (openedUnchecked && opened(e));
   const shownErrors = (rows: readonly Entry[]) => [
-    ...keyValueErrors(rows, format).filter(
-      (error) => !unchecked(rows[Number(error.path.split(".")[0])]),
-    ),
+    ...keyValueErrors(rows, format).flatMap((error) => {
+      const index = Number(error.path.split(".")[0]);
+      const row = rows[index];
+      if (!unchecked(row)) return [error];
+      // A key set twice with a row that the user changed keeps its error, on
+      // that row: the map keeps only the value of the last row.
+      const twice =
+        row.key !== "" &&
+        error.path.endsWith(".key") &&
+        rows.findIndex((e) => e.key === row.key) < index
+          ? rows.findIndex((e) => e.key === row.key && !unchecked(e))
+          : -1;
+      return twice >= 0 ? [{ ...error, path: `${twice}.key` }] : [];
+    }),
     // keyValueErrors ignores a row with an empty key and an empty value as
     // one that the user did not fill yet. Such a row that the editor opens
     // with is an entry with an empty key, which Kubernetes refuses.

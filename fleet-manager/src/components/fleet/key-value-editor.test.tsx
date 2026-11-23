@@ -244,6 +244,61 @@ describe("KeyValueEditor", () => {
       ).toBeTruthy();
   });
 
+  describe("a key that the user renames to the key of a row that the editor does not check", () => {
+    // renameFirst clears the key of the first row and types key, one
+    // character at a time.
+    async function renameFirst(key: string) {
+      const first = within(screen.getByRole("group", { name: "Entry 1" }));
+      const input = first.getByRole("textbox", { name: "Key" });
+      await userEvent.clear(input);
+      await userEvent.type(input, key);
+      return first;
+    }
+
+    it.each([
+      ["openedUnchecked", { openedUnchecked: true }],
+      [
+        "checkedEntries",
+        { checkedEntries: [{ key: "team", value: "second" }] },
+      ],
+    ])(
+      "shows that the key is set twice on the renamed row, with %s",
+      async (_, props) => {
+        const onChange = vi.fn();
+        render(
+          <KeyValueEditor
+            label="Labels"
+            format="label"
+            defaultValue={{ owner: "first", team: "second" }}
+            onChange={onChange}
+            {...props}
+          />,
+        );
+        const first = await renameFirst("team");
+        expect(onChange.mock.lastCall![1]).toContainEqual({
+          path: "0.key",
+          message: "team is set twice",
+        });
+        expect(first.getByText("team is set twice")).toBeTruthy();
+      },
+    );
+  });
+
+  it("keeps an empty key of a row that it does not check off a new row that the user adds", async () => {
+    const onErrors = vi.fn();
+    render(
+      <KeyValueEditor
+        label="Labels"
+        format="label"
+        defaultValue={{ "": "x" }}
+        openedUnchecked
+        onErrors={onErrors}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add an entry" }));
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+  });
+
   describe("with openedUnchecked", () => {
     it("shows no error for a row that it opens with, and checks a row that the user adds or changes", async () => {
       const onChange = vi.fn();

@@ -82,9 +82,24 @@ export function EnvEditor({
     );
   const isChecked = (row: Row) =>
     opened(row) && checked.includes(JSON.stringify(toEnv(row)));
-  const errors = rowErrors(rows).filter((error) => {
-    const row = rows[Number(error.path.split(".")[0])];
-    return !isChecked(row) && !(openedUnchecked && opened(row));
+  const unchecked = (row: Row) =>
+    isChecked(row) || (openedUnchecked && opened(row));
+  const nameOf = (row: Row) =>
+    row.source === "other" ? row.entry.name : row.name;
+  const errors = rowErrors(rows).flatMap((error) => {
+    const index = Number(error.path.split(".")[0]);
+    const row = rows[index];
+    if (!unchecked(row)) return [error];
+    // A name set twice with a row that the user changed keeps its error, on
+    // that row: the merge by name keeps only the last variable.
+    const name = nameOf(row);
+    const twice =
+      name !== "" &&
+      error.path.endsWith(".name") &&
+      rows.findIndex((r) => nameOf(r) === name) < index
+        ? rows.findIndex((r) => nameOf(r) === name && !unchecked(r))
+        : -1;
+    return twice >= 0 ? [{ ...error, path: `${twice}.name` }] : [];
   });
   useErrorsReport(errors, onErrors);
   const env = rows.filter((row) => !isChecked(row)).map(toEnv);
