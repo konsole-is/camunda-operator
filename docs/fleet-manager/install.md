@@ -2,45 +2,6 @@
 
 The fleet manager is a web app for the Camunda clusters of one Kubernetes cluster. You create, change, back up, and delete clusters in it. Each version of the operator chart ships it as its own image. The chart does not install it by default.
 
-## What the fleet manager writes
-
-The fleet manager does not write a `CamundaCluster` itself. When you create a cluster, it writes a **claim**. A claim is a request for one cluster. The operator reads the claim and builds the cluster from it.
-
-A claim is a `CamundaClusterClaim` with the name of the cluster, in the namespace of the cluster. A management plane runs Management Identity, Console, and Web Modeler for many clusters. Its claim is a `CamundaManagementClusterClaim`. The claim holds what you chose in the create form:
-
-- The **preset**: the shared size and settings of the cluster, such as the number of brokers, the CPU, and the memory. Your admin makes the presets.
-- The **release**: the Camunda version and the images.
-- The **platform config**, when you do not use the default: the sign-in method, the license, and the image repositories.
-- One **option** for each storage and access choice, for example **Existing secondary storage** for **Secondary storage**. An option is a `PluginRegistration`, also called a registration. The operator brings the built-in options. A plugin is a Helm chart that adds more options, for example for a cloud provider.
-- The settings that you changed on top of the preset, for example two Tasklist replicas.
-
-```yaml
-apiVersion: fleet.camunda.io/v1alpha1
-kind: CamundaClusterClaim
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  presetRef: small
-  releaseRef: camunda-8-9-0
-  plugins:
-    - section: secondary-storage
-      registration: existing-secondary-storage
-      parameters:
-        name: my-cluster-storage
-  cluster:
-    tasklist:
-      replicas: 2
-```
-
-The **environment** of the namespace sets the rules for its claims. It names the presets, the releases, the platform config, and the options that a claim can use. If a claim breaks these rules, the operator does not build the cluster, and the status of the claim says why. [Environments](environments.md) shows how to set the rules.
-
-Each change that you make to a cluster in the fleet manager is a change of its claim. You see the claim on the **Claim** tab of the cluster page and in the review before each save. A cluster that you applied without a claim, for example with `kubectl`, shows **Not managed**. You can read such a cluster in the fleet manager, but you cannot change it there.
-
-In Git mode, the fleet manager commits the claim to a Git repository, and your GitOps tool applies it. [Git mode](settings.md#git-mode) shows how to turn it on.
-
-[Claims](../guides/claims.md) writes a claim with `kubectl` and shows what the operator builds from it. [CamundaClusterClaim](../crds/camundaclusterclaim.md) and [CamundaManagementClusterClaim](../crds/camundamanagementclusterclaim.md) list the fields.
-
 ## Turn it on
 
 Set `fleetManager.enabled=true` on the release of the operator:
@@ -81,14 +42,25 @@ The **Fleet** page lists the clusters, as [The fleet view](fleet-view.md) shows.
 | **Environments** | [Environments](environments.md) |
 | **Presets** and **Releases** | [Presets and releases](presets-and-releases.md) |
 | **Platform** and **Connections** | [Platform config and connections](platform-and-connections.md) |
-| **Plugins** | [Registrations](registrations.md) |
+| **Plugins** | [Plugins](registrations.md) |
 | **Settings** | [Fleet manager settings](settings.md) |
 
 The three buttons at the right of the top bar select the theme: **System**, **Light**, or **Dark**. The browser keeps the choice.
 
+## What the fleet manager writes
+
+When you create a cluster, the fleet manager writes a **claim**, a [CamundaClusterClaim](../crds/camundaclusterclaim.md) with the name of the cluster. A claim is a request for a cluster. It names a preset, a release, the storage and access options that you picked, and your changes to the settings of the preset. The operator builds the cluster from the claim.
+
+Each change that you make to the cluster in the fleet manager is a change of its claim. A cluster without a claim shows **Not managed**, and you can only read it here.
+
+- A **preset** holds the shared size and settings of a cluster, and a **release** holds the Camunda version. See [Presets and releases](presets-and-releases.md).
+- An **option** gives the cluster its storage or its access, for example **New Elasticsearch cluster**. See [Plugins](registrations.md).
+- An **environment** sets the presets, the releases, and the options that its namespaces can use. See [Environments](environments.md).
+- A **management plane** runs Management Identity, Console, and Web Modeler for many clusters. See [Management planes](management-planes.md).
+
 ## Trust a private CA
 
-A private CA can sign the certificate of your Git server or Prometheus server. Then give the CA bundle to the fleet manager. Put the PEM bundle in a ConfigMap in the release namespace:
+If a private CA signs your Git or Prometheus server certificate, give the CA bundle to the fleet manager. Put the PEM bundle in a ConfigMap in the release namespace:
 
 ```bash
 kubectl -n camunda-operator-system create configmap fleet-manager-ca --from-file=ca.crt=<path to the PEM CA bundle>
@@ -105,7 +77,11 @@ helm upgrade camunda-operator \
   --set fleetManager.extraCACerts.configMapName=fleet-manager-ca
 ```
 
-The fleet manager reads the key `ca.crt`. For another key, add `--set fleetManager.extraCACerts.key=<key>`. The fleet manager reads the bundle when its pod starts, so restart the Deployment after you change the ConfigMap. If the ConfigMap or its key does not exist, the pod does not start.
+The fleet manager reads the key `ca.crt`. For another key, add `--set fleetManager.extraCACerts.key=<key>`. If the ConfigMap or its key does not exist, the pod does not start. The fleet manager reads the bundle when its pod starts, so restart it after you change the ConfigMap:
+
+```bash
+kubectl -n camunda-operator-system rollout restart deployment/camunda-operator-fleet-manager
+```
 
 ## Who can reach it
 

@@ -120,7 +120,7 @@ Some parameters are templates, for example the inline policy of the Connectors r
 | --- | --- |
 | `{{ .namespace }}` | The namespace of the cluster. |
 | `{{ .claim }}` | The name of the claim. |
-| `{{ .request }}` | The name of the request of the claim for this option. |
+| `{{ .request }}` | The name of the `PluginRequest` that the operator writes for this option of the cluster. |
 | `{{ .serviceAccount }}` | The ServiceAccount that gets the permissions. |
 | `{{ .parameters.<name> }}` | The value of another parameter of the option. |
 

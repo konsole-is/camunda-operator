@@ -1,6 +1,6 @@
 # The cluster page
 
-The cluster page shows one Camunda cluster: its processes and pods, their logs and events, its backups, its addresses, and its claim. To open it, select the name of the cluster in [the fleet view](fleet-view.md).
+The cluster page shows one Camunda cluster: its processes and pods, their logs and events, its backups, its addresses, and its [claim](install.md#what-the-fleet-manager-writes). To open it, select the name of the cluster in [the fleet view](fleet-view.md).
 
 ## The tabs of the cluster
 
@@ -11,7 +11,7 @@ The cluster page shows one Camunda cluster: its processes and pods, their logs a
 | **Endpoints** | The address of each app: its public URL, its Service, and its protocol. |
 | **Claim** | The choices for the whole cluster, as [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab) shows. |
 
-A cluster that the fleet manager made also has **Change topology**, as [Change the topology](change-a-cluster.md#change-the-topology) shows, and **Delete** in its header.
+A cluster that has a claim also has **Change topology**, as [Change the topology](change-a-cluster.md#change-the-topology) shows, and **Delete** in its header.
 
 ## The tabs of a component
 
@@ -50,16 +50,7 @@ The options **New Elasticsearch cluster** and **New PostgreSQL server** also sho
 
 ### Grants
 
-A Grant asks the cloud identity of the cluster for one permission, for example access to a bucket. The **Grants** box shows each Grant with its statement and its state:
-
-| Line | What it means | What to do |
-| --- | --- | --- |
-| None | The identity has the permission. | Nothing. |
-| The meaning of the reason, for example **The identity or the cloud refused it. The message says why.** | The identity does not have the permission. | Read the message. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. |
-| **The role still has the statement that this Grant holds.** | The option has a new template, and the old permission still applies. | After a chart upgrade, wait. |
-| **Not applied yet.** | The identity has not applied the Grant yet. | Wait. |
-
-While a Grant is refused, the card of the option shows **Not ready (GrantRejected)**.
+A Grant asks the cloud identity of the cluster for one permission, for example access to a bucket. The **Grants** box shows each Grant with its state. While a Grant is refused, the card of the option shows **Not ready (GrantRejected)**. Read the message of the Grant. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. A Grant that shows **Not applied yet** needs no action.
 
 ## Logs
 
@@ -79,7 +70,7 @@ The **Events** tab lists the Kubernetes events of the component, newest first. T
 
 ## Delete the cluster
 
-Select **Delete** in the header of the cluster. Only a cluster that the fleet manager made has **Delete**.
+Select **Delete** in the header of the cluster. Only a cluster that has a claim has **Delete**.
 
 ### Keep or delete the resources
 
@@ -94,7 +85,7 @@ The delete always removes the claim, and the `CamundaCluster`, Optimize, and bac
 
 ### Volumes and backups
 
-By default, the broker volumes go with the cluster, and the page says "Volumes deleted". To keep them for a later cluster of the same name, set `whenDeleted: Retain` in the claim, for example with `kubectl edit camundaclusterclaim my-cluster -n my-cluster-ns`. Do this before you open the delete page:
+By default, the broker volumes go with the cluster, and the page says "Volumes deleted". To keep them for a later cluster of the same name, open the **Settings** tab of the brokers. Set `persistentVolumeClaimRetentionPolicy` to `whenDeleted: Retain`, and save. Do this before you open the delete page. The claim then holds:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1

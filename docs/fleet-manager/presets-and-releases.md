@@ -53,7 +53,7 @@ A cluster that sets a field itself keeps its own value. Each field of the preset
 
 ### Rotate the admin password
 
-The page of a cluster preset has the part **Admin password**. Its button rotates the admin password of each cluster that uses the preset with basic authentication, for example **Rotate the admin password of 3 clusters**. A cluster that sets its own `auth.basic` does not count. A cluster that runs Connectors restarts its Connectors pods. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
+The page of a cluster preset has the part **Admin password**. Its button rotates the admin password of each cluster that uses the preset with basic authentication, for example **Rotate the admin password of 3 clusters**. A cluster that sets its own `auth.basic` does not count. The review names each cluster whose password changes. Select **Rotate**, or **Push to Git** in Git mode. A cluster that runs Connectors restarts its Connectors pods. See [Authentication: Rotate the password](../guides/authentication.md#rotate-the-password).
 
 ### Delete a preset
 

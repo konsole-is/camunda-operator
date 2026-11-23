@@ -1,6 +1,6 @@
 # Change a cluster
 
-You change a cluster on its [cluster page](cluster-page.md). Each change goes into the claim of the cluster, and the operator then changes the cluster. A cluster that shows **Not managed** has no editors.
+You change a cluster on its [cluster page](cluster-page.md). Each change goes into the [claim](install.md#what-the-fleet-manager-writes) of the cluster, and the operator then changes the cluster. A cluster that shows **Not managed** has no editors.
 
 Your changes collect as unsaved changes until you save them, as [Save or discard the changes](#save-or-discard-the-changes) shows.
 
@@ -42,13 +42,13 @@ spec:
   # ... the rest of your claim
 ```
 
-While Tasklist runs inside the gateway, this value applies only after Tasklist runs standalone, as [Embedded apps](#embedded-apps) shows. A setting that you leave as it is stays out of the claim, so the preset decides it. A block such as `scheduling` replaces the block of the preset as a whole. So a change of one part writes the whole block, with the other parts as the preset sets them.
+A setting that you leave as it is stays out of the claim, so the preset decides it.
 
 A volume cannot become smaller. A smaller `storageSize` keeps the current size of the volumes.
 
 ### Embedded apps
 
-Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. The **Settings** tab of the process that an app runs in shows the settings of the app below its own. These settings apply only when the app runs standalone, except `extraEnv` and `extraEnvFrom`, which go to the process that the app runs in. So you can prepare the settings of an app before it runs on its own.
+Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. Their settings, such as Tasklist `replicas`, apply only when they run standalone, except `extraEnv` and `extraEnvFrom`.
 
 ## Change the topology
 
@@ -110,6 +110,6 @@ The bar at the bottom of the page counts your unsaved changes:
 
 **Discard** removes every unsaved change.
 
-While an editor shows an error, **Review** is off, and the bar names the setting and the error. Correct the value, or reset it. The most common error is a CPU or memory limit below its request. A request or limit that you leave empty keeps the value of the preset, so the error can name the preset. Set a limit that is not below the request, or a lower request.
+While an editor shows an error, **Review** is off, and the bar names the setting and the error. Correct the value, or reset it. The most common error is a CPU or memory limit below its request, as [Errors in the settings](create-a-cluster.md#errors-in-the-settings) shows.
 
 If another tool, such as `kubectl apply`, set a field that your change touches, the review asks before it takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what that means.

@@ -129,9 +129,9 @@ In OIDC mode, the plane registers no Optimize callback. The **Optimize** tab the
 
 In OIDC mode, `KeycloakReady`, `SecretsReady`, and `OptimizeCallbacksReady` show `True` with the reason `Disabled`. This is expected, and it does not hold `Ready` back. The [Status](../crds/camundamanagementcluster.md#status) section of `CamundaManagementCluster` lists each reason and what to do.
 
-### Planes made outside the fleet manager
+### Planes without a claim
 
-A plane that you applied without the fleet manager shows `Not managed by the fleet manager. You can read this management plane but not change it here.` Change such a plane where you manage it, for example in your GitOps repository.
+A plane without a claim shows `Not managed by the fleet manager. You can read this management plane but not change it here.` Change such a plane where you manage it, for example in your GitOps repository.
 
 ## Change a management plane
 

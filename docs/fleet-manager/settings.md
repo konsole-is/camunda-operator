@@ -4,8 +4,8 @@ The settings of the fleet manager name this Kubernetes cluster, the Git reposito
 
 The fleet manager works in one of two modes:
 
-- **Direct mode**, the default: each save writes to the Kubernetes API.
-- **Git mode**: each save is a commit in a Git repository, and your GitOps tool applies it. Git mode is on when `git.repository` is set.
+- Direct mode, the default: each save writes to the Kubernetes API.
+- Git mode: each save is a commit in a Git repository, and your GitOps tool applies it. Git mode is on when `git.repository` is set.
 
 ## Set the settings at install
 
@@ -79,7 +79,7 @@ After a take-over, the other tool can set its value again:
 - A plain `kubectl apply` of the file sets the old values again, without a warning.
 - Argo CD and Flux set their value again on the next sync. Change the source in Git too.
 
-The review never offers a field that the operator sets itself. Leave such a field as it is. In Git mode, the review offers no take-over, because your GitOps tool applies the whole file.
+The review offers no take-over in Git mode, or for a field that the operator sets itself.
 
 ## Git credentials
 
@@ -156,7 +156,7 @@ After a save in Git mode, each page shows "Waiting for GitOps to apply" at the t
 
 ### When a save fails
 
-Before the commit, the fleet manager asks the Kubernetes API to check each object. If the API refuses an object, the save makes no commit and shows the message. The most common messages are:
+When the Kubernetes API or the Git server refuses a save, the save makes no commit and shows the message. The most common messages are:
 
 | Message | What to do |
 | --- | --- |

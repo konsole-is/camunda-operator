@@ -2,7 +2,7 @@
 
 The **Fleet** page lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. **New cluster** opens the create form, as [Create a cluster](create-a-cluster.md) shows. The page updates live, without a reload.
 
-When the fleet manager cannot read a list, the page shows `Could not read <kind>:` and the error. When its list is not current, the page shows `Not known: the fleet manager has no current list of <kind>.` The page then does not say that there is no cluster or no plane. The other pages of the fleet manager show the same lines.
+When the fleet manager cannot read a list, each page says so, and never shows that list as empty.
 
 ## Needs attention
 
@@ -12,7 +12,7 @@ The panel **Needs attention** at the top of the page lists what is wrong now. It
 | --- | --- |
 | Cluster | The `Ready` condition of the cluster is `False`. The entry links to the cluster page. |
 | Backup | A backup failed in the last 24 hours. The entry links to the **Backups** tab of its cluster. |
-| Option | An option is not accepted or not ready. See [Registrations](registrations.md). |
+| Option | An option is not accepted or not ready. See [Plugins](registrations.md). |
 | Management plane | The `Ready` condition of the plane is `False`. |
 
 Each entry shows the reason and the message. When nothing is wrong, the panel says "Nothing needs attention."
@@ -39,14 +39,14 @@ Each table of clusters has these columns:
 
 | Column | What it shows |
 | --- | --- |
-| Cluster | The name, which opens [the cluster page](cluster-page.md), and the namespace. A cluster that you applied without the fleet manager shows **Not managed**. |
+| Cluster | The name, which opens [the cluster page](cluster-page.md), and the namespace. A cluster without a claim shows **Not managed**. |
 | Status | The `Ready` condition, such as `Ready` or `Not ready · Degraded`. Hold the pointer on it to see the message. |
 | Version | The Camunda version that the cluster runs, and its preset. |
 | Components | One dot for each part of the cluster, as the next section shows. |
 | Last backup | The phase and the start time of the newest backup, or **No backups**. |
 | Warnings | One chip for each warning, errors first, as [Warnings](#warnings) shows. |
 
-A new cluster shows before the operator has built it. Its row shows the `Ready` condition of the claim, for example `Not ready · NotAllowed` when the environment does not allow a choice. The message says what to change.
+A new cluster shows before the operator has built it. Its row shows the `Ready` condition of its [claim](install.md#what-the-fleet-manager-writes), for example `Not ready · NotAllowed` when the environment does not allow a choice. The message says what to change.
 
 ### Component dots
 
