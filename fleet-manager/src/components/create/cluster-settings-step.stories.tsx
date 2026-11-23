@@ -61,6 +61,8 @@ const teamSecrets: SecretRefs = [
 
 // ClusterSettingsStep holds no draft, so the harness holds the draft and
 // derives the draft cluster and its fields as the create flow does.
+// brokerResources replaces the resources of the brokers in the preset
+// medium.
 function ClusterSettingsStepHarness({
   initial,
   secrets,
@@ -68,18 +70,39 @@ function ClusterSettingsStepHarness({
   set,
   reset,
   errors,
+  brokerResources,
 }: {
   initial: ClusterDraft;
   secrets: SecretRefs;
   errors?: ComponentProps<typeof ClusterSettingsStep>["errors"];
+  brokerResources?: object;
   pick: ComponentProps<typeof ClusterSettingsStep>["pick"];
   set: ComponentProps<typeof ClusterSettingsStep>["set"];
   reset: ComponentProps<typeof ClusterSettingsStep>["reset"];
 }) {
   const [draft, setDraft] = useState(initial);
+  const offered =
+    brokerResources === undefined
+      ? presets
+      : presets.map((p) =>
+          p.metadata.name === "medium"
+            ? {
+                ...p,
+                spec: {
+                  cluster: {
+                    ...p.spec.cluster,
+                    zeebe: {
+                      ...p.spec.cluster.zeebe,
+                      resources: brokerResources,
+                    },
+                  },
+                },
+              }
+            : p,
+        );
   const drafted = draftCluster(
     draft,
-    presets as unknown as Resource<"CamundaClusterPreset">[],
+    offered as unknown as Resource<"CamundaClusterPreset">[],
     releases,
     environment,
   );
@@ -262,5 +285,32 @@ export const MissingSecret: Story = {
           "The namespace team-orders holds no Secret orders-oidc. Pick a Secret of team-orders, or reset the field.",
       },
     ],
+  },
+};
+
+export const PresetLimitBelowRequest: Story = {
+  name: "Preset limit below the request",
+  args: { brokerResources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+  play: async ({ canvasElement }) => {
+    const { group, row } = brokers(canvasElement);
+    await expect(row).toHaveAttribute("aria-expanded", "true");
+    await expect(row).toHaveAccessibleName(/ 1 error$/);
+    const resources = within(group).getAllByRole("group", {
+      name: "resources",
+    })[0];
+    await expect(within(resources).getByRole("alert")).toHaveTextContent(
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    );
+    const limit = within(
+      within(resources).getByRole("group", { name: "CPU limit" }),
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.clear(limit);
+    await expect(within(resources).getByRole("alert")).toHaveTextContent(
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    );
+    await expect(limit).toHaveAccessibleDescription(
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    );
+    await expect(row).toHaveAccessibleName(/ 1 error$/);
   },
 };

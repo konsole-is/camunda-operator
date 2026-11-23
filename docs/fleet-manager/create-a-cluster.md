@@ -38,6 +38,12 @@ The first line of an open group says how many settings the group has and where t
 
 When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. A red count next to the name then says how many settings have an error, for example `1 error`. This count stays when you close the group.
 
+A setting also shows an error when the value that the cluster gets is not valid. Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the setting shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2`. When the preset alone gives a limit below its request, the error names the preset for both values.
+
+**Next** stays off while a setting shows such an error, also when you changed nothing. When the preset changes to such a value after you leave this step, **Create** stays off and names this step. To correct it, set a limit that is not below the request, or a lower request. For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not stop **Next**. Correct it before the process runs on its own, because its resources apply only then.
+
+A resource such as `ephemeral-storage` has no field in the setting. An edit of another amount of the same setting writes its values into the claim too. **Reset to preset** removes them from the claim, together with the other amounts that the claim sets there. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
+
 A setting that an option of **Storage and access** fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.
 
 A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. A new namespace holds no Secret yet. [A Secret that the namespace does not hold](#a-secret-that-the-namespace-does-not-hold) says what the step shows then.

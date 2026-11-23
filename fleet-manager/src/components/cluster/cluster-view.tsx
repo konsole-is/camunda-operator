@@ -362,6 +362,18 @@ export function ClusterView({
     tab === "backups" || tab === "overview" || tab === "claim",
   );
 
+  // The claim check of the edit page reads these, and the page renders
+  // each second for its clock.
+  const claimRequests = useMemo(
+    () =>
+      requests.items.filter(
+        (r) =>
+          r.spec.claimRef.kind === "CamundaClusterClaim" &&
+          r.spec.claimRef.name === claimName,
+      ),
+    [requests.items, claimName],
+  );
+
   const live = cluster.item;
   if (!live) {
     return <p className="text-sm text-muted">This cluster no longer exists.</p>;
@@ -415,11 +427,6 @@ export function ClusterView({
 
   const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
-  const claimRequests = requests.items.filter(
-    (r) =>
-      r.spec.claimRef.kind === "CamundaClusterClaim" &&
-      r.spec.claimRef.name === claimName,
-  );
   const access = claimRequests.find(
     (r) => r.metadata?.labels?.[SECTION_LABEL] === ACCESS_SECTION,
   );

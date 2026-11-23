@@ -8,6 +8,7 @@ import {
 } from "../../../test/fakes/settings";
 import type { FieldState } from "@/lib/fields";
 import {
+  blockingMergedErrors,
   type Setting,
   settingChange,
   settingsOf,
@@ -272,6 +273,318 @@ describe("settingsOf", () => {
     expect(replicas.steps).toEqual(
       steps("spec", "cluster", "tasklist", "replicas"),
     );
+  });
+});
+
+describe("settingsOf merged errors", () => {
+  // brokers returns the resources setting of the brokers when preset is
+  // spec.cluster.zeebe.resources of the preset and claim that of the claim.
+  function brokers(preset?: object, claim?: object): Setting {
+    return setting(
+      processSettings("zeebe", "zeebe", {
+        ...(preset && { preset: { zeebe: { resources: preset } } }),
+        ...(claim && { claim: { cluster: { zeebe: { resources: claim } } } }),
+      }),
+      "resources",
+    );
+  }
+
+  const messages = (s: Setting) => s.mergedErrors?.map((e) => e.message);
+
+  it("names the preset when its limit stays below the request of the claim", () => {
+    expect(
+      messages(brokers({ limits: { cpu: "1" } }, { requests: { cpu: "2" } })),
+    ).toEqual([
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    ]);
+  });
+
+  it("names the preset when its request stays above the limit of the claim", () => {
+    expect(
+      messages(brokers({ requests: { cpu: "2" } }, { limits: { cpu: "1" } })),
+    ).toEqual([
+      "The CPU request of 2 comes from the preset and is above the CPU limit of 1.",
+    ]);
+  });
+
+  it("names the preset when it sets both and the claim changes nothing", () => {
+    expect(
+      messages(
+        brokers({
+          requests: { cpu: "2" },
+          limits: { cpu: "1" },
+        }),
+      ),
+    ).toEqual([
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    ]);
+  });
+
+  it("names no source when the claim sets the limit and the request", () => {
+    const setting = brokers(
+      { requests: { cpu: "4" }, limits: { cpu: "8" } },
+      { requests: { cpu: "2" }, limits: { cpu: "1" } },
+    );
+    expect(setting.mergedErrors).toEqual([
+      {
+        message: "The CPU limit of 1 is below the CPU request of 2.",
+        blocks: true,
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      "both values come from the preset",
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      undefined,
+      "The ephemeral-storage limit of 1Gi and the ephemeral-storage request of 2Gi come from the preset. The limit is below the request. Pick another preset, or ask your admin to correct the preset.",
+    ],
+    [
+      "the claim sets one value",
+      { limits: { "ephemeral-storage": "1Gi" } },
+      { requests: { "ephemeral-storage": "2Gi" } },
+      "The ephemeral-storage limit of 1Gi comes from the preset and is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove this value from the claim. Pick another preset, or ask your admin to correct the preset.",
+    ],
+    [
+      "the claim holds both values, as after an edit of another amount",
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      {
+        requests: { "ephemeral-storage": "2Gi" },
+        limits: { "ephemeral-storage": "1Gi" },
+      },
+      "The ephemeral-storage limit of 1Gi is below the ephemeral-storage request of 2Gi. Select Reset to preset to remove these values from the claim.",
+    ],
+  ])(
+    "says how to correct a resource without a field when %s",
+    (_, preset, claim, message) => {
+      expect(messages(brokers(preset, claim))).toEqual([message]);
+    },
+  );
+
+  it("does not block on the resources of an embedded app", () => {
+    const tasklist = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: {
+          tasklist: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+      }),
+      "resources",
+    );
+    expect(tasklist.mergedErrors).toMatchObject([{ blocks: false }]);
+    const zeebe = brokers({ requests: { cpu: "2" }, limits: { cpu: "1" } });
+    expect(zeebe.mergedErrors).toMatchObject([{ blocks: true }]);
+  });
+
+  const FAULT = { requests: { cpu: "2" }, limits: { cpu: "1" } };
+  const BOTH =
+    "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
+
+  it.each([
+    ["brokers", "zeebe", "zeebe", {}, true, ""],
+    [
+      "a standalone gateway",
+      "gateway",
+      "gateway",
+      { gateway: { mode: "Standalone" } },
+      true,
+      "",
+    ],
+    [
+      "a gateway embedded in the brokers",
+      "zeebe",
+      "gateway",
+      { gateway: { mode: "Embedded" } },
+      false,
+      " Correct it before Gateway runs standalone.",
+    ],
+    [
+      "a standalone Tasklist",
+      "tasklist",
+      "tasklist",
+      { tasklist: { mode: "Standalone" } },
+      true,
+      "",
+    ],
+    [
+      "Connectors that are enabled",
+      "connectors",
+      "connectors",
+      { connectors: { enabled: true } },
+      true,
+      "",
+    ],
+    [
+      "Connectors that are not enabled",
+      "connectors",
+      "connectors",
+      {},
+      false,
+      " Correct it before Connectors are turned on.",
+    ],
+  ] as const)(
+    "blocks on the resources of %s only when its workload runs",
+    (_, host, process, cluster, blocks, later) => {
+      const resources = setting(
+        processSettings(host, process, {
+          cluster: cluster as SettingsPage["cluster"],
+          preset: { [process]: { resources: FAULT } } as SettingsPage["preset"],
+        }),
+        "resources",
+      );
+      expect(resources.mergedErrors).toEqual([
+        expect.objectContaining({ message: BOTH + later, blocks }),
+      ]);
+    },
+  );
+
+  it("blocks on the resources of the dump", () => {
+    const dump = setting(
+      clusterSettings({ preset: { backup: { dump: { resources: FAULT } } } }),
+      "backup.dump.resources",
+    );
+    expect(dump.mergedErrors).toEqual([
+      expect.objectContaining({ message: BOTH, blocks: true }),
+    ]);
+  });
+
+  it("says that a value that no manager owns is already set on the cluster", () => {
+    const resources = setting(
+      processSettings("zeebe", "zeebe", {
+        cluster: {
+          zeebe: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+        claim: {
+          cluster: { zeebe: { resources: { requests: { cpu: "2" } } } },
+        },
+      }),
+      "resources",
+    );
+    expect(messages(resources)).toEqual([
+      "The CPU limit of 1 is already set on the cluster and is below the CPU request of 2.",
+    ]);
+  });
+
+  it("has no error when the merged limit is not below the request", () => {
+    expect(
+      brokers({ limits: { cpu: "4" } }, { requests: { cpu: "2" } })
+        .mergedErrors,
+    ).toEqual([]);
+    expect(brokers().mergedErrors).toEqual([]);
+  });
+
+  it("compares the memory and quantities in other units", () => {
+    expect(
+      messages(
+        brokers(
+          { requests: { memory: "2Gi" }, limits: { cpu: "500m" } },
+          { requests: { cpu: "1" }, limits: { memory: "1024Mi" } },
+        ),
+      ),
+    ).toEqual([
+      "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
+      "The memory request of 2Gi comes from the preset and is above the memory limit of 1024Mi.",
+    ]);
+  });
+
+  it("checks the resources of every component and of the dump", () => {
+    const gateway = setting(
+      processSettings("gateway", "gateway", {
+        preset: { gateway: { resources: { limits: { memory: "1Gi" } } } },
+        claim: {
+          cluster: { gateway: { resources: { requests: { memory: "2Gi" } } } },
+        },
+      }),
+      "resources",
+    );
+    expect(gateway.mergedErrors).toHaveLength(1);
+    const dump = setting(
+      clusterSettings({
+        preset: {
+          backup: { dump: { resources: { limits: { cpu: "1" } } } },
+        },
+        claim: {
+          cluster: {
+            backup: { dump: { resources: { requests: { cpu: "2" } } } },
+          },
+        },
+      }),
+      "backup.dump.resources",
+    );
+    expect(messages(dump)).toEqual([
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+    ]);
+  });
+
+  it("asks to correct a fault of an embedded app before it runs standalone", () => {
+    const tasklist = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: {
+          tasklist: {
+            resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+          },
+        },
+      }),
+      "resources",
+    );
+    expect(messages(tasklist)).toEqual([
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request. Correct it before Tasklist runs standalone.",
+    ]);
+  });
+
+  it("has no merged errors without the claim, as on the preset page", () => {
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(setting(settings, "resources").mergedErrors).toHaveLength(1);
+    const { merged } = settingsFieldsOf({
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+      },
+    });
+    expect(
+      setting(settingsOf({ group, spec: merged.spec }), "resources")
+        .mergedErrors,
+    ).toBeUndefined();
+  });
+});
+
+describe("blockingMergedErrors", () => {
+  it("gives each merged error that blocks with the path of its setting", () => {
+    const page = {
+      cluster: { gateway: { mode: "Standalone" } },
+      preset: {
+        zeebe: { resources: { requests: { cpu: "2" }, limits: { cpu: "1" } } },
+        tasklist: {
+          resources: { requests: { cpu: "2" }, limits: { cpu: "1" } },
+        },
+      },
+    } as const;
+    const { fields, merged } = settingsFieldsOf(page as SettingsPage);
+    expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([
+      "zeebe.resources: The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.",
+    ]);
+  });
+
+  it("gives nothing for a merged value that holds", () => {
+    const { fields, merged } = settingsFieldsOf({
+      preset: { zeebe: { resources: { limits: { cpu: "4" } } } },
+    });
+    expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([]);
   });
 });
 

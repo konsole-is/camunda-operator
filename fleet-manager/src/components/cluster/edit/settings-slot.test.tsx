@@ -193,6 +193,36 @@ describe("ComponentSettingsEditor", () => {
     });
   });
 
+  it("refuses an Optimize request typed above its limit", async () => {
+    const optimize = {
+      managementAuthConfigRef: "keycloak",
+      importer: {
+        replicas: 1,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+    };
+    const spec = { zeebe: { replicas: 3 }, gateway: { mode: "Standalone" } };
+    renderSlot(
+      contextOf({
+        openId: "optimize",
+        claim: claim("41", {
+          cluster: spec,
+          attachments: { optimize },
+        }),
+      }),
+    );
+    await openEditors();
+    const request = within(
+      within(settingRow(group("Optimize"), "importer.resources")).getByRole(
+        "group",
+        { name: "CPU request" },
+      ),
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.type(request, "4");
+    expect(screen.getByText("The limit is below the request")).toBeTruthy();
+    expect(claimSpec().attachments.optimize).toEqual(optimize);
+  });
+
   it("a new Optimize field shows that the claim sets it", async () => {
     renderSlot(contextOf({ openId: "optimize" }));
     await openEditors();
@@ -288,6 +318,155 @@ describe("ComponentSettingsEditor", () => {
     await userEvent.type(input, "{Backspace}{Backspace}");
     expect(review().disabled).toBe(false);
     expect(within(bar()).queryByText(/Enter a whole number/)).toBeNull();
+  });
+
+  it("a cleared limit that leaves the limit of the preset below the request blocks Review and names the preset", async () => {
+    const spec = {
+      zeebe: {
+        replicas: 3,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { limits: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      }),
+    );
+    await openEditors();
+    const resources = () => settingRow(group("Brokers"), "resources");
+    await userEvent.clear(
+      within(
+        within(resources()).getByRole("group", { name: "CPU limit" }),
+      ).getByRole("textbox", { name: "Amount" }),
+    );
+    const message =
+      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
+    expect(within(resources()).getByRole("alert").textContent).toBe(message);
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(within(bar).getByText(`zeebe.resources: ${message}`)).toBeTruthy();
+    expect(within(resources()).getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("keeps Review off for a merged error after the editors close", async () => {
+    const spec = {
+      zeebe: {
+        replicas: 3,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "3" } },
+      },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { limits: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      }),
+    );
+    await openEditors();
+    await userEvent.clear(
+      within(
+        within(settingRow(group("Brokers"), "resources")).getByRole("group", {
+          name: "CPU limit",
+        }),
+      ).getByRole("textbox", { name: "Amount" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close the editors" }),
+    );
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    expect(
+      within(bar).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(
+      within(bar).getByText(
+        "zeebe.resources: The CPU limit of 1 comes from the preset and is below the CPU request of 2.",
+      ),
+    ).toBeTruthy();
+  });
+
+  // brokerSlot renders the brokers of a cluster whose claim and live
+  // cluster hold resources, under the preset medium with presetResources.
+  function brokerSlot(resources: object, presetResources: object) {
+    const spec = {
+      zeebe: { replicas: 3, resources },
+      gateway: { mode: "Standalone" },
+    };
+    const preset = {
+      kind: "CamundaClusterPreset",
+      metadata: { name: "medium" },
+      spec: { cluster: { zeebe: { resources: presetResources } } },
+    } as unknown as Resource<"CamundaClusterPreset">;
+    const of = (s: object) =>
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(s),
+        claim: claim("41", { cluster: s }),
+        presets: [preset],
+      });
+    return { view: renderSlot(of(spec)), of, spec };
+  }
+  const brokerAmount = (label: string) =>
+    within(
+      within(settingRow(group("Brokers"), "resources")).getByRole("group", {
+        name: label,
+      }),
+    ).getByRole("textbox", { name: "Amount" });
+
+  it("leaves no edit of a longer value after a reset to the preset and a backspace", async () => {
+    brokerSlot({ requests: { cpu: "2" } }, { requests: { cpu: "1" } });
+    await openEditors();
+    await userEvent.click(
+      within(settingRow(group("Brokers"), "resources")).getByRole("button", {
+        name: "Reset to preset",
+      }),
+    );
+    await userEvent.type(brokerAmount("CPU request"), "2");
+    expect(claimSpec().cluster.zeebe.resources).toEqual({
+      requests: { cpu: "12" },
+    });
+    await userEvent.type(brokerAmount("CPU request"), "{Backspace}");
+    expect(claimSpec().cluster.zeebe.resources).toEqual({
+      requests: { cpu: "1" },
+    });
+  });
+
+  it("ends with no change after a delete and a retype of the value of the claim", async () => {
+    brokerSlot({ requests: { cpu: "1" } }, { requests: { cpu: "1" } });
+    await openEditors();
+    await userEvent.clear(brokerAmount("CPU request"));
+    expect(
+      screen.getByRole("region", { name: "Unsaved changes" }).textContent,
+    ).toContain("1 unsaved change");
+    await userEvent.type(brokerAmount("CPU request"), "1");
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
   });
 
   it("closing the editors clears the error that one of them shows", async () => {

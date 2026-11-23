@@ -98,6 +98,18 @@ export function topologyOf(
   }));
 }
 
+/**
+ * runsOwnWorkload tells whether process has a workload of its own in the
+ * cluster of spec, as topologyOf gives the boxes. An embedded process and
+ * Connectors that are not enabled have none.
+ */
+export function runsOwnWorkload(
+  spec: CamundaClusterSpec,
+  process: Process,
+): boolean {
+  return topologyOf(spec, []).some((box) => box.process === process);
+}
+
 // The waiting reasons that do not clear without a change to the pod or its
 // image.
 const BAD_REASONS = new Set([

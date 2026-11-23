@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL } from "@/lib/labels";
-import { type Process, type TopologyBox, podDot, topologyOf } from "./topology";
+import {
+  type Process,
+  type TopologyBox,
+  podDot,
+  runsOwnWorkload,
+  topologyOf,
+} from "./topology";
 
 // shape renders the boxes as "Brokers[Gateway,Operate]" strings.
 const shape = (boxes: TopologyBox[]) =>
@@ -84,6 +90,24 @@ function pod(
     ...over,
   } as Resource<"Pod">;
 }
+
+describe("runsOwnWorkload", () => {
+  it("is true for a process with a box of its own and false for an embedded one or Connectors that are off", () => {
+    const spec: CamundaClusterSpec = {
+      version: "8.9.0",
+      gateway: { mode: "Embedded" },
+      operate: { mode: "Standalone" },
+    };
+    expect(runsOwnWorkload(spec, "zeebe")).toBe(true);
+    expect(runsOwnWorkload(spec, "gateway")).toBe(false);
+    expect(runsOwnWorkload(spec, "operate")).toBe(true);
+    expect(runsOwnWorkload(spec, "tasklist")).toBe(false);
+    expect(runsOwnWorkload(spec, "connectors")).toBe(false);
+    expect(
+      runsOwnWorkload({ ...spec, connectors: { enabled: true } }, "connectors"),
+    ).toBe(true);
+  });
+});
 
 describe("topologyOf", () => {
   it.each(cases)("boxes for %o", (c) => {

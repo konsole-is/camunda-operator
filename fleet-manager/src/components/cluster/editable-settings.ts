@@ -1,3 +1,10 @@
+import {
+  EDITED_RESOURCES,
+  type LimitBelowRequest,
+  limitsBelowRequests,
+  type Resources,
+} from "@/components/fleet/resources-editor";
+import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { fieldSchemas } from "@/generated/fieldschema";
 import {
   type ClusterField,
@@ -17,7 +24,8 @@ import {
 } from "@/lib/fields";
 import type { OpenAPISchema } from "@/lib/schema";
 import { valueAt, without, withValue } from "@/lib/session";
-import type { SettingsGroup } from "./settings";
+import { type SettingsGroup, settingsGroupsOf } from "./settings";
+import { type Process, runsOwnWorkload } from "./topology";
 
 /**
  * Setting is one editor of a settings group. steps is where a change goes,
@@ -29,7 +37,9 @@ import type { SettingsGroup } from "./settings";
  * counts the entries that the preset and the release put before value.
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key.
+ * map key by key. mergedErrors are the limits of the merged value that are
+ * below their request, and undefined when no check of the merged value
+ * runs.
  */
 export type Setting = {
   key: string;
@@ -46,6 +56,17 @@ export type Setting = {
   resetLabel: string;
   resetNote?: string;
   replaces?: true;
+  mergedErrors?: MergedError[];
+};
+
+/**
+ * MergedError is a limit below its request in the merged value of a
+ * setting. blocks is false when the value does not apply now: the process
+ * runs embedded, or Connectors are not enabled.
+ */
+export type MergedError = {
+  message: string;
+  blocks: boolean;
 };
 
 /**
@@ -65,6 +86,9 @@ export type Setting = {
  * state of its fields, a claim state first, and the lock of any of them. A
  * locked setting has no editor and no steps. A field that belongs to no
  * setting is a read-only setting of its own, after the others.
+ *
+ * With claim, spec is a merge of layers, and a resources setting gets
+ * mergedErrors: each limit of spec below its request, for any resource.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -126,9 +150,39 @@ export function settingsOf(input: {
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
+    const keyed = "claim" in input && editor.kind === "resources";
+    // The operator gives the resources of a process only to its own
+    // workload.
+    const applies =
+      keyed &&
+      (!COMPONENTS.includes(group.component) ||
+        runsOwnWorkload(
+          spec as CamundaClusterSpec,
+          group.component as Process,
+        ));
+    const stateAt = (part: string[]) =>
+      mine.find(({ names: f }) => sameNames(f, [...names, ...part]))?.field
+        .state;
+    const checked: Setting = keyed
+      ? {
+          ...setting,
+          mergedErrors: limitsBelowRequests((value ?? {}) as Resources).map(
+            (below) => ({
+              message: mergedLimitError(
+                below,
+                group,
+                applies,
+                stateAt(["limits", below.resource]),
+                stateAt(["requests", below.resource]),
+              ),
+              blocks: applies,
+            }),
+          ),
+        }
+      : setting;
     if (holder?.field.claimSteps)
       return {
-        ...setting,
+        ...checked,
         ...blockReset(
           names.slice(prefix, holder.names.length).join(".") || group.label,
           "preset",
@@ -140,7 +194,7 @@ export function settingsOf(input: {
           rest: steps(names.slice(holder.names.length)),
         },
       };
-    return { ...setting, editor, steps: [...base, ...steps(names)] };
+    return { ...checked, editor, steps: [...base, ...steps(names)] };
   });
   const rest = group.fields
     .filter((field) => !used.has(field.key))
@@ -154,6 +208,130 @@ export function settingsOf(input: {
       resetLabel: "Reset to preset",
     }));
   return [...settings, ...rest];
+}
+
+// mergedLimitError returns the message of a limit below its request in
+// group. applies says whether the resources of group apply now.
+function mergedLimitError(
+  below: LimitBelowRequest,
+  group: SettingsGroup,
+  applies: boolean,
+  limitState: FieldState | undefined,
+  requestState: FieldState | undefined,
+): string {
+  const states = [limitState, requestState];
+  // The editor has no field for this resource. An edit of another amount
+  // writes the whole block, so the claim can hold copies of these values.
+  const claimed = states.filter((state) => state?.kind === "claim").length;
+  const unedited = !EDITED_RESOURCES.includes(below.resource);
+  const fixed =
+    (unedited && claimed > 0
+      ? ` Select Reset to preset to remove ${claimed > 1 ? "these values" : "this value"} from the claim.`
+      : "") +
+    (unedited && states.some((state) => state?.kind === "preset")
+      ? " Pick another preset, or ask your admin to correct the preset."
+      : "");
+  const later = applies
+    ? ""
+    : group.embedded
+      ? ` Correct it before ${group.label} runs standalone.`
+      : ` Correct it before ${group.label} are turned on.`;
+  return faultOf(below, limitState, requestState) + fixed + later;
+}
+
+// faultOf returns the sentence of a limit below its request. It names
+// where the limit and the request come from when that is not the claim.
+function faultOf(
+  below: LimitBelowRequest,
+  limitState: FieldState | undefined,
+  requestState: FieldState | undefined,
+): string {
+  const name = RESOURCE_NAMES[below.resource] ?? below.resource;
+  const limit = `${name} limit of ${below.limit}`;
+  const request = `${name} request of ${below.request}`;
+  const limitFrom = originOf(limitState);
+  const requestFrom = originOf(requestState);
+  if (limitFrom === undefined)
+    return requestFrom === undefined
+      ? `The ${limit} is below the ${request}.`
+      : `The ${request} ${requestFrom.one} and is above the ${limit}.`;
+  if (requestFrom === undefined)
+    return `The ${limit} ${limitFrom.one} and is below the ${request}.`;
+  if (limitFrom.one === requestFrom.one)
+    return `The ${limit} and the ${request} ${limitFrom.many}. The limit is below the request.`;
+  return `The ${limit} ${limitFrom.one}. It is below the ${request}, which ${requestFrom.one}.`;
+}
+
+const RESOURCE_NAMES: Partial<Record<string, string>> = {
+  cpu: "CPU",
+  memory: "memory",
+};
+
+// originOf gives the words that say where a value of state comes from, for
+// one value and for two, or undefined for a value of the claim. A value
+// that no manager owns, or one of an unknown writer, is only known to be on
+// the cluster.
+function originOf(
+  state: FieldState | undefined,
+): { one: string; many: string } | undefined {
+  const from = (layer: string) => ({
+    one: `comes from ${layer}`,
+    many: `come from ${layer}`,
+  });
+  const by = (writer: string) => ({
+    one: `is set by ${writer}`,
+    many: `are set by ${writer}`,
+  });
+  switch (state?.kind) {
+    case undefined:
+    case "claim":
+      return undefined;
+    case "preset":
+      return from("the preset");
+    case "release":
+      return from("the release");
+    case "environment":
+      return from("the environment");
+    case "admin":
+      return by("your admin");
+    case "filled":
+      return {
+        one: `is filled by ${state.sectionLabel}`,
+        many: `are filled by ${state.sectionLabel}`,
+      };
+    case "setBy":
+      if (state.manager !== undefined) return by(state.manager);
+      break;
+    case "default":
+      break;
+  }
+  return {
+    one: "is already set on the cluster",
+    many: "are already set on the cluster",
+  };
+}
+
+/**
+ * blockingMergedErrors returns each merged error that blocks of a cluster,
+ * as "<path>: <message>", where path names the setting in spec.cluster of
+ * the claim, such as zeebe.resources. fields are clusterFields of the
+ * cluster, spec the merged spec, and claim spec.cluster of the claim.
+ */
+export function blockingMergedErrors(
+  fields: readonly ClusterField[],
+  spec: CamundaClusterSpec,
+  claim: unknown,
+): string[] {
+  return settingsGroupsOf(fields, spec).flatMap((group) =>
+    settingsOf({ group, spec, claim }).flatMap((setting) =>
+      (setting.mergedErrors ?? [])
+        .filter((e) => e.blocks)
+        .map(
+          (e) =>
+            `${group.component === "cluster" ? "" : `${group.component}.`}${setting.label}: ${e.message}`,
+        ),
+    ),
+  );
 }
 
 /**
@@ -360,6 +538,10 @@ function isSecretRef(root: SchemaRoot, path: string): boolean {
 
 function steps(names: readonly string[]): Step[] {
   return names.map((field) => ({ field }));
+}
+
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && startsWith(a, b);
 }
 
 function startsWith(names: readonly string[], prefix: readonly string[]) {
