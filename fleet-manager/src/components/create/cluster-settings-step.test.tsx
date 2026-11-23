@@ -103,6 +103,7 @@ function renderStep(
     presets: presets.map((p) => p.metadata?.name ?? ""),
     fields,
     merged: drafted.merged,
+    below: drafted.below,
     secrets: [],
     pick: vi.fn(),
     set: vi.fn(),
@@ -141,6 +142,7 @@ function LiveStep({
       presets={["small"]}
       fields={fields}
       merged={drafted.merged}
+      below={drafted.below}
       secrets={[]}
       pick={vi.fn()}
       set={(steps, value) => {

@@ -2,7 +2,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { limitsBelowRequests, ResourcesEditor } from "./resources-editor";
+import {
+  type AmountWrite,
+  amountWrite,
+  limitsBelowRequests,
+  ResourcesEditor,
+} from "./resources-editor";
 
 afterEach(cleanup);
 
@@ -238,6 +243,131 @@ describe("ResourcesEditor quantities", () => {
   });
 });
 
+describe("ResourcesEditor with onAmounts", () => {
+  const amount = (label: string) =>
+    within(screen.getByRole("group", { name: label })).getByRole("textbox", {
+      name: "Amount",
+    });
+  const PRESET = {
+    requests: { cpu: "1", memory: "1Gi" },
+    limits: { cpu: "2", memory: "2Gi" },
+  };
+
+  it("reports only the amount that the user changed", async () => {
+    const onAmounts = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={PRESET}
+        limitsChecked
+        onAmounts={onAmounts}
+      />,
+    );
+    await userEvent.clear(amount("Memory request"));
+    expect(onAmounts).toHaveBeenLastCalledWith({ "requests.memory": "" }, []);
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onAmounts).toHaveBeenLastCalledWith(
+      { "requests.memory": "2Gi" },
+      [],
+    );
+  });
+
+  it("reports a unit that the user picked as a change of its amount", async () => {
+    const onAmounts = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={PRESET}
+        limitsChecked
+        onAmounts={onAmounts}
+      />,
+    );
+    await userEvent.selectOptions(
+      within(screen.getByRole("group", { name: "Memory limit" })).getByRole(
+        "combobox",
+        { name: "Unit" },
+      ),
+      "Mi",
+    );
+    expect(onAmounts).toHaveBeenLastCalledWith({ "limits.memory": "2Mi" }, []);
+  });
+
+  it("reports each amount typed while an amount had an error with the first edit without one", async () => {
+    const onAmounts = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={PRESET}
+        limitsChecked
+        onAmounts={onAmounts}
+      />,
+    );
+    await userEvent.type(amount("CPU limit"), "x");
+    await userEvent.clear(amount("Memory request"));
+    await userEvent.type(amount("Memory request"), "3");
+    expect(onAmounts).toHaveBeenLastCalledWith(
+      { "limits.cpu": "2x", "requests.memory": "3Gi" },
+      [{ path: "limits.cpu", message: "Enter a number" }],
+    );
+    await userEvent.type(amount("CPU limit"), "{Backspace}");
+    expect(onAmounts).toHaveBeenLastCalledWith(
+      { "limits.cpu": "2", "requests.memory": "3Gi" },
+      [],
+    );
+    await userEvent.type(amount("CPU limit"), "0");
+    expect(onAmounts).toHaveBeenLastCalledWith({ "limits.cpu": "20" }, []);
+  });
+
+  it("writes the whole value without onAmounts, as on the preset page", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={PRESET}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.clear(amount("Memory request"));
+    await userEvent.type(amount("Memory request"), "2");
+    expect(onChange).toHaveBeenLastCalledWith(
+      {
+        requests: { cpu: "1", memory: "2Gi" },
+        limits: { cpu: "2", memory: "2Gi" },
+      },
+      [],
+    );
+  });
+
+  it("writes both amounts after a refused limit below its request, as on the preset page", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={PRESET}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.clear(amount("CPU request"));
+    await userEvent.type(amount("CPU request"), "3");
+    expect(onChange).toHaveBeenLastCalledWith(
+      {
+        requests: { cpu: "3", memory: "1Gi" },
+        limits: { cpu: "2", memory: "2Gi" },
+      },
+      [{ path: "limits.cpu", message: "The limit is below the request" }],
+    );
+    await userEvent.clear(amount("CPU limit"));
+    await userEvent.type(amount("CPU limit"), "4");
+    expect(onChange).toHaveBeenLastCalledWith(
+      {
+        requests: { cpu: "3", memory: "1Gi" },
+        limits: { cpu: "4", memory: "2Gi" },
+      },
+      [],
+    );
+  });
+});
+
 describe("limitsBelowRequests", () => {
   it("names a limit below its request in another unit", () => {
     expect(
@@ -302,5 +432,121 @@ describe("limitsBelowRequests", () => {
     expect(
       limitsBelowRequests({ requests: { cpu: "two" }, limits: { cpu: "1" } }),
     ).toEqual([]);
+  });
+});
+
+describe("amountWrite", () => {
+  const rows: {
+    name: string;
+    quantity: string;
+    saved?: string | number;
+    below?: string | number;
+    held?: true;
+    want: AmountWrite;
+  }[] = [
+    {
+      name: "resets an emptied field",
+      quantity: "",
+      saved: "3",
+      below: "1",
+      want: undefined,
+    },
+    {
+      name: "resets an emptied field under a held change",
+      quantity: "",
+      saved: "3",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "writes the saved value back as it is",
+      quantity: "1",
+      saved: 1,
+      below: "2",
+      want: { value: 1 },
+    },
+    {
+      name: "writes the saved value back when it is equal to the preset",
+      quantity: "1000m",
+      saved: "1",
+      below: "1",
+      want: { value: "1" },
+    },
+    {
+      name: "writes the preset amount when the saved claim sets another one",
+      quantity: "1Gi",
+      saved: "3Gi",
+      below: "1Gi",
+      want: { value: "1Gi" },
+    },
+    {
+      name: "resets the preset amount where the saved claim sets none",
+      quantity: "1024Mi",
+      below: "1Gi",
+      want: undefined,
+    },
+    {
+      name: "writes an amount that is neither saved nor below",
+      quantity: "2Gi",
+      saved: "3Gi",
+      below: "1Gi",
+      want: { value: "2Gi" },
+    },
+    {
+      name: "writes an amount where no layer gives a value",
+      quantity: "5",
+      want: { value: "5" },
+    },
+    {
+      name: "resets the preset amount under a held change",
+      quantity: "500m",
+      saved: "2",
+      below: "500m",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "resets the preset amount under a held change also when it is saved",
+      quantity: "500m",
+      saved: "500m",
+      below: "500m",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "resets the preset amount under a held change where the saved claim sets none",
+      quantity: "512Mi",
+      below: "512Mi",
+      held: true,
+      want: undefined,
+    },
+    {
+      name: "writes the saved value as it is under a held change",
+      quantity: "1500m",
+      saved: "1.5",
+      below: "500m",
+      held: true,
+      want: { value: "1.5" },
+    },
+    {
+      name: "writes any other amount under a held change",
+      quantity: "750m",
+      saved: "2",
+      below: "500m",
+      held: true,
+      want: { value: "750m" },
+    },
+    {
+      name: "writes an amount that is not a number as it is",
+      quantity: "2x",
+      below: "2",
+      want: { value: "2x" },
+    },
+  ];
+
+  it.each(rows)("$name", ({ quantity, saved, below, held, want }) => {
+    expect(
+      amountWrite(quantity, { saved, below, held: held ?? false }),
+    ).toEqual(want);
   });
 });

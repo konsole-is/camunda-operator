@@ -46,6 +46,7 @@ import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
 import {
   type MapEntry,
+  resourceWrites,
   type Setting,
   settingChange,
   settingsSummary,
@@ -208,6 +209,7 @@ export function SettingRow({
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
+  const [mountedPending] = useState(setting.layers?.pending ?? []);
   // The error that the editor shows, which it reports after it renders.
   const [editorError, setEditorError] = useState<string>();
   const errorId = useId();
@@ -257,11 +259,14 @@ export function SettingRow({
         />
       </div>
     );
-  const change = own((value: unknown) => {
-    const next = settingChange(setting, value);
+  const write = (next: { steps: Step[]; value: unknown }) => {
     if (next.value === undefined) reset(next.steps);
     else set(next.steps, next.value);
-  });
+  };
+  const change = own((value: unknown) => write(settingChange(setting, value)));
+  const changeAmounts = own((amounts: Readonly<Record<string, string>>) =>
+    resourceWrites(setting, amounts, mountedPending).forEach(write),
+  );
   const note = setting.state && stateNote(setting.state);
   const messages = [
     ...errors.map((e) => ({ text: e.message, blocks: true })),
@@ -289,6 +294,7 @@ export function SettingRow({
         checkedEntries={merged.flatMap((e) => (e.entry ? [e.entry] : []))}
         openedUnchecked={setting.openedUnchecked === true}
         onChange={change}
+        onAmounts={setting.layers && changeAmounts}
         onRefused={own(() => {})}
         onShown={setEditorError}
       />
@@ -355,9 +361,11 @@ function useShownError(
 // after each change. current is the value before
 // the pending changes. replaces reaches only the editor of a map of
 // strings. describedBy reaches only the editors of resources, storage
-// size, environment, maps of strings, and tolerations. limitsChecked
-// reaches only the editor of resources, and checkedEntries and
-// openedUnchecked only the editors of environment and maps of strings.
+// size, environment, maps of strings, and tolerations. limitsChecked and
+// onAmounts reach only the editor of resources. With onAmounts, that editor
+// reports the amounts of each valid change to it, in place of onChange.
+// checkedEntries and openedUnchecked reach only the editors of environment
+// and maps of strings.
 function Editor({
   label,
   editor,
@@ -370,6 +378,7 @@ function Editor({
   openedUnchecked,
   secrets,
   onChange,
+  onAmounts,
   onRefused,
   onShown,
 }: {
@@ -384,6 +393,7 @@ function Editor({
   checkedEntries: readonly (MapEntry | EnvVar)[];
   openedUnchecked: boolean;
   onChange: (value: unknown) => void;
+  onAmounts?: (amounts: Readonly<Record<string, string>>) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
 }) {
@@ -448,7 +458,14 @@ function Editor({
           defaultValue={initial as Resources}
           describedBy={describedBy}
           limitsChecked={limitsChecked}
-          onChange={valid}
+          onChange={onAmounts ? undefined : valid}
+          onAmounts={
+            onAmounts &&
+            ((amounts, errors) => {
+              if (errors.length === 0) onAmounts(amounts);
+              else onRefused();
+            })
+          }
           onErrors={onErrors}
         />
       );

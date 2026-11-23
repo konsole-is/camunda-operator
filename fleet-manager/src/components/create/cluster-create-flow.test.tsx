@@ -1794,12 +1794,12 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("names the preset as the source of the limit after the limit field is cleared, and blocks Next", async () => {
+  it("still names the preset after the limit field is cleared, and blocks Next", async () => {
     show(withBrokerResources({ requests: { cpu: "2" }, limits: { cpu: "1" } }));
     await toStep("Cluster settings");
     await userEvent.clear(cpuLimit());
     const message =
-      "The CPU limit of 1 comes from the preset and is below the CPU request of 2.";
+      "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
     await waitFor(() =>
       expect(within(brokerResources()).getByRole("alert").textContent).toBe(
         message,
@@ -1812,6 +1812,104 @@ describe("ClusterCreateFlow write", () => {
     await userEvent.type(cpuLimit(), "2");
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(within(brokerResources()).queryByRole("alert")).toBeNull();
+  });
+
+  it("writes only the memory request that the user changed over the preset", async () => {
+    show(
+      withBrokerResources({
+        requests: { cpu: "1", memory: "1Gi" },
+        limits: { cpu: "2", memory: "2Gi" },
+      }),
+    );
+    await toStep("Cluster settings");
+    await openSettings("Brokers");
+    const memory = within(
+      within(brokerResources()).getByRole("group", { name: "Memory request" }),
+    ).getByRole("textbox", { name: "Amount" });
+    await userEvent.clear(memory);
+    await userEvent.type(memory, "2");
+    for (let i = 0; i < 4 && !heading("Review"); i++)
+      await userEvent.click(next());
+    expect(heading("Review")).toBeTruthy();
+    const diff = screen.getByRole("figure", { name: "The claim" }).textContent;
+    expect(diff).toContain("memory: 2Gi");
+    expect(diff).not.toContain("limits");
+    expect(diff).not.toContain("cpu");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    await screen.findByRole("heading", { name: "Creating the cluster search" });
+    const written = fakeWriter.applied[0].apply.at(-1) as unknown as {
+      spec: { cluster?: object };
+    };
+    expect(written.spec.cluster).toEqual({
+      zeebe: { resources: { requests: { memory: "2Gi" } } },
+    });
+  });
+
+  // createdCluster clicks Next up to the review, creates the cluster, and
+  // returns spec.cluster of the claim that the create wrote.
+  async function createdCluster(name = "search") {
+    for (let i = 0; i < 4 && !heading("Review"); i++)
+      await userEvent.click(next());
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    await screen.findByRole("heading", {
+      name: `Creating the cluster ${name}`,
+    });
+    const written = fakeWriter.applied[0].apply.at(-1) as unknown as {
+      spec: { cluster?: object };
+    };
+    return written.spec.cluster;
+  }
+  const memoryRequest = () =>
+    within(
+      within(brokerResources()).getByRole("group", { name: "Memory request" }),
+    ).getByRole("textbox", { name: "Amount" });
+  const retypeMemory = async (text: string) => {
+    await userEvent.clear(memoryRequest());
+    await userEvent.type(memoryRequest(), text);
+  };
+
+  it("writes nothing for the preset amount typed again after the step opens again", async () => {
+    show(withBrokerResources({ requests: { memory: "1Gi" } }));
+    await toStep("Cluster settings");
+    await openSettings("Brokers");
+    await retypeMemory("2");
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(next());
+    await openSettings("Brokers");
+    await retypeMemory("1");
+    expect(await createdCluster()).toBeUndefined();
+  });
+
+  it("writes nothing for the amount of a preset picked after an edit", async () => {
+    const preset = (name: string, memory: string) => ({
+      apiVersion: "core.camunda.io/v1" as const,
+      kind: "CamundaClusterPreset" as const,
+      metadata: { name },
+      spec: { cluster: { zeebe: { resources: { requests: { memory } } } } },
+    });
+    const environment = prod();
+    environment.spec.presets = { camundaCluster: ["small", "large"] };
+    show(
+      data({
+        accessRequests: [],
+        environments: [environment],
+        presets: [preset("small", "1Gi"), preset("large", "4Gi")],
+      }),
+    );
+    await toStep("Cluster settings");
+    await openSettings("Brokers");
+    await retypeMemory("2");
+    for (let i = 0; i < 4 && !heading("Environment and name"); i++)
+      await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("radio", { name: /^large/ }));
+    for (let i = 0; i < 4 && !heading("Cluster settings"); i++)
+      await userEvent.click(next());
+    await openSettings("Brokers");
+    expect(memoryRequest()).toHaveProperty("value", "2");
+    await retypeMemory("4");
+    expect(await createdCluster()).toBeUndefined();
   });
 
   it("compares a merged limit with a request in another unit", async () => {
@@ -1828,7 +1926,7 @@ describe("ClusterCreateFlow write", () => {
     );
     await waitFor(() => expect(next().disabled).toBe(true));
     expect(within(brokerResources()).getByRole("alert").textContent).toBe(
-      "The CPU limit of 500m is below the CPU request of 1.",
+      "The CPU limit of 500m comes from the preset and is below the CPU request of 1.",
     );
   });
 

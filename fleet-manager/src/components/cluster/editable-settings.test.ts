@@ -6,9 +6,10 @@ import {
   settingsGroupOf,
   steps,
 } from "../../../test/fakes/settings";
-import type { FieldState } from "@/lib/fields";
+import type { FieldState, Step } from "@/lib/fields";
 import {
   blockingMergedErrors,
+  resourceWrites,
   type Setting,
   settingChange,
   settingsOf,
@@ -587,6 +588,19 @@ describe("settingsOf merged errors", () => {
   });
 });
 
+describe("settingsOf claim layers", () => {
+  const preset = { zeebe: { resources: { requests: { cpu: "1" } } } };
+
+  it("gives no layers where no claim merges, as on the preset page", () => {
+    const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
+    const { merged, below } = settingsFieldsOf({ preset });
+    expect(
+      setting(settingsOf({ group, spec: merged.spec, below }), "resources")
+        .layers,
+    ).toBeUndefined();
+  });
+});
+
 describe("settingsOf merged entry errors", () => {
   const PRESET =
     "comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.";
@@ -948,6 +962,86 @@ describe("settingsOf merged entry errors", () => {
       setting(settingsOf({ group, spec: merged.spec }), "podLabels")
         .mergedErrors,
     ).toBeUndefined();
+  });
+});
+
+describe("resourceWrites", () => {
+  const preset = {
+    zeebe: {
+      resources: { requests: { memory: "1Gi" }, limits: { cpu: "500m" } },
+    },
+  };
+  const saved = { zeebe: { resources: { limits: { cpu: 2 } } } };
+  const at = (...names: string[]) =>
+    steps("spec", "cluster", "zeebe", "resources", ...names);
+  // resources returns the resources setting over the saved claim, with the
+  // steps of pending.
+  function resources(pending: Step[][]) {
+    const { group } = settingsGroupOf("zeebe", "zeebe", { preset });
+    const { merged, below } = settingsFieldsOf({
+      preset,
+      claim: { cluster: saved },
+    });
+    return setting(
+      settingsOf({
+        group,
+        spec: merged.spec,
+        claim: saved,
+        liveClaim: saved,
+        pending,
+        below,
+      }),
+      "resources",
+    );
+  }
+
+  it("writes each amount at its own key, a value or a reset", () => {
+    expect(
+      resourceWrites(
+        resources([]),
+        {
+          "requests.memory": "1024Mi",
+          "limits.cpu": "2000m",
+          "requests.cpu": "3",
+          "limits.memory": "",
+        },
+        [],
+      ),
+    ).toEqual([
+      { steps: at("requests", "memory"), value: undefined },
+      { steps: at("limits", "cpu"), value: 2 },
+      { steps: at("requests", "cpu"), value: "3" },
+      { steps: at("limits", "memory"), value: undefined },
+    ]);
+  });
+
+  it("resets an amount equal to the preset under a pending change of the block", () => {
+    expect(
+      resourceWrites(resources([at()]), { "requests.memory": "1Gi" }, []),
+    ).toEqual([{ steps: at("requests", "memory"), value: undefined }]);
+  });
+
+  it("holds no amount for a pending change of the amount itself or of another block", () => {
+    const setting = resources([
+      at("requests", "cpu"),
+      steps("spec", "cluster", "gateway", "resources"),
+    ]);
+    expect(setting.layers?.pending).toEqual([at("requests", "cpu")]);
+    expect(resourceWrites(setting, { "limits.cpu": "2" }, [])).toEqual([
+      { steps: at("limits", "cpu"), value: 2 },
+    ]);
+  });
+
+  it("holds an amount for a pending change of the block when the row mounted", () => {
+    expect(
+      resourceWrites(resources([]), { "limits.cpu": "500m" }, [at()]),
+    ).toEqual([{ steps: at("limits", "cpu"), value: undefined }]);
+  });
+
+  it("holds no amount for a row mounted with nothing pending", () => {
+    expect(resourceWrites(resources([]), { "limits.cpu": "500m" }, [])).toEqual(
+      [{ steps: at("limits", "cpu"), value: "500m" }],
+    );
   });
 });
 

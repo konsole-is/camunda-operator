@@ -33,7 +33,10 @@ export function steps(...names: string[]): Step[] {
   return names.map((field) => ({ field }));
 }
 
-/** settingsFieldsOf returns the merged spec and the field states of page. */
+/**
+ * settingsFieldsOf returns the merged spec, the field states, and below,
+ * the merged spec of the preset and the release alone, of page.
+ */
 export function settingsFieldsOf(page: SettingsPage) {
   const spec = {
     ...((page.claim?.cluster ?? {}) as CamundaClusterSpec),
@@ -68,7 +71,11 @@ export function settingsFieldsOf(page: SettingsPage) {
         spec: page.optimize,
       } as unknown as Resource<"CamundaOptimize">),
   });
-  return { merged, fields };
+  return {
+    merged,
+    fields,
+    below: mergeCluster(preset, page.release, {}).spec,
+  };
 }
 
 /**
@@ -81,7 +88,7 @@ export function settingsGroupOf(
   process: Process | "cluster",
   page: SettingsPage,
 ) {
-  const { fields, merged } = settingsFieldsOf(page);
+  const { fields, merged, below } = settingsFieldsOf(page);
   const group: SettingsGroup | undefined =
     host === "cluster"
       ? {
@@ -100,6 +107,7 @@ export function settingsGroupOf(
       group,
       spec: merged.spec,
       claim: page.claim?.cluster ?? {},
+      below,
     }),
   };
 }

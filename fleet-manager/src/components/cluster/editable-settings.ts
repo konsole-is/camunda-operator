@@ -1,6 +1,7 @@
 import { type EnvVar, envErrors } from "@/components/fleet/env-editor";
 import { keyValueErrors } from "@/components/fleet/key-value-editor";
 import {
+  amountWrite,
   EDITED_RESOURCES,
   type LimitBelowRequest,
   limitsBelowRequests,
@@ -27,6 +28,7 @@ import {
   type SettingEditor,
   type Step,
 } from "@/lib/fields";
+import { equalJSON } from "@/lib/policy";
 import type { OpenAPISchema } from "@/lib/schema";
 import { valueAt, without, withValue } from "@/lib/session";
 import { type SettingsGroup, settingsGroupsOf } from "./settings";
@@ -45,7 +47,12 @@ import { type Process, runsOwnWorkload } from "./topology";
  * map key by key. mergedErrors are the faults of the merged value that the
  * editor does not own, and undefined when no check of the merged value
  * runs. openedUnchecked says that the editor of a map or of variables does
- * not check a row that it opens with until the user changes it.
+ * not check a row that it opens with until the user changes it. layers is
+ * set for a resources setting whose value merges the claim over the layers
+ * below it: saved is the block of the claim before the pending changes,
+ * below the merged block of the layers under the claim, with the pending
+ * changes, and pending the steps of the pending changes at, above, or
+ * inside the block.
  */
 export type Setting = {
   key: string;
@@ -64,6 +71,7 @@ export type Setting = {
   replaces?: true;
   mergedErrors?: MergedError[];
   openedUnchecked?: true;
+  layers?: { saved: unknown; below: unknown; pending: Step[][] };
 };
 
 /**
@@ -88,7 +96,9 @@ export type MapEntry = { key: string; value: string };
  * cluster, and spec.attachments.optimize of the claim for Optimize. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
- * claim only.
+ * claim only. liveClaim is claim before the pending changes, and pending
+ * the steps of those changes, from the root of the claim. below is the
+ * merged spec of the layers under the claim, at the root of spec.
  *
  * Each path of componentFieldPaths gives one setting, in that order, also
  * when no layer sets it. Its label is the path without the process name.
@@ -104,13 +114,17 @@ export type MapEntry = { key: string; value: string };
  * map of strings, or of variables gets mergedErrors. For resources, they
  * are each limit of spec below its request, for any resource. For a map
  * or variables, they are the entries of spec that fail the rule of the
- * editor, one for each entry.
+ * editor, one for each entry. With below too, a resources setting gets
+ * layers. A setting with a holder gets no layers.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
   spec: unknown;
   live?: unknown;
   claim?: unknown;
+  liveClaim?: unknown;
+  pending?: readonly Step[][];
+  below?: unknown;
 }): Setting[] {
   const { group, spec, live, claim } = input;
   const optimize = group.component === "optimize";
@@ -214,7 +228,25 @@ export function settingsOf(input: {
           rest: steps(names.slice(holder.names.length)),
         },
       };
-    return { ...checked, editor, steps: [...base, ...steps(names)] };
+    const layers = "claim" in input &&
+      editor.kind === "resources" &&
+      "below" in input && {
+        layers: {
+          saved: valueAt(input.liveClaim, steps(names)),
+          below: valueAt(input.below, steps(names)),
+          pending: (input.pending ?? []).filter(
+            (at) =>
+              startsWithSteps(at, [...base, ...steps(names)]) ||
+              startsWithSteps([...base, ...steps(names)], at),
+          ),
+        },
+      };
+    return {
+      ...checked,
+      ...layers,
+      editor,
+      steps: [...base, ...steps(names)],
+    };
   });
   const rest = group.fields
     .filter((field) => !used.has(field.key))
@@ -456,8 +488,8 @@ function mergedLimitError(
   requestState: FieldState | undefined,
 ): string {
   const states = [limitState, requestState];
-  // The editor has no field for this resource. An edit of another amount
-  // writes the whole block, so the claim can hold copies of these values.
+  // The editor has no field for this resource, so a value that the claim
+  // holds goes only with a reset or an edit in the Claim tab.
   const claimed = states.filter((state) => state?.kind === "claim").length;
   const unedited = !EDITED_RESOURCES.includes(below.resource);
   const fixed =
@@ -652,6 +684,36 @@ export function settingChange(
 }
 
 /**
+ * resourceWrites returns the write of each amount of a resources setting
+ * with layers, as amountWrite decides it: the steps of its key, such as
+ * requests.memory under steps, and its claim value, or undefined for a
+ * reset. amounts maps each path to the quantity that its field shows.
+ * mounted are layers.pending of the setting when its row mounted: a key
+ * that they hold stays held for the life of the row.
+ */
+export function resourceWrites(
+  setting: Setting,
+  amounts: Readonly<Record<string, string>>,
+  mounted: readonly Step[][],
+): { steps: Step[]; value: unknown }[] {
+  const { saved, below, pending } = setting.layers!;
+  return Object.entries(amounts).map(([path, quantity]) => {
+    const keys = path.split(".");
+    const at = (block: unknown) =>
+      valueAt(block, steps(keys)) as string | number | undefined;
+    const key = [...setting.steps!, ...steps(keys)];
+    const held = [...pending, ...mounted].some(
+      (above) => above.length < key.length && startsWithSteps(key, above),
+    );
+    return {
+      steps: key,
+      value: amountWrite(quantity, { saved: at(saved), below: at(below), held })
+        ?.value,
+    };
+  });
+}
+
+/**
  * selectionSettingsOf returns the settings of the parameters of one
  * selection. fields are the parameterFields of that selection and schema is
  * spec.parameters of its registration. A locked parameter is read only. An
@@ -771,6 +833,13 @@ function isSecretRef(root: SchemaRoot, path: string): boolean {
 
 function steps(names: readonly string[]): Step[] {
   return names.map((field) => ({ field }));
+}
+
+function startsWithSteps(
+  all: readonly Step[],
+  prefix: readonly Step[],
+): boolean {
+  return prefix.every((step, i) => equalJSON(step, all[i]));
 }
 
 function sameNames(a: readonly string[], b: readonly string[]): boolean {

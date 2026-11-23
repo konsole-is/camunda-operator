@@ -26,6 +26,12 @@ export type LimitBelowRequest = {
   limit: string;
 };
 
+/**
+ * AmountWrite is what an edit of one amount writes to the claim: a value at
+ * the key of the amount, or, as undefined, a reset of that key.
+ */
+export type AmountWrite = { value: string | number } | undefined;
+
 /** EDITED_RESOURCES are the resources that ResourcesEditor has fields for. */
 export const EDITED_RESOURCES: readonly string[] = ["cpu", "memory"];
 
@@ -83,6 +89,12 @@ const FIELDS: [Side, Resource, string][] = [
  * against its request in the value that the cluster gets: the editor then
  * neither shows nor reports a limit below its request, and passes such an
  * edit on. onErrors gets the errors that it shows, also at mount.
+ *
+ * With onAmounts, the editor reports amounts in place of the whole value:
+ * after each edit, the quantity of each field that the user typed in since
+ * the last edit without errors, by its path such as requests.memory, with
+ * the errors. An empty field gives "". The caller writes them only when
+ * errors is empty.
  */
 export function ResourcesEditor({
   label,
@@ -90,6 +102,7 @@ export function ResourcesEditor({
   describedBy,
   limitsChecked = false,
   onChange,
+  onAmounts,
   onErrors,
 }: {
   label: string;
@@ -97,20 +110,30 @@ export function ResourcesEditor({
   describedBy?: string;
   limitsChecked?: boolean;
   onChange?: (value: Resources, errors: ValidationError[]) => void;
+  onAmounts?: (
+    amounts: Readonly<Record<string, string>>,
+    errors: ValidationError[],
+  ) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [amounts, setAmounts] = useState(() => amountsOf(defaultValue));
+  const [unwritten, setUnwritten] = useState<ReadonlySet<string>>(new Set());
   const errors = amountErrors(amounts, limitsChecked);
   useErrorsReport(errors, onErrors);
 
   const update = (path: string, amount: Amount) => {
     const next = { ...amounts, [path]: amount };
+    const nextErrors = amountErrors(next, limitsChecked);
     setAmounts(next);
-    onChange?.(
-      toResources(defaultValue, next),
-      amountErrors(next, limitsChecked),
-    );
+    if (onAmounts) {
+      const typed = new Set(unwritten).add(path);
+      setUnwritten(nextErrors.length === 0 ? new Set() : typed);
+      onAmounts(
+        Object.fromEntries([...typed].map((p) => [p, quantityOf(next[p])])),
+        nextErrors,
+      );
+    } else onChange?.(toResources(defaultValue, next), nextErrors);
   };
 
   return (
@@ -199,6 +222,10 @@ function parse(quantity: string | number | undefined, emptyUnit = ""): Amount {
     : { amount: String(quantity), unit: "" };
 }
 
+function quantityOf(value: Amount): string {
+  return value.amount === "" ? "" : `${value.amount}${value.unit}`;
+}
+
 function toResources(
   original: Resources,
   amounts: Record<string, Amount>,
@@ -207,14 +234,55 @@ function toResources(
   for (const side of ["requests", "limits"] as const) {
     const map: Record<string, string | number> = { ...original[side] };
     for (const resource of ["cpu", "memory"] as const) {
-      const value = amounts[`${side}.${resource}`];
-      if (value.amount === "") delete map[resource];
-      else map[resource] = `${value.amount}${value.unit}`;
+      const quantity = quantityOf(amounts[`${side}.${resource}`]);
+      if (quantity === "") delete map[resource];
+      else map[resource] = quantity;
     }
     if (Object.keys(map).length) result[side] = map;
     else delete result[side];
   }
   return result;
+}
+
+/**
+ * amountWrite returns what an edit of one amount writes. quantity is what
+ * the field shows, "" when it is empty. saved is the value of the key in
+ * the claim before the pending changes, below its merged value in the
+ * layers under the claim, and held says that a pending change of a field
+ * above the key, such as a reset of the block, holds the change of the key.
+ * Amounts compare by value: 1, "1" and 1000m are equal. An empty quantity
+ * writes a reset. Under a held change, a quantity equal to below writes a
+ * reset, also when saved is equal to below. Else a quantity equal to saved
+ * writes saved as it is, and without saved, a quantity equal to below
+ * writes a reset. Any other quantity writes itself.
+ */
+export function amountWrite(
+  quantity: string,
+  key: {
+    saved: string | number | undefined;
+    below: string | number | undefined;
+    held: boolean;
+  },
+): AmountWrite {
+  if (quantity === "") return undefined;
+  const typed = parse(quantity);
+  const isBelow = sameAmount(typed, parse(key.below));
+  if (key.held && isBelow) return undefined;
+  if (key.saved !== undefined && sameAmount(typed, parse(key.saved)))
+    return { value: key.saved };
+  if (key.saved === undefined && isBelow) return undefined;
+  return { value: quantity };
+}
+
+// sameAmount says whether a and b are one quantity. Two empty amounts are
+// one, and an amount that is not a number equals only the same text.
+function sameAmount(a: Amount, b: Amount): boolean {
+  if (a.amount === "" || b.amount === "") return a.amount === b.amount;
+  const x = base(a);
+  const y = base(b);
+  if (x === undefined || y === undefined)
+    return a.amount + a.unit === b.amount + b.unit;
+  return close(x, y);
 }
 
 function amountErrors(
@@ -268,9 +336,13 @@ function rank(resource: string): number {
 function isBelow(request: Amount, limit: Amount): boolean {
   const r = base(request);
   const l = base(limit);
-  // Float scales make equal quantities differ in the last digit, such as
-  // 700m and 0.7.
-  return r !== undefined && l !== undefined && l < r * (1 - 1e-12);
+  return r !== undefined && l !== undefined && l < r && !close(l, r);
+}
+
+// close says whether a and b, in base units, are one quantity. Float scales
+// make equal quantities differ in the last digit, such as 700m and 0.7.
+function close(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.abs(b) * 1e-12;
 }
 
 function base(value: Amount): number | undefined {

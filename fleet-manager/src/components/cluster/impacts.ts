@@ -150,6 +150,16 @@ export function mergedSpecs(input: ClusterChangeInput): {
 }
 
 /**
+ * belowClaim returns the merged spec of the preset and the release of the
+ * cluster after the pending changes, without the claim: the value that a
+ * field takes where the claim does not set it.
+ */
+export function belowClaim(input: ClusterChangeInput): CamundaClusterSpec {
+  const after = clusterAfter(input);
+  return merged(input, after.presetRef, after.releaseRef, {}).spec;
+}
+
+/**
  * clusterImpacts returns the impact lines of a change, in the order of the
  * impact table of the review, each once.
  */

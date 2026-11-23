@@ -10,6 +10,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -31,6 +32,7 @@ import {
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { BackupObject } from "../backups";
 import type { ClusterSlotContext } from "../slots";
+import { ComponentSettingsEditor } from "./settings-slot";
 import {
   type ClaimActions,
   ClusterEditProvider,
@@ -200,6 +202,7 @@ function Page({
     <ClusterEditProvider context={context} actions={actions}>
       <Probe />
       <Dropper />
+      <ComponentSettingsEditor ctx={context} />
     </ClusterEditProvider>
   );
 }
@@ -1019,6 +1022,67 @@ describe("ClusterEditProvider", () => {
           message,
         ),
       );
+      expect(
+        within(dialog()!).getByRole<HTMLButtonElement>("button", {
+          name: "Push to Git",
+        }).disabled,
+      ).toBe(true);
+    });
+
+    // clearRequestAndLimit clears the CPU request and sets the CPU limit
+    // to 1 in the resources editor of the brokers.
+    async function clearRequestAndLimit() {
+      fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
+      const amount = (label: string) =>
+        within(
+          within(
+            within(
+              screen.getByRole("region", { name: "Brokers settings" }),
+            ).getAllByRole("group", { name: "resources" })[0],
+          ).getByRole("group", { name: label }),
+        ).getByRole("textbox", { name: "Amount" });
+      await userEvent.clear(amount("CPU request"));
+      await userEvent.type(amount("CPU limit"), "1");
+    }
+
+    it("refuses the save after the edit in the resources editor", async () => {
+      fakeWriter.previews = [{ objects: [], errors: [], ownership }];
+      page({ ...context(), openId: "zeebe" });
+      await clearRequestAndLimit();
+      openReview();
+      await waitFor(() => expect(choice()).toBeTruthy());
+      expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
+      expect(save().disabled).toBe(true);
+    });
+
+    it("in Git mode, refuses the push after the edit in the resources editor and names the kept request once", async () => {
+      fakeWriter.reset("git");
+      const kept = {
+        ...context(),
+        openId: "zeebe" as const,
+        writeMode: "git" as const,
+      };
+      fakeWriter.previews = [
+        {
+          objects: [{ ref, after: kept.claim as KubeObject, diff: [] }],
+          errors: [],
+        },
+      ];
+      page(kept);
+      await clearRequestAndLimit();
+      openReview();
+      await waitFor(() =>
+        expect(
+          within(dialog()!).getAllByRole("alert")[0].textContent,
+        ).toContain(message),
+      );
+      const notes = within(dialog()!)
+        .getAllByRole("alert")
+        .map((a) => a.textContent ?? "")
+        .join("\n");
+      expect(
+        notes.split("spec.cluster.zeebe.resources.requests.cpu").length - 1,
+      ).toBe(1);
       expect(
         within(dialog()!).getByRole<HTMLButtonElement>("button", {
           name: "Push to Git",
