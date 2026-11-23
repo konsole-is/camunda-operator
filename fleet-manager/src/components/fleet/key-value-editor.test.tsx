@@ -245,8 +245,6 @@ describe("KeyValueEditor", () => {
   });
 
   describe("a key that the user renames to the key of a row that the editor does not check", () => {
-    // renameFirst clears the key of the first row and types key, one
-    // character at a time.
     async function renameFirst(key: string) {
       const first = within(screen.getByRole("group", { name: "Entry 1" }));
       const input = first.getByRole("textbox", { name: "Key" });
@@ -284,18 +282,20 @@ describe("KeyValueEditor", () => {
     );
   });
 
-  it("keeps an empty key of a row that it does not check off a new row that the user adds", async () => {
+  it("keeps an empty key of a row that it does not check off an earlier row that the user empties", async () => {
     const onErrors = vi.fn();
     render(
       <KeyValueEditor
         label="Labels"
         format="label"
-        defaultValue={{ "": "x" }}
+        defaultValue={{ a: "1", "": "x" }}
         openedUnchecked
         onErrors={onErrors}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Add an entry" }));
+    const first = within(screen.getByRole("group", { name: "Entry 1" }));
+    await userEvent.clear(first.getByRole("textbox", { name: "Key" }));
+    await userEvent.clear(first.getByRole("textbox", { name: "Value" }));
     expect(onErrors).toHaveBeenLastCalledWith([]);
   });
 

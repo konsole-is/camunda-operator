@@ -101,8 +101,8 @@ export function KeyValueEditor({
       const index = Number(error.path.split(".")[0]);
       const row = rows[index];
       if (!unchecked(row)) return [error];
-      // A key set twice with a row that the user changed keeps its error, on
-      // that row: the map keeps only the value of the last row.
+      // A key set twice with a row that the user changed or added keeps its
+      // error on that row, because only one of the two values can apply.
       const twice =
         row.key !== "" &&
         error.path.endsWith(".key") &&

@@ -253,6 +253,31 @@ describe("EnvEditor", () => {
     },
   );
 
+  it("keeps an empty name of a row that it does not check off an earlier row that the user empties", async () => {
+    const onErrors = vi.fn();
+    render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[
+          { name: "A", value: "1" },
+          { name: "", value: "x" },
+        ]}
+        openedUnchecked
+        onErrors={onErrors}
+      />,
+    );
+    await userEvent.clear(
+      within(screen.getByRole("group", { name: "Variable 1" })).getByRole(
+        "textbox",
+        { name: "Name" },
+      ),
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([
+      { path: "0.name", message: "Enter a name" },
+    ]);
+  });
+
   describe("with checkedEntries", () => {
     const checked = [{ name: "", value: "x" }];
 

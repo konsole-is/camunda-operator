@@ -90,8 +90,8 @@ export function EnvEditor({
     const index = Number(error.path.split(".")[0]);
     const row = rows[index];
     if (!unchecked(row)) return [error];
-    // A name set twice with a row that the user changed keeps its error, on
-    // that row: the merge by name keeps only the last variable.
+    // A name set twice with a row that the editor checks keeps its error on
+    // that row, because only one of the two values can apply.
     const name = nameOf(row);
     const twice =
       name !== "" &&
