@@ -85,6 +85,63 @@ describe("presetDeleteChecks", () => {
     });
   });
 
+  describe("with a claim whose recorded policy alone names the preset", () => {
+    const blockOf = (
+      plugins: {
+        section: string;
+        registration: string;
+        parameters?: unknown;
+      }[],
+    ) => {
+      const sources = presetSources();
+      sources.clusterClaims = [
+        {
+          metadata: { namespace: "team-orders", name: "search" },
+          spec: { plugins },
+          status: {
+            resolvedPolicy: {
+              deletionPolicy: "Delete",
+              parameters: { elasticsearch: { preset: { value: "recorded" } } },
+            },
+          },
+        },
+      ];
+      return presetDeleteChecks(sources, [])(
+        "ElasticsearchClusterPreset",
+        "recorded",
+      ).block;
+    };
+    const refused = {
+      reason: PRESET_IN_USE,
+      users: ["CamundaClusterClaim team-orders/search"],
+    };
+
+    it("blocks the delete while another selection is not a JSON object", () => {
+      expect(
+        blockOf([
+          { section: "secondary-storage", registration: "elasticsearch" },
+          {
+            section: "backup-storage",
+            registration: "existing-object-storage",
+            parameters: "x",
+          },
+        ]),
+      ).toEqual(refused);
+    });
+
+    it("blocks the delete while the selection of the preset is not a JSON object", () => {
+      expect(
+        blockOf([
+          {
+            section: "secondary-storage",
+            registration: "elasticsearch",
+            parameters: "x",
+          },
+        ]),
+      ).toEqual(refused);
+    });
+  });
+
   it("blocks a preset that only an environment allows", () => {
     const sources = presetSources();
     sources.clusters = [];

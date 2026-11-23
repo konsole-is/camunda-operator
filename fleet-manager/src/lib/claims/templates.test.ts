@@ -7,7 +7,7 @@ import {
   environmentFixtures,
   sectionFixtures,
 } from "@/components/setup/environments/fixtures";
-import { grantPreviews, templateData } from "./templates";
+import { grantPreviews, type TemplateClaim, templateData } from "./templates";
 
 const sources = sectionFixtures();
 const production = sources.environments[0];
@@ -125,6 +125,103 @@ describe("templateData", () => {
       }).parameters,
     ).toMatchObject({
       extraPolicyArns: ["arn:aws:iam::aws:policy/AmazonSQSFullAccess"],
+    });
+  });
+
+  describe("the release of the claim", () => {
+    const released: PluginRegistration = {
+      ...input.registration,
+      spec: {
+        ...input.registration.spec,
+        parameters: {
+          type: "object",
+          properties: { releaseRef: { type: "string" } },
+        },
+      },
+    };
+    const releaseOf = (
+      claim: TemplateClaim,
+      environment: Environment | undefined,
+      registration = released,
+    ) =>
+      templateData({
+        ...input,
+        claim,
+        environment,
+        registration,
+        registrations: input.registrations.map((r) =>
+          r.metadata.name === registration.metadata.name ? registration : r,
+        ),
+      }).parameters.releaseRef;
+    const pinned = (
+      releases: Environment["spec"]["releases"],
+    ): Environment => ({
+      ...production,
+      spec: {
+        ...production.spec,
+        releases,
+        parameters: {
+          "aws-connectors-role": { releaseRef: { value: "8.8.0" } },
+        },
+      },
+    });
+
+    it("gives a cluster claim its own release", () => {
+      expect(releaseOf({ ...orders, releaseRef: "8.9.22" }, production)).toBe(
+        "8.9.22",
+      );
+    });
+
+    it("gives a cluster claim without a release the default release of the environment", () => {
+      expect(releaseOf(orders, production)).toBe("8.9.23");
+      expect(releaseOf({ ...orders, releaseRef: "" }, production)).toBe(
+        "8.9.23",
+      );
+    });
+
+    it("gives no release when neither the claim nor the environment names one", () => {
+      expect(
+        releaseOf(orders, {
+          ...production,
+          spec: { ...production.spec, releases: undefined },
+        }),
+      ).toBeUndefined();
+      expect(releaseOf(orders, undefined)).toBeUndefined();
+    });
+
+    it("replaces the value of the environment with the release of the claim", () => {
+      const environment = pinned(production.spec.releases);
+      expect(releaseOf({ ...orders, releaseRef: "8.9.22" }, environment)).toBe(
+        "8.9.22",
+      );
+      expect(releaseOf(orders, environment)).toBe("8.9.23");
+    });
+
+    it("keeps the value of the environment when the claim gets no release", () => {
+      expect(releaseOf(orders, pinned(undefined))).toBe("8.8.0");
+    });
+
+    it("gives no release to a plane claim", () => {
+      expect(
+        releaseOf(
+          {
+            ...orders,
+            kind: "CamundaManagementClusterClaim",
+            releaseRef: "8.9.22",
+          },
+          production,
+        ),
+      ).toBeUndefined();
+    });
+
+    it("gives no release to a registration that does not declare releaseRef", () => {
+      expect(
+        releaseOf(
+          { ...orders, releaseRef: "8.9.22" },
+          production,
+          input.registration,
+        ),
+      ).toBeUndefined();
     });
   });
 });

@@ -20,8 +20,8 @@ import {
 import { requestName } from "./requests";
 
 /**
- * TemplateClaim is the claim that a template renders for. releaseRef is the
- * release of a cluster claim, its own or the default of its Environment.
+ * TemplateClaim is the claim that a template renders for. releaseRef is
+ * spec.releaseRef of a cluster claim.
  */
 export type TemplateClaim = {
   kind: ClaimKind;
@@ -36,9 +36,11 @@ export type TemplateClaim = {
  * registration in section. A live request of the claim gives its name and
  * its target account; else requestName and targetServiceAccount give them.
  * parameters are the request parameters that resolve gives under
- * environment, with the selection of the claim, or none. outputs is empty,
- * because a template parameter cannot read them. A policy that resolve
- * refuses gives no parameters.
+ * environment, with the selection of the claim, or none. When registration
+ * declares releaseRef, the release of a cluster claim, its own or else the
+ * default of environment, replaces the parameter releaseRef. outputs is
+ * empty, because a template parameter cannot read them. A policy that
+ * resolve refuses gives no parameters.
  */
 export function templateData(input: {
   claim: TemplateClaim;
@@ -72,13 +74,15 @@ export function templateData(input: {
       {}),
   };
   // The claim controller sets the parameter releaseRef of a cluster claim
-  // (requestParameters of pkg/components/claimrequests).
+  // (References of pkg/components/camundaclusterclaim and requestParameters
+  // of pkg/components/claimrequests).
+  const release = claim.releaseRef || input.environment?.spec.releases?.default;
   if (
     claim.kind === "CamundaClusterClaim" &&
-    claim.releaseRef &&
+    release &&
     declaresRelease(registration)
   )
-    parameters.releaseRef = claim.releaseRef;
+    parameters.releaseRef = release;
   return {
     namespace: claim.namespace,
     claim: claim.name,
