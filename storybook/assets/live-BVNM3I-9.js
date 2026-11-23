@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{a as t,t as n}from"./hooks-DwXdO6lu.js";function r(e,n){let{items:r,error:i}=t(e,{},n);return{items:r,...i&&{error:i}}}function i(){return(i=e((()=>{n()})))()}export{r as n,i as t};

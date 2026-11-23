@@ -1,0 +1,3648 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Core Kubernetes operator for the Camunda platform">
+      
+      
+      
+        <link rel="canonical" href="https://konsole-is.github.io/camunda-operator/dev/fleet-manager/settings/">
+      
+      
+        <link rel="prev" href="../install/">
+      
+      
+        <link rel="next" href="../create-a-cluster/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Fleet manager settings - Camunda Operator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/panzoom.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <meta name="panzoom-theme" content="material">
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#fleet-manager-settings" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Camunda Operator" class="md-header__button md-logo" aria-label="Camunda Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Camunda Operator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Fleet manager settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/konsole-is/camunda-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konsole-is/camunda-operator
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Camunda Operator" class="md-nav__button md-logo" aria-label="Camunda Operator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Camunda Operator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/konsole-is/camunda-operator" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konsole-is/camunda-operator
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started-management-plane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started with the management plane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../go-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use the API types from Go
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet manager
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Fleet manager
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install the fleet manager
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#set-the-settings-at-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set the settings at install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#change-a-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a setting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fields-that-another-tool-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields that another tool set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#git-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git credentials
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git credentials">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A GitHub App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-for-gitops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting for GitOps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-that-go-to-the-api-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes that go to the API in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-a-save-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a save fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prometheus-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prometheus credentials
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-of-the-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics of the charts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secret-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secret values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secrets-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secrets in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../create-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform-and-connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform config and connections
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../presets-and-releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets and releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/secondary-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Secondary storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/management-plane/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management plane
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/backup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/writing-a-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../crds/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CRD reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_2" id="__nav_10_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Cluster
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundacluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaplatformconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaPlatformConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundarelease/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaRelease
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_3" id="__nav_10_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage backends
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Storage backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/elasticsearchcluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElasticsearchCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/elasticsearchclusterpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ElasticsearchClusterPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserver/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserverpreset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServerPreset
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_4" id="__nav_10_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contracts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contracts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/secondarystorageconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SecondaryStorageConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/objectstorageconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ObjectStorageConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseserverconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseServerConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/databaseconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DatabaseConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/managementauthconfig/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ManagementAuthConfig
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_5" id="__nav_10_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Management
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementcluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementCluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_6" id="__nav_10_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analytics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaoptimize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaOptimize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_7" id="__nav_10_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalbackupelasticsearch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalBackupElasticsearch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalbackuprdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalBackupRDBMS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/backupschedule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BackupSchedule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_8" id="__nav_10_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restore
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Restore
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalrestoreelasticsearch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalRestoreElasticsearch
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/logicalrestorerdbms/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LogicalRestoreRDBMS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pointintimerestore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointInTimeRestore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_9" id="__nav_10_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Plugins
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginsection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginSection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginregistration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRegistration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/pluginrequest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRequest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/grant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Grant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_10" id="__nav_10_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fleet
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Fleet
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#set-the-settings-at-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set the settings at install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#change-a-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a setting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fields-that-another-tool-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fields that another tool set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#git-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git credentials
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git credentials">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A GitHub App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-for-gitops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting for GitOps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-that-go-to-the-api-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes that go to the API in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-a-save-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a save fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#prometheus-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prometheus credentials
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-of-the-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics of the charts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secret-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secret values
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secrets-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secrets in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="fleet-manager-settings">Fleet manager settings<a class="headerlink" href="#fleet-manager-settings" title="Permanent link">&para;</a></h1>
+<p>The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap <code>fleet-manager-settings</code> in the release namespace. The release namespace is the namespace of the Helm release, <code>camunda-operator-system</code> in the examples on this page.</p>
+<p>In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when <code>git.repository</code> is set. The page <strong>Setup &gt; Settings</strong> of the fleet manager shows the settings and saves a change, as <a href="#settings-page">Settings page</a> shows.</p>
+<h2 id="set-the-settings-at-install">Set the settings at install<a class="headerlink" href="#set-the-settings-at-install" title="Permanent link">&para;</a></h2>
+<p>The chart values <code>fleetManager.settings.*</code> give the first value of each setting:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>--install<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--create-namespace<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.settings.kubernetesClusterName<span class="o">=</span>prod-eu<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.settings.prometheus.url<span class="o">=</span>http://prometheus.monitoring:9090
+</span></code></pre></div>
+<p>The fleet manager creates the ConfigMap <code>fleet-manager-settings</code> from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later <code>helm upgrade</code> with other <code>fleetManager.settings.*</code> values does not change the ConfigMap. To change a setting, use the Settings page or edit the ConfigMap, as <a href="#change-a-setting">Change a setting</a> shows.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Key in the ConfigMap</th>
+<th>Chart value</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kubernetesClusterName</code></td>
+<td><code>fleetManager.settings.kubernetesClusterName</code></td>
+<td>The name of this Kubernetes cluster.</td>
+</tr>
+<tr>
+<td><code>git.repository</code></td>
+<td><code>fleetManager.settings.git.repository</code></td>
+<td>The HTTPS address of the Git repository for Git mode.</td>
+</tr>
+<tr>
+<td><code>git.branch</code></td>
+<td><code>fleetManager.settings.git.branch</code></td>
+<td>The branch of the repository.</td>
+</tr>
+<tr>
+<td><code>git.path</code></td>
+<td><code>fleetManager.settings.git.path</code></td>
+<td>The folder in the repository for the files of the fleet manager.</td>
+</tr>
+<tr>
+<td><code>git.credentialsSecretRef</code></td>
+<td><code>fleetManager.settings.git.credentialsSecretRef</code></td>
+<td>The name of the Secret with the Git credentials. See <a href="#git-credentials">Git credentials</a>.</td>
+</tr>
+<tr>
+<td><code>secretStore.kind</code></td>
+<td><code>fleetManager.settings.secretStore.kind</code></td>
+<td><code>SecretStore</code> or <code>ClusterSecretStore</code>, the kind of the External Secrets store for Git mode.</td>
+</tr>
+<tr>
+<td><code>secretStore.name</code></td>
+<td><code>fleetManager.settings.secretStore.name</code></td>
+<td>The name of that store.</td>
+</tr>
+<tr>
+<td><code>prometheus.url</code></td>
+<td><code>fleetManager.settings.prometheus.url</code></td>
+<td>The address of Prometheus.</td>
+</tr>
+<tr>
+<td><code>prometheus.credentialsSecretRef</code></td>
+<td><code>fleetManager.settings.prometheus.credentialsSecretRef</code></td>
+<td>The name of the Secret with the Prometheus credentials. See <a href="#prometheus-credentials">Prometheus credentials</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>An empty value means that the setting is not set. An address in <code>git.repository</code> or <code>prometheus.url</code> starts with <code>http://</code> or <code>https://</code>, and it must not hold a user name or a password, as in <code>https://user:token@git.example.com</code>. The fleet manager treats another address as not set. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.</p>
+<h2 id="settings-page">Settings page<a class="headerlink" href="#settings-page" title="Permanent link">&para;</a></h2>
+<p>Open <strong>Setup &gt; Settings</strong> in the fleet manager. The page has a field for each setting. The text under each field names its key in the ConfigMap, so you can match the field to the <a href="#settings">Settings</a> table. The page shows only the names of Secrets, never a value.</p>
+<p>Select <strong>Git mode</strong> to show the Git settings. Git mode is on when the repository is set, so the page refuses to save Git mode without a repository. Clear <strong>Git mode</strong> to turn Git mode off. The save then clears <code>git.repository</code> and keeps the other Git settings for the next time.</p>
+<p>In Git mode, the page shows the files that a save writes, for a claim and for an environment under the current <strong>Path</strong>. If the path names no folder in the repository, as <code>a/../b</code> does, the page shows <code>git.path must name a folder in the repository.</code> and refuses to save.</p>
+<p>The settings stay in the cluster also in Git mode. A save on the page writes the ConfigMap <code>fleet-manager-settings</code> and the fleet manager never pushes it to Git.</p>
+<p>The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it <code>(not found)</code>. It also shows <code>The Secret &lt;name&gt; does not exist in namespace &lt;namespace&gt;.</code> A save keeps that name until you pick another Secret or <strong>None</strong>. To correct it, create the Secret, as <a href="#git-credentials">Git credentials</a> and <a href="#prometheus-credentials">Prometheus credentials</a> show. If the page cannot list the Secrets, it shows <code>Could not list the Secrets of namespace &lt;namespace&gt;: &lt;message&gt;</code>. The fields then keep each name and do not mark it <code>(not found)</code>.</p>
+<p><strong>Test the connection</strong> connects to the Git repository with the saved settings. <strong>Test the query</strong> sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.</p>
+<p><strong>Save</strong> writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows <code>The ConfigMap fleet-manager-settings changed since you opened it.</code> Select <strong>Reload</strong> to get the current settings, then make your change again.</p>
+<p>When <code>prometheus.url</code> is not set, the page shows <code>Charts do not show. Everything else works.</code> The <strong>Metrics</strong> tab of a component then shows no charts. Set <strong>Prometheus URL</strong> to show the charts. <a href="#metrics-of-the-charts">Metrics of the charts</a> lists the metrics that Prometheus must hold.</p>
+<p>Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With <code>metrics-server found</code>, the pages show the live CPU and memory. With <code>metrics-server not found</code>, the pages hide them.</p>
+<p>The page shows the <code>kubectl port-forward</code> command that opens the fleet manager, as <a href="../install/#open-it">Open it</a> shows.</p>
+<p>The permissions table lists what the fleet manager can do in the release namespace. The page cannot change these permissions. The chart sets them.</p>
+<h2 id="change-a-setting">Change a setting<a class="headerlink" href="#change-a-setting" title="Permanent link">&para;</a></h2>
+<p>Use the <a href="#settings-page">Settings page</a> to change a setting. You can also edit the ConfigMap. The fleet manager creates the ConfigMap the first time that it reads its settings. The ConfigMap exists at the latest after you open the Settings page once. A ConfigMap that the fleet manager created holds one key for each setting:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings<span class="w"> </span>-o<span class="w"> </span>yaml
+</span></code></pre></div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-manager-settings</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-operator-system</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">git.branch</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">git.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">git.path</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">git.repository</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">kubernetesClusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-eu</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">prometheus.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">prometheus.url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus.monitoring:9090</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">secretStore.kind</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">secretStore.name</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span></code></pre></div>
+<p>To change a setting with <code>kubectl</code>, edit the ConfigMap:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>edit<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings
+</span></code></pre></div>
+<p>The fleet manager reads the ConfigMap each time that it needs a setting, so a change takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.</p>
+<h2 id="fields-that-another-tool-set">Fields that another tool set<a class="headerlink" href="#fields-that-another-tool-set" title="Permanent link">&para;</a></h2>
+<p>A field manager is a tool that writes an object, such as <code>kubectl</code>, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or removes. It shows the tool next to the field. One choice, <strong>Take over these fields</strong>, covers the changed fields and the removed fields together. Each row says what the save does to its field:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Fields that another tool set
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>spec.displayName: kubectl-client-side-apply set it. The save changes it.
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>[ ] Take over these fields
+</span></code></pre></div>
+<p>Without the choice, a changed field stops the save, and <strong>Save</strong> stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it. Outside a list item, an empty string, list, or map that another tool set stays unless you give it a value. The review does not name it. Inside a list item, the review names it with the tool, as other fields.</p>
+<p>With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each field that the change leaves out. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example <code>It gets its default value 7 again.</code> If the object changed after the review, the save writes nothing and shows <code>The &lt;kind&gt; &lt;name&gt; changed since you opened it.</code></p>
+<p>Another write can change the object after the save gave the new values and before it removed the fields. Then the new values stay, and the fields that the save did not remove stay too. The save shows <code>The fleet manager saved the &lt;kind&gt; &lt;name&gt;, but did not remove &lt;fields&gt;.</code> To remove them, open the page again and take them over in a new save. When a save writes more than one object, the objects that it wrote before a failure stay.</p>
+<p>The review asks on every save. The fleet manager does not keep the choice for a later save, and no setting turns it on for good.</p>
+<p>One review does not ask. When the Environments page adds a namespace to an environment, the labels and annotations that other tools set on the namespace stay.</p>
+<p>The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with <code>camunda-operator/</code>. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and <strong>Save</strong> stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays. The review names such fields in muted lines, with no choice. Each line names the controllers that set its fields:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>camunda-operator/databaseserver-recovery of the operator sets this field. It stays: spec.pitr.lastRecovery.
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>camunda-operator/pointintimerestore-recovery of the operator sets this field. It stays: spec.recovery.
+</span></code></pre></div>
+<p>When a GitOps tool such as Argo CD or Flux set the field or manages the object, the review gives a warning. The tool sets its own value again on its next sync. Change the source in Git too. When the fleet manager does not know the tool, the review says <code>The fleet manager does not know this tool.</code> next to its name. You can still take the field over.</p>
+<p>After a take-over, the other tool can change the field again:</p>
+<ul>
+<li>
+<p><code>kubectl apply --server-side</code> of an older file fails on each field that the fleet manager took over:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>error: Apply failed with 1 conflict: conflict with "fleet-manager" using fleet.camunda.io/v1alpha1: .spec.displayName
+</span></code></pre></div>
+<p>Remove the field from the file, or add <code>--force-conflicts</code> to take the field back.</p>
+</li>
+<li>
+<p>A plain <code>kubectl apply</code> of that file sets the old values again, with no conflict.</p>
+</li>
+<li>A field that the save removed has no field manager. The next apply of a file that holds the field adds it again.</li>
+</ul>
+<p>In Git mode the review offers no take-over. The file in the repository holds the whole object, and your GitOps tool applies it.</p>
+<h2 id="git-credentials">Git credentials<a class="headerlink" href="#git-credentials" title="Permanent link">&para;</a></h2>
+<p>The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with <code>http://</code>. The Secret of <code>git.credentialsSecretRef</code> holds a token or the keys of a GitHub App. When the Secret holds keys of both sets, each save fails. Create the Secret <code>fleet-git</code> in the release namespace, as one of the two sections below shows. Then set <code>git.credentialsSecretRef</code> to <code>fleet-git</code>. Without the setting, the fleet manager connects to the repository without credentials.</p>
+<p>The fleet manager reads the Secret at each save and at each connection test, so a change to the Secret takes effect without a restart.</p>
+<h3 id="a-token">A token<a class="headerlink" href="#a-token" title="Permanent link">&para;</a></h3>
+<p>The Secret holds the keys <code>username</code> and <code>token</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-git<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>&lt;user&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
+</span></code></pre></div>
+<h3 id="a-github-app">A GitHub App<a class="headerlink" href="#a-github-app" title="Permanent link">&para;</a></h3>
+<p>A GitHub App works for repositories on <code>github.com</code> and on GitHub Enterprise Server. For a repository on another Git server, use a token.</p>
+<ol>
+<li>Create a GitHub App with the repository permission "Contents: Read and write", as <a href="https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app">Registering a GitHub App</a> shows.</li>
+<li>Install the App on the repository of <code>git.repository</code>, as <a href="https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app">Installing your own GitHub App</a> shows.</li>
+<li>Write down the App ID from the settings page of the App.</li>
+<li>Write down the installation ID. It is the number at the end of the address of the installation settings page.</li>
+<li>Generate a private key for the App, and download the <code>.pem</code> file.</li>
+<li>
+<p>Create the Secret. If the App is on GitHub Enterprise Server, set <code>enterpriseHost</code> to the host of the server, for example <code>ghe.example.com</code>. Otherwise, remove the line of <code>enterpriseHost</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-git<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">appId</span><span class="o">=</span>&lt;app<span class="w"> </span>id&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">installationId</span><span class="o">=</span>&lt;installation<span class="w"> </span>id&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">enterpriseHost</span><span class="o">=</span>&lt;host&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span>--from-file<span class="o">=</span><span class="nv">privateKey</span><span class="o">=</span>&lt;app&gt;.private-key.pem
+</span></code></pre></div>
+</li>
+</ol>
+<p>Without <code>enterpriseHost</code>, the fleet manager uses the App keys only for a repository on <code>github.com</code>. With <code>enterpriseHost</code>, it uses them only for a repository on that host.</p>
+<p>The fleet manager must reach the GitHub API: <code>https://api.github.com</code> for <code>github.com</code>, or <code>https://&lt;enterpriseHost&gt;/api/v3</code> for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.</p>
+<p>Commits show the bot of the App, <code>&lt;app slug&gt;[bot]</code>, as the author. The slug is the name of the App in its GitHub address, <code>https://github.com/apps/&lt;app slug&gt;</code>. If the fleet manager cannot find the bot, commits show <code>fleet-manager</code>, and the save still works.</p>
+<h2 id="git-mode">Git mode<a class="headerlink" href="#git-mode" title="Permanent link">&para;</a></h2>
+<p>Set <code>git.repository</code> to turn on Git mode. Set the branch, the folder, and the Secret with the credentials in the same ConfigMap:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-manager-settings</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-operator-system</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">git.repository</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://git.example.com/platform/fleet.git</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">git.branch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">main</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="nt">git.path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">clusters/prod</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span><span class="nt">git.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-git</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">  </span><span class="c1"># ... the rest of your settings</span>
+</span></code></pre></div>
+<p>An empty <code>git.branch</code> uses the default branch of the repository. The branch must exist before the first save. An empty <code>git.path</code> puts the files at the root of the repository. <code>git.path</code> must be a folder inside the repository, so a save fails when the path holds <code>..</code>.</p>
+<p>Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change. The author is <code>fleet-manager</code>, or the bot of the GitHub App when the Secret holds the keys of an App. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under <code>git.path</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>clusters/prod/
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>├── _cluster/
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>│   └── namespaces/
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>│       └── team-a.yaml
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>└── team-a/
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    └── camundaclusterclaims/
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>        └── orders.yaml
+</span></code></pre></div>
+<p>A namespaced object goes to <code>&lt;git.path&gt;/&lt;namespace&gt;/&lt;plural&gt;/&lt;name&gt;.yaml</code>. A cluster-scoped object goes to <code>&lt;git.path&gt;/_cluster/&lt;plural&gt;/&lt;name&gt;.yaml</code>. <code>&lt;plural&gt;</code> is the plural resource name of the kind, as <code>kubectl api-resources</code> shows it. A file holds the object without <code>status</code> and without the fields that the API server sets. Each object carries the annotation <code>fleet.camunda.io/revision</code> with the SHA-256 of its content. A delete in the fleet manager removes the file of the object. Point your GitOps tool at the folder of <code>git.path</code>.</p>
+<h3 id="waiting-for-gitops">Waiting for GitOps<a class="headerlink" href="#waiting-for-gitops" title="Permanent link">&para;</a></h3>
+<p>After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. The line of a changed file goes away when the object in the cluster carries the <code>fleet.camunda.io/revision</code> of the push. The line of a deleted file goes away when the object is gone from the cluster, or when the cluster starts to delete it. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of <code>git.path</code>.</p>
+<p>Your GitOps tool must prune. When the fleet manager removes a file, the GitOps tool must delete the object from the cluster. Flux prunes when the Kustomization sets <code>prune: true</code>. Argo CD prunes when <code>syncPolicy.automated</code> of the Application sets <code>prune: true</code>. If your GitOps tool does not prune, the line of a delete stays, because the fleet manager waits without a time limit.</p>
+<h3 id="changes-that-go-to-the-api-in-git-mode">Changes that go to the API in Git mode<a class="headerlink" href="#changes-that-go-to-the-api-in-git-mode" title="Permanent link">&para;</a></h3>
+<p>One-off backups, restores, and backup deletions go to the Kubernetes API also in Git mode. The settings go to the API too, and the fleet manager never commits them. For Secrets, see <a href="#secrets-in-git-mode">Secrets in Git mode</a>.</p>
+<h3 id="when-a-save-fails">When a save fails<a class="headerlink" href="#when-a-save-fails" title="Permanent link">&para;</a></h3>
+<p>Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too. So when a validation rule needs such a field, the save fails before the commit. This is true for Flux, which uses server-side apply. Argo CD uses client-side apply by default. With it, this is true for a custom resource such as an <code>Environment</code>, but not for a <code>Namespace</code> or a <code>ConfigMap</code>. The cluster cannot check an <code>ExternalSecret</code>, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.</p>
+<p>When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Cause</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The message of the API server, for example <code>releases.default must be one of releases.allowed</code></td>
+<td>The cluster refuses the object.</td>
+<td>Correct the value and save again.</td>
+</tr>
+<tr>
+<td><code>The &lt;kind&gt; &lt;name&gt; changed since you opened it.</code></td>
+<td>Someone changed or deleted the object in the cluster after the page read it.</td>
+<td>Open the page again.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; in &lt;repository&gt; holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert &lt;file&gt; in the repository.</code></td>
+<td>An earlier save of the same object is in the repository, and GitOps has not applied it. Each save of the object fails until GitOps applies the file.</td>
+<td>Wait until GitOps applies the earlier save, then open the page again. If GitOps cannot apply it, correct or revert the file in the repository.</td>
+</tr>
+<tr>
+<td><code>Someone changed &lt;file&gt; in &lt;repository&gt; since the fleet manager read it. Open the page again.</code></td>
+<td>Someone pushed a change to the same file.</td>
+<td>Open the page again.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; changed again while the fleet manager pushed. Save again.</code></td>
+<td>The branch changed again during the save.</td>
+<td>Save again.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; refused the credentials.</code></td>
+<td>The username or the token of the Secret is wrong, or the token cannot push. With a GitHub App, the App does not have the permission "Contents: Read and write" on the repository.</td>
+<td>Correct the Secret of <code>git.credentialsSecretRef</code>, or give the App the permission.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; refused the push to the branch &lt;branch&gt;.</code></td>
+<td>The Git server accepts the credentials, but the branch is protected, or a rule of the server refuses the push.</td>
+<td>Let the user of the token push to the branch, or set <code>git.branch</code> to a branch that accepts a push.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; must start with https:// to use the credentials of the Secret &lt;secret&gt;.</code></td>
+<td><code>git.credentialsSecretRef</code> is set, and <code>git.repository</code> is not an <code>https://</code> address.</td>
+<td>Set <code>git.repository</code> to the <code>https://</code> address of the repository.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; does not exist in namespace &lt;namespace&gt;.</code></td>
+<td>The Secret of <code>git.credentialsSecretRef</code> is not in the release namespace.</td>
+<td>Create the Secret, as <a href="#git-credentials">Git credentials</a> shows.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has no key &lt;key&gt;.</code></td>
+<td>The Secret has no key <code>username</code> or no key <code>token</code>, or the value is empty.</td>
+<td>Add the key to the Secret.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.</code></td>
+<td>The Secret holds keys of both sets.</td>
+<td>Remove the keys of the set that you do not use.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; needs the keys appId, installationId, and privateKey for a GitHub App. It has no key &lt;keys&gt;.</code></td>
+<td>The Secret holds some keys of a GitHub App, or a key has an empty value.</td>
+<td>Add the keys to the Secret, as <a href="#a-github-app">A GitHub App</a> shows.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key &lt;key&gt; that is not a number.</code></td>
+<td>The value of <code>appId</code> or <code>installationId</code> is not the ID that GitHub shows.</td>
+<td>Correct the value in the Secret.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key privateKey that is not a PEM private key.</code></td>
+<td>The value of <code>privateKey</code> is not the content of the <code>.pem</code> file of the App.</td>
+<td>Create the Secret again with <code>--from-file=privateKey=&lt;app&gt;.private-key.pem</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; is not on github.com. To use the GitHub App keys of the Secret &lt;secret&gt; with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.</code></td>
+<td>The Secret holds the keys of a GitHub App without <code>enterpriseHost</code>, and the repository is not on <code>github.com</code>.</td>
+<td>If the repository is on GitHub Enterprise Server, add <code>enterpriseHost</code>, as <a href="#a-github-app">A GitHub App</a> shows. For another Git server, use a token, as <a href="#a-token">A token</a> shows.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; is not on the host of the key enterpriseHost of the Secret &lt;secret&gt;. The GitHub App keys of the Secret work only there.</code></td>
+<td>The repository is on another host than <code>enterpriseHost</code>.</td>
+<td>Correct <code>git.repository</code> or <code>enterpriseHost</code>.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key enterpriseHost that is not a host name.</code></td>
+<td>The value of <code>enterpriseHost</code> holds more than a host, for example <code>https://</code> or a path.</td>
+<td>Set <code>enterpriseHost</code> to the host only, for example <code>ghe.example.com</code>.</td>
+</tr>
+<tr>
+<td><code>GitHub refused the token request of the App &lt;app id&gt; for the installation &lt;installation id&gt; (HTTP &lt;status&gt;).</code></td>
+<td>The App ID, the installation ID, or the private key is wrong, or the App is not installed on the repository.</td>
+<td>Correct the keys of the Secret, or install the App on the repository.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; has no branch &lt;branch&gt;.</code></td>
+<td>The branch of <code>git.branch</code> does not exist.</td>
+<td>Create the branch, or correct <code>git.branch</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; is not in the repository. GitOps does not manage &lt;kind&gt; &lt;name&gt;.</code></td>
+<td>A delete of an object that has no file in the repository.</td>
+<td>Delete the object in the cluster with <code>kubectl delete</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; is behind a symbolic link in the repository. The fleet manager does not write through a link.</code></td>
+<td>A folder or the file on the path of the object is a symbolic link in the repository.</td>
+<td>Replace the link with a real folder or file in the repository.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="prometheus-credentials">Prometheus credentials<a class="headerlink" href="#prometheus-credentials" title="Permanent link">&para;</a></h2>
+<p>The Secret of <code>prometheus.credentialsSecretRef</code> holds the keys <code>username</code> and <code>password</code> for basic authentication, or the key <code>token</code> for a bearer token. Create it in the release namespace:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-prometheus<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
+</span></code></pre></div>
+<p>Then set <code>prometheus.credentialsSecretRef</code> to <code>fleet-prometheus</code>. Without the setting, the fleet manager sends no credentials to Prometheus.</p>
+<h2 id="metrics-of-the-charts">Metrics of the charts<a class="headerlink" href="#metrics-of-the-charts" title="Permanent link">&para;</a></h2>
+<p>The <strong>Metrics</strong> tab of a component on <a href="../cluster-page/">the cluster page</a> shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:</p>
+<table>
+<thead>
+<tr>
+<th>Chart</th>
+<th>Metric</th>
+<th>Where Prometheus gets it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>container_cpu_usage_seconds_total</code></td>
+<td>The <a href="https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md">cAdvisor metrics</a> of the kubelet</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td><code>container_memory_working_set_bytes</code></td>
+<td>The <a href="https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md">cAdvisor metrics</a> of the kubelet</td>
+</tr>
+<tr>
+<td>Disk used</td>
+<td><code>kubelet_volume_stats_used_bytes</code></td>
+<td>The <a href="https://kubernetes.io/docs/reference/instrumentation/metrics/">kubelet metrics</a>, for each PersistentVolumeClaim of the pods</td>
+</tr>
+<tr>
+<td>Process instances activated</td>
+<td><code>zeebe_element_instance_events_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Records processed</td>
+<td><code>zeebe_stream_processor_records_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Records exported</td>
+<td><code>zeebe_exporter_events_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Requests dropped by backpressure</td>
+<td><code>zeebe_dropped_request_count_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Partition health</td>
+<td><code>zeebe_health</code></td>
+<td>The brokers</td>
+</tr>
+</tbody>
+</table>
+<p>Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim. A component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels <code>namespace</code> and <code>pod</code> on each series, and <code>namespace</code> and <code>persistentvolumeclaim</code> on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A <code>ServiceMonitor</code> or a <code>PodMonitor</code> of the Prometheus Operator adds <code>namespace</code> and <code>pod</code> to the metrics of the brokers.</p>
+<p>Camunda documents the metrics of the brokers in <a href="https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics">Camunda components metrics</a>. The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release. The 8.9 metrics page names these metrics. The version is the one that the cluster reports in <code>status.management.version</code>. For another version or a pre-release, the Metrics tab of the brokers shows only CPU, Memory, and Disk used. A line names the version: <code>The app has no Camunda charts for version &lt;version&gt; yet.</code> For a cluster without a reported version, the tab shows the same three charts. Its line is <code>The cluster reports no Camunda version yet, so the Camunda charts do not show.</code></p>
+<p>A chart without data for the range does not show. When no chart has data, the tab shows <code>No metric has data for this range.</code> Without <code>prometheus.url</code>, the tab shows <code>Prometheus is not configured, so the charts do not show.</code> When Prometheus does not answer, the tab shows <code>Prometheus did not answer. The charts show again when it answers.</code></p>
+<h2 id="secret-values">Secret values<a class="headerlink" href="#secret-values" title="Permanent link">&para;</a></h2>
+<p>The fleet manager shows the names of Secrets and the names of their keys. It never shows the value of a key, and no page and no response of the fleet manager holds one.</p>
+<h2 id="secrets-in-git-mode">Secrets in Git mode<a class="headerlink" href="#secrets-in-git-mode" title="Permanent link">&para;</a></h2>
+<p>In Git mode, the fleet manager does not write a Secret value. It commits an <code>ExternalSecret</code> to the Git repository, and External Secrets makes the Secret from the store of <code>secretStore.kind</code> and <code>secretStore.name</code>. For the Secret <code>db</code> in the namespace <code>orders</code>, the commit holds this object:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">external-secrets.io/v1</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ExternalSecret</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">  </span><span class="nt">refreshInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">  </span><span class="nt">secretStoreRef</span><span class="p">:</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SecretStore</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vault</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="w">    </span><span class="nt">creationPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Owner</span>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="w">  </span><span class="nt">dataFrom</span><span class="p">:</span>
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">extract</span><span class="p">:</span>
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a><span class="w">        </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders/db</span>
+</span></code></pre></div>
+<p>Put each key of the Secret as a property of the store entry <code>&lt;namespace&gt;/&lt;name&gt;</code>, here <code>orders/db</code>. External Secrets copies each property of the entry into the Secret. If <code>secretStore.kind</code> or <code>secretStore.name</code> is not set, the fleet manager refuses to write a Secret in Git mode.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Install the fleet manager">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Install the fleet manager
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../create-a-cluster/" class="md-footer__link md-footer__link--next" aria-label="Next: Create a cluster">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Create a cluster
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+        <script src="../../assets/javascripts/panzoom.min.js"></script>
+      
+        <script src="../../assets/javascripts/zoompan.js"></script>
+      
+    
+  </body>
+</html>
