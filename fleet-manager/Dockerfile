@@ -3,8 +3,9 @@
 # Dockerfile.dockerignore limits the context to the app and the images table.
 
 # The release of fleet-manager/.node-version. engines in package.json pins the
-# same release, and pnpm refuses to install with another.
-FROM node:26.13.0-trixie-slim AS build
+# same release, and pnpm refuses to install with another. A custom manager of
+# renovate.json5 reads this line, and make lint fails when it has another shape.
+FROM node:26.13.1-trixie-slim AS build
 ENV NEXT_TELEMETRY_DISABLED=1
 # The layout of the repository, so the app finds ../pkg/images/table.json as
 # it does in a checkout.

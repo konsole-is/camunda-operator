@@ -246,8 +246,12 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 lint-examples: ## Check the version pins of config/example against the matrix entry of E2E_CAMUNDA_MINOR.
 	go run ./hack/exampleversions -matrix test/e2e/matrix/$(E2E_CAMUNDA_MINOR).env config/example
 
+.PHONY: lint-node
+lint-node: ## Check that the four Node.js pins of the fleet manager name one release.
+	go run ./hack/nodepins
+
 .PHONY: lint
-lint: golangci-lint lint-examples ## Check the example version pins and run callsplit, then golangci-lint.
+lint: golangci-lint lint-examples lint-node ## Check the example version pins and the Node.js pins, and run callsplit, then golangci-lint.
 	go run ./hack/callsplit -check ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" run) || exit 1; done
 
