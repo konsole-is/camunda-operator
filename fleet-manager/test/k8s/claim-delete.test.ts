@@ -1,16 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { KubeConfig } from "@kubernetes/client-node";
+import { KubeConfig, KubernetesObjectApi } from "@kubernetes/client-node";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import {
+  applyClaimChange,
   applyClaimDelete,
+  previewClaimChange,
   previewClaimDelete,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
   applyPlaneClaimDelete,
   previewPlaneClaimDelete,
 } from "@/app/fleet/planes/[namespace]/[name]/actions";
+import { deleteClaimSteps, previewDeleteSteps } from "@/lib/claims/deletion";
+import type { DeletableClaim } from "@/lib/policy";
+import type { ManagedFieldsEntry } from "@/lib/merge";
+import { takenFields } from "@/lib/write/ownership";
 import type { Change, KubeObject } from "@/lib/write/types";
 import { KubeError, kubeRequest } from "../scenarios/kube";
+import { createClientSideApplied } from "./client-side-apply";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -237,6 +244,120 @@ describe("the delete of a claim against envtest", () => {
     });
     expect((await read(claim.metadata.name))?.metadata.uid).toBe(
       again.metadata.uid,
+    );
+  });
+});
+
+describe("the delete of a claim whose deletion policy kubectl apply set, against envtest", () => {
+  const intent = "Delete the cluster";
+  const actions = {
+    preview: previewClaimDelete,
+    previewPolicy: previewClaimChange,
+  };
+  // ownedBy reports whether an entry of manager owns spec.<field> of object.
+  const ownedBy = (object: KubeObject, manager: string, field: string) =>
+    ((object.metadata.managedFields ?? []) as ManagedFieldsEntry[]).some(
+      (entry) => {
+        const spec = (entry.fieldsV1 as Record<string, unknown> | undefined)?.[
+          "f:spec"
+        ] as Record<string, unknown> | undefined;
+        return entry.manager === manager && spec?.[`f:${field}`] !== undefined;
+      },
+    );
+
+  // applied makes a claim with kubectl apply, with the deletion policy
+  // Delete and the cleanup finalizer, and returns it as the API server
+  // answered.
+  async function applied() {
+    const name = `orders-${randomUUID().slice(0, 8)}`;
+    await createClientSideApplied(KubernetesObjectApi.makeApiClient(kc), {
+      apiVersion,
+      kind: "CamundaClusterClaim",
+      metadata: { name, namespace, finalizers: ["fleet.camunda.io/cleanup"] },
+      spec: { presetRef: "medium", deletionPolicy: "Delete" },
+    });
+    return (await read(name)) as unknown as DeletableClaim & KubeObject;
+  }
+
+  it("the review names the field and kubectl, and the policy write without the take-over writes nothing", async () => {
+    const claim = await applied();
+    const steps = deleteClaimSteps(claim, "Orphan", intent);
+
+    const preview = await previewDeleteSteps(
+      steps.remove,
+      steps.policy,
+      actions,
+    );
+
+    expect(preview.ownership).toEqual([
+      expect.objectContaining({
+        changed: [
+          expect.objectContaining({
+            path: "spec.deletionPolicy",
+            managers: [
+              expect.objectContaining({ name: "kubectl-client-side-apply" }),
+            ],
+          }),
+        ],
+        cleared: [],
+      }),
+    ]);
+    expect(preview.objects).toEqual([
+      expect.objectContaining({
+        ref: expect.objectContaining({ name: claim.metadata.name }),
+      }),
+    ]);
+    expect(await applyClaimChange(steps.policy!)).toMatchObject({
+      ok: false,
+      errors: [{ code: "Conflict", path: "spec.deletionPolicy" }],
+    });
+    expect((await read(claim.metadata.name))?.metadata.resourceVersion).toBe(
+      claim.metadata.resourceVersion,
+    );
+  });
+
+  it("with the take-over, the fleet manager owns the policy, and the claim is deleted under it", async () => {
+    const claim = await applied();
+    const steps = deleteClaimSteps(claim, "Orphan", intent);
+    const { ownership = [] } = await previewDeleteSteps(
+      steps.remove,
+      steps.policy,
+      actions,
+    );
+
+    const taken = deleteClaimSteps(claim, "Orphan", intent, ownership).policy!;
+    expect(await applyClaimChange(taken)).toEqual({ ok: true, mode: "direct" });
+    const written = (await read(
+      claim.metadata.name,
+    )) as unknown as DeletableClaim & KubeObject;
+    expect(written.spec?.deletionPolicy).toBe("Orphan");
+    // The forced write took only the deletion policy from kubectl.
+    expect(
+      takenFields(claim, written).map((f) => [
+        f.path,
+        f.managers.map((m) => m.name),
+      ]),
+    ).toEqual([["spec.deletionPolicy", ["kubectl-client-side-apply"]]]);
+    expect(ownedBy(written, "kubectl-client-side-apply", "presetRef")).toBe(
+      true,
+    );
+    expect(
+      ownedBy(written, "kubectl-client-side-apply", "deletionPolicy"),
+    ).toBe(false);
+    expect(ownedBy(written, "fleet-manager", "deletionPolicy")).toBe(true);
+
+    const after = deleteClaimSteps(written, "Orphan", intent);
+    expect(after.policy).toBeUndefined();
+    expect(await applyClaimDelete(after.remove)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    // The cleanup finalizer holds the claim, with the policy that the
+    // operator reads when it deletes what the claim made.
+    const deleting = await read(claim.metadata.name);
+    expect(deleting?.metadata.deletionTimestamp).toBeDefined();
+    expect((deleting?.spec as { deletionPolicy?: string }).deletionPolicy).toBe(
+      "Orphan",
     );
   });
 });

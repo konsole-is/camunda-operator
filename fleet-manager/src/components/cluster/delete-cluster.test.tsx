@@ -14,13 +14,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyClaimChange,
   applyClaimDelete,
+  previewClaimChange,
   previewClaimDelete,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { type WatchSpec, watchId } from "@/lib/k8s/shared-watch";
 import { REVISION_ANNOTATION } from "@/lib/labels";
-import type { KubeObject, WriteMode } from "@/lib/write/types";
+import type {
+  ForeignManager,
+  KubeObject,
+  ObjectOwnership,
+  Preview,
+  WriteMode,
+} from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { DeleteCluster } from "./delete-cluster";
@@ -160,12 +167,22 @@ const data = (over: Partial<DeleteClusterData> = {}): DeleteClusterData =>
 const actions = {
   preview: previewClaimDelete,
   remove: applyClaimDelete,
+  previewPolicy: previewClaimChange,
   applyPolicy: applyClaimChange,
 };
 
 // page renders the delete page of initial in writeMode, direct when it is
 // left out. An explicit undefined is a page that could not read the mode.
 function page(
+  initial: DeleteClusterData = data(),
+  ...mode: [WriteMode | undefined] | []
+) {
+  return pageWith(actions, initial, ...mode);
+}
+
+// pageWith is page with the server actions given.
+function pageWith(
+  given: typeof actions,
   initial: DeleteClusterData = data(),
   ...mode: [WriteMode | undefined] | []
 ) {
@@ -177,7 +194,7 @@ function page(
         <DeleteCluster
           initial={initial}
           writeMode={writeMode}
-          actions={actions}
+          actions={given}
         />
       </GitPushesProvider>
     </QueryClientProvider>,
@@ -346,6 +363,213 @@ describe("DeleteCluster", () => {
     );
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
     expect(fakeWriter.applied[1]).toEqual(remove("42"));
+  });
+
+  describe("a deletion policy that another tool set", () => {
+    const kubectl: ForeignManager = {
+      name: "kubectl-client-side-apply",
+      operation: "Update",
+      kind: "other",
+      known: true,
+    };
+    const operator: ForeignManager = {
+      name: "camunda-operator/CamundaClusterClaim/uid-1",
+      operation: "Apply",
+      kind: "operator",
+      known: true,
+    };
+    const ownedBy = (manager: ForeignManager): ObjectOwnership[] => [
+      {
+        ref,
+        changed: [
+          {
+            path: "spec.deletionPolicy",
+            steps: [{ field: "spec" }, { field: "deletionPolicy" }],
+            managers: [manager],
+          },
+        ],
+        cleared: [],
+      },
+    ];
+    // ownedPage renders the page of a claim with the deletion policy
+    // Delete, whose policy write the API server answers with a Conflict on
+    // the field of manager, and without one after the take-over.
+    const ownedPage = (manager: ForeignManager) => {
+      const initial = data({ claim: claim({ deletionPolicy: "Delete" }) });
+      const policyPreview: Preview = {
+        objects: [],
+        errors: [
+          {
+            code: "Conflict",
+            message: `conflict with "${manager.name}"`,
+            path: "spec.deletionPolicy",
+            manager: manager.name,
+            ref,
+          },
+        ],
+        ownership: ownedBy(manager),
+      };
+      pageWith(
+        {
+          ...actions,
+          previewPolicy: async (change) =>
+            change.takeOver
+              ? { objects: [], errors: [], ownership: ownedBy(manager) }
+              : policyPreview,
+        },
+        initial,
+      );
+      return initial;
+    };
+    const group = () =>
+      screen.findByRole("group", { name: "Fields that another tool set" });
+    const confirmButton = () =>
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Delete the cluster",
+      });
+
+    it("direct mode: names the field and its tool before the confirm, and without the take-over the confirm stays off and nothing is written", async () => {
+      await readAll(ownedPage(kubectl));
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      expect((await group()).textContent).toContain(
+        "spec.deletionPolicy: kubectl-client-side-apply set it. The save changes it.",
+      );
+      expect(
+        screen.getByText(
+          "Another tool set the deletion policy of the claim, so the delete cannot change it without the take-over. Take over the field below, or choose Delete the resources to delete with the policy that the claim has.",
+        ),
+      ).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await act(async () => {});
+      expect(confirmButton().disabled).toBe(true);
+      expect(fakeWriter.applied).toEqual([]);
+    });
+
+    it("direct mode: with the take-over, the policy write takes over the field, and the delete follows once the claim has the policy", async () => {
+      const initial = ownedPage(kubectl);
+      await readAll(initial);
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      await group();
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Take over these fields" }),
+      );
+      await confirm("Delete the cluster");
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+      expect(fakeWriter.applied[0]).toMatchObject({
+        apply: [{ spec: { deletionPolicy: "Orphan" } }],
+        preconditions: { [KEY]: "41" },
+        takeOver: { [KEY]: ["spec.deletionPolicy"] },
+      });
+      await liveClaim(
+        claim({ deletionPolicy: "Orphan", resourceVersion: "42" }),
+        "Orphan",
+      );
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+      expect(fakeWriter.applied[1]).toEqual(remove("42"));
+    });
+
+    it("direct mode: a new version of the claim during the review starts the review again, without the take-over, and the confirm goes off", async () => {
+      const initial = ownedPage(kubectl);
+      await readAll(initial);
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      await group();
+      const choice = () =>
+        screen.getByRole("checkbox", { name: "Take over these fields" });
+      fireEvent.click(choice());
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+      await liveClaim(
+        claim({ deletionPolicy: "Delete", resourceVersion: "42" }),
+      );
+      await waitFor(() =>
+        expect(choice().getAttribute("aria-checked")).toBe("false"),
+      );
+      expect(confirmButton().disabled).toBe(true);
+      expect(
+        screen.getByText(
+          "Take over the fields to save, or go back and leave them as they are.",
+        ),
+      ).toBeTruthy();
+      expect(fakeWriter.applied).toEqual([]);
+    });
+
+    it("direct mode: a dry run of the policy write that the claim made stale turns the confirm on once the next version of the claim comes in", async () => {
+      const initial = data({ claim: claim({ deletionPolicy: "Delete" }) });
+      const stale: Preview = {
+        objects: [],
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The CamundaClusterClaim orders changed since you opened it.",
+            ref,
+          },
+        ],
+      };
+      let answer = stale;
+      pageWith({ ...actions, previewPolicy: async () => answer }, initial);
+      await readAll(initial);
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      expect(
+        await screen.findByText(
+          "The CamundaClusterClaim orders changed since you opened it.",
+        ),
+      ).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await act(async () => {});
+      expect(confirmButton().disabled).toBe(true);
+      answer = { objects: [], errors: [] };
+      await liveClaim(
+        claim({ deletionPolicy: "Delete", resourceVersion: "42" }),
+      );
+      await waitFor(() => expect(confirmButton().disabled).toBe(false));
+      expect(fakeWriter.applied).toEqual([]);
+    });
+
+    it("direct mode: a deletion policy of an operator controller offers no take-over, names the controller, and keeps the confirm off", async () => {
+      await readAll(ownedPage(operator));
+      fireEvent.click(
+        screen.getByRole("radio", { name: /Keep the resources/ }),
+      );
+      expect((await group()).textContent).toContain(
+        "spec.deletionPolicy: camunda-operator/CamundaClusterClaim/uid-1 of the operator sets it.",
+      );
+      expect(screen.queryByRole("checkbox")).toBeNull();
+      expect(
+        screen.getByText(
+          "The operator sets the deletion policy of the claim, so the delete cannot change it. Choose Delete the resources to delete with the policy that the claim has.",
+        ),
+      ).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+        target: { value: "orders" },
+      });
+      await act(async () => {});
+      expect(confirmButton().disabled).toBe(true);
+      expect(fakeWriter.applied).toEqual([]);
+    });
+
+    it("direct mode: the policy that the claim has sends only the delete, with no question", async () => {
+      await readAll(ownedPage(kubectl));
+      await confirm("Delete the cluster");
+      await waitFor(() => expect(fakeWriter.applied).toEqual([remove()]));
+      expect(
+        screen.queryByRole("group", { name: "Fields that another tool set" }),
+      ).toBeNull();
+    });
   });
 
   it("disables the choice while the delete is sent, so that the page cannot show another policy than the write", async () => {
