@@ -227,6 +227,30 @@ describe("settingsOf", () => {
     expect(clusterRef.editor).toBeUndefined();
   });
 
+  it.each([
+    [false, true],
+    [true, undefined],
+  ])(
+    "leaves the rows that the editor opens with unchecked in the labels of the ServiceMonitor of Optimize only while it is off (enabled: %s)",
+    (enabled, unchecked) => {
+      const attachment = {
+        managementAuthConfigRef: "keycloak",
+        monitoring: { serviceMonitor: { enabled, labels: { "bad key": "x" } } },
+      };
+      const { fields } = settingsFieldsOf({
+        claim: { attachments: { optimize: attachment } },
+        optimize: { clusterRef: { name: "orders" }, ...attachment },
+      });
+      const [group] = componentSettings(fields, "optimize", {});
+      const labels = setting(
+        settingsOf({ group, spec: attachment }),
+        "monitoring.serviceMonitor.labels",
+      );
+      expect(labels.openedUnchecked).toBe(unchecked);
+      expect(labels.mergedErrors).toBeUndefined();
+    },
+  );
+
   it("a change inside a block keeps the pending changes of the block", () => {
     const pending = {
       managementAuthConfigRef: "keycloak",
@@ -563,7 +587,380 @@ describe("settingsOf merged errors", () => {
   });
 });
 
+describe("settingsOf merged entry errors", () => {
+  const PRESET =
+    "comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.";
+
+  // brokerSetting returns the setting label of the brokers under page.
+  const brokerSetting = (label: string, page: SettingsPage) =>
+    setting(processSettings("zeebe", "zeebe", page), label);
+
+  it("reports a label key of the preset that is not valid, with the entry", () => {
+    const labels = brokerSetting("podLabels", {
+      preset: { zeebe: { podLabels: { "bad key": "x", team: "a" } } },
+    });
+    expect(labels.mergedErrors).toEqual([
+      {
+        message: `The label key "bad key" ${PRESET}`,
+        blocks: true,
+        entry: { key: "bad key", value: "x" },
+      },
+    ]);
+  });
+
+  it("keeps the error when the claim leaves the key out", () => {
+    const labels = brokerSetting("podLabels", {
+      preset: { zeebe: { podLabels: { "bad key": "x", team: "a" } } },
+      claim: { cluster: { zeebe: { podLabels: { team: "a" } } } },
+    });
+    expect(labels.mergedErrors?.map((e) => e.message)).toEqual([
+      `The label key "bad key" ${PRESET}`,
+    ]);
+  });
+
+  it("reports an entry that the claim holds as one that the claim can correct, with no entry for the editor to leave out", () => {
+    const labels = brokerSetting("podLabels", {
+      preset: { zeebe: { podLabels: { "bad key": "x" } } },
+      claim: { cluster: { zeebe: { podLabels: { "bad key": "y" } } } },
+    });
+    expect(labels.mergedErrors).toEqual([
+      {
+        message:
+          'The label key "bad key" is not valid. Correct it, or remove its row.',
+        blocks: true,
+      },
+    ]);
+  });
+
+  it("says that the claim can set a valid value for a label value of the preset that is not valid", () => {
+    const labels = brokerSetting("podLabels", {
+      preset: { zeebe: { podLabels: { team: "not valid" } } },
+    });
+    expect(labels.mergedErrors).toEqual([
+      {
+        message:
+          'The value of the label "team" comes from the preset and is not valid. Set a valid value for "team" in the claim, pick another preset, or ask your admin to correct the preset.',
+        blocks: true,
+        entry: { key: "team", value: "not valid" },
+      },
+    ]);
+  });
+
+  it("reports one error for an entry whose key and value are not valid", () => {
+    const labels = brokerSetting("podLabels", {
+      preset: { zeebe: { podLabels: { "bad key": "not valid" } } },
+    });
+    expect(labels.mergedErrors?.map((e) => e.message)).toEqual([
+      `The label key "bad key" ${PRESET}`,
+    ]);
+  });
+
+  it("reports an empty annotation key of the preset", () => {
+    const annotations = brokerSetting("podAnnotations", {
+      preset: { zeebe: { podAnnotations: { "": "x", note: "any text" } } },
+    });
+    expect(annotations.mergedErrors).toEqual([
+      {
+        message: `An empty annotation key ${PRESET}`,
+        blocks: true,
+        entry: { key: "", value: "x" },
+      },
+    ]);
+  });
+
+  it("reports an annotation key of the preset that is not valid", () => {
+    const annotations = brokerSetting("podAnnotations", {
+      preset: { zeebe: { podAnnotations: { "bad key": "x" } } },
+    });
+    expect(annotations.mergedErrors?.map((e) => e.message)).toEqual([
+      `The annotation key "bad key" ${PRESET}`,
+    ]);
+  });
+
+  it("reports an empty key of the preset with an empty value, which the editor ignores", () => {
+    const annotations = brokerSetting("podAnnotations", {
+      preset: { zeebe: { podAnnotations: { "": "" } } },
+    });
+    expect(annotations.mergedErrors).toEqual([
+      {
+        message: `An empty annotation key ${PRESET}`,
+        blocks: true,
+        entry: { key: "", value: "" },
+      },
+    ]);
+  });
+
+  it("reports an empty annotation key of the Connectors ServiceAccount", () => {
+    const annotations = setting(
+      processSettings("connectors", "connectors", {
+        cluster: { connectors: { enabled: true } },
+        preset: {
+          connectors: { serviceAccount: { annotations: { "": "x" } } },
+        },
+      }),
+      "serviceAccount.annotations",
+    );
+    expect(annotations.mergedErrors?.map((e) => e.message)).toEqual([
+      `An empty annotation key ${PRESET}`,
+    ]);
+  });
+
+  it("reports a variable of the preset without a name", () => {
+    const env = brokerSetting("extraEnv", {
+      preset: { zeebe: { extraEnv: [{ name: "", value: "x" }] } },
+      claim: {
+        cluster: { zeebe: { extraEnv: [{ name: "TZ", value: "UTC" }] } },
+      },
+    });
+    expect(env.mergedErrors).toEqual([
+      {
+        message: `A variable without a name ${PRESET}`,
+        blocks: true,
+        entry: { name: "", value: "x" },
+      },
+    ]);
+  });
+
+  it("reports a variable without a name that the claim holds, with no entry for the editor to leave out", () => {
+    const env = brokerSetting("extraEnv", {
+      preset: { zeebe: { extraEnv: [{ name: "", value: "x" }] } },
+      claim: { cluster: { zeebe: { extraEnv: [{ name: "", value: "y" }] } } },
+    });
+    expect(env.mergedErrors).toEqual([
+      {
+        message: "A variable without a name is not valid. Remove its row.",
+        blocks: true,
+      },
+    ]);
+    expect(env.openedUnchecked).toBe(true);
+  });
+
+  it("asks the admin to correct a variable of the release", () => {
+    const env = setting(
+      clusterSettings({
+        release: { version: "8.9.1", extraEnv: [{ name: "", value: "x" }] },
+      }),
+      "extraEnv",
+    );
+    expect(env.mergedErrors?.map((e) => e.message)).toEqual([
+      "A variable without a name comes from the release. The claim cannot remove it. Ask your admin to correct the release.",
+    ]);
+  });
+
+  it("blocks on the labels, the annotations, and the variables of the whole cluster", () => {
+    const settings = clusterSettings({
+      preset: {
+        podLabels: { "bad key": "x" },
+        podAnnotations: { "": "x" },
+        extraEnv: [{ name: "", value: "x" }],
+      },
+    });
+    for (const label of ["podLabels", "podAnnotations", "extraEnv"])
+      expect(setting(settings, label).mergedErrors).toEqual([
+        expect.objectContaining({ blocks: true }),
+      ]);
+  });
+
+  it("does not block on the labels of an embedded app, and asks to correct them before it runs standalone", () => {
+    const labels = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: { tasklist: { podLabels: { "bad key": "x" } } },
+      }),
+      "podLabels",
+    );
+    expect(labels.mergedErrors).toEqual([
+      expect.objectContaining({
+        message: `The label key "bad key" ${PRESET} Correct it before Tasklist runs standalone.`,
+        blocks: false,
+      }),
+    ]);
+  });
+
+  it("blocks on the variables of an embedded app, which its host gets", () => {
+    const env = setting(
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+        preset: { tasklist: { extraEnv: [{ name: "", value: "x" }] } },
+      }),
+      "extraEnv",
+    );
+    expect(env.mergedErrors).toEqual([
+      expect.objectContaining({ blocks: true }),
+    ]);
+  });
+
+  it("does not block on the variables of Connectors that are not enabled", () => {
+    const env = setting(
+      processSettings("connectors", "connectors", {
+        preset: { connectors: { extraEnv: [{ name: "", value: "x" }] } },
+      }),
+      "extraEnv",
+    );
+    expect(env.mergedErrors).toEqual([
+      expect.objectContaining({
+        message: `A variable without a name ${PRESET} Correct it before Connectors are turned on.`,
+        blocks: false,
+      }),
+    ]);
+  });
+
+  it("blocks on the labels and the variables of the dump", () => {
+    const settings = clusterSettings({
+      preset: {
+        backup: {
+          dump: {
+            podLabels: { "bad key": "x" },
+            extraEnv: [{ name: "", value: "x" }],
+          },
+        },
+      },
+    });
+    for (const label of ["backup.dump.podLabels", "backup.dump.extraEnv"])
+      expect(setting(settings, label).mergedErrors).toEqual([
+        expect.objectContaining({ blocks: true }),
+      ]);
+  });
+
+  // monitorLabels returns the setting monitoring.serviceMonitor.labels of
+  // a claim whose ServiceMonitor is enabled as given and holds a label key
+  // that is not valid.
+  const monitorLabels = (enabled: boolean) =>
+    setting(
+      clusterSettings({
+        claim: {
+          cluster: {
+            monitoring: {
+              serviceMonitor: { enabled, labels: { "bad key": "x" } },
+            },
+          },
+        },
+      }),
+      "monitoring.serviceMonitor.labels",
+    );
+  const HELD_KEY =
+    'The label key "bad key" is not valid. Correct it, or remove its row.';
+
+  it("warns about a label key of the claim that is not valid in a ServiceMonitor that is off", () => {
+    expect(monitorLabels(false).mergedErrors).toEqual([
+      {
+        message: `${HELD_KEY} Correct it before you turn on the ServiceMonitor.`,
+        blocks: false,
+      },
+    ]);
+  });
+
+  it("warns, and does not block, about an empty key of the claim in a ServiceMonitor that is off", () => {
+    const labels = setting(
+      clusterSettings({
+        claim: {
+          cluster: {
+            monitoring: {
+              serviceMonitor: { enabled: false, labels: { "": "" } },
+            },
+          },
+        },
+      }),
+      "monitoring.serviceMonitor.labels",
+    );
+    expect(labels.openedUnchecked).toBe(true);
+    expect(labels.mergedErrors).toEqual([
+      {
+        message:
+          "An empty label key is not valid. Correct it, or remove its row. Correct it before you turn on the ServiceMonitor.",
+        blocks: false,
+      },
+    ]);
+  });
+
+  it("blocks on a label key of the claim that is not valid in a ServiceMonitor that is on", () => {
+    expect(monitorLabels(true).mergedErrors).toEqual([
+      { message: HELD_KEY, blocks: true },
+    ]);
+  });
+
+  it("keeps the rule of Kubernetes in the editor of a map that reaches no object, and leaves the rows it opens with to the merged check", () => {
+    const labels = monitorLabels(false);
+    expect(labels.editor).toEqual({ kind: "keyValue", format: "label" });
+    expect(labels.openedUnchecked).toBe(true);
+  });
+
+  it("blocks on a label key of the claim that is not valid in the pod labels of a process that runs", () => {
+    const labels = brokerSetting("podLabels", {
+      claim: { cluster: { zeebe: { podLabels: { "bad key": "x" } } } },
+    });
+    expect(labels.mergedErrors).toEqual([{ message: HELD_KEY, blocks: true }]);
+  });
+
+  it("says that the value of a label of the claim that is not valid needs a correction", () => {
+    const labels = brokerSetting("podLabels", {
+      claim: { cluster: { zeebe: { podLabels: { team: "not valid" } } } },
+    });
+    expect(labels.mergedErrors).toEqual([
+      {
+        message: 'The value of the label "team" is not valid. Correct it.',
+        blocks: true,
+      },
+    ]);
+  });
+
+  it("checks every row of a map in the editor without the claim, as on the preset page", () => {
+    const page = {
+      preset: {
+        monitoring: { serviceMonitor: { labels: { "bad key": "x" } } },
+      },
+    };
+    const { group } = settingsGroupOf("cluster", "cluster", page);
+    const { merged } = settingsFieldsOf(page);
+    const labels = setting(
+      settingsOf({ group, spec: merged.spec }),
+      "monitoring.serviceMonitor.labels",
+    );
+    expect(labels.editor).toEqual({ kind: "keyValue", format: "label" });
+    expect(labels.openedUnchecked).toBeUndefined();
+  });
+
+  it("warns about an annotation key of the preset on a Connectors ServiceAccount that the operator does not create", () => {
+    const annotations = setting(
+      processSettings("connectors", "connectors", {
+        cluster: { connectors: { enabled: true } },
+        preset: {
+          connectors: {
+            serviceAccount: { create: false, annotations: { "bad key": "x" } },
+          },
+        },
+      }),
+      "serviceAccount.annotations",
+    );
+    expect(annotations.mergedErrors).toEqual([
+      expect.objectContaining({
+        message: `The annotation key "bad key" ${PRESET} Correct it before the operator creates the ServiceAccount.`,
+        blocks: false,
+      }),
+    ]);
+  });
+
+  it("has no merged entry errors without the claim, as on the preset page", () => {
+    const page = { preset: { zeebe: { podLabels: { "bad key": "x" } } } };
+    const { group } = settingsGroupOf("zeebe", "zeebe", page);
+    const { merged } = settingsFieldsOf(page);
+    expect(
+      setting(settingsOf({ group, spec: merged.spec }), "podLabels")
+        .mergedErrors,
+    ).toBeUndefined();
+  });
+});
+
 describe("blockingMergedErrors", () => {
+  it("gives a preset entry that fails the rule of its editor with the path of its setting", () => {
+    const { fields, merged } = settingsFieldsOf({
+      preset: { zeebe: { podLabels: { "bad key": "x" } } },
+    });
+    expect(blockingMergedErrors(fields, merged.spec, {})).toEqual([
+      'zeebe.podLabels: The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.',
+    ]);
+  });
+
   it("gives each merged error that blocks with the path of its setting", () => {
     const page = {
       cluster: { gateway: { mode: "Standalone" } },

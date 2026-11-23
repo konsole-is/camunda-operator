@@ -25,6 +25,7 @@ import {
   STALE_CLAIM_MESSAGE,
   type ClaimObject,
   type Session,
+  valueAt,
 } from "@/lib/session";
 import type { KubeObject, WriteMode } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
@@ -414,6 +415,109 @@ describe("ClaimReview", () => {
     expect((await confirm("Push to Git")).disabled).toBe(false);
   });
 
+  describe("Git mode with keptByDryRun", () => {
+    const ref = {
+      apiVersion: claim.apiVersion,
+      kind: claim.kind,
+      namespace: "team-a",
+      name: "orders",
+    };
+    const resources: Step[] = [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "zeebe" },
+      { field: "resources" },
+    ];
+    // withResources returns the claim with the broker resources live.
+    const withResources = (live: object): ClaimObject => ({
+      ...claim,
+      spec: { cluster: { zeebe: { replicas: 3, resources: live } } },
+    });
+    const sessionOf = (live: object, value?: object) => {
+      const s = openSession({
+        claim: withResources(live),
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!;
+      const result =
+        value === undefined
+          ? resetValue(s, resources)
+          : setValue(s, resources, value);
+      if (!("session" in result)) throw new Error("refused");
+      return result.session;
+    };
+    const dryRun = (after: object) => ({
+      objects: [{ ref, after: withResources(after) as KubeObject, diff: [] }],
+      errors: [],
+    });
+
+    it("gives input the claim of the dry run with a field of another tool that a write of the whole block leaves out, and names that field", async () => {
+      fakeWriter.reset("git");
+      fakeWriter.previews = [
+        dryRun({ requests: { cpu: "2" }, limits: { cpu: "1" } }),
+      ];
+      const inputs: unknown[] = [];
+      review({
+        session: sessionOf(
+          { requests: { cpu: "2" } },
+          { limits: { cpu: "1" } },
+        ),
+        keptByDryRun: true,
+        input: (saved) => {
+          inputs.push(valueAt(claimAfter(saved), resources));
+          return { impacts: [] };
+        },
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toBe(
+          "Another tool keeps spec.cluster.zeebe.resources.requests.cpu, so the push does not remove it.",
+        ),
+      );
+      expect(inputs.at(-1)).toEqual({
+        limits: { cpu: "1" },
+        requests: { cpu: "2" },
+      });
+    });
+
+    it("names only the fields of a reset block that the dry run keeps", async () => {
+      fakeWriter.reset("git");
+      fakeWriter.previews = [dryRun({ requests: { memory: "1Gi" } })];
+      review({
+        session: sessionOf({
+          limits: { cpu: "1" },
+          requests: { memory: "1Gi" },
+        }),
+        keptByDryRun: true,
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toBe(
+          "Another tool keeps spec.cluster.zeebe.resources.requests.memory, so the push does not remove it.",
+        ),
+      );
+    });
+
+    it("gives input the session without keptByDryRun, as the review of a plane", async () => {
+      fakeWriter.reset("git");
+      fakeWriter.previews = [
+        dryRun({ requests: { cpu: "2" }, limits: { cpu: "1" } }),
+      ];
+      const inputs: unknown[] = [];
+      review({
+        session: sessionOf(
+          { requests: { cpu: "2" } },
+          { limits: { cpu: "1" } },
+        ),
+        input: (saved) => {
+          inputs.push(valueAt(claimAfter(saved), resources));
+          return { impacts: [] };
+        },
+      });
+      await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+      await confirm("Push to Git");
+      expect(inputs.at(-1)).toEqual({ limits: { cpu: "1" } });
+    });
+  });
+
   it("Git mode shows a note when the preview keeps a reset field of a list item named by index", async () => {
     fakeWriter.reset("git");
     const env = { name: "TZ", value: "UTC" };
@@ -536,6 +640,22 @@ describe("ClaimReview", () => {
       screen.getByRole("figure", { name: "Changes to the claim" }).textContent,
     ).toContain("replicas: 5");
     await confirm("Save");
+  });
+
+  it("shows each blocking message of input as an alert and keeps the confirm off", async () => {
+    const message = "zeebe.resources: The CPU limit is below the request.";
+    review({ input: inputOf({ blocking: [message] }) });
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+    expect(screen.getByRole("alert").textContent).toBe(message);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Save" }).disabled,
+    ).toBe(true);
+  });
+
+  it("an empty list of blocking messages changes nothing", async () => {
+    review({ input: inputOf({ blocking: [] }) });
+    await confirm("Save");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("previews the change of the session with its precondition", async () => {
@@ -742,6 +862,61 @@ describe("ClaimReview with fields of another tool", () => {
       ),
     );
     expect(diff().querySelectorAll("del")).toHaveLength(1);
+  });
+
+  it("blocks on the blocking messages of the claim that the save leaves, again after each choice", async () => {
+    const owned: ClaimObject = {
+      ...claim,
+      metadata: {
+        ...claim.metadata,
+        managedFields: [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": { "f:cluster": { "f:zeebe": { "f:partitions": {} } } },
+            },
+          },
+        ],
+      } as ClaimObject["metadata"],
+    };
+    const reset = resetValue(
+      openSession({
+        claim: owned,
+        resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+        locks: () => undefined,
+      })!,
+      partitions,
+    );
+    if (!("session" in reset)) throw new Error("refused");
+    const ownership = [{ ref, changed: [], cleared: [fieldAt(partitions)] }];
+    fakeWriter.previews = [
+      { objects: [], errors: [], ownership },
+      { objects: [], errors: [] },
+    ];
+    const kept = "Another tool keeps partitions.";
+    review({
+      session: reset.session,
+      input: (saved) => ({
+        impacts: [],
+        blocking:
+          valueAt(claimAfter(saved), partitions) === undefined ? [] : [kept],
+      }),
+    });
+    await waitFor(() => expect(choice()).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toBe(kept);
+    const save = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Save",
+    });
+    expect(save.disabled).toBe(true);
+
+    fireEvent.click(choice());
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(choice());
+    expect(screen.getByRole("alert").textContent).toBe(kept);
+    expect(save.disabled).toBe(true);
   });
 
   it("with the choice, a reset field that the API server defaults shows its default value in the row and the diff", async () => {

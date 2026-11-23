@@ -9,6 +9,7 @@ export {
   editorOf,
   editorValueOf,
   fieldSchemaFromOpenAPI,
+  type KeyValueFormat,
   overrideEditorOf,
   parameterEditorOf,
   type ParameterEditor,

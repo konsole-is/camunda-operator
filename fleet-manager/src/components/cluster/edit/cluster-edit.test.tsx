@@ -63,6 +63,20 @@ const schedule: Step[] = [
   { field: "attachments" },
   { field: "backupSchedule" },
 ];
+const zeebeCpu = (side: "requests" | "limits"): Step[] => [
+  { field: "spec" },
+  { field: "cluster" },
+  { field: "zeebe" },
+  { field: "resources" },
+  { field: side },
+  { field: "cpu" },
+];
+const zeebeResources: Step[] = [
+  { field: "spec" },
+  { field: "cluster" },
+  { field: "zeebe" },
+  { field: "resources" },
+];
 const PRECONDITION = "CamundaClusterClaim/team-a/orders";
 
 // Probe is an editor: it changes the claim only through useClusterEdit.
@@ -100,6 +114,36 @@ function Probe() {
         Missing release
       </button>
       <button onClick={() => edit.set(presetRef, "large")}>Large preset</button>
+      <button onClick={() => edit.reset(zeebeCpu("requests"))}>
+        Clear the CPU request
+      </button>
+      <button onClick={() => edit.set(zeebeCpu("limits"), "1")}>
+        Limit the CPU to 1
+      </button>
+      <button
+        onClick={() => edit.set(zeebeResources, { limits: { cpu: "1" } })}
+      >
+        Write the resources with only a CPU limit of 1
+      </button>
+      <button onClick={() => edit.reset(zeebeResources)}>
+        Reset the resources
+      </button>
+      <button
+        onClick={() =>
+          edit.set(
+            [
+              { field: "spec" },
+              { field: "cluster" },
+              { field: "monitoring" },
+              { field: "serviceMonitor" },
+              { field: "enabled" },
+            ],
+            true,
+          )
+        }
+      >
+        Turn on the ServiceMonitor
+      </button>
       <button
         onClick={() => edit.invalid(replicas, "Replicas: Enter 1 or more")}
       >
@@ -871,6 +915,297 @@ describe("ClusterEditProvider", () => {
           .getAttribute("data-variant"),
       ).toBe("destructive"),
     );
+  });
+
+  describe("a save that keeps a CPU request of another tool", () => {
+    const spec = {
+      zeebe: { replicas: 3, resources: { requests: { cpu: "2" } } },
+    };
+    const kubectl = {
+      name: "kubectl",
+      operation: "Apply",
+      kind: "other" as const,
+      known: true,
+    };
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    };
+    const ownership = [
+      {
+        ref,
+        changed: [],
+        cleared: [
+          {
+            path: "spec.cluster.zeebe.resources.requests.cpu",
+            steps: zeebeCpu("requests") as { field: string }[],
+            managers: [kubectl],
+          },
+        ],
+      },
+    ];
+    // context holds a claim whose CPU request kubectl owns, under a preset
+    // whose CPU request is 1.
+    function context(): ClusterSlotContext {
+      const owned = claim("41", { cluster: spec });
+      owned.metadata.managedFields = [
+        {
+          manager: "kubectl",
+          operation: "Apply",
+          fieldsV1: {
+            "f:spec": {
+              "f:cluster": {
+                "f:zeebe": {
+                  "f:resources": { "f:requests": { "f:cpu": {} } },
+                },
+              },
+            },
+          },
+        },
+      ];
+      return slotContext({
+        cluster: cluster(spec),
+        claim: owned,
+        presets: [
+          {
+            kind: "CamundaClusterPreset",
+            metadata: { name: "medium" },
+            spec: {
+              cluster: { zeebe: { resources: { requests: { cpu: "1" } } } },
+            },
+          } as unknown as Resource<"CamundaClusterPreset">,
+        ],
+      });
+    }
+    const message =
+      "zeebe.resources: The CPU limit of 1 is below the CPU request of 2. A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.";
+    const choice = () =>
+      within(dialog()!).getByRole("checkbox", {
+        name: "Take over these fields",
+      });
+    const save = () =>
+      within(dialog()!).getByRole<HTMLButtonElement>("button", {
+        name: "Save",
+      });
+
+    it("refuses the save and names the kept value", async () => {
+      fakeWriter.previews = [{ objects: [], errors: [], ownership }];
+      page(context());
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() => expect(choice()).toBeTruthy());
+      expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
+      expect(save().disabled).toBe(true);
+    });
+
+    it("in Git mode, refuses the push when the dry run keeps the request", async () => {
+      fakeWriter.reset("git");
+      const kept = { ...context(), writeMode: "git" as const };
+      fakeWriter.previews = [
+        {
+          objects: [{ ref, after: kept.claim as KubeObject, diff: [] }],
+          errors: [],
+        },
+      ];
+      page(kept);
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() =>
+        expect(within(dialog()!).getByRole("alert").textContent).toContain(
+          message,
+        ),
+      );
+      expect(
+        within(dialog()!).getByRole<HTMLButtonElement>("button", {
+          name: "Push to Git",
+        }).disabled,
+      ).toBe(true);
+    });
+
+    it("saves once the user takes the request over, and refuses again when the choice goes off", async () => {
+      fakeWriter.previews = [
+        { objects: [], errors: [], ownership },
+        { objects: [], errors: [] },
+      ];
+      page(context());
+      click("Clear the CPU request");
+      click("Limit the CPU to 1");
+      openReview();
+      await waitFor(() => expect(choice()).toBeTruthy());
+      fireEvent.click(choice());
+      await waitFor(() => expect(save().disabled).toBe(false));
+      expect(within(dialog()!).queryByRole("alert")).toBeNull();
+
+      fireEvent.click(choice());
+      expect(within(dialog()!).getByRole("alert").textContent).toBe(message);
+      expect(save().disabled).toBe(true);
+    });
+  });
+
+  describe("a label key of the claim that is not valid, with no editor open", () => {
+    const review = () =>
+      within(bar()!).getByRole<HTMLButtonElement>("button", {
+        name: "Review",
+      });
+    const withCluster = (spec: object) =>
+      slotContext({
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: { zeebe: { replicas: 3 }, ...spec } }),
+      });
+
+    it("lets a change through while the ServiceMonitor is off, and blocks Review once the change turns it on", () => {
+      page(
+        withCluster({
+          monitoring: {
+            serviceMonitor: { enabled: false, labels: { "bad key": "x" } },
+          },
+        }),
+      );
+      click("Scale");
+      expect(review().disabled).toBe(false);
+      click("Turn on the ServiceMonitor");
+      expect(review().disabled).toBe(true);
+      expect(bar()!.textContent).toContain(
+        'monitoring.serviceMonitor.labels: The label key "bad key" is not valid. Correct it, or remove its row.',
+      );
+    });
+
+    it("blocks Review for a label key of the pod labels of the brokers", () => {
+      page(
+        withCluster({ zeebe: { replicas: 3, podLabels: { "bad key": "x" } } }),
+      );
+      click("Scale");
+      expect(review().disabled).toBe(true);
+      expect(bar()!.textContent).toContain(
+        'zeebe.podLabels: The label key "bad key" is not valid. Correct it, or remove its row.',
+      );
+    });
+  });
+
+  describe("in Git mode, a push that keeps fields of another tool", () => {
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    };
+    // owns returns a managedFields entry of an apply by manager that owns
+    // the fields of zeebe.resources in resources.
+    const owns = (manager: string, resources: object, revision = false) => ({
+      manager,
+      operation: "Apply",
+      fieldsV1: {
+        ...(revision && {
+          "f:metadata": {
+            "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+          },
+        }),
+        "f:spec": { "f:cluster": { "f:zeebe": { "f:resources": resources } } },
+      },
+    });
+    // gitPage renders the page in Git mode for a claim with the broker
+    // resources of live, the managedFields of managers, and a preset with
+    // the broker resources of preset. after is the claim that the dry run
+    // of the push gives.
+    function gitPage(
+      live: object,
+      managers: object[],
+      preset: object,
+      after: object,
+    ) {
+      fakeWriter.reset("git");
+      const spec = { zeebe: { replicas: 3, resources: live } };
+      const owned = claim("41", { cluster: spec });
+      owned.metadata.managedFields =
+        managers as typeof owned.metadata.managedFields;
+      const dryRun = claim("41", {
+        cluster: { zeebe: { replicas: 3, resources: after } },
+      });
+      fakeWriter.previews = [
+        {
+          objects: [{ ref, after: dryRun as KubeObject, diff: [] }],
+          errors: [],
+        },
+      ];
+      page(
+        slotContext({
+          writeMode: "git",
+          cluster: cluster(spec),
+          claim: owned,
+          presets: [
+            {
+              kind: "CamundaClusterPreset",
+              metadata: { name: "medium" },
+              spec: { cluster: { zeebe: { resources: preset } } },
+            } as unknown as Resource<"CamundaClusterPreset">,
+          ],
+        }),
+      );
+    }
+    const push = () =>
+      within(dialog()!).getByRole<HTMLButtonElement>("button", {
+        name: "Push to Git",
+      });
+    const KEPT =
+      "A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.";
+
+    it("refuses a write of the whole block that leaves a CPU request of another tool above the new limit", async () => {
+      gitPage(
+        { requests: { cpu: "2" } },
+        [
+          owns("kubectl", { "f:requests": { "f:cpu": {} } }),
+          owns("argocd-controller", {}, true),
+        ],
+        { requests: { cpu: "1" } },
+        { requests: { cpu: "2" }, limits: { cpu: "1" } },
+      );
+      click("Write the resources with only a CPU limit of 1");
+      openReview();
+      await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        `zeebe.resources: The CPU limit of 1 is below the CPU request of 2. ${KEPT}`,
+      );
+      expect(push().disabled).toBe(true);
+    });
+
+    it("pushes a reset of the block when only a valid field of another tool stays", async () => {
+      gitPage(
+        { limits: { cpu: "1" }, requests: { memory: "1Gi" } },
+        [
+          owns("argocd-controller", { "f:limits": { "f:cpu": {} } }, true),
+          owns("kubectl", { "f:requests": { "f:memory": {} } }),
+        ],
+        { requests: { cpu: "2" } },
+        { requests: { memory: "1Gi" } },
+      );
+      click("Reset the resources");
+      openReview();
+      await waitFor(() => expect(push().disabled).toBe(false));
+      expect(dialog()!.textContent).not.toContain("zeebe.resources: ");
+    });
+
+    it("refuses a reset of the block when a request of another tool stays above the limit of the preset", async () => {
+      gitPage(
+        { requests: { cpu: "2" }, limits: { cpu: "4" } },
+        [
+          owns("kubectl", { "f:requests": { "f:cpu": {} } }),
+          owns("argocd-controller", { "f:limits": { "f:cpu": {} } }, true),
+        ],
+        { limits: { cpu: "1" } },
+        { requests: { cpu: "2" } },
+      );
+      click("Reset the resources");
+      openReview();
+      await waitFor(() => expect(fakeWriter.previewed).toHaveLength(1));
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        `zeebe.resources: The CPU limit of 1 comes from the preset and is below the CPU request of 2. ${KEPT}`,
+      );
+      expect(push().disabled).toBe(true);
+    });
   });
 
   it("a claim update that changes a field with a pending change keeps the pending value and shows the new live value before it", async () => {

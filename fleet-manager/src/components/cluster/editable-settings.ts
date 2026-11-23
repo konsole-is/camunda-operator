@@ -1,3 +1,5 @@
+import { type EnvVar, envErrors } from "@/components/fleet/env-editor";
+import { keyValueErrors } from "@/components/fleet/key-value-editor";
 import {
   EDITED_RESOURCES,
   type LimitBelowRequest,
@@ -15,9 +17,12 @@ import {
   type FieldLock,
   type FieldState,
   fieldSchemaOf,
+  itemStep,
+  type KeyValueFormat,
   optimizeClaimNames,
   overrideEditorOf,
   parameterEditorOf,
+  pathFrom,
   type SchemaRoot,
   type SettingEditor,
   type Step,
@@ -37,9 +42,10 @@ import { type Process, runsOwnWorkload } from "./topology";
  * counts the entries that the preset and the release put before value.
  * replaces says that a claim value replaces the value below it as a
  * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key. mergedErrors are the limits of the merged value that are
- * below their request, and undefined when no check of the merged value
- * runs.
+ * map key by key. mergedErrors are the faults of the merged value that the
+ * editor does not own, and undefined when no check of the merged value
+ * runs. openedUnchecked says that the editor of a map or of variables does
+ * not check a row that it opens with until the user changes it.
  */
 export type Setting = {
   key: string;
@@ -57,17 +63,24 @@ export type Setting = {
   resetNote?: string;
   replaces?: true;
   mergedErrors?: MergedError[];
+  openedUnchecked?: true;
 };
 
 /**
- * MergedError is a limit below its request in the merged value of a
- * setting. blocks is false when the value does not apply now: the process
- * runs embedded, or Connectors are not enabled.
+ * MergedError is a fault of the merged value of a setting: a limit below
+ * its request, an entry of a map that fails the rule of its editor, or an
+ * entry of a list of variables that fails it and that the claim does not
+ * hold. entry is that entry, as the editor holds it, when the claim does
+ * not hold it. blocks is false when the value reaches no object now.
  */
 export type MergedError = {
   message: string;
   blocks: boolean;
+  entry?: MapEntry | EnvVar;
 };
+
+/** MapEntry is one entry of a map of strings. */
+export type MapEntry = { key: string; value: string };
 
 /**
  * settingsOf returns the settings of group. spec holds the values by their
@@ -87,8 +100,11 @@ export type MergedError = {
  * locked setting has no editor and no steps. A field that belongs to no
  * setting is a read-only setting of its own, after the others.
  *
- * With claim, spec is a merge of layers, and a resources setting gets
- * mergedErrors: each limit of spec below its request, for any resource.
+ * With claim, spec is a merge of layers, and a setting of resources, of a
+ * map of strings, or of variables gets mergedErrors. For resources, they
+ * are each limit of spec below its request, for any resource. For a map
+ * or variables, they are the entries of spec that fail the rule of the
+ * editor, one for each entry.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -150,36 +166,40 @@ export function settingsOf(input: {
       ? ({ kind: "secretRef" } as const)
       : editorOf(path, fieldSchemaOf(root, path), { value: own });
     if (!editor) return setting;
-    const keyed = "claim" in input && editor.kind === "resources";
-    // The operator gives the resources of a process only to its own
-    // workload.
-    const applies =
-      keyed &&
-      (!COMPONENTS.includes(group.component) ||
-        runsOwnWorkload(
-          spec as CamundaClusterSpec,
-          group.component as Process,
-        ));
-    const stateAt = (part: string[]) =>
-      mine.find(({ names: f }) => sameNames(f, [...names, ...part]))?.field
-        .state;
-    const checked: Setting = keyed
-      ? {
-          ...setting,
-          mergedErrors: limitsBelowRequests((value ?? {}) as Resources).map(
-            (below) => ({
-              message: mergedLimitError(
-                below,
-                group,
-                applies,
-                stateAt(["limits", below.resource]),
-                stateAt(["requests", below.resource]),
-              ),
-              blocks: applies,
+    const reach = reachOf(editor, group, names, spec);
+    // The check of the merged value covers each entry of a map and of the
+    // variables, and on Optimize nothing checks a map that reaches no
+    // object.
+    const openedUnchecked =
+      (editor.kind === "keyValue" &&
+        ("claim" in input || (optimize && !reach.applies))) ||
+      (editor.kind === "env" && "claim" in input);
+    const checked: Setting =
+      "claim" in input
+        ? {
+            ...setting,
+            ...(openedUnchecked && { openedUnchecked: true as const }),
+            ...mergedCheckOf({
+              editor,
+              reach,
+              value,
+              claimValue: valueAt(claim, steps(names)),
+              stateAt: (part) =>
+                mine.find(({ names: f }) => sameNames(f, [...names, ...part]))
+                  ?.field.state,
+              // A map below a lock path is one field, so its entries
+              // take the state of the setting.
+              entryStateAt: (step) =>
+                mine.find(
+                  ({ field }) =>
+                    field.path === pathFrom("spec", [...steps(names), step]),
+                )?.field.state ?? (state?.kind === "claim" ? undefined : state),
             }),
-          ),
-        }
-      : setting;
+          }
+        : {
+            ...setting,
+            ...(openedUnchecked && { openedUnchecked: true as const }),
+          };
     if (holder?.field.claimSteps)
       return {
         ...checked,
@@ -210,12 +230,228 @@ export function settingsOf(input: {
   return [...settings, ...rest];
 }
 
-// mergedLimitError returns the message of a limit below its request in
-// group. applies says whether the resources of group apply now.
+// mergedCheckOf returns the mergedErrors of a setting with editor, or
+// nothing for an editor without a check of the merged value. value is the
+// merged value of the setting and claimValue that of the claim.
+// stateAt gives the state of the field at a path below the setting, and
+// entryStateAt that of the entry at one step below it.
+function mergedCheckOf(input: {
+  editor: SettingEditor;
+  reach: Reach;
+  value: unknown;
+  claimValue: unknown;
+  stateAt: (part: string[]) => FieldState | undefined;
+  entryStateAt: (step: Step) => FieldState | undefined;
+}): Pick<Setting, "mergedErrors"> {
+  const { editor, reach, value, claimValue, stateAt, entryStateAt } = input;
+  const { applies, later } = reach;
+  if (editor.kind === "resources") {
+    return {
+      mergedErrors: limitsBelowRequests((value ?? {}) as Resources).map(
+        (below) => ({
+          message: mergedLimitError(
+            below,
+            later,
+            stateAt(["limits", below.resource]),
+            stateAt(["requests", below.resource]),
+          ),
+          blocks: applies,
+        }),
+      ),
+    };
+  }
+  if (editor.kind === "keyValue") {
+    const held = isObject(claimValue) ? claimValue : {};
+    const entries = Object.entries(isObject(value) ? value : {}).map(
+      ([key, v]): MapEntry => ({ key, value: String(v) }),
+    );
+    const faults = entryFaults(keyValueErrors(entries, editor.format));
+    // The editor ignores a row with an empty key and an empty value, as a
+    // row that the user did not fill yet. Kubernetes refuses the empty key.
+    const blank = entries.findIndex((e) => e.key === "" && e.value === "");
+    if (blank >= 0) faults.push({ index: blank, field: "key" });
+    return {
+      mergedErrors: faults.map(({ index, field }): MergedError => {
+        const entry = entries[index];
+        if (Object.hasOwn(held, entry.key))
+          return {
+            message: heldEntryFault(entry, field, editor.format) + later,
+            blocks: applies,
+          };
+        const state = entryStateAt({ field: entry.key });
+        return {
+          message:
+            mapEntryFault(entry, field, editor.format, state) +
+            remedyOf(state, field === "value" ? entry.key : undefined) +
+            later,
+          blocks: applies,
+          entry,
+        };
+      }),
+    };
+  }
+  if (editor.kind === "env") {
+    const held = Array.isArray(claimValue) ? (claimValue as EnvVar[]) : [];
+    const env = Array.isArray(value) ? (value as EnvVar[]) : [];
+    return {
+      mergedErrors: entryFaults(envErrors(env))
+        // The merge keeps one entry for each name, and the editor reads an
+        // entry from a Secret only with its key, so only a missing name
+        // fails here.
+        .map(({ index }): MergedError => {
+          const entry = env[index];
+          if (held.some((e) => e.name === entry.name))
+            return {
+              message:
+                "A variable without a name is not valid. Remove its row." +
+                later,
+              blocks: applies,
+            };
+          const state = entryStateAt(itemStep(entry, index));
+          return {
+            message:
+              `A variable without a name ${entryOrigin(state)}. The claim cannot remove it.` +
+              remedyOf(state) +
+              later,
+            blocks: applies,
+            entry,
+          };
+        }),
+    };
+  }
+  return {};
+}
+
+// entryOrigin returns the words that say where an entry of state comes
+// from. The claim does not hold the entry, so without a known layer it is
+// only known to be on the cluster.
+function entryOrigin(state: FieldState | undefined): string {
+  return (originOf(state) ?? ON_CLUSTER).one;
+}
+
+// Reach says whether a value reaches an object now, and later is the
+// sentence that says when it will, or "" when it does now.
+type Reach = { applies: boolean; later: string };
+
+// reachOf returns the Reach of the setting at names with editor in group
+// of spec.
+function reachOf(
+  editor: SettingEditor,
+  group: SettingsGroup,
+  names: readonly string[],
+  spec: unknown,
+): Reach {
+  const component = group.component as Process;
+  // The operator gives the resources and the pod labels and annotations of
+  // a process only to its own workload. It gives the variables of an
+  // embedded process to its host, and those of Connectors to their own
+  // workload only.
+  if (
+    COMPONENTS.includes(group.component) &&
+    !(editor.kind === "env" && component !== "connectors") &&
+    !runsOwnWorkload(spec as CamundaClusterSpec, component)
+  )
+    return {
+      applies: false,
+      later: group.embedded
+        ? ` Correct it before ${group.label} runs standalone.`
+        : ` Correct it before ${group.label} are turned on.`,
+    };
+  const parent = names.slice(0, -1);
+  // The operator makes a ServiceMonitor only while its enabled is true.
+  if (editor.kind === "keyValue" && parent.at(-1) === "serviceMonitor") {
+    if (valueAt(spec, steps([...parent, "enabled"])) !== true)
+      return {
+        applies: false,
+        later: " Correct it before you turn on the ServiceMonitor.",
+      };
+  }
+  // The operator annotates a ServiceAccount only while its create is not
+  // false.
+  if (editor.kind === "keyValue" && parent.at(-1) === "serviceAccount") {
+    if (valueAt(spec, steps([...parent, "create"])) === false)
+      return {
+        applies: false,
+        later: " Correct it before the operator creates the ServiceAccount.",
+      };
+  }
+  return { applies: true, later: "" };
+}
+
+// entryFaults gives the first error of each entry of errors, whose paths
+// are "<entry>.<field>", with the entry and the field. An error of the key
+// or the name comes first, because the claim cannot change it.
+function entryFaults(
+  errors: readonly { path: string }[],
+): { index: number; field: string }[] {
+  const faults = new Map<number, string>();
+  for (const { path } of errors) {
+    const dot = path.indexOf(".");
+    const index = Number(path.slice(0, dot));
+    if (!faults.has(index)) faults.set(index, path.slice(dot + 1));
+  }
+  return [...faults].map(([index, field]) => ({ index, field }));
+}
+
+// mapEntryFault returns the sentence of an entry of a map of strings whose
+// field fails the rule of the editor.
+function mapEntryFault(
+  entry: MapEntry,
+  field: string,
+  format: KeyValueFormat | undefined,
+  state: FieldState | undefined,
+): string {
+  const noun = format ?? "map";
+  const from = entryOrigin(state);
+  if (field === "value")
+    return `The value of the ${noun} "${entry.key}" ${from} and is not valid.`;
+  const key =
+    entry.key === ""
+      ? `An empty ${noun} key`
+      : `The ${noun} key "${entry.key}"`;
+  return `${key} ${from}. The claim cannot remove it.`;
+}
+
+function heldEntryFault(
+  entry: MapEntry,
+  field: string,
+  format: KeyValueFormat | undefined,
+): string {
+  const noun = format ?? "map";
+  if (field === "value")
+    return `The value of the ${noun} "${entry.key}" is not valid. Correct it.`;
+  const key =
+    entry.key === ""
+      ? `An empty ${noun} key`
+      : `The ${noun} key "${entry.key}"`;
+  return `${key} is not valid. Correct it, or remove its row.`;
+}
+
+// remedyOf returns what the user can do about an entry of the layer of
+// state. With key, the claim can set a valid value for that key.
+function remedyOf(state: FieldState | undefined, key?: string): string {
+  const own =
+    key === undefined ? [] : [`Set a valid value for "${key}" in the claim`];
+  const others =
+    state?.kind === "preset"
+      ? ["pick another preset", "ask your admin to correct the preset"]
+      : state?.kind === "release"
+        ? ["ask your admin to correct the release"]
+        : [];
+  const all = [...own, ...others];
+  if (all.length === 0) return "";
+  const text =
+    all.length === 1
+      ? all[0]
+      : `${all.slice(0, -1).join(", ")}, or ${all.at(-1)}`;
+  return ` ${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+// mergedLimitError returns the message of a limit below its request, with
+// later, the sentence that says when the value applies.
 function mergedLimitError(
   below: LimitBelowRequest,
-  group: SettingsGroup,
-  applies: boolean,
+  later: string,
   limitState: FieldState | undefined,
   requestState: FieldState | undefined,
 ): string {
@@ -231,11 +467,6 @@ function mergedLimitError(
     (unedited && states.some((state) => state?.kind === "preset")
       ? " Pick another preset, or ask your admin to correct the preset."
       : "");
-  const later = applies
-    ? ""
-    : group.embedded
-      ? ` Correct it before ${group.label} runs standalone.`
-      : ` Correct it before ${group.label} are turned on.`;
   return faultOf(below, limitState, requestState) + fixed + later;
 }
 
@@ -305,11 +536,13 @@ function originOf(
     case "default":
       break;
   }
-  return {
-    one: "is already set on the cluster",
-    many: "are already set on the cluster",
-  };
+  return ON_CLUSTER;
 }
+
+const ON_CLUSTER = {
+  one: "is already set on the cluster",
+  many: "are already set on the cluster",
+};
 
 /**
  * blockingMergedErrors returns each merged error that blocks of a cluster,

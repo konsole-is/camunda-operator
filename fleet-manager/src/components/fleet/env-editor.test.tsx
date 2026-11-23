@@ -195,6 +195,180 @@ describe("EnvEditor", () => {
     ]);
   });
 
+  it("shows no error for a row that it opens with when openedUnchecked, and checks a row that the user changes", async () => {
+    const onChange = vi.fn();
+    const onErrors = vi.fn();
+    render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[{ name: "", value: "x" }]}
+        openedUnchecked
+        onChange={onChange}
+        onErrors={onErrors}
+      />,
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([]);
+    await userEvent.type(
+      within(screen.getByRole("group", { name: "Variable 1" })).getByRole(
+        "textbox",
+        { name: "Value" },
+      ),
+      "y",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "", value: "xy" }],
+      [{ path: "0.name", message: "Enter a name" }],
+    );
+  });
+
+  it.each([
+    ["openedUnchecked", { openedUnchecked: true }],
+    ["checkedEntries", { checkedEntries: [{ name: "SECOND", value: "2" }] }],
+  ])(
+    "shows that a name is set twice on the renamed row, with %s",
+    async (_, props) => {
+      const onChange = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[
+            { name: "FIRST", value: "1" },
+            { name: "SECOND", value: "2" },
+          ]}
+          onChange={onChange}
+          {...props}
+        />,
+      );
+      const first = within(screen.getByRole("group", { name: "Variable 1" }));
+      const name = first.getByRole("textbox", { name: "Name" });
+      await userEvent.clear(name);
+      await userEvent.type(name, "SECOND");
+      expect(onChange.mock.lastCall![1]).toContainEqual({
+        path: "0.name",
+        message: "SECOND is set twice",
+      });
+      expect(first.getByText("SECOND is set twice")).toBeTruthy();
+    },
+  );
+
+  it("keeps an empty name of a row that it does not check off an earlier row that the user empties", async () => {
+    const onErrors = vi.fn();
+    render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[
+          { name: "A", value: "1" },
+          { name: "", value: "x" },
+        ]}
+        openedUnchecked
+        onErrors={onErrors}
+      />,
+    );
+    await userEvent.clear(
+      within(screen.getByRole("group", { name: "Variable 1" })).getByRole(
+        "textbox",
+        { name: "Name" },
+      ),
+    );
+    expect(onErrors).toHaveBeenLastCalledWith([
+      { path: "0.name", message: "Enter a name" },
+    ]);
+  });
+
+  describe("with checkedEntries", () => {
+    const checked = [{ name: "", value: "x" }];
+
+    it("shows no error for an equal row and leaves it out of the entries", async () => {
+      const onChange = vi.fn();
+      const onErrors = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[
+            { name: "", value: "x" },
+            { name: "TZ", value: "UTC" },
+          ]}
+          checkedEntries={checked}
+          onChange={onChange}
+          onErrors={onErrors}
+        />,
+      );
+      expect(onErrors).toHaveBeenLastCalledWith([]);
+      expect(screen.queryByText("Enter a name")).toBeNull();
+      const tz = screen.getByRole("group", { name: "Variable 2" });
+      await userEvent.type(
+        within(tz).getByRole("textbox", { name: "Value" }),
+        "+1",
+      );
+      expect(onChange).toHaveBeenLastCalledWith(
+        [{ name: "TZ", value: "UTC+1" }],
+        [],
+      );
+    });
+
+    it("checks a row that the user adds, also when it equals a checked entry", async () => {
+      const onChange = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[
+            { name: "", value: "x" },
+            { name: "TZ", value: "UTC" },
+          ]}
+          checkedEntries={checked}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove variable 1" }),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add a variable" }),
+      );
+      const row = screen.getByRole("group", { name: "Variable 2" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "x",
+      );
+      expect(onChange).toHaveBeenLastCalledWith(
+        [
+          { name: "TZ", value: "UTC" },
+          { name: "", value: "x" },
+        ],
+        [{ path: "1.name", message: "Enter a name" }],
+      );
+      expect(screen.getByText("Enter a name")).toBeTruthy();
+    });
+
+    it("checks the row again once the user changes it", async () => {
+      const onChange = vi.fn();
+      render(
+        <EnvEditor
+          label="Env"
+          secrets={secrets}
+          defaultValue={[{ name: "", value: "x" }]}
+          checkedEntries={checked}
+          onChange={onChange}
+        />,
+      );
+      const row = screen.getByRole("group", { name: "Variable 1" });
+      await userEvent.type(
+        within(row).getByRole("textbox", { name: "Value" }),
+        "y",
+      );
+      expect(onChange).toHaveBeenLastCalledWith(
+        [{ name: "", value: "xy" }],
+        [{ path: "0.name", message: "Enter a name" }],
+      );
+      expect(screen.getByText("Enter a name")).toBeTruthy();
+    });
+  });
+
   it("describes the name and the value by the hint of the field", () => {
     render(
       <>

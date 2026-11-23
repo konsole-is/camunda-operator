@@ -42,7 +42,9 @@ export type ClusterEdit = ClaimEdit<ClusterClaim>;
  * validateClusterClaim and the merged errors that block as its
  * validation. Review adds the reset of allowVersionDowngrade once the
  * downgrade is done, and shows the impacts, cautions, confirm, and merged
- * diff of the cluster. It needs a GitPushesProvider above it.
+ * diff of the cluster. In Git mode, the review keeps each field that the
+ * change removes and the dry run of the push still holds. It needs a
+ * GitPushesProvider above it.
  */
 export function ClusterEditProvider({
   context,
@@ -122,6 +124,7 @@ export function ClusterEditProvider({
     writeMode: context.writeMode,
     locks,
     validate,
+    keptByDryRun: true,
     prepare: (s) => withDowngradeReset(s, cluster),
     review: (s, review) => clusterReview(context, s, review),
   };
@@ -167,7 +170,9 @@ export function useClusterEdit(): ClusterEdit {
 
 // clusterReview reads saved, the claim that the save leaves, so a reset
 // field that another tool keeps changes nothing in the impacts and the
-// merged diff.
+// merged diff. The review opens only when validate passes on session, so
+// a merged error of saved comes from a cleared field that the save keeps,
+// or whose value the preview gives.
 function clusterReview(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,
@@ -189,8 +194,17 @@ function clusterReview(
       },
     }),
     mergedLines: merged && objectDiff(merged.before.spec, merged.after.spec),
+    blocking:
+      saved === session
+        ? []
+        : mergedErrorsAfter(context, saved).map(
+            (e) => `${e.message} ${KEPT_CAUSE}`,
+          ),
   };
 }
+
+const KEPT_CAUSE =
+  "A field that you cleared stays in the claim that the save leaves, or gets its default value again. That causes this error. Go back and change the edit, or take the fields over when the review offers that.";
 
 const ALLOW_DOWNGRADE: Step[] = [
   { field: "spec" },

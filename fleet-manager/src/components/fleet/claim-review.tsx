@@ -9,6 +9,7 @@ import {
   changeOf,
   claimAfter,
   outcomeOf,
+  dryRunKept,
   savedSession,
   valueAt,
   type ClaimObject,
@@ -53,6 +54,8 @@ export type ClaimReviewInput = {
   caution?: ReactNode;
   confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
+  /** blocking are reasons that the save cannot go. Each shows as an alert, and the confirm stays disabled while there is one. */
+  blocking?: string[];
 };
 
 /**
@@ -72,11 +75,16 @@ export type ClaimReviewInput = {
  * previews the change of withTakeOver, and the confirm writes that change.
  * The diff of the claim then shows the claim that the save leaves: a
  * cleared field of another tool stays in it until the take-over.
- * In Git mode it notes each reset field that the preview keeps.
+ * In Git mode it notes each reset field that the preview keeps. With
+ * keptByDryRun, saved in Git mode is the claim after the change with each
+ * field that the change removes and the preview still holds, as the
+ * preview holds it, and the notes name each such field that the preview
+ * holds with the value of the claim.
  *
- * input gives the impacts, the caution, the confirm, and mergedLines from
- * saved: a session whose change gives the claim that the save leaves, as
- * the diff of the claim shows it.
+ * input gives the impacts, the caution, the confirm, mergedLines, and the
+ * blocking messages from saved: a session whose change gives the claim
+ * that the save leaves, as the diff of the claim shows it. It runs again
+ * when the take-over choice changes saved.
  */
 export function ClaimReview<C extends ClaimObject>({
   session,
@@ -89,6 +97,7 @@ export function ClaimReview<C extends ClaimObject>({
   onWritten,
   onRefused,
   onCancel,
+  keptByDryRun = false,
 }: {
   session: Session<C>;
   mode: WriteMode;
@@ -101,6 +110,7 @@ export function ClaimReview<C extends ClaimObject>({
   onWritten?: () => void;
   onRefused?: (fields: FieldError[]) => void;
   onCancel?: () => void;
+  keptByDryRun?: boolean;
 }) {
   const [previewed, setPreviewed] = useState<{
     session: Session<C>;
@@ -149,17 +159,28 @@ export function ClaimReview<C extends ClaimObject>({
     effective !== base && takenPreview?.change === effective
       ? takenPreview.result
       : undefined;
-  // The diff shows the claim that the save leaves: a cleared field of
-  // another tool stays until the take-over.
+  const dryRun =
+    mode === "git" && keptByDryRun && given
+      ? claimOf(given, session)
+      : undefined;
+  const kept = useMemo(
+    () => (dryRun ? dryRunKept(session, dryRun) : undefined),
+    [session, dryRun],
+  );
+  // The diff shows the claim that the save leaves. A field that the change
+  // clears stays in direct mode while another tool holds it, until the
+  // take-over, and in Git mode with keptByDryRun while the preview still
+  // holds it.
   const saved = useMemo(
     () =>
+      kept?.applied ??
       savedSession(
         session,
         ownershipOf(ownership, session),
         chosen,
         taken && claimOf(taken, session),
       ),
-    [session, ownership, chosen, taken],
+    [kept, session, ownership, chosen, taken],
   );
   const shown = input(saved);
 
@@ -206,11 +227,20 @@ export function ClaimReview<C extends ClaimObject>({
     !previewOutcome ||
     !previewOutcome.ok ||
     takeOverOpen(ownership, chosen) ||
-    (writeOutcome !== undefined && !writeOutcome.ok && writeOutcome.stale);
+    (writeOutcome !== undefined && !writeOutcome.ok && writeOutcome.stale) ||
+    (shown.blocking?.length ?? 0) > 0;
   const alerts = [
+    ...(shown.blocking ?? []),
     ...messagesOf(previewOutcome),
     ...messagesOf(writeOutcome),
-    ...(checked && mode === "git" ? keptResets(session, checked) : []),
+    ...(kept
+      ? kept.kept.map(
+          (path) =>
+            `Another tool keeps ${path}, so the push does not remove it.`,
+        )
+      : checked && mode === "git"
+        ? keptResets(session, checked)
+        : []),
   ];
 
   async function confirm() {

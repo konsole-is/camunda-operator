@@ -38,6 +38,11 @@ type Row =
  * the hint and error elements of the field for each control of a row.
  * missingIn gives the namespaces that lack a picked Secret key, and the row
  * names them. onErrors gets the errors that it shows, also at mount.
+ * checkedEntries are entries of defaultValue that the host checks itself,
+ * and that a value below the entries keeps. While its row is unchanged,
+ * such an entry shows no error, refuses no change, and is not in the
+ * entries that onChange gets. With openedUnchecked, a row of defaultValue
+ * shows no error and refuses no change while it is unchanged.
  */
 export function EnvEditor({
   label,
@@ -45,6 +50,8 @@ export function EnvEditor({
   defaultValue = [],
   describedBy,
   missingIn,
+  checkedEntries = [],
+  openedUnchecked = false,
   onChange,
   onErrors,
 }: {
@@ -53,6 +60,8 @@ export function EnvEditor({
   defaultValue?: EnvVar[];
   describedBy?: string;
   missingIn?: (name: string, key: string) => readonly string[];
+  checkedEntries?: readonly EnvVar[];
+  openedUnchecked?: boolean;
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
@@ -61,9 +70,39 @@ export function EnvEditor({
   const [rows, setRows] = useState<Row[]>(() =>
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
-  const errors = rowErrors(rows);
+  const [initial] = useState(rows);
+  const checked = checkedEntries.map((entry, i) =>
+    JSON.stringify(toEnv(toRow(entry, i))),
+  );
+  const opened = (row: Row) =>
+    initial.some(
+      (r) =>
+        r.id === row.id &&
+        JSON.stringify(toEnv(r)) === JSON.stringify(toEnv(row)),
+    );
+  const isChecked = (row: Row) =>
+    opened(row) && checked.includes(JSON.stringify(toEnv(row)));
+  const unchecked = (row: Row) =>
+    isChecked(row) || (openedUnchecked && opened(row));
+  const nameOf = (row: Row) =>
+    row.source === "other" ? row.entry.name : row.name;
+  const errors = rowErrors(rows).flatMap((error) => {
+    const index = Number(error.path.split(".")[0]);
+    const row = rows[index];
+    if (!unchecked(row)) return [error];
+    // A name set twice with a row that the editor checks keeps its error on
+    // that row, because only one of the two values can apply.
+    const name = nameOf(row);
+    const twice =
+      name !== "" &&
+      error.path.endsWith(".name") &&
+      rows.findIndex((r) => nameOf(r) === name) < index
+        ? rows.findIndex((r) => nameOf(r) === name && !unchecked(r))
+        : -1;
+    return twice >= 0 ? [{ ...error, path: `${twice}.name` }] : [];
+  });
   useErrorsReport(errors, onErrors);
-  const env = rows.map(toEnv);
+  const env = rows.filter((row) => !isChecked(row)).map(toEnv);
   const report = JSON.stringify([env, errors]);
   const reported = useRef(report);
   useEffect(() => {
@@ -247,6 +286,14 @@ function toEnv(row: Row): EnvVar {
         valueFrom: { secretKeyRef: { name: row.ref.name, key: row.ref.key } },
       }
     : { name: row.name };
+}
+
+/**
+ * envErrors returns the errors that EnvEditor shows for env, with the paths
+ * "<entry>.name" and "<entry>.secret", counting entries from 0.
+ */
+export function envErrors(env: readonly EnvVar[]): ValidationError[] {
+  return rowErrors(env.map(toRow));
 }
 
 function rowErrors(rows: Row[]): ValidationError[] {

@@ -1,11 +1,14 @@
+import { itemStep, pathFrom, type Step } from "@/lib/fields";
 import {
   APP_FIELD_MANAGER,
+  type FieldPath,
   gitOpsManager,
   type KeptField,
   keptRemovals,
   type LiveObject,
   type ManagedObject,
 } from "@/lib/merge";
+import { equalJSON } from "@/lib/policy";
 import { offered, withoutFields, withValuesOf } from "@/lib/write/ownership";
 import type { ObjectOwnership, WriteMode } from "@/lib/write/types";
 import {
@@ -14,6 +17,7 @@ import {
   type PendingChange,
   type Session,
 } from "./session";
+import { valueAt, withValue } from "./steps";
 
 /**
  * keptFields returns each field of the spec of the claim of s that the
@@ -65,6 +69,112 @@ export function savedSession<C extends ClaimObject>(
   const saved = withoutFields(claimAfter(applied), removed);
   const { spec } = final ? withValuesOf(saved, removed, final) : saved;
   return specSession(s, spec);
+}
+
+/**
+ * dryRunKept returns each field of the spec of the claim of s that the
+ * change of s removes and that dryRun, the claim of a dry run of that
+ * change, still holds with the value of the claim, in the order of the
+ * claim. A field is a map key at the deepest level where dryRun still
+ * holds a value, or a list item that the change removes whole. applied is
+ * a session whose change gives the claim after the change with each
+ * removed field that dryRun holds back, as dryRun holds it, or s when
+ * dryRun holds none.
+ */
+export function dryRunKept<C extends ClaimObject>(
+  s: Session<C>,
+  dryRun: object,
+): { kept: FieldPath[]; applied: Session<C> } {
+  const intended = claimAfter(s).spec;
+  const dry = (dryRun as { spec?: unknown }).spec;
+  const restored: Step[][] = [];
+  // A list inside an item comes before the list of that item, whose new
+  // order can move the item that an index names.
+  const reordered: Step[][] = [];
+  const visit = (
+    live: unknown,
+    after: unknown,
+    held: unknown,
+    at: Step[],
+    item: boolean,
+  ): void => {
+    if (live === undefined || held === undefined) return;
+    if (
+      isPlainObject(live) &&
+      isPlainObject(held) &&
+      !(item && after === undefined)
+    ) {
+      if (after !== undefined && !isPlainObject(after)) return;
+      for (const key of Object.keys(live)) {
+        const step = { field: key };
+        visit(
+          live[key],
+          valueAt(after, [step]),
+          valueAt(held, [step]),
+          [...at, step],
+          false,
+        );
+      }
+      return;
+    }
+    if (Array.isArray(live) && Array.isArray(after) && Array.isArray(held)) {
+      const before = restored.length;
+      live.forEach((entry, index) => {
+        const step = itemStep(entry, index);
+        visit(
+          entry,
+          valueAt(after, [step]),
+          valueAt(held, [step]),
+          [...at, step],
+          true,
+        );
+      });
+      if (
+        restored.slice(before).some((steps) => steps.length === at.length + 1)
+      )
+        reordered.push(at);
+      return;
+    }
+    if (after === undefined) restored.push(at);
+  };
+  visit(s.claim.spec, intended, dry, [{ field: "spec" }], false);
+  if (restored.length === 0) return { kept: [], applied: s };
+  let claim = restored.reduce(
+    (to, steps) => withValue(to, steps, valueAt(dryRun, steps)),
+    { spec: intended } as object,
+  );
+  for (const at of reordered)
+    claim = withValue(
+      claim,
+      at,
+      inDryRunOrder(valueAt(claim, at), valueAt(dryRun, at)),
+    );
+  return {
+    kept: restored
+      .filter((steps) =>
+        equalJSON(valueAt(dryRun, steps), valueAt(s.claim, steps)),
+      )
+      .map((steps) => pathFrom("", steps)),
+    applied: specSession(s, (claim as { spec?: object }).spec),
+  };
+}
+
+// inDryRunOrder returns the items of list in the order of the same items in
+// dryRun, with the items that dryRun does not hold at the end.
+function inDryRunOrder(list: unknown, dryRun: unknown): unknown {
+  if (!Array.isArray(list) || !Array.isArray(dryRun)) return list;
+  const keyOf = (item: unknown, index: number) =>
+    JSON.stringify(itemStep(item, index));
+  const keys = list.map(keyOf);
+  const ordered = dryRun.flatMap((item, index) => {
+    const at = keys.indexOf(keyOf(item, index));
+    return at >= 0 ? [list[at]] : [];
+  });
+  return [...ordered, ...list.filter((item) => !ordered.includes(item))];
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function specSession<C extends ClaimObject>(

@@ -33,6 +33,7 @@ export {
 export { valueAt, without, withValue } from "./steps";
 export {
   appliedSession,
+  dryRunKept,
   keptFields,
   savedOf,
   saveManager,

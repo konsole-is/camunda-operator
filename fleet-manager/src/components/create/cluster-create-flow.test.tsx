@@ -1851,6 +1851,57 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
+  // withBrokers is the data of the flow with a preset small that sets
+  // spec.cluster.zeebe to zeebe.
+  const withBrokers = (zeebe: object) =>
+    data({
+      accessRequests: [],
+      presets: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "CamundaClusterPreset",
+          metadata: { name: "small" },
+          spec: { cluster: { zeebe } },
+        },
+      ],
+    });
+  const BAD_KEY =
+    'The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.';
+
+  it("keeps the error of a label key of the preset after its row is deleted, and blocks Next", async () => {
+    show(withBrokers({ podLabels: { "bad key": "x", team: "a" } }));
+    await toStep("Cluster settings");
+    await waitFor(() => expect(next().disabled).toBe(true));
+    const labels = () =>
+      within(
+        screen.getByRole("region", { name: "Brokers settings" }),
+      ).getAllByRole("group", { name: "podLabels" })[0];
+    expect(within(labels()).getByRole("alert").textContent).toBe(BAD_KEY);
+    await userEvent.click(
+      within(labels()).getByRole("button", { name: "Remove entry 1" }),
+    );
+    expect(within(labels()).getByRole("alert").textContent).toBe(BAD_KEY);
+    expect(settingsRow("Brokers").textContent).toContain("1 error");
+    expect(next().disabled).toBe(true);
+    expect(footer()).toContain(`Cluster settings: zeebe.podLabels: ${BAD_KEY}`);
+  });
+
+  it("turns Create off when the preset changes to a label key that is not valid after step 3", async () => {
+    const initial = data({ accessRequests: [] });
+    const { rerender } = show(initial);
+    await toReview("team-a");
+    await waitFor(() => expect(create().disabled).toBe(false));
+    live.objects.CamundaClusterPreset = withBrokers({
+      podLabels: { "bad key": "x" },
+    }).presets;
+    rerender(flowOf(initial));
+    expect(create().disabled).toBe(true);
+    expect(
+      document.getElementById(create().getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe(`Cluster settings: zeebe.podLabels: ${BAD_KEY}`);
+  });
+
   it("refuses the reference while the Secret watch is overdue", async () => {
     const { view, initial } = await pickInTeamA();
     live.objects.Secret = [

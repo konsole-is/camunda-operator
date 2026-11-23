@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { KeyValueFormat } from "@/lib/fields";
 import type { ValidationError } from "@/lib/schema";
 import { isLabelKey, isLabelValue } from "@/lib/labels";
 import { useErrorsReport } from "./errors-report";
@@ -21,13 +22,19 @@ export type EmptyMap = "inherited" | "unset";
  * KeyValueEditor edits a map of strings, such as pod labels or annotations,
  * as rows of key and value. A row with an empty key and an empty value is
  * ignored. With format "label", keys and values must be valid Kubernetes
- * labels. onChange gets the map and the errors after each edit, and
+ * labels. With format "annotation", keys must be valid Kubernetes
+ * annotation keys. onChange gets the map and the errors after each edit, and
  * undefined in place of the map while no row has a key. With emptyMap,
  * the user can also set the map to {}, which onChange gets as {}, and a
  * defaultValue of {} starts as that empty map. An error path is
  * "<row>.key" or "<row>.value", counting rows from 0. describedBy names
  * the hint and error elements of the field for each input. onErrors gets
- * the errors that it shows, also at mount.
+ * the errors that it shows, also at mount. checkedEntries are entries of
+ * defaultValue that the host checks itself, and that a value below the map
+ * keeps. While its row is unchanged, such an entry shows no error, refuses
+ * no change, and is not in the map that onChange gets. With
+ * openedUnchecked, a row of defaultValue shows no error and refuses no
+ * change while it is unchanged.
  */
 export function KeyValueEditor({
   label,
@@ -37,6 +44,8 @@ export function KeyValueEditor({
   format,
   emptyMap,
   describedBy,
+  checkedEntries = [],
+  openedUnchecked = false,
   onChange,
   onErrors,
 }: {
@@ -44,9 +53,11 @@ export function KeyValueEditor({
   defaultValue?: Record<string, string>;
   keyLabel?: string;
   valueLabel?: string;
-  format?: "label";
+  format?: KeyValueFormat;
   emptyMap?: EmptyMap;
   describedBy?: string;
+  checkedEntries?: readonly { key: string; value: string }[];
+  openedUnchecked?: boolean;
   onChange?: (
     value: Record<string, string> | undefined,
     errors: ValidationError[],
@@ -77,18 +88,52 @@ export function KeyValueEditor({
     moveFocus.current = false;
     (empty ? undoButton : setButton).current?.focus();
   }, [empty]);
-  const errors = keyValueErrors(entries, format);
+  const [initial] = useState(entries);
+  const same = (a: { key: string; value: string }, b: Entry) =>
+    a.key === b.key && a.value === b.value;
+  // opened says that e is a row of defaultValue that the user did not change.
+  const opened = (e: Entry) => initial.some((i) => i.id === e.id && same(i, e));
+  const checked = (e: Entry) =>
+    opened(e) && checkedEntries.some((c) => same(c, e));
+  const unchecked = (e: Entry) => checked(e) || (openedUnchecked && opened(e));
+  const shownErrors = (rows: readonly Entry[]) => [
+    ...keyValueErrors(rows, format).flatMap((error) => {
+      const index = Number(error.path.split(".")[0]);
+      const row = rows[index];
+      if (!unchecked(row)) return [error];
+      // A key set twice with a row that the user changed or added keeps its
+      // error on that row, because only one of the two values can apply.
+      const twice =
+        row.key !== "" &&
+        error.path.endsWith(".key") &&
+        rows.findIndex((e) => e.key === row.key) < index
+          ? rows.findIndex((e) => e.key === row.key && !unchecked(e))
+          : -1;
+      return twice >= 0 ? [{ ...error, path: `${twice}.key` }] : [];
+    }),
+    // keyValueErrors ignores a row with an empty key and an empty value as
+    // one that the user did not fill yet. Such a row that the editor opens
+    // with is an entry with an empty key, which Kubernetes refuses.
+    ...rows.flatMap((e, index) =>
+      e.key === "" && e.value === "" && opened(e) && !unchecked(e)
+        ? [{ path: `${index}.key`, message: "Enter a key" }]
+        : [],
+    ),
+  ];
+  const errors = shownErrors(entries);
   useErrorsReport(errors, onErrors);
 
   const update = (changed: Entry[], changedEmpty = false) => {
     setEntries(changed);
     setEmpty(changedEmpty);
     const map = Object.fromEntries(
-      changed.filter((e) => e.key !== "").map((e) => [e.key, e.value]),
+      changed
+        .filter((e) => e.key !== "" && !checked(e))
+        .map((e) => [e.key, e.value]),
     );
     onChange?.(
       changedEmpty || Object.keys(map).length > 0 ? map : undefined,
-      keyValueErrors(changed, format),
+      shownErrors(changed),
     );
   };
   const setEmptyMap = (on: boolean) => {
@@ -226,7 +271,7 @@ export function KeyValueEditor({
  */
 export function keyValueErrors(
   entries: readonly { key: string; value: string }[],
-  format?: "label",
+  format?: KeyValueFormat,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   const seen = new Set<string>();
@@ -243,6 +288,16 @@ export function keyValueErrors(
       errors.push({
         path: `${index}.key`,
         message: "Use a valid label key, for example team or example.com/team",
+      });
+    // Kubernetes checks an annotation key in lower case, and Go lowers the
+    // dotted capital I to a plain i, where JavaScript adds a dot above.
+    else if (
+      format === "annotation" &&
+      !isLabelKey(entry.key.replaceAll("\u0130", "i").toLowerCase())
+    )
+      errors.push({
+        path: `${index}.key`,
+        message: "Use a valid annotation key, for example example.com/note",
       });
     if (format === "label" && !isLabelValue(entry.value))
       errors.push({
