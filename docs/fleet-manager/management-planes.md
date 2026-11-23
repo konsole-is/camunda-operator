@@ -29,9 +29,9 @@ Management Identity always runs. Enter its first administrator:
 
 Management Identity reads the first administrator once, at its first start.
 
-Select **Run Console** and **Run Web Modeler** to run them. Web Modeler sends mail, so it needs an SMTP server. Enter the host, the port, the sender address, and a **Credentials Secret** with the keys `username` and `password`.
+Select **Run Console** and **Run Web Modeler** to run them. Web Modeler sends mail, so it needs an SMTP server. Enter the host, the port, and the sender address. If the server needs a sign-in, pick a **Credentials Secret** with the keys `username` and `password`.
 
-The step fills one version for each component, for the Camunda minor of the default release of the environment. You can type another version. Management Identity, Console, and Web Modeler need `8.9.0` or later. Keycloak needs a version from `26.0.0`, below `27.0.0`. Management Identity 8.9 cannot create its realm in Keycloak `26.7.0` or later, and the step shows a warning. [The operator runs Keycloak](../crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason.
+The step fills one version for each component, for the Camunda minor of the default release of the first environment that the plane serves. You can type another version. Management Identity, Console, and Web Modeler need `8.9.0` or later. Keycloak needs a version from `26.0.0`, below `27.0.0`. Management Identity 8.9 cannot create its realm in Keycloak `26.7.0` or later, and the step shows a warning. [The operator runs Keycloak](../crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason.
 
 ### Storage and access
 

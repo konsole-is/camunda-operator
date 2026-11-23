@@ -42,7 +42,7 @@ spec:
   # ... the rest of your claim
 ```
 
-A setting that you leave as it is stays out of the claim, so the preset decides it.
+A setting that you leave as it is stays out of the claim, so the preset decides it. One exception is a block such as `scheduling`: a change of one part writes the whole block into the claim. The other parts keep their values, but they no longer follow the preset.
 
 A volume cannot become smaller. A smaller `storageSize` keeps the current size of the volumes.
 
