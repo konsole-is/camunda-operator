@@ -7,13 +7,11 @@ import {
   BUILTIN_OPTIONS,
   byCodeUnit,
   decodeObject,
-  environmentOf,
   nameOf,
   own,
-  type PluginSelection,
   type ResolvedPolicy,
-  resolve,
 } from "@/lib/policy";
+import { requestedParameters } from "./requested";
 
 /**
  * presetUsage returns, for each preset that a cluster uses, the
@@ -120,8 +118,8 @@ export function presetResources(
  * resources of presetResources; for a cluster preset, the cluster claims
  * whose spec.presetRef is name; each claim of either kind with a selection,
  * and each request, of a built-in registration whose preset parameter lists
- * kind, when that parameter, or the one its request gets from the claim
- * policy, is name. A claim names a preset this way before its resource
+ * kind, when that parameter, or the one that requestedParameters gives its
+ * request, is name. A claim names a preset this way before its resource
  * exists. Each object is in the list once, sorted by kind in the order of
  * PresetUserKind, then namespace, then name, by code unit. An empty name
  * matches nothing.
@@ -135,9 +133,9 @@ export function presetUsers(
 }
 
 /**
- * findPresetUsers returns presetUsers over sources. It resolves the policy
- * of each claim once, so a caller that looks up many presets in the same
- * sources calls it once and then calls the result for each preset.
+ * findPresetUsers returns presetUsers over sources. It resolves the claim
+ * policies when it is called, so a caller that looks up many presets in the
+ * same sources calls it once and then calls the result for each preset.
  */
 export function findPresetUsers(
   sources: PresetUsageSources,
@@ -187,35 +185,16 @@ function claimUse(
   sources: PresetUsageSources,
 ): ClaimUse {
   const selections = claim.spec.plugins ?? [];
-  const resolves = selections.some(
-    (s) => own(BUILTIN_OPTIONS, s.registration)?.lists.preset !== undefined,
-  );
   return {
     user: userOf(kind, claim),
     presetRef,
     selections,
-    requested: resolves ? requestedParameters(claim, sources) : [],
+    requested: selections.map((s) =>
+      own(BUILTIN_OPTIONS, s.registration)?.lists.preset === undefined
+        ? undefined
+        : requestedParameters(claim, s, sources),
+    ),
   };
-}
-
-// requestedParameters gives the parameters of the request of each selection
-// of claim, in claim order, or none when the policy cannot be resolved.
-function requestedParameters(
-  claim: Selecting,
-  sources: PresetUsageSources,
-): unknown[] {
-  const namespace = sources.namespaces.find(
-    (n) => n.metadata?.name === claim.metadata.namespace,
-  );
-  const resolved = resolve({
-    recorded: claim.status?.resolvedPolicy,
-    environment:
-      namespace && environmentOf(namespace, sources.environments).environment,
-    registrations: [...sources.registrations],
-    selections: (claim.spec.plugins ?? []) as PluginSelection[],
-  });
-  if (!("value" in resolved)) return [];
-  return resolved.value.requests?.map((r) => r.parameters) ?? [];
 }
 
 function resourcesOf(

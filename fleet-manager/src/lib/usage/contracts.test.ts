@@ -899,6 +899,19 @@ describe("contractUsage", () => {
       ).toEqual(["orders"]);
     });
 
+    it("counts the contract that the policy gives a selection whose parameters are not a JSON object", () => {
+      const sources = sourcesWith({
+        clusterClaims: [
+          claim("team-a", "existing-object-storage", "x" as unknown as object, {
+            "existing-object-storage": { name: { value: "backups" } },
+          }),
+        ],
+      });
+      expect(
+        usersOf(sources, objectStorage("team-a", "backups")).map((u) => u.name),
+      ).toEqual(["orders"]);
+    });
+
     it("resolves the selection in the namespace of the claim", () => {
       const sources = sourcesWith({
         clusterClaims: [
