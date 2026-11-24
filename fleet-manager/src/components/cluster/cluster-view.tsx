@@ -158,11 +158,12 @@ export type ClusterPageData = {
  * refusal of the claim shows under the header.
  *
  * Without a cluster, the page of a claim of the route name shows the claim:
- * its section cards, its conditions, and what it waits for. Its Claim tab
- * and slots get claimClusterOf of the claim as the cluster, with drafted
- * set. With neither, or while the cluster could not be read, the page shows
- * only the read errors, and names the cluster or claim kind that it could
- * not read, or says that the cluster no longer exists.
+ * its section cards, its conditions, and what it waits for. Its slots get
+ * claimClusterOf of the claim as the cluster, with drafted set, also while
+ * the page cannot read the cluster and holds none. With neither a cluster
+ * nor a claim, the page shows only the read errors, and names the cluster
+ * or claim kind that it could not read, or says that the cluster no longer
+ * exists.
  */
 export function ClusterView({
   initial,
@@ -399,10 +400,9 @@ export function ClusterView({
   // Until the watch first answers, its cache can hold an answer older than
   // the server read, for example from an earlier visit of the page.
   const live =
-    cluster.item ??
-    (clusterFresh || answered.has("CamundaCluster")
-      ? undefined
-      : initial.cluster);
+    clusterFresh || answered.has("CamundaCluster")
+      ? cluster.item
+      : initial.cluster;
   const liveErrors = (
     [
       ["CamundaCluster", cluster],
