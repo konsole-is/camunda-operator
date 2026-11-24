@@ -35,7 +35,7 @@ spec:
 
 ### Create a platform config
 
-Select **New platform config** on the page **Setup > Platform**. Type the **Name**. Clusters and environments use this name to refer to the config, and you cannot change it later. To start from a config that exists, select it in **Copy from**. The new config then gets the authentication, the license Secret, and the image repositories of that config.
+Select **New platform config** on the page **Setup > Platform**. Type the **Name**. Clusters, management planes, database servers, claims, and environments use this name to refer to the config. You cannot change it later. To start from a config that exists, select it in **Copy from**. The new config then gets the authentication, the license Secret, and the image repositories of that config.
 
 Select the authentication method. Then complete the fields, the license Secret, and the image repositories, as on the page of a config. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new config opens.
 
