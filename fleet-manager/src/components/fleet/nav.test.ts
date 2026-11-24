@@ -42,6 +42,7 @@ describe("SETUP_ITEMS", () => {
     ).toEqual([
       { href: "/setup/new-environment", label: "New environment" },
       { href: "/setup/new-release", label: "New release" },
+      { href: "/setup/new-platform-config", label: "New platform config" },
     ]);
   });
 });
