@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   KubeConfig,
   KubernetesObjectApi,
@@ -41,7 +43,7 @@ import {
 } from "@/components/setup/platform/draft";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
-import { requestJSON } from "@/lib/k8s/client";
+import { KubernetesRequestError, requestJSON } from "@/lib/k8s/client";
 import { get } from "@/lib/k8s/read";
 import {
   APP_FIELD_MANAGER,
@@ -54,6 +56,7 @@ import type { ClaimObject } from "@/lib/session";
 import { createChangeOf } from "@/lib/write/create";
 import { offered, withTakeOver } from "@/lib/write/ownership";
 import type { Change, KubeObject, Preview } from "@/lib/write/types";
+import { directWriter } from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
 
 // Each case builds an object with real field managers, then saves a change
@@ -1203,6 +1206,100 @@ describe("a save of the platform config editor against the API server", () => {
       ]),
     ).toBe(false);
     expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
+  });
+
+  it("a status write between the update and the record does not stop the switch", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "oidc", oidc },
+    });
+    await createClientSideApplied(api, object);
+    const taken = await edit(object, basic, true);
+    expect(taken.preview.errors).toEqual([]);
+    const others = (o: KubeObject) =>
+      ((o.metadata.managedFields ?? []) as ManagedFieldsEntry[]).filter(
+        (e) => e.manager !== APP_FIELD_MANAGER,
+      );
+    // A proxy to the API server writes the status, as the controller of the
+    // kind does after a change of spec, just before the record of the save.
+    let beforeRecord: ManagedFieldsEntry[] | undefined;
+    const proxy = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (c: Buffer) => chunks.push(c));
+      request.on("end", async () => {
+        const text = Buffer.concat(chunks).toString();
+        const body: unknown = text === "" ? undefined : JSON.parse(text);
+        const path = request.url ?? "";
+        const records =
+          Array.isArray(body) &&
+          body.some(
+            (op: { path: string }) => op.path === "/metadata/managedFields",
+          );
+        try {
+          if (records && beforeRecord === undefined) {
+            const moved = await requestJSON<KubeObject>(kc, {
+              method: "PATCH",
+              path: `${path.split("?")[0]}/status?fieldManager=status-writer`,
+              body: { status: { observedGeneration: 2 } },
+              contentType: "application/merge-patch+json",
+            });
+            beforeRecord = others(moved);
+          }
+          const answer = await requestJSON(kc, {
+            method: request.method as "GET" | "PATCH",
+            path,
+            body,
+            contentType: request.headers["content-type"],
+          });
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.end(JSON.stringify(answer));
+        } catch (error) {
+          const failed = error as KubernetesRequestError;
+          response.writeHead(failed.statusCode ?? 500, {
+            "Content-Type": "application/json",
+          });
+          response.end(
+            JSON.stringify(failed.status ?? { message: failed.message }),
+          );
+        }
+      });
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const proxied = new KubeConfig();
+    proxied.loadFromOptions({
+      clusters: [
+        {
+          name: "proxy",
+          server: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
+          skipTLSVerify: true,
+        },
+      ],
+      users: [{ name: "proxy" }],
+      contexts: [{ name: "proxy", cluster: "proxy", user: "proxy" }],
+      currentContext: "proxy",
+    });
+
+    try {
+      expect(await directWriter(proxied).apply(taken.change)).toEqual({
+        ok: true,
+        mode: "direct",
+      });
+    } finally {
+      await new Promise((resolve) => proxy.close(resolve));
+    }
+
+    const after = await read(object);
+    expect(beforeRecord).toBeDefined();
+    expect(after.status).toMatchObject({ observedGeneration: 2 });
+    expect(after.spec).toEqual({ auth: { method: "basic" } });
+    expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
+    expect(
+      owns(after, APP_FIELD_MANAGER, ["f:spec", "f:auth", "f:method"], "Apply"),
+    ).toBe(true);
+    const raw = await requestJSON<KubeObject>(kc, {
+      method: "GET",
+      path: `/apis/core.camunda.io/v1/camundaplatformconfigs/${object.metadata.name}`,
+    });
+    expect(others(raw)).toEqual(beforeRecord);
   });
 
   it("a newer write between the review and the save of a removal fails with Stale and writes nothing", async () => {

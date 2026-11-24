@@ -56,6 +56,8 @@ export { refKey, refOf } from "./refs";
 /** WRITE_TIMEOUT_MS bounds each request of a write. */
 export const WRITE_TIMEOUT_MS = 15_000;
 
+const RECORD_TRIES = 3;
+
 /**
  * WriteOnlyKindMap is every kind that the direct writer writes beside the
  * kinds of KindMap. The cache does not list or watch these kinds.
@@ -161,12 +163,10 @@ export function diffView(
  * listed fields, and prunedFields. The preview is the dry run of that
  * patch. Both writes refuse the object with Conflict when the update takes
  * or removes a field of another manager that the lists do not name. A
- * field of remove can come back with its default value. After
- * the update, apply dry-runs the apply of the object without force, and
- * writes the managedFields of that answer without the Update entry of the
- * fleet manager. When that dry run sets other values, or a request after
- * the update fails, apply stops, the update stays, and the error says that
- * the next save records the fields.
+ * field of remove can come back with its default value. When an apply of
+ * the change sets other values than the update, or apply cannot record the
+ * fields after the update, apply stops, the update stays, and the error
+ * says that the next save records the fields.
  *
  * Any other object with a take-over list is applied with force only when
  * takeOver lists a field. A dry run with force must then take no field
@@ -279,48 +279,65 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     object: KubeObject,
     written: KubeObject,
   ): Promise<ApiError[]> => {
-    const resourceVersion = written.metadata.resourceVersion;
-    try {
-      const probe = await applyObject(object, resourceVersion, false, true);
-      if (!equalJSON(applyBody(probe), applyBody(written)))
-        return [
-          {
-            code: "Invalid",
-            message: partialSaveMessage(
+    let current = written;
+    for (let attempt = 1; ; attempt++) {
+      const resourceVersion = current.metadata.resourceVersion;
+      try {
+        const probe = await applyObject(object, resourceVersion, false, true);
+        if (!equalJSON(applyBody(probe), applyBody(current)))
+          return [
+            {
+              code: "Invalid",
+              message: partialSaveMessage(
+                ref,
+                "An apply of the change sets other values than the update.",
+              ),
               ref,
-              "An apply of the change sets other values than the update.",
-            ),
-            ref,
-          },
-        ];
-      await send(
-        "PATCH",
-        `${pathOf(ref)}?fieldManager=${encodeURIComponent(APP_FIELD_MANAGER)}`,
-        [
-          {
-            op: "replace",
-            path: "/metadata/resourceVersion",
-            value: resourceVersion,
-          },
-          {
-            op: "replace",
-            path: "/metadata/managedFields",
-            value: entriesOf(probe).filter((e) => !isOwnUpdate(e)),
-          },
-        ],
-        "application/json-patch+json",
-      );
-      return [];
-    } catch (error) {
-      const errors = await staleFirst(
-        apiErrorsOf(error, ref, true),
-        ref,
-        resourceVersion,
-      );
-      return errors.map((e) => ({
-        ...e,
-        message: partialSaveMessage(ref, e.message),
-      }));
+            },
+          ];
+        await send(
+          "PATCH",
+          `${pathOf(ref)}?fieldManager=${encodeURIComponent(APP_FIELD_MANAGER)}`,
+          [
+            {
+              op: "replace",
+              path: "/metadata/resourceVersion",
+              value: resourceVersion,
+            },
+            {
+              op: "replace",
+              path: "/metadata/managedFields",
+              value: [
+                ...entriesOf(current).filter((e) => !isOwnEntry(e)),
+                ...entriesOf(probe).filter(
+                  (e) => isOwnEntry(e) && e.operation === "Apply",
+                ),
+              ],
+            },
+          ],
+          "application/json-patch+json",
+        );
+        return [];
+      } catch (error) {
+        const errors = apiErrorsOf(error, ref, true);
+        // The controller of the kind writes its status after each change
+        // of spec, and that write moves the resourceVersion.
+        const moved =
+          attempt < RECORD_TRIES && errors.every((e) => e.code === "Stale")
+            ? await read(ref).catch(() => undefined)
+            : undefined;
+        if (
+          moved !== undefined &&
+          equalJSON(applyBody(moved), applyBody(written))
+        ) {
+          current = moved;
+          continue;
+        }
+        return (await staleFirst(errors, ref, resourceVersion)).map((e) => ({
+          ...e,
+          message: partialSaveMessage(ref, e.message),
+        }));
+      }
     }
   };
 

@@ -878,6 +878,141 @@ describe("directWriter with a take-over", () => {
     );
   });
 
+  // movingAnswers answers a removal save whose object a status write moves
+  // after the update. reads gives the object of each GET after the update,
+  // and record answers each write of managedFields.
+  const movingAnswers = (
+    reads: object[],
+    record: (resourceVersion: string) => { status: number; body: unknown },
+  ) => {
+    let updated = false;
+    let read = 0;
+    return (r: Seen) => {
+      if (r.method === "GET") {
+        if (!updated) return { status: 200, body: named };
+        return { status: 200, body: reads[Math.min(read++, reads.length - 1)] };
+      }
+      const body = r.body as {
+        path: string;
+        value?: unknown;
+        metadata?: { resourceVersion: string };
+      }[] & { metadata?: { resourceVersion: string } };
+      if (r.contentType === "application/apply-patch+yaml") {
+        const version = (r.body as { metadata: { resourceVersion: string } })
+          .metadata.resourceVersion;
+        return {
+          status: 200,
+          body: {
+            ...probed,
+            metadata: { ...probed.metadata, resourceVersion: version },
+          },
+        };
+      }
+      if (r.url.includes("dryRun=All"))
+        return { status: 200, body: environment({ color: "red" }) };
+      const version = body.find((op) => op.path === "/metadata/resourceVersion")
+        ?.value as string;
+      if (body.some((op) => op.path === "/metadata/managedFields"))
+        return record(version);
+      updated = true;
+      return { status: 200, body: environment({ color: "red" }, [], "8") };
+    };
+  };
+  const statusOnly = (resourceVersion: string) => ({
+    ...environment({ color: "red" }, [], resourceVersion),
+    status: { observedGeneration: 2 },
+  });
+  const records = () =>
+    writes().filter(
+      (r) =>
+        r.method === "PATCH" &&
+        (r.body as { path: string }[]).some(
+          (op) => op.path === "/metadata/managedFields",
+        ),
+    );
+
+  it("a status write between the update and the record does not stop the save", async () => {
+    answer = movingAnswers([statusOnly("9")], (version) =>
+      version === "8"
+        ? { status: 409, body: conflict }
+        : { status: 200, body: statusOnly(version) },
+    );
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect(
+      records().map(
+        (r) => (r.body as { path: string; value: unknown }[])[0].value,
+      ),
+    ).toEqual(["8", "9"]);
+  });
+
+  it("a spec write between the update and the record fails with Stale and records nothing again", async () => {
+    answer = movingAnswers([environment({ color: "blue" }, [], "9")], () => ({
+      status: 409,
+      body: conflict,
+    }));
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toMatchObject({ ok: false, errors: [{ code: "Stale" }] });
+    const [error] = (result as { errors: { message: string }[] }).errors;
+    expect(error.message).toMatch(
+      /^The fleet manager saved the Environment staging, but did not record its fields\. /,
+    );
+    expect(records()).toHaveLength(1);
+  });
+
+  it("a record that newer status writes keep refusing stops after three tries", async () => {
+    answer = movingAnswers(
+      [statusOnly("9"), statusOnly("10"), statusOnly("11"), statusOnly("12")],
+      () => ({ status: 409, body: conflict }),
+    );
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toMatchObject({ ok: false, errors: [{ code: "Stale" }] });
+    const [error] = (result as { errors: { message: string }[] }).errors;
+    expect(error.message).toMatch(
+      /^The fleet manager saved the Environment staging, but did not record its fields\. /,
+    );
+    expect(records()).toHaveLength(3);
+  });
+
+  it("the record keeps the entries of other managers as the object holds them", async () => {
+    const kubectl = kubectlOwns("color");
+    const written = environment(
+      { color: "red" },
+      [kubectl, fleetOwns("Update", "color")],
+      "8",
+    );
+    answer = removalAnswers(
+      named,
+      written,
+      {
+        ...probed,
+        metadata: {
+          ...probed.metadata,
+          managedFields: [
+            kubectlOwns("other"),
+            fleetOwns("Apply", "color"),
+            fleetOwns("Update", "color"),
+          ],
+        },
+      },
+      { update: { status: 200, body: written } },
+    );
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect((records()[0].body as { value: unknown }[])[1].value).toEqual([
+      kubectl,
+      fleetOwns("Apply", "color"),
+    ]);
+  });
+
   it("stops before the record when the apply after the update sets other values", async () => {
     answer = removalAnswers(
       named,
