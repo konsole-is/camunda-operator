@@ -2,6 +2,7 @@ import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconf
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
+import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
 import { keepEmpty } from "@/lib/write/ownership";
@@ -11,6 +12,11 @@ import type { Change, KubeObject } from "@/lib/write/types";
 const API_VERSION = "core.camunda.io/v1";
 const KIND = "CamundaPlatformConfig";
 const OIDC_PATH = "spec.auth.oidc";
+
+// NAME_PATTERN is the Pattern of spec.platformConfigRef of a cluster and of
+// a claim, and NAME_MAX its MaxLength.
+const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const NAME_MAX = 253;
 
 // IMAGE_PATTERN is the Pattern of each field of ImagesSpec in
 // api/v1/camundaplatformconfig_types.go.
@@ -136,6 +142,56 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
       );
   }
   return errors;
+}
+
+/**
+ * nameErrors returns the error of the name of a new platform config, with
+ * the path "name", or no error. A name is one that spec.platformConfigRef
+ * accepts, and not one of taken.
+ */
+export function nameErrors(
+  name: string,
+  taken: readonly string[],
+): ValidationError[] {
+  const error = (message: string) => [{ path: "name", message }];
+  if (name === "") return error("Give the platform config a name.");
+  if (!NAME_PATTERN.test(name) || name.length > NAME_MAX)
+    return error(
+      "The name has only lowercase letters, digits, and hyphens, and at most 253 characters.",
+    );
+  if (taken.includes(name))
+    return error("A platform config with this name exists.");
+  return [];
+}
+
+/**
+ * createChange applies a new platform config name with the spec of specOf.
+ * The write fails with Stale when a config of that name exists.
+ */
+export function createChange(name: string, draft: PlatformDraft): Change {
+  return {
+    intent: `Create the platform config ${name}`,
+    apply: [
+      {
+        apiVersion: API_VERSION,
+        kind: KIND,
+        metadata: { name },
+        spec: specOf(draft),
+      },
+    ],
+    create: [refKey({ kind: KIND, name })],
+  };
+}
+
+/** changeCount counts the top-level fields of the spec that differ between before and after. */
+export function changeCount(
+  before: PlatformDraft,
+  after: PlatformDraft,
+): number {
+  const a = before as Record<string, unknown>;
+  const b = after as Record<string, unknown>;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].filter((k) => !equalJSON(a[k], b[k])).length;
 }
 
 /**

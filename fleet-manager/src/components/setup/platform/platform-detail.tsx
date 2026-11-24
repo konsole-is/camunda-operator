@@ -12,7 +12,6 @@ import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import { type ReadError, type SourceReads } from "@/lib/k8s/unread";
 import { defaultRepositories } from "@/lib/merge";
-import { equalJSON } from "@/lib/policy";
 import { platformDeleteBlock } from "@/lib/usage";
 import type {
   Change,
@@ -23,6 +22,7 @@ import type {
 import type { ImagesTable } from "@/startup/bundled-data";
 import { AuthSection } from "./auth-section";
 import {
+  changeCount,
   deleteChange,
   draftErrors,
   draftOf,
@@ -291,12 +291,4 @@ export function PlatformDetailLive({
       actions={actions}
     />
   );
-}
-
-// changeCount counts the top-level fields of the spec that differ.
-function changeCount(a: PlatformDraft, b: PlatformDraft): number {
-  const before = a as Record<string, unknown>;
-  const after = b as Record<string, unknown>;
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((k) => !equalJSON(before[k], after[k])).length;
 }

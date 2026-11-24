@@ -43,6 +43,10 @@ export const MINOR_KINDS: readonly KindName[] = [
 export const ROLL_NOTICE =
   "A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.";
 
+/** CREATE_EFFECT says what the create of a platform config changes. */
+export const CREATE_EFFECT =
+  "A resource or an environment that names this config uses it from now on.";
+
 /** DELETE_EFFECT says what a delete does to the users of a platform config. */
 export const DELETE_EFFECT =
   "Users of a deleted config report InvalidReference and keep running.";
