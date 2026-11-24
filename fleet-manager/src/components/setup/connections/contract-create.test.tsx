@@ -314,6 +314,24 @@ describe("ContractCreate", () => {
     });
   });
 
+  it("offers the database servers of the picked namespace only", () => {
+    const sources = withTeamB();
+    sources.databaseServerConfigs.push({
+      ...sources.databaseServerConfigs[0],
+      metadata: { namespace: "team-b", name: "pg-b" },
+    });
+    setup("databases", { page: sources, server: sources });
+    const offered = () =>
+      [...(field("Database server") as unknown as HTMLSelectElement).options]
+        .map((o) => o.value)
+        .filter((v) => v !== "");
+
+    select("Namespace", "team-a");
+    expect(offered()).toEqual(["postgres"]);
+    select("Namespace", "team-b");
+    expect(offered()).toEqual(["pg-b"]);
+  });
+
   it("writes only the block of the picked storage type", async () => {
     const u = user();
     setup("object-storage");
