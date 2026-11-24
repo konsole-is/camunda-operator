@@ -1076,6 +1076,16 @@ describe("laidOver", () => {
     ).toEqual({ auth: { method: "oidc", extra: 1 } });
   });
 
+  it("lays spec over key by key also when an entry holds spec with no field below it", () => {
+    const live = environment({ a: 1, b: 2 }, [
+      entry("kubectl-client-side-apply", "Update", { "f:spec": {} }),
+    ]);
+    expect(laidOver(live, environment({ a: 3 }), []).spec).toEqual({
+      a: 3,
+      b: 2,
+    });
+  });
+
   it("leaves out each removed field, also under a list item", () => {
     const live = environment({
       displayName: "Stage",

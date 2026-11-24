@@ -273,12 +273,19 @@ export function laidOver(
 ): KubeObject {
   const result = withoutFields(live, removed) as KubeObject & JsonMap;
   const tree = ownerTree(live as ManagedObject, () => true);
+  // The roots are containers, as in walkApplied: an owner of a root owns
+  // no value of it.
   const lay = (
     under: unknown,
     over: unknown,
     node: OwnerTree | undefined,
+    root = false,
   ): unknown => {
-    if (!isRecord(over) || !isRecord(under) || (node?.whole.length ?? 0) > 0)
+    if (
+      !isRecord(over) ||
+      !isRecord(under) ||
+      (!root && (node?.whole.length ?? 0) > 0)
+    )
       return copyJSON(over);
     for (const [key, value] of Object.entries(over))
       setKey(
@@ -301,6 +308,7 @@ export function laidOver(
         Object.hasOwn(result, key) ? result[key] : undefined,
         value,
         tree.children.get(`f:${key}`),
+        true,
       ),
     );
   }
@@ -314,6 +322,7 @@ export function laidOver(
         Object.hasOwn(metadata, name) ? metadata[name] : undefined,
         applied.metadata[name],
         tree.children.get("f:metadata")?.children.get(`f:${name}`),
+        true,
       ),
     );
   }
