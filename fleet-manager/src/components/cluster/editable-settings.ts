@@ -95,8 +95,8 @@ export type MapEntry = { key: string; value: string };
 /**
  * settingsOf returns the settings of group. spec holds the values by their
  * claim names: the merged CamundaCluster spec for a process or the
- * cluster, spec.attachments.optimize of the claim for Optimize, and the
- * preset body for an Elasticsearch or a database server preset. live,
+ * cluster, and spec.attachments.optimize of the claim for Optimize. For an
+ * Elasticsearch or a database server preset, spec is the preset body. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
  * claim only. liveClaim is claim before the pending changes, and pending
