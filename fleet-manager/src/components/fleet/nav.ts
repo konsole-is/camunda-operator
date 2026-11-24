@@ -32,7 +32,7 @@ export const SETUP_ITEMS: readonly SetupItem[] = [
   item("presets", "Presets", "preset"),
   item("releases", "Releases", "release"),
   item("platform", "Platform", "platform-config"),
-  item("connections", "Connections"),
+  item("connections", "Connections", "connection-contract"),
   item("plugins", "Plugins"),
   item("settings", "Settings"),
 ];

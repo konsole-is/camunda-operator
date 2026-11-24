@@ -14,6 +14,7 @@ import { objectPath } from "@/lib/k8s/kinds";
 import { SETTING_KEYS, type Settings } from "@/lib/settings/keys";
 import { getSettings } from "@/lib/settings/store";
 import {
+  CREATE_ONLY_RESOURCE_VERSION,
   WriteOnlyKindMap,
   applyBody,
   directWriter,
@@ -305,6 +306,136 @@ describe("directWriter when an object is deleted after the preview", () => {
         expect.objectContaining({ code: "Stale" }),
         expect.objectContaining({ code: "Forbidden" }),
       ],
+    });
+  });
+});
+
+describe("directWriter when the object of a create appears after the dry run", () => {
+  // The object is missing at the read and the dry run. Before the write,
+  // another client creates it, so the real apply answers 409.
+  let race: http.Server;
+  let raceKc: KubeConfig;
+  let bodies: unknown[];
+  let conflict: object;
+
+  beforeAll(async () => {
+    race = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const json = (status: number, body: unknown) => {
+          response.writeHead(status, { "Content-Type": "application/json" });
+          response.end(JSON.stringify(body));
+        };
+        const body = Buffer.concat(chunks).toString("utf8");
+        if (request.method === "GET")
+          return json(404, {
+            kind: "Status",
+            apiVersion: "v1",
+            status: "Failure",
+            reason: "NotFound",
+            code: 404,
+          });
+        if (request.url?.includes("dryRun=All"))
+          return json(200, JSON.parse(body));
+        bodies.push(JSON.parse(body));
+        return json(409, conflict);
+      });
+    });
+    await new Promise<void>((resolve) => race.listen(0, "127.0.0.1", resolve));
+    raceKc = configFor(
+      `http://127.0.0.1:${(race.address() as AddressInfo).port}`,
+    );
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => race.close(resolve));
+  });
+
+  beforeEach(() => {
+    bodies = [];
+    conflict = {
+      kind: "Status",
+      apiVersion: "v1",
+      status: "Failure",
+      reason: "Conflict",
+      code: 409,
+      message: "the object has been modified",
+    };
+  });
+
+  const creates = [
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "ObjectStorageConfig",
+      metadata: { name: "archive", namespace: "team-a" },
+      spec: { type: "S3", s3: { bucketName: "acme" } },
+    },
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaPlatformConfig",
+      metadata: { name: "basic" },
+      spec: { auth: { method: "basic" } },
+    },
+  ];
+
+  it.each(creates)(
+    "fails with Stale and sends the create-only resourceVersion when a $kind appears after the dry run",
+    async (object) => {
+      const ref = {
+        kind: object.kind,
+        namespace: object.metadata.namespace,
+        name: object.metadata.name,
+      };
+      const result = await directWriter(raceKc).apply({
+        intent: "Create",
+        apply: [object],
+        create: [refKey(ref)],
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          expect.objectContaining({
+            code: "Stale",
+            message: `The ${object.kind} ${object.metadata.name} exists already. Pick another name.`,
+          }),
+        ],
+      });
+      expect(bodies).toEqual([
+        expect.objectContaining({
+          metadata: {
+            ...object.metadata,
+            resourceVersion: CREATE_ONLY_RESOURCE_VERSION,
+          },
+        }),
+      ]);
+    },
+  );
+
+  it("gives Stale for a field manager conflict of a create too", async () => {
+    conflict = {
+      ...conflict,
+      details: {
+        causes: [
+          {
+            reason: "FieldManagerConflict",
+            field: ".spec.s3.bucketName",
+            message: 'conflict with "kubectl"',
+          },
+        ],
+      },
+    };
+
+    const result = await directWriter(raceKc).apply({
+      intent: "Create",
+      apply: [creates[0]],
+      create: ["ObjectStorageConfig/team-a/archive"],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
     });
   });
 });

@@ -11,7 +11,14 @@ import { useWatchesFresh } from "@/lib/k8s/hooks";
 import { useLive } from "@/lib/k8s/live";
 import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
 import type { ContractUserSources } from "@/lib/usage";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
+
+/** ConnectionActions are the writes of the Connections pages: the server actions on the page, fakes in tests and stories. */
+export type ConnectionActions = {
+  previewChange: (change: Change) => Promise<Preview>;
+  applyChange: (change: Change) => Promise<WriteResult>;
+};
 
 /**
  * ConnectionSources holds every list that the Connections pages read, in all

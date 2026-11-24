@@ -19,11 +19,11 @@ import type { ReadError } from "@/lib/k8s/unread";
 import type { ContractRef } from "@/lib/usage";
 import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
-import { type ContractActions, ConnectionDetail } from "./connection-detail";
+import { ConnectionDetail } from "./connection-detail";
 import { deleteChange, draftOf, updateChange } from "./draft";
 import type { ContractObject } from "./facts";
 import { connectionFixtures } from "./fixtures";
-import type { ConnectionSources } from "./sources";
+import type { ConnectionActions, ConnectionSources } from "./sources";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -271,10 +271,10 @@ function edit(
     ...sources.managementAuthConfigs,
   ].find((c) => c.metadata.name === target.name)!;
   const actions = {
-    previewChange: vi.fn<ContractActions["previewChange"]>(async () =>
+    previewChange: vi.fn<ConnectionActions["previewChange"]>(async () =>
       live ? previewOf(live) : { objects: [], errors: [] },
     ),
-    applyChange: vi.fn<ContractActions["applyChange"]>(async () => ({
+    applyChange: vi.fn<ConnectionActions["applyChange"]>(async () => ({
       ok: true as const,
       mode: "direct" as const,
     })),

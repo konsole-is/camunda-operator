@@ -28,12 +28,7 @@ import {
   writerEditable,
   writerLabel,
 } from "@/lib/usage";
-import type {
-  Change,
-  Preview,
-  WriteMode,
-  WriteResult,
-} from "@/lib/write/types";
+import type { WriteMode } from "@/lib/write/types";
 import { requestsOf } from "./connection-list";
 import { ContractForm } from "./contract-form";
 import {
@@ -49,18 +44,18 @@ import { readyOf } from "@/lib/policy";
 import { saveEffects } from "./impact";
 import { SecretRefView } from "./secret-ref-view";
 import {
+  type ConnectionActions,
   type ConnectionPageData,
   type ConnectionSources,
   useConnectionSources,
 } from "./sources";
-import { CONNECTION_TABS, contractHref, contractsOf } from "./tabs";
+import {
+  CONNECTION_TABS,
+  connectionsHref,
+  contractHref,
+  contractsOf,
+} from "./tabs";
 import { UsersTable } from "./users-table";
-
-/** ContractActions are the writes of the detail: the server actions on the page, fakes in tests and stories. */
-export type ContractActions = {
-  previewChange: (change: Change) => Promise<Preview>;
-  applyChange: (change: Change) => Promise<WriteResult>;
-};
 
 /**
  * ConnectionDetail is the page of one contract: its own Ready, its writer,
@@ -83,7 +78,7 @@ export function ConnectionDetail({
   target: ContractRef;
   sources: ConnectionSources & { errors: ReadError[] } & SourceReads;
   mode?: WriteMode;
-  actions?: ContractActions;
+  actions?: ConnectionActions;
 }): ReactNode {
   const contracts = contractsOf(sources, target.kind);
   const live = contracts.find(
@@ -100,7 +95,7 @@ export function ConnectionDetail({
       .filter((c) => c.metadata.namespace === target.namespace)
       .map((c) => c.metadata.name ?? ""),
     draftOf,
-    listHref: `/setup/connections?tab=${tab.value}`,
+    listHref: connectionsHref(tab.value),
     hrefOf: (name, namespace) =>
       contractHref({ kind: target.kind, namespace, name }),
   });
@@ -354,7 +349,7 @@ export function ConnectionDetailLive({
   initial: ConnectionPageData;
   target: ContractRef;
   mode?: WriteMode;
-  actions?: ContractActions;
+  actions?: ConnectionActions;
 }): ReactNode {
   return (
     <ConnectionDetail

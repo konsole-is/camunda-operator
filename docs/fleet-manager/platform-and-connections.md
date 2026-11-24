@@ -96,13 +96,23 @@ The column **Writer** says who wrote the contract:
 | `Management plane <namespace>/<plane>` | A management plane wrote it. |
 | `<Kind> <name>` | The object that owns it, for example `ElasticsearchCluster orders-es`. |
 | `Kept from <registration>` | An option wrote it, and its cluster was deleted with **Keep the resources**. |
-| `Created by hand` | You or a tool applied it. |
+| `Created by hand` | You created it on this page, or you or a tool applied it. |
 
 You can change and delete only a contract that is `Created by hand` or `Kept from <registration>`. Any other contract shows `Managed by <writer>. Change it there.`
 
 ### Who uses a contract
 
 **Used by** lists each object that uses the contract, with its own status. These are clusters, Optimize, management planes, database servers, Elasticsearch clusters, and backups and restores that still need the contract. A backup counts, because a restore reads from its bucket.
+
+### Create a contract
+
+Open the tab of the kind, and select its **New** button, for example **New object storage contract**. Type the **Name**. Clusters and other resources use this name to refer to the contract. You cannot change it later.
+
+Select the **Namespace**. Only resources in that namespace can use the contract. A Management Identity contract has no namespace. To start from a contract of the same kind, select it in **Copy from**. The new contract gets its settings.
+
+For a storage contract, select the storage type. For an object storage contract, also select the auth type. Then complete the fields and the Secrets, as in [Change a contract](#change-a-contract). Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new contract opens, with the writer `Created by hand`.
+
+The page refuses a name that a contract of the same kind has in the namespace. It also refuses a Management Identity name that a management plane uses.
 
 ### Change a contract
 
