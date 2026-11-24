@@ -209,20 +209,23 @@ describe("createChange", () => {
     ["CamundaClusterPreset", "cluster", { zeebe: { replicas: 1 } }],
     ["ElasticsearchClusterPreset", "cluster", { replicas: 1 }],
     ["DatabaseServerPreset", "server", { instances: 1 }],
-  ] as const)("creates a %s with its body under spec.%s", (kind, field, body) => {
-    expect(createChange(kind, "lab", { body, description: "" })).toEqual({
-      intent: "Create the preset lab",
-      apply: [
-        {
-          apiVersion: "core.camunda.io/v1",
-          kind,
-          metadata: { name: "lab" },
-          spec: { [field]: body },
-        },
-      ],
-      create: [refKey({ kind, name: "lab" })],
-    });
-  });
+  ] as const)(
+    "creates a %s with its body under spec.%s",
+    (kind, field, body) => {
+      expect(createChange(kind, "lab", { body, description: "" })).toEqual({
+        intent: "Create the preset lab",
+        apply: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind,
+            metadata: { name: "lab" },
+            spec: { [field]: body },
+          },
+        ],
+        create: [refKey({ kind, name: "lab" })],
+      });
+    },
+  );
 
   it("creates with the name and the body only, without a precondition", () => {
     const change = createChange("CamundaClusterPreset", "large", {
@@ -246,8 +249,11 @@ describe("createChange", () => {
 
   it("writes an empty body as an empty map, since the CRD requires it", () => {
     expect(
-      createChange("ElasticsearchClusterPreset", "lab", presetDraftOf(undefined))
-        .apply[0].spec,
+      createChange(
+        "ElasticsearchClusterPreset",
+        "lab",
+        presetDraftOf(undefined),
+      ).apply[0].spec,
     ).toEqual({ cluster: {} });
   });
 });
