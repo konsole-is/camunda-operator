@@ -396,9 +396,13 @@ export function ClusterView({
     [requests.items, claimName],
   );
 
-  // Until the watch is fresh, its cache can hold an answer older than the
-  // server read, for example from an earlier visit of the page.
-  const live = cluster.item ?? (clusterFresh ? undefined : initial.cluster);
+  // Until the watch first answers, its cache can hold an answer older than
+  // the server read, for example from an earlier visit of the page.
+  const live =
+    cluster.item ??
+    (clusterFresh || answered.has("CamundaCluster")
+      ? undefined
+      : initial.cluster);
   const liveErrors = (
     [
       ["CamundaCluster", cluster],

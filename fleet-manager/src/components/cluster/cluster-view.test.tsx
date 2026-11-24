@@ -2583,6 +2583,25 @@ describe("Before the cluster exists", () => {
     ).toBeNull();
   });
 
+  it("does not show a deleted cluster again when its watch loses its connection later", () => {
+    const loaded = { ...waiting, cluster: cluster() };
+    live.objects.CamundaCluster = [cluster()];
+    const { rerender } = render(view({ initial: loaded }));
+    live.objects.CamundaCluster = [];
+    rerender(view({ initial: loaded }));
+    expect(
+      screen.getByRole("region", { name: "The cluster does not exist yet" }),
+    ).toBeTruthy();
+    live.stale = ["CamundaCluster"];
+    rerender(view({ initial: loaded }));
+    expect(screen.queryByRole("region", { name: "Topology" })).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "Cluster" })).getByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("a failed first read of the cluster is an error until its watch answers", () => {
     live.stale = ["CamundaCluster"];
     render(
