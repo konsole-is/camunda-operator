@@ -35,7 +35,9 @@ export type ActionSlotName = (typeof ACTION_SLOTS)[number];
  * openId is the component whose detail the Overview tab shows: a process,
  * an app embedded in one, Optimize, or a selection of the claim. now is the
  * clock of the page. unread names each kind that the page could not read or
- * whose list is not current.
+ * whose list is not current. drafted is true while no CamundaCluster
+ * exists: cluster is then the CamundaCluster that the claim would make
+ * (claimClusterOf), and backups and restores are empty.
  */
 export type ClusterSlotContext = {
   cluster: Resource<"CamundaCluster">;
@@ -61,6 +63,7 @@ export type ClusterSlotContext = {
   openId?: CardId;
   now: string;
   unread: readonly string[];
+  drafted?: true;
 };
 
 /**
