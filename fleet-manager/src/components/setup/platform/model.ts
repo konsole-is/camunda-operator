@@ -12,6 +12,14 @@ import {
 } from "@/lib/usage";
 import type { PlatformSources } from "./sources";
 
+/** PLATFORM_HREF is the path of the Platform page. */
+export const PLATFORM_HREF = "/setup/platform";
+
+/** platformConfigHref returns the path of the page of the platform config name. */
+export function platformConfigHref(name: string): string {
+  return `${PLATFORM_HREF}/${encodeURIComponent(name)}`;
+}
+
 /** Condition is the Ready condition of a platform config as the list shows it. */
 export type Condition = {
   status: "True" | "False" | "Unknown";

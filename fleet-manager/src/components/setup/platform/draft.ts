@@ -13,11 +13,6 @@ const API_VERSION = "core.camunda.io/v1";
 const KIND = "CamundaPlatformConfig";
 const OIDC_PATH = "spec.auth.oidc";
 
-// NAME_PATTERN is the Pattern of spec.platformConfigRef of a cluster and of
-// a claim, and NAME_MAX its MaxLength.
-const NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const NAME_MAX = 253;
-
 // IMAGE_PATTERN is the Pattern of each field of ImagesSpec in
 // api/v1/camundaplatformconfig_types.go.
 const IMAGE_PATTERN =
@@ -25,6 +20,14 @@ const IMAGE_PATTERN =
 
 /** PlatformDraft is the spec of one platform config as the admin edits it. Its fields can be empty or incomplete. */
 export type PlatformDraft = CamundaPlatformConfig["spec"];
+
+/** PlatformCreateDraft is the form of a new platform config: its name and its spec. */
+export type PlatformCreateDraft = { name: string; spec: PlatformDraft };
+
+// The pattern and the length of spec.platformConfigRef of a CamundaCluster
+// and of a CamundaClusterClaim.
+const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const NAME_MAX = 253;
 
 type Oidc = NonNullable<NonNullable<PlatformDraft["auth"]>["oidc"]>;
 
@@ -145,9 +148,8 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
 }
 
 /**
- * nameErrors returns the error of the name of a new platform config, with
- * the path "name", or no error. A name is one that spec.platformConfigRef
- * accepts, and not one of taken.
+ * nameErrors returns the error of name for a new platform config, with
+ * the path "name", or none. taken are the names of the platform configs.
  */
 export function nameErrors(
   name: string,
@@ -155,7 +157,7 @@ export function nameErrors(
 ): ValidationError[] {
   const error = (message: string) => [{ path: "name", message }];
   if (name === "") return error("Give the platform config a name.");
-  if (!NAME_PATTERN.test(name) || name.length > NAME_MAX)
+  if (!NAME.test(name) || name.length > NAME_MAX)
     return error(
       "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
     );
@@ -165,8 +167,8 @@ export function nameErrors(
 }
 
 /**
- * createChange applies a new platform config name with the spec of specOf.
- * The write fails with Stale when a config of that name exists.
+ * createChange creates the platform config name with the spec of specOf.
+ * The write fails with Stale when the platform config exists.
  */
 export function createChange(name: string, draft: PlatformDraft): Change {
   return {

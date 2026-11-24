@@ -7,7 +7,12 @@ import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { Button } from "@/components/ui/button";
 import { type ReadError, unknownUsersText } from "@/lib/k8s/unread";
-import { type PlatformRow, platformRows, unreadUserKinds } from "./model";
+import {
+  type PlatformRow,
+  platformConfigHref,
+  platformRows,
+  unreadUserKinds,
+} from "./model";
 import { type PlatformSnapshot, usePlatformSources } from "./sources";
 
 const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
@@ -62,7 +67,7 @@ export function PlatformList({
         rows={rows.map((row) => ({
           id: row.name,
           label: row.name,
-          href: `/setup/platform/${encodeURIComponent(row.name)}`,
+          href: platformConfigHref(row.name),
           search: row.name,
           sort: {
             name: row.name,

@@ -19,8 +19,8 @@ import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";
-import { type PlatformActions, PlatformDetail } from "./platform-detail";
-import type { PlatformSources } from "./sources";
+import { PlatformDetail } from "./platform-detail";
+import type { PlatformActions, PlatformSources } from "./sources";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));

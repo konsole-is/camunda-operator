@@ -23,32 +23,26 @@ import {
   draftErrors,
   draftOf,
   nameErrors,
+  type PlatformCreateDraft,
   type PlatformDraft,
   specOf,
 } from "./draft";
 import { ImagesSection } from "./images-section";
 import {
   CREATE_EFFECT,
+  PLATFORM_HREF,
+  platformConfigHref,
   unreadMinorKinds,
   unreadUserKinds,
   userMinors,
   usersOf,
 } from "./model";
-import type { PlatformActions } from "./platform-detail";
 import {
+  type PlatformActions,
   type PlatformSnapshot,
   type PlatformSources,
   usePlatformSources,
 } from "./sources";
-
-/** PlatformCreateDraft is a new platform config as the admin edits it: its name and its spec. */
-export type PlatformCreateDraft = { name: string; spec: PlatformDraft };
-
-const LIST_HREF = "/setup/platform";
-
-function hrefOf(name: string): string {
-  return `${LIST_HREF}/${encodeURIComponent(name)}`;
-}
 
 /**
  * PlatformCreate is the create page of a platform config on sources. It
@@ -77,8 +71,8 @@ export function PlatformCreate({
     isNew: true,
     listed: names,
     draftOf: () => ({ name: "", spec: draftOf(configNamed(copy)) }),
-    listHref: LIST_HREF,
-    hrefOf,
+    listHref: PLATFORM_HREF,
+    hrefOf: platformConfigHref,
   });
   const { draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
