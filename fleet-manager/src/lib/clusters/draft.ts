@@ -359,9 +359,9 @@ export function draftCluster(
 /**
  * claimClusterOf returns the CamundaCluster that the claim would make: the
  * name and namespace of the claim, CLAIM_LABEL with the claim name, and a
- * copy of spec.cluster with presetRef, releaseRef, and platformConfigRef.
- * releaseRef and platformConfigRef fall back to the defaults of environment,
- * and each ref is set only when it is known. It has no status.
+ * copy of spec.cluster with suspend and the refs of the claim. releaseRef
+ * and platformConfigRef fall back to the defaults of environment, and each
+ * ref is set only when it is known. It has no status.
  */
 export function claimClusterOf(
   claim: {
@@ -391,6 +391,7 @@ export function claimClusterOf(
       ...(spec.presetRef && { presetRef: spec.presetRef }),
       ...(releaseRef && { releaseRef }),
       ...(platformConfigRef && { platformConfigRef }),
+      ...(spec.suspend !== undefined && { suspend: spec.suspend }),
     },
   } as Resource<"CamundaCluster">;
 }

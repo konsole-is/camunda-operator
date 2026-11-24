@@ -765,6 +765,15 @@ describe("claimClusterOf", () => {
     ).toEqual({});
   });
 
+  it("keeps the suspend of the claim", () => {
+    expect(
+      claimClusterOf(
+        { name: "orders", namespace: "team-a", spec: { suspend: true } },
+        undefined,
+      ).spec.suspend,
+    ).toBe(true);
+  });
+
   it("does not share the cluster spec of the claim", () => {
     const spec = { cluster: { zeebe: { replicas: 3 } } };
     const cluster = claimClusterOf(
