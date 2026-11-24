@@ -12,7 +12,7 @@ The page **Setup > Presets** lists the presets of three kinds:
 | Elasticsearch | [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md) | The option **New Elasticsearch cluster** |
 | PostgreSQL | [DatabaseServerPreset](../crds/databaseserverpreset.md) | The option **New PostgreSQL server** |
 
-Each row shows the key facts of the preset, the environments that allow it in **Allowed in**, and its users in **Used by**. The fleet manager does not create a preset. Apply a new preset with `kubectl` or through your Git repository.
+Each row shows the key facts of the preset, the environments that allow it in **Allowed in**, and its users in **Used by**. You can also apply a preset with `kubectl` or through your Git repository.
 
 The description of a preset comes from its annotation `kubernetes.io/description`. The create form shows it on the card of the preset:
 
@@ -26,6 +26,14 @@ metadata:
 spec:
   # ... the rest of your preset
 ```
+
+### Create a preset
+
+Select **New preset** on the page **Setup > Presets**. Pick the **Kind**: **Cluster**, **Elasticsearch**, or **PostgreSQL**. **Copy from** lists the presets of that kind. Pick one to start from its fields, or keep **Nothing, start empty**. Type the **Name**. Resources name the preset by it, and it cannot change later.
+
+Set the fields as on the page of a preset. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new preset opens.
+
+An environment allows a new preset only when it lists the name of the preset already. To offer the preset to new clusters, allow it on the [Environments](environments.md) page.
 
 ### Change a preset
 

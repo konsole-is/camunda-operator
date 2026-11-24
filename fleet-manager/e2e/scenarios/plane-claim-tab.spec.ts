@@ -33,10 +33,8 @@ type Claim = {
 };
 
 // The scenario applied the claim with kubectl, which owns its fields. A
-// field that kubectl owns stays until the review takes it over. The save
-// removes the fields of kubectl after it applies the new provider, and the
-// CRD refuses a claim with two providers, so this move cannot save.
-test("a move of the identity mode shows what it does, and the take-over of the kubectl provider meets the one-provider rule", async ({
+// field that kubectl owns stays until the review takes it over.
+test("a move of the identity mode shows what it does, and saves with the take-over of the kubectl provider", async ({
   page,
   scenario,
 }) => {
@@ -81,11 +79,18 @@ test("a move of the identity mode shows what it does, and the take-over of the k
     "spec.management.identityProvider.oidc: kubectl set it. The save removes it, or it gets its default value again.",
   );
   await expect(dialog.getByText(/Sign-in moves/).first()).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText(
-    "exactly one identity provider",
-  );
-  await expect(save).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   await checkPage(page, "plane-claim-review-take-over");
+  await dialog.getByLabel(/to confirm/).fill("plane-a");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole("status")).toContainText(
+    "The claim plane-a is saved.",
+  );
+  const saved = await kubeRequest<Claim>(scenario.admin, "GET", CLAIM);
+  expect(Object.keys(saved.spec.management.identityProvider)).toEqual([
+    "externalKeycloak",
+  ]);
 });
 
 test("a change of the deletion policy saves only the claim", async ({

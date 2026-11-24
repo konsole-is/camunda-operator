@@ -13,7 +13,7 @@ import type { Change, Preview, WriteResult } from "@/lib/write/types";
 
 const platformConfigSchema = adminChangeSchema(["CamundaPlatformConfig"]);
 
-/** previewPlatformConfigChange is the dry run of an update or a delete of CamundaPlatformConfigs, under the rules of applyPlatformConfigChange. */
+/** previewPlatformConfigChange is the dry run of a create, an update, or a delete of CamundaPlatformConfigs, under the rules of applyPlatformConfigChange. */
 export async function previewPlatformConfigChange(
   change: Change,
 ): Promise<Preview> {
@@ -27,7 +27,7 @@ export async function previewPlatformConfigChange(
 }
 
 /**
- * applyPlatformConfigChange writes an update or a delete of
+ * applyPlatformConfigChange writes a create, an update, or a delete of
  * CamundaPlatformConfigs with the writer of the settings. It refuses with
  * Forbidden the whole change when platformDeleteBlock blocks the delete of
  * one of its configs: a config that a resource, a claim, or an environment

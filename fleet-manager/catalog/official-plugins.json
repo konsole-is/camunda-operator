@@ -7,6 +7,9 @@
       "sections": [
         "access"
       ],
+      "controllers": [
+        "gateway-access"
+      ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/gateway-access",
       "version": "0.1.0",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
@@ -18,65 +21,35 @@
       "sections": [
         "backup-storage"
       ],
+      "controllers": [
+        "rustfs"
+      ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/rustfs",
       "version": "0.1.0",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
       "installCommand": "helm install rustfs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/rustfs --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
     },
     {
-      "name": "aws-identity",
-      "description": "Creates one AWS IAM role for each cluster, with IRSA or EKS Pod Identity.",
+      "name": "aws",
+      "description": "Gives each cluster on AWS an IAM role, a KMS key, encrypted EBS volumes, an S3 bucket, and an IAM role for its Connectors. The command turns on all five controllers. Remove the --set of each controller that you do not need.",
       "sections": [
-        "cloud-identity"
-      ],
-      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-identity",
-      "version": "0.1.0",
-      "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-identity oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-identity --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
-    },
-    {
-      "name": "aws-kms",
-      "description": "Creates an AWS KMS key for each cluster, in one Region or in many.",
-      "sections": [
-        "encryption-key"
-      ],
-      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-kms",
-      "version": "0.1.0",
-      "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-kms oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-kms --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
-    },
-    {
-      "name": "aws-ebs",
-      "description": "Creates an encrypted EBS StorageClass for the volumes of each cluster.",
-      "sections": [
-        "volume-encryption"
-      ],
-      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-ebs",
-      "version": "0.1.0",
-      "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-ebs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-ebs --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
-    },
-    {
-      "name": "aws-s3",
-      "description": "Creates an encrypted S3 bucket for the backups of each cluster.",
-      "sections": [
-        "backup-storage"
-      ],
-      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-s3",
-      "version": "0.1.0",
-      "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-s3 oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-s3 --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
-    },
-    {
-      "name": "aws-connectors-role",
-      "description": "Gives the Connectors of each cluster their own AWS IAM role.",
-      "sections": [
+        "cloud-identity",
+        "encryption-key",
+        "volume-encryption",
+        "backup-storage",
         "connectors-permissions"
       ],
-      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-connectors-role",
+      "controllers": [
+        "aws-identity",
+        "aws-connectors-role",
+        "aws-kms",
+        "aws-ebs",
+        "aws-s3"
+      ],
+      "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws",
       "version": "0.1.0",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-connectors-role oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-connectors-role --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws --version 0.1.0 --namespace camunda-operator-plugins --create-namespace --set identity.enabled=true --set connectorsRole.enabled=true --set kms.enabled=true --set ebs.enabled=true --set s3.enabled=true"
     }
   ]
 }

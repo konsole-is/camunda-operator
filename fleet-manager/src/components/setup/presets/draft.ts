@@ -4,6 +4,8 @@ import {
   presetDescription,
 } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
+import type { ValidationError } from "@/lib/schema";
+import type { PresetKind } from "@/lib/usage";
 import { keepEmpty } from "@/lib/write/ownership";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
@@ -55,7 +57,7 @@ export function presetUpdateChange(
       ...(Object.keys(kept).length > 0 && { annotations: kept }),
     },
     spec: {
-      [live.kind === "DatabaseServerPreset" ? "server" : "cluster"]: draft.body,
+      [bodyField(live.kind)]: draft.body,
     },
   };
   return keepEmpty(
@@ -88,4 +90,87 @@ export function presetChangeCount(
     (k) => !equalJSON(base.body[k], draft.body[k]),
   ).length;
   return changed + (base.description !== draft.description.trim() ? 1 : 0);
+}
+
+/** PresetCreateDraft is the form of a new preset: its name, and its body and description. */
+export type PresetCreateDraft = { name: string; preset: PresetDraft };
+
+// The pattern and the length of spec.presetRef of a CamundaClusterClaim.
+const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const NAME_MAX = 253;
+
+/**
+ * nameErrors returns the error of name for a new preset, with the path
+ * "name", or none. taken are the names of the presets of the same kind.
+ */
+export function nameErrors(
+  name: string,
+  taken: readonly string[],
+): ValidationError[] {
+  const error = (message: string) => [{ path: "name", message }];
+  if (name === "") return error("Give the preset a name.");
+  if (!NAME.test(name) || name.length > NAME_MAX)
+    return error(
+      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
+    );
+  if (taken.includes(name))
+    return error("A preset of this kind with this name exists.");
+  return [];
+}
+
+/**
+ * createChange creates the preset name of kind with the body and the
+ * description of draft. A blank description leaves out the annotation.
+ * The write fails with Stale when the preset exists.
+ */
+export function createChange(
+  kind: PresetKind,
+  name: string,
+  draft: PresetDraft,
+): Change {
+  const description = draft.description.trim();
+  return {
+    intent: `Create the preset ${name}`,
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind,
+        metadata: {
+          name,
+          ...(description !== "" && {
+            annotations: { [DESCRIPTION_ANNOTATION]: description },
+          }),
+        },
+        spec: { [bodyField(kind)]: draft.body },
+      },
+    ],
+    create: [refKey({ kind, name })],
+  };
+}
+
+/**
+ * createEffects says what the create of a preset changes. allowed are the
+ * environments that list its name already, or undefined when they cannot
+ * be read.
+ */
+export function createEffects(
+  allowed: readonly string[] | undefined,
+): string[] {
+  const uses = "A resource that names this preset uses it from now on.";
+  if (allowed === undefined)
+    return [
+      uses,
+      "The environments that allow it are not known while the fleet manager cannot read them.",
+    ];
+  if (allowed.length === 0) return [uses, "No environment allows it yet."];
+  return [
+    uses,
+    allowed.length === 1
+      ? `The environment ${allowed[0]} lists its name and allows it at once.`
+      : `The environments ${allowed.join(", ")} list its name and allow it at once.`,
+  ];
+}
+
+function bodyField(kind: PresetKind): "cluster" | "server" {
+  return kind === "DatabaseServerPreset" ? "server" : "cluster";
 }

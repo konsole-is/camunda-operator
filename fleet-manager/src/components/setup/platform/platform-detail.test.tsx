@@ -19,8 +19,8 @@ import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject, Preview, WriteMode } from "@/lib/write/types";
 import { platformFixtures, twoMinorTable } from "./fixtures";
 import { DELETE_EFFECT, ROLL_NOTICE } from "./model";
-import { type PlatformActions, PlatformDetail } from "./platform-detail";
-import type { PlatformSources } from "./sources";
+import { PlatformDetail } from "./platform-detail";
+import type { PlatformActions, PlatformSources } from "./sources";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
@@ -262,11 +262,9 @@ describe("PlatformDetail", () => {
     expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
   });
 
-  it("a switch to Basic names the OIDC block of another tool and keeps Save off with the error of the CRD rule", async () => {
+  it("a switch to Basic with the take-over of the OIDC block of another tool saves the method and the removal", async () => {
     const { actions } = setup();
     const path = "spec.auth.oidc";
-    const rule =
-      "oidc is required when method is oidc and must not be set when method is basic";
     const ownership = [
       {
         ref: CONFIG_REF,
@@ -274,25 +272,18 @@ describe("PlatformDetail", () => {
         cleared: [foreignField(path)],
       },
     ];
-    // The save applies the method before it removes the block, so the API
-    // server refuses the take-over too.
     actions.previewChange.mockImplementation(async (change) => ({
       objects: [],
-      errors: [
-        change.takeOver
-          ? {
-              code: "Invalid",
-              message: `Invalid value: ${rule}`,
-              path: "spec.auth",
-              ref: CONFIG_REF,
-            }
-          : {
+      errors: change.takeOver
+        ? []
+        : [
+            {
               code: "Conflict",
               message: 'conflict with "kubectl-client-side-apply"',
               path: "spec.auth.method",
               ref: CONFIG_REF,
             },
-      ],
+          ],
       ownership,
     }));
 
@@ -312,16 +303,22 @@ describe("PlatformDetail", () => {
     ).toContain(
       `${path}: kubectl-client-side-apply set it. It stays unless you take it over.`,
     );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
 
     fireEvent.click(choice);
-    await waitFor(() =>
-      expect(within(review).getByRole("alert").textContent).toContain(rule),
-    );
-    expect(within(review).getByRole("button", { name: "Save" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect(actions.applyChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    const applied = actions.applyChange.mock.calls[0][0];
+    expect(applied).toMatchObject({
+      takeOver: { "CamundaPlatformConfig//oidc-prod": ["spec.auth.method"] },
+      remove: { "CamundaPlatformConfig//oidc-prod": [path] },
+    });
+    expect(applied.force).toBeUndefined();
+    expect((applied.apply[0].spec as { auth: unknown }).auth).toEqual({
+      method: "basic",
+    });
   });
 
   it("blocks the review while a field is invalid", () => {
@@ -712,5 +709,72 @@ describe("PlatformDetail over the empty values of another tool", () => {
     );
     expect(changed.map((f) => f.path)).toEqual(["spec.auth.oidc.issuerUrl"]);
     expect(cleared).toEqual([]);
+  });
+});
+
+describe("PlatformDetail after a switch of the sign-in that took over a field", () => {
+  it("a change under spec.auth asks for no take-over when kubectl keeps only spec.auth itself", async () => {
+    const sources = platformFixtures();
+    const config = sources.platformConfigs.find(
+      (c) => c.metadata.name === "oidc-prod",
+    )!;
+    // kubectl made the object, and the fleet manager took the sign-in over:
+    // kubectl keeps spec.auth with no field below it.
+    config.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: { "f:spec": { ".": {}, "f:auth": {} } },
+      },
+      {
+        manager: "fleet-manager",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:auth": {
+              "f:method": {},
+              "f:oidc": { "f:issuerUrl": {}, "f:clientId": {} },
+            },
+          },
+        },
+      },
+    ];
+    const { actions } = setup({ sources });
+    actions.previewChange.mockImplementation(async (change) => {
+      const { changed, cleared } = foreignFields(
+        config as unknown as KubeObject,
+        change.apply[0],
+        change.keep?.["CamundaPlatformConfig//oidc-prod"],
+      );
+      return {
+        objects: [],
+        errors: [],
+        ...(changed.length + cleared.length > 0
+          ? { ownership: [{ ref: CONFIG_REF, changed, cleared }] }
+          : {}),
+      };
+    });
+
+    fireEvent.change(input("Issuer URL"), {
+      target: { value: "https://login.example.com/realms/other" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = screen.getByRole("region", {
+      name: "Review the platform config",
+    });
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const save = within(review).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    expect(
+      within(review).queryByRole("checkbox", {
+        name: "Take over these fields",
+      }),
+    ).toBeNull();
+    expect(
+      within(review).queryByRole("group", {
+        name: "Fields that another tool set",
+      }),
+    ).toBeNull();
   });
 });

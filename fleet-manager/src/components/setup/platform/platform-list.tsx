@@ -1,11 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { Button } from "@/components/ui/button";
 import { type ReadError, unknownUsersText } from "@/lib/k8s/unread";
-import { type PlatformRow, platformRows, unreadUserKinds } from "./model";
+import {
+  type PlatformRow,
+  platformConfigHref,
+  platformRows,
+  unreadUserKinds,
+} from "./model";
 import { type PlatformSnapshot, usePlatformSources } from "./sources";
 
 const METHOD_LABEL = { basic: "Basic", oidc: "OIDC" } as const;
@@ -28,9 +35,14 @@ export function PlatformList({
   const unread = unreadUserKinds({ errors, stale });
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
-        Platform
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
+          Platform
+        </h1>
+        <Button asChild>
+          <Link href="/setup/new-platform-config">New platform config</Link>
+        </Button>
+      </div>
       {errors.map((e) => (
         <p key={e.kind} role="alert" className="text-sm text-bad">
           Could not read {e.kind}: {e.message}
@@ -43,7 +55,7 @@ export function PlatformList({
         label="Platform configs"
         emptyText={
           rows.length === 0
-            ? "No platform config yet. A cluster needs one. The guide shows how to apply one."
+            ? "No platform config yet. A cluster needs one."
             : undefined
         }
         columns={[
@@ -55,7 +67,7 @@ export function PlatformList({
         rows={rows.map((row) => ({
           id: row.name,
           label: row.name,
-          href: `/setup/platform/${encodeURIComponent(row.name)}`,
+          href: platformConfigHref(row.name),
           search: row.name,
           sort: {
             name: row.name,
