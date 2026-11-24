@@ -90,7 +90,11 @@ export function clusterProgressRows(
  * the label of the section, else its name. request is absent while
  * status.requests of the claim names no request for the selection.
  */
-export type WaitedRequest = { section: string; label: string; request?: string };
+export type WaitedRequest = {
+  section: string;
+  label: string;
+  request?: string;
+};
 
 /**
  * waitedRequests returns, in claim order, the selections of claim whose
@@ -106,10 +110,11 @@ export function waitedRequests(
 ): WaitedRequest[] | undefined {
   const waits: WaitedRequest[] = [];
   for (const selection of claim.spec.plugins ?? []) {
+    const { section, registration } = selection;
     const fields = slotFields(
       "CamundaClusterClaim",
       sections,
-      [selection],
+      [{ section, registration }],
       requests,
     );
     if (!("value" in fields)) return undefined;
@@ -119,15 +124,13 @@ export function waitedRequests(
       continue;
     }
     const request = claim.status?.requests?.find(
-      (r) =>
-        r.section === selection.section &&
-        r.registration === selection.registration,
+      (r) => r.section === section && r.registration === registration,
     )?.name;
     waits.push({
-      section: selection.section,
+      section,
       label:
-        sections.find((s) => s.metadata.name === selection.section)?.spec
-          .label || selection.section,
+        sections.find((s) => s.metadata.name === section)?.spec.label ||
+        section,
       ...(request && { request }),
     });
   }

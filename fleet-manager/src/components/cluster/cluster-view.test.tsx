@@ -72,6 +72,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
       { metadata: { name: string } }[] | undefined;
     return {
       item: items ? items.find((o) => o.metadata.name === ref.name) : initial,
+      error: live.errors[kind],
     };
   },
 }));
@@ -155,6 +156,7 @@ function claim(revision?: string): Resource<"CamundaClusterClaim"> {
 
 function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
   return {
+    ref: { namespace: "team-a", name: "orders" },
     cluster: cluster(),
     namespace: {
       kind: "Namespace",
@@ -540,12 +542,44 @@ describe("ClusterView", () => {
     ).toBeTruthy();
   });
 
-  it("says the cluster no longer exists when it goes away", () => {
+  it("says the cluster no longer exists when it and its claim go away", () => {
     live.objects.CamundaCluster = [];
+    live.objects.CamundaClusterClaim = [];
     render(view());
     expect(screen.getByText("This cluster no longer exists.")).toBeTruthy();
     expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     expect(screen.queryAllByRole("tab")).toEqual([]);
+  });
+
+  it("a claim that the precheck refused shows the refusal while its cluster is Ready", () => {
+    const refused = {
+      ...claim(),
+      metadata: { ...claim().metadata, generation: 2 },
+      status: {
+        conditions: [
+          {
+            type: "Ready",
+            status: "False",
+            reason: "NotAllowed",
+            observedGeneration: 2,
+            message:
+              "The Environment prod does not allow the release camunda-8-8.",
+            lastTransitionTime: now,
+          },
+        ],
+      },
+    } as unknown as Resource<"CamundaClusterClaim">;
+    render(view({ initial: data({ claims: [refused] }) }));
+    expect(
+      screen.getByText(
+        "The Environment prod does not allow the release camunda-8-8.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Open the Claim tab" })
+        .getAttribute("href"),
+    ).toBe("?tab=claim");
   });
 
   it("watches the pods with the selector of the page", () => {
@@ -2293,6 +2327,281 @@ describe("The detail of a section", () => {
     expect(
       screen.getByText(
         "Not known: the fleet manager has no current list of PluginRegistration.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("Before the cluster exists", () => {
+  const condition = (type: string, reason: string) => ({
+    type,
+    status: "False",
+    reason,
+    message: "",
+    observedGeneration: 1,
+    lastTransitionTime: now,
+  });
+  const waitingClaim = {
+    ...claim(),
+    metadata: { ...claim().metadata, generation: 1 },
+    spec: {
+      plugins: [
+        {
+          section: "secondary-storage",
+          registration: "existing-secondary-storage",
+        },
+      ],
+    },
+    status: {
+      requests: [
+        {
+          section: "secondary-storage",
+          registration: "existing-secondary-storage",
+          name: "orders-secondary-storage",
+        },
+      ],
+      conditions: [
+        condition("Ready", "PrerequisiteNotMet"),
+        condition("RequestsReady", "OperationPending"),
+      ],
+    },
+  } as unknown as Resource<"CamundaClusterClaim">;
+  const section = {
+    kind: "PluginSection",
+    metadata: { name: "secondary-storage" },
+    spec: {
+      label: "Secondary storage",
+      selection: "One",
+      slot: "secondaryStorage",
+      appliesTo: ["CamundaClusterClaim"],
+    },
+  } as unknown as Resource<"PluginSection">;
+  const request = {
+    kind: "PluginRequest",
+    metadata: {
+      namespace: "team-a",
+      name: "orders-secondary-storage",
+      generation: 1,
+      labels: { [CLAIM_LABEL]: "orders", [SECTION_LABEL]: "secondary-storage" },
+    },
+    spec: {
+      claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+      section: "secondary-storage",
+      registration: "existing-secondary-storage",
+    },
+    status: { conditions: [] },
+  } as unknown as Resource<"PluginRequest">;
+  const waiting = data({
+    cluster: undefined,
+    claims: [waitingClaim],
+    sections: [section],
+    requests: [request],
+    pods: [],
+  });
+
+  it("shows the claim, its section cards, its conditions, and the requests it waits for", () => {
+    render(view({ initial: waiting }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "orders" }),
+    ).toBeTruthy();
+    const block = screen.getByRole("region", {
+      name: "The cluster does not exist yet",
+    });
+    expect(
+      within(block)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Secondary storage: orders-secondary-storage"]);
+    expect(screen.queryByRole("region", { name: "Topology" })).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "Components" }))
+        .getAllByRole("article")
+        .map((a) => a.getAttribute("aria-label")),
+    ).toEqual(["Secondary storage"]);
+    expect(
+      within(screen.getByRole("region", { name: "Conditions" }))
+        .getAllByRole("rowheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Claim", "RequestsReady"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([
+      "Overview",
+      "Backups",
+      "Endpoints",
+      "Claim",
+    ]);
+  });
+
+  it("watches the requests of the claim by the page name", () => {
+    render(view({ initial: waiting }));
+    expect(live.calls.find((c) => c.kind === "PluginRequest")?.opts).toEqual({
+      namespace: "team-a",
+      labelSelector: `${CLAIM_LABEL}=orders`,
+    });
+  });
+
+  it("the Backups and Endpoints tabs say that the cluster does not exist yet", async () => {
+    const { container } = render(view({ initial: waiting, slots: filled }));
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    expect(
+      screen.getByText("The cluster does not exist yet, so it has no backups."),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.backups.actions"]'),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Endpoints" }));
+    expect(
+      screen.getByText(
+        "The cluster does not exist yet, so it has no endpoints.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("the Claim tab shows the claim and mounts the claim editor slot", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(view({ initial: waiting }));
+    expect(screen.getByRole("region", { name: "Basics" })).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).not.toBeNull();
+  });
+
+  it("gives the slots the cluster that the claim would make, marked as drafted", () => {
+    let seen: ClusterSlotContext | undefined;
+    render(
+      view({
+        initial: waiting,
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.drafted).toBe(true);
+    expect(seen?.cluster.metadata).toEqual({
+      name: "orders",
+      namespace: "team-a",
+      labels: { [CLAIM_LABEL]: "orders" },
+    });
+    expect(seen?.claim?.metadata?.name).toBe("orders");
+    expect(seen?.backups).toEqual([]);
+    expect(seen?.restores).toEqual([]);
+  });
+
+  it("gives the slots no drafted mark while the cluster exists", () => {
+    let seen: ClusterSlotContext | undefined;
+    render(
+      view({
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.drafted).toBeUndefined();
+  });
+
+  it("shows the cluster once its watch gives it, without a new page", () => {
+    const { rerender } = render(view({ initial: waiting }));
+    expect(
+      screen.getByRole("region", { name: "The cluster does not exist yet" }),
+    ).toBeTruthy();
+    live.objects.CamundaCluster = [cluster()];
+    rerender(view({ initial: waiting }));
+    expect(screen.getByRole("region", { name: "Topology" })).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "The cluster does not exist yet" }),
+    ).toBeNull();
+  });
+
+  it("a failed read of the cluster is an error, never a claim page that says the cluster does not exist yet", () => {
+    live.errors.CamundaCluster = "forbidden";
+    render(view({ initial: waiting }));
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read CamundaCluster: forbidden",
+    );
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
+    expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
+  });
+
+  it("a failed first read of the cluster is an error until its watch answers", () => {
+    live.stale = ["CamundaCluster"];
+    render(
+      view({
+        initial: {
+          ...waiting,
+          readErrors: [{ kind: "CamundaCluster", message: "forbidden" }],
+        },
+      }),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read CamundaCluster: forbidden",
+    );
+    expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
+  });
+
+  it("names the claim kind, never that the cluster is gone, while the claims are not read and no cluster exists", () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    render(view({ initial: data({ cluster: undefined, claims: [] }) }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
+  });
+
+  it("names the claim kind, never that the cluster is gone, while the claims are stale and no cluster exists", () => {
+    live.stale = ["CamundaClusterClaim"];
+    live.overdue = ["CamundaClusterClaim"];
+    render(view({ initial: data({ cluster: undefined, claims: [] }) }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
+  });
+
+  it("says that the claim is being deleted after its cluster went", () => {
+    const deleting = {
+      ...waitingClaim,
+      metadata: { ...waitingClaim.metadata, deletionTimestamp: now },
+    } as Resource<"CamundaClusterClaim">;
+    render(view({ initial: data({ cluster: undefined, claims: [deleting] }) }));
+    expect(
+      screen.getByRole("region", { name: "The cluster no longer exists" }),
+    ).toBeTruthy();
+    expect(screen.getByText("The claim is being deleted.")).toBeTruthy();
+    expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
+  });
+
+  it("a process in the URL shows the claim state while no cluster exists", () => {
+    window.history.replaceState(null, "", "?component=zeebe");
+    render(view({ initial: waiting }));
+    expect(
+      screen.getByRole("region", { name: "The cluster does not exist yet" }),
+    ).toBeTruthy();
+  });
+
+  it("names the request kind in the block, never a list, while the requests are not read", () => {
+    live.errors.PluginRequest = "forbidden";
+    render(view({ initial: waiting }));
+    const block = screen.getByRole("region", {
+      name: "The cluster does not exist yet",
+    });
+    expect(within(block).queryByRole("list")).toBeNull();
+    expect(
+      within(block).getByText(
+        "Not known: the fleet manager has no current list of PluginRequest.",
       ),
     ).toBeTruthy();
   });

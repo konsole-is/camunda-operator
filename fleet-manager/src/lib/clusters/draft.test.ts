@@ -758,8 +758,10 @@ describe("claimClusterOf", () => {
 
   it("sets no reference that neither the claim nor the Environment names", () => {
     expect(
-      claimClusterOf({ name: "orders", namespace: "team-a", spec: {} }, undefined)
-        .spec,
+      claimClusterOf(
+        { name: "orders", namespace: "team-a", spec: {} },
+        undefined,
+      ).spec,
     ).toEqual({});
   });
 

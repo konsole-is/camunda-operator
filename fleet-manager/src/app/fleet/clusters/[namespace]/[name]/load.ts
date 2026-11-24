@@ -117,6 +117,7 @@ export async function loadClusterPage(
     }),
   );
   return {
+    ref: { namespace, name },
     cluster,
     namespace: namespaceObject,
     environments,

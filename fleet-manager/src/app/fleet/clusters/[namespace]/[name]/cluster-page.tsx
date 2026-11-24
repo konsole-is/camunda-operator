@@ -1,12 +1,12 @@
 "use client";
 
+import { claimNameOf } from "@/components/cluster/claim";
 import {
   type ClusterPageData,
   ClusterView,
 } from "@/components/cluster/cluster-view";
 import { type PendingPush, useGitPushes } from "@/components/fleet/git-pushes";
 import type { PushedObject } from "@/components/fleet/git-waiting-line";
-import { CLAIM_LABEL } from "@/lib/labels";
 import { refKey } from "@/lib/write/refs";
 import type { WriteMode } from "@/lib/write/types";
 import { applyClaimChange, previewClaimChange } from "./actions";
@@ -30,8 +30,8 @@ export function ClusterPage({
   writeMode?: WriteMode;
 }) {
   const { pushes } = useGitPushes();
-  const { namespace, labels } = initial.cluster.metadata ?? {};
-  const claimName = labels?.[CLAIM_LABEL];
+  const { namespace } = initial.ref;
+  const claimName = claimNameOf(initial.cluster, initial.ref.name);
   const key =
     claimName === undefined
       ? undefined

@@ -542,14 +542,21 @@ describe("ClusterEditProvider", () => {
   });
 
   it("the review of a claim without its cluster names no impact of a running cluster and saves the claim", async () => {
-    page(slotContext({ drafted: true, cluster: { ...cluster(), status: undefined } }));
+    page(
+      slotContext({
+        drafted: true,
+        cluster: { ...cluster(), status: undefined },
+      }),
+    );
     click("Suspend");
     openReview();
     expect(
       within(dialog()!).queryByRole("list", { name: "What this change does" }),
     ).toBeNull();
     expect(
-      within(dialog()!).queryByText("Every workload goes to zero. The volumes stay."),
+      within(dialog()!).queryByText(
+        "Every workload goes to zero. The volumes stay.",
+      ),
     ).toBeNull();
     await confirm("Save");
 

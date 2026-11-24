@@ -168,7 +168,11 @@ describe("waitedRequests", () => {
   const waitSections = [
     {
       metadata: { name: "secondary-storage" },
-      spec: { label: "Secondary storage", selection: "One", slot: "secondaryStorage" },
+      spec: {
+        label: "Secondary storage",
+        selection: "One",
+        slot: "secondaryStorage",
+      },
     },
     {
       metadata: { name: "encryption-key" },
@@ -177,7 +181,10 @@ describe("waitedRequests", () => {
   ] as PluginSection[];
   const claim = claimOf(
     [
-      { section: "secondary-storage", registration: "existing-secondary-storage" },
+      {
+        section: "secondary-storage",
+        registration: "existing-secondary-storage",
+      },
       { section: "encryption-key", registration: "kms" },
     ],
     {
@@ -187,13 +194,21 @@ describe("waitedRequests", () => {
           registration: "existing-secondary-storage",
           name: "orders-secondary-storage",
         },
-        { section: "encryption-key", registration: "kms", name: "orders-encryption-key" },
+        {
+          section: "encryption-key",
+          registration: "kms",
+          name: "orders-encryption-key",
+        },
       ],
     },
   );
   const request = (section: string, outputs?: Record<string, string>) =>
     ({
-      metadata: { namespace: "team-a", name: `orders-${section}`, generation: 1 },
+      metadata: {
+        namespace: "team-a",
+        name: `orders-${section}`,
+        generation: 1,
+      },
       spec: { section, registration: "existing-secondary-storage" },
       status: {
         conditions: [condition("OutputsReady", outputs ? "True" : "False")],

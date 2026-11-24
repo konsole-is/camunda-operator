@@ -24,7 +24,9 @@ describe("ClusterWaiting", () => {
       name: "The cluster does not exist yet",
     });
     expect(
-      within(block).getByText("The claim waits for the outputs of these requests:"),
+      within(block).getByText(
+        "The claim waits for the outputs of these requests:",
+      ),
     ).toBeTruthy();
     const list = within(block).getByRole("list", {
       name: "Requests the claim waits for",
@@ -33,7 +35,10 @@ describe("ClusterWaiting", () => {
       within(list)
         .getAllByRole("listitem")
         .map((li) => li.textContent),
-    ).toEqual(["Secondary storage: orders-secondary-storage", "Access: Not made yet"]);
+    ).toEqual([
+      "Secondary storage: orders-secondary-storage",
+      "Access: Not made yet",
+    ]);
   });
 
   it("names the kinds it could not read, never a list of waits", () => {

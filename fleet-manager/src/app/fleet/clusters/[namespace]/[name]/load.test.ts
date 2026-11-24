@@ -135,7 +135,7 @@ describe("loadClusterPage", () => {
     named("orders");
     k8s.failing = "LogicalBackupRDBMS";
     const data = await loadClusterPage("team-a", "orders");
-    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.cluster?.metadata?.name).toBe("orders");
     expect(data?.backups.rdbms).toEqual([]);
   });
 
@@ -143,7 +143,7 @@ describe("loadClusterPage", () => {
     named("orders");
     k8s.failing = "BackupSchedule";
     const data = await loadClusterPage("team-a", "orders");
-    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.cluster?.metadata?.name).toBe("orders");
     expect(data?.backupStorage.schedules).toEqual([]);
   });
 

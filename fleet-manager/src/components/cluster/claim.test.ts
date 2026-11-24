@@ -370,7 +370,9 @@ describe("storedYaml", () => {
 
 describe("claimNameOf", () => {
   const clusterLabelled = (labels: Record<string, string>) =>
-    ({ metadata: { namespace: "team-a", name: "orders", labels } }) as unknown as Resource<"CamundaCluster">;
+    ({
+      metadata: { namespace: "team-a", name: "orders", labels },
+    }) as unknown as Resource<"CamundaCluster">;
 
   it("names the claim that the label of the cluster names", () => {
     expect(

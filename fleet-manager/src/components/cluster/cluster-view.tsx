@@ -8,8 +8,13 @@ import {
 } from "@/components/fleet/git-waiting-line";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import { NotRead } from "@/components/fleet/not-read";
+import { PrecheckLine } from "@/components/fleet/precheck-line";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { FieldDoc } from "@/generated/fielddocs";
 import { useClock } from "@/components/fleet/use-clock";
 import { useAnswered } from "@/lib/k8s/answered";
@@ -21,6 +26,8 @@ import {
 } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import { currentReadErrors, unreadKinds } from "@/lib/k8s/unread";
+import { claimClusterOf } from "@/lib/clusters/draft";
+import { waitedRequests } from "@/lib/clusters/progress";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -47,11 +54,12 @@ import {
   overviewHref,
   sectionCards,
 } from "./cards";
-import { claimView } from "./claim";
+import { claimNameOf, claimView } from "./claim";
 import { ClaimTab } from "./claim-tab";
 import { BuiltinStorage } from "./builtin-storage";
 import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
+import { ClusterWaiting } from "./cluster-waiting";
 import { ComponentCards } from "./component-card";
 import { ComponentSettings } from "./component-settings";
 import { endpointRows } from "./endpoints";
@@ -75,12 +83,14 @@ import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
 
 /**
- * ClusterPageData is the first snapshot of the cluster page. The namespaced
- * lists hold the objects of the namespace of the cluster. requests holds the
- * PluginRequests of the namespace whose claim label names the claim of the
- * cluster. podSelector selects the pods of the cluster by its owner label,
- * and pods holds them. backupStorage holds
- * the objects that the Backups tab follows from the cluster to its backup
+ * ClusterPageData is the first snapshot of the cluster page. ref is the
+ * namespace and name of the route. cluster is undefined when no cluster of
+ * that name exists or its read failed. The namespaced lists hold the objects
+ * of that namespace. requests holds the PluginRequests of the namespace
+ * whose claim label names claimNameOf of the cluster. podSelector selects
+ * the pods of the cluster by its owner label, and pods holds them.
+ * backupStorage holds the objects that the Backups tab follows from the
+ * cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
  * registrations every PluginSection and PluginRegistration.
@@ -91,7 +101,8 @@ import { TopologyView } from "./topology-view";
  * empty.
  */
 export type ClusterPageData = {
-  cluster: Resource<"CamundaCluster">;
+  ref: { namespace: string; name: string };
+  cluster?: Resource<"CamundaCluster">;
   namespace?: Resource<"Namespace">;
   environments: Resource<"Environment">[];
   claims: Resource<"CamundaClusterClaim">[];
@@ -143,8 +154,15 @@ export type ClusterPageData = {
  * of the claim. writeMode is the write mode of the fleet manager, undefined
  * when the page could not read it. claimActions turn on the edit host of a
  * managed cluster, which the slots reach through useClusterEdit. pushedClaim
- * is the claim file that the fleet manager pushed in Git mode. When the
- * cluster is deleted, the page says so and shows nothing else.
+ * is the claim file that the fleet manager pushed in Git mode. A precheck
+ * refusal of the claim shows under the header.
+ *
+ * Without a cluster, the page of a claim of the route name shows the claim:
+ * its section cards, its conditions, and what it waits for. Its Claim tab
+ * and slots get claimClusterOf of the claim as the cluster, with drafted
+ * set. With neither, or while the cluster could not be read, the page shows
+ * only the read errors and the kinds that it could not read, or says that
+ * the cluster no longer exists.
  */
 export function ClusterView({
   initial,
@@ -161,8 +179,7 @@ export function ClusterView({
   writeMode?: WriteMode;
   claimActions?: ClaimActions;
 }) {
-  const { namespace, name } = initial.cluster.metadata ?? {};
-  const ns = namespace ?? "";
+  const { namespace: ns, name } = initial.ref;
   const params = useSearchParams();
   const urlTab = clusterTabOf(params.get("tab") ?? undefined);
   const [tab, setTab] = useState<ClusterTab>(urlTab);
@@ -183,7 +200,7 @@ export function ClusterView({
 
   const cluster = useResource(
     "CamundaCluster",
-    { namespace: ns, name: name ?? "" },
+    { namespace: ns, name },
     initial.cluster,
   );
   const namespaceObject = useResource(
@@ -204,7 +221,7 @@ export function ClusterView({
     { namespace: ns },
     initial.storage,
   );
-  const claimName = cluster.item?.metadata?.labels?.[CLAIM_LABEL];
+  const claimName = claimNameOf(cluster.item, name);
   const requestsOpts = {
     namespace: ns,
     labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
@@ -330,7 +347,7 @@ export function ClusterView({
   const listOverdue = useWatchesOverdue(followedLists);
   const answered = useAnswered([
     ...followedLists,
-    { kind: "CamundaCluster", opts: { namespace: ns, name: name ?? "" } },
+    { kind: "CamundaCluster", opts: { namespace: ns, name } },
     { kind: "Namespace", opts: { name: ns } },
     "CamundaClusterPreset",
     "CamundaRelease",
@@ -352,7 +369,7 @@ export function ClusterView({
     overviewRef.current?.querySelector<HTMLElement>(selector)?.focus();
   }, [component]);
   const usage = usePodUsage(ns, initial.podSelector);
-  const partitions = usePartitions(ns, name ?? "");
+  const partitions = usePartitions(ns, name);
   const backups = useMemo(
     () => [...backupsES.items, ...backupsRDBMS.items],
     [backupsES.items, backupsRDBMS.items],
@@ -375,10 +392,6 @@ export function ClusterView({
   );
 
   const live = cluster.item;
-  if (!live) {
-    return <p className="text-sm text-muted">This cluster no longer exists.</p>;
-  }
-
   const liveErrors = (
     [
       ["CamundaCluster", cluster],
@@ -425,37 +438,67 @@ export function ClusterView({
     claimName !== undefined &&
     [...stale, ...errors.map((e) => e.kind)].includes("CamundaClusterClaim");
 
-  const managed = isManaged(live);
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
-  const access = claimRequests.find(
-    (r) => r.metadata?.labels?.[SECTION_LABEL] === ACCESS_SECTION,
-  );
-  const preset = presets.items.find(
-    (p) => p.metadata?.name === live.spec.presetRef,
-  );
-  const release = releases.items.find(
-    (r) => r.metadata?.name === live.spec.releaseRef,
-  );
-  const merged = mergeCluster(preset?.spec, release?.spec, live.spec);
-
   const environmentName =
     namespaceObject.item?.metadata?.labels?.[ENVIRONMENT_LABEL];
   const environmentObject =
     environmentName === undefined
       ? undefined
       : environments.items.find((e) => e.metadata?.name === environmentName);
+  const clusterUnread = errors.some((e) => e.kind === "CamundaCluster");
+  const drafted =
+    !live && claim && !clusterUnread
+      ? claimClusterOf(
+          { name, namespace: ns, spec: claim.spec },
+          environmentObject as unknown as Environment | undefined,
+        )
+      : undefined;
+  const subject = live ?? drafted;
+  if (!subject) {
+    const objectUnread = unreadKinds({ errors, stale }).filter(
+      (kind) => kind === "CamundaCluster" || kind === "CamundaClusterClaim",
+    );
+    return (
+      <div className="flex flex-col gap-4">
+        {errors.map((e, i) => (
+          <p key={i} role="alert" className="text-sm text-bad">
+            Could not read {e.kind}: {e.message}
+          </p>
+        ))}
+        {objectUnread.length > 0 ? (
+          <NotRead kinds={objectUnread} />
+        ) : (
+          <p className="text-sm text-muted">This cluster no longer exists.</p>
+        )}
+      </div>
+    );
+  }
+
+  const managed = isManaged(subject);
+  const access = claimRequests.find(
+    (r) => r.metadata?.labels?.[SECTION_LABEL] === ACCESS_SECTION,
+  );
+  const preset = presets.items.find(
+    (p) => p.metadata?.name === subject.spec.presetRef,
+  );
+  const release = releases.items.find(
+    (r) => r.metadata?.name === subject.spec.releaseRef,
+  );
+  const merged = mergeCluster(preset?.spec, release?.spec, subject.spec);
+
   const environment =
     environmentName === undefined
       ? undefined
       : (environmentObject?.spec?.displayName ?? environmentName);
   const storageObject = storage.items.find(
-    (s) => s.metadata?.name === live.spec.storageRef,
+    (s) => s.metadata?.name === subject.spec.storageRef,
   );
   const storageType = storageObject?.spec.type;
-  const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
-    ConditionLike | undefined;
-  const clusterConditions = conditionRows(live.status?.conditions);
-  const optimize = clusterOptimize(name ?? "", optimizes.items);
+  const ready = (live ?? claim)?.status?.conditions?.find(
+    (c) => c.type === "Ready",
+  ) as ConditionLike | undefined;
+  const clusterConditions = conditionRows(live?.status?.conditions);
+  const optimize = clusterOptimize(name, optimizes.items);
   const sectionList = claim
     ? sectionComponents({
         // A claim holds the parameters of a selection as unknown, because the
@@ -467,14 +510,16 @@ export function ClusterView({
       })
     : [];
   const cards = [
-    ...componentCards({
-      spec: merged.spec,
-      pods: pods.items,
-      conditions: clusterConditions,
-      optimize,
-      usage,
-      partitions,
-    }),
+    ...(live
+      ? componentCards({
+          spec: merged.spec,
+          pods: pods.items,
+          conditions: clusterConditions,
+          optimize,
+          usage,
+          partitions,
+        })
+      : []),
     ...sectionCards(
       sectionList,
       requestsError,
@@ -497,7 +542,7 @@ export function ClusterView({
     ...restoresPITR.items,
   ];
   const backupStorage = backupStorageOf({
-    cluster: live,
+    cluster: subject,
     spec: merged.spec,
     storage: storage.items,
     objectStorage: objectStorage.items,
@@ -510,7 +555,7 @@ export function ClusterView({
   });
   const fields = clusterFields(
     clusterFieldsInputOf({
-      cluster: live,
+      cluster: subject,
       merged,
       claim,
       sections: sections.items,
@@ -541,7 +586,7 @@ export function ClusterView({
   const unread = unreadKinds({ errors, stale });
   const requestsStale = unread.includes("PluginRequest");
   const context: ClusterSlotContext = {
-    cluster: live,
+    cluster: subject,
     claim,
     merged,
     environment: environmentObject,
@@ -554,8 +599,8 @@ export function ClusterView({
     registrations: registrations.items,
     requests: claimRequests,
     storage: storageObject,
-    backups,
-    restores,
+    backups: live ? backups : [],
+    restores: live ? restores : [],
     backupStorage,
     schedules: schedules.items,
     optimize,
@@ -564,6 +609,7 @@ export function ClusterView({
     openId,
     now: clock,
     unread,
+    ...(drafted && { drafted: true }),
   };
   const slot = (
     slotName: Parameters<typeof ActionSlot>[0]["name"],
@@ -581,7 +627,7 @@ export function ClusterView({
       ? requestDetail({
           component: openSection,
           claim,
-          cluster: name ?? "",
+          cluster: name,
           sections: sections.items,
           registrations: registrations.items,
           components: sectionList,
@@ -614,7 +660,7 @@ export function ClusterView({
     openSection && claim
       ? claimView({
           claim,
-          cluster: live,
+          cluster: subject,
           merged,
           environments: environments.items,
           sections: sections.items,
@@ -639,23 +685,33 @@ export function ClusterView({
           now={now}
         />
       )}
-      <ActivityBanner
-        backup={runningBackup(live, backups)}
-        restore={runningRestore(live, restores)}
-        backupsHref="?tab=backups"
-        onOpenBackups={() => selectTab("backups")}
-      />
+      {live && (
+        <ActivityBanner
+          backup={runningBackup(live, backups)}
+          restore={runningRestore(live, restores)}
+          backupsHref="?tab=backups"
+          onOpenBackups={() => selectTab("backups")}
+        />
+      )}
       <ClusterHeader
-        name={name ?? ""}
+        name={name}
         namespace={ns}
         ready={ready}
         environment={environment}
-        version={live.status?.management?.version}
-        preset={live.spec.presetRef}
+        version={live?.status?.management?.version}
+        preset={subject.spec.presetRef}
         storage={storageType}
-        links={launchLinks(live.spec.externalUrl, access?.status?.links)}
+        links={
+          live ? launchLinks(live.spec.externalUrl, access?.status?.links) : []
+        }
         actions={slot("cluster.header.actions")}
       />
+      {claim && !claimUnread && (
+        <PrecheckLine
+          claim={claim}
+          href={tab === "claim" ? undefined : "?tab=claim"}
+        />
+      )}
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList>
           {CLUSTER_TABS.map((t) => (
@@ -697,7 +753,7 @@ export function ClusterView({
                               operatorVersion={operatorVersionOf(
                                 registrations.items,
                               )}
-                              cluster={{ namespace: ns, name: name ?? "" }}
+                              cluster={{ namespace: ns, name }}
                             />
                             {slot("component.settings.editor")}
                           </>
@@ -713,7 +769,7 @@ export function ClusterView({
                 <ClusterComponentDetail
                   id={openId}
                   cards={cards}
-                  cluster={live}
+                  cluster={subject}
                   namespace={ns}
                   podSelector={initial.podSelector}
                   conditions={clusterConditions}
@@ -726,7 +782,7 @@ export function ClusterView({
                         groups={componentSettings(fields, openId, merged.spec)}
                         docs={initial.fieldDocs}
                         operatorVersion={operatorVersionOf(registrations.items)}
-                        cluster={{ namespace: ns, name: name ?? "" }}
+                        cluster={{ namespace: ns, name }}
                       />
                       {slot("component.settings.editor")}
                     </div>
@@ -736,11 +792,27 @@ export function ClusterView({
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              <TopologyView
-                boxes={topologyOf(merged.spec, pods.items)}
-                actions={slot("cluster.topology.actions")}
-                conditions={processConditions}
-              />
+              {live ? (
+                <TopologyView
+                  boxes={topologyOf(merged.spec, pods.items)}
+                  actions={slot("cluster.topology.actions")}
+                  conditions={processConditions}
+                />
+              ) : (
+                claim && (
+                  <ClusterWaiting
+                    // A claim holds the parameters of a selection as
+                    // unknown, and waitedRequests reads no parameter.
+                    waits={waitedRequests(
+                      claim as unknown as CamundaClusterClaim,
+                      sections.items as unknown as PluginSection[],
+                      claimRequests as unknown as PluginRequest[],
+                    )}
+                    deleting={Boolean(claim.metadata?.deletionTimestamp)}
+                    unread={unread.filter((kind) => WAIT_KINDS.includes(kind))}
+                  />
+                )
+              )}
               <ComponentCards
                 cards={cards}
                 hrefOf={overviewHref}
@@ -765,24 +837,37 @@ export function ClusterView({
           )}
         </TabsContent>
         <TabsContent value="backups">
-          <BackupsTab
-            storage={backupStorage}
-            backups={backupRowsOf(live, backups, clock)}
-            restores={restoreRowsOf(live, restores)}
-            actions={slot("cluster.backups.actions")}
-            rowActions={rowActionsOf(slots, managed, context)}
-            unread={unread}
-          />
+          {live ? (
+            <BackupsTab
+              storage={backupStorage}
+              backups={backupRowsOf(live, backups, clock)}
+              restores={restoreRowsOf(live, restores)}
+              actions={slot("cluster.backups.actions")}
+              rowActions={rowActionsOf(slots, managed, context)}
+              unread={unread}
+            />
+          ) : (
+            <p className="text-sm text-muted">
+              The cluster does not exist yet, so it has no backups.
+            </p>
+          )}
         </TabsContent>
         <TabsContent value="endpoints">
-          <EndpointsTab
-            rows={endpointRows({
-              cluster: live,
-              spec: merged.spec,
-              optimizes: optimizes.items,
-              accessOutputs: access?.status?.outputs,
-            })}
-          />
+          {live ? (
+            <EndpointsTab
+              rows={endpointRows({
+                cluster: live,
+                spec: merged.spec,
+                optimizes: optimizes.items,
+                accessOutputs: access?.status?.outputs,
+              })}
+            />
+          ) : (
+            <EndpointsTab
+              rows={[]}
+              emptyText="The cluster does not exist yet, so it has no endpoints."
+            />
+          )}
         </TabsContent>
         <TabsContent value="claim">
           {claimUnread ? (
@@ -797,7 +882,7 @@ export function ClusterView({
                 <ClaimTab
                   view={claimView({
                     claim,
-                    cluster: live,
+                    cluster: subject,
                     merged,
                     environments: environments.items,
                     sections: sections.items,
@@ -824,6 +909,13 @@ export function ClusterView({
     content
   );
 }
+
+// WAIT_KINDS are the kinds of the lists that waitedRequests reads.
+const WAIT_KINDS: readonly string[] = [
+  "CamundaClusterClaim",
+  "PluginSection",
+  "PluginRequest",
+];
 
 // SETTINGS_KINDS are the kinds of the lists that claimView reads.
 const SETTINGS_KINDS: readonly string[] = [
