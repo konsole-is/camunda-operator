@@ -41,6 +41,7 @@ import {
 } from "@/components/setup/platform/draft";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
+import { requestJSON } from "@/lib/k8s/client";
 import { get } from "@/lib/k8s/read";
 import {
   APP_FIELD_MANAGER,
@@ -786,6 +787,7 @@ describe("a take-over against the API server", () => {
       mode: "direct",
     });
     expect(retained(await read(made))).toEqual({ completed: 7, failed: 3 });
+    expect(owns(await read(made), APP_FIELD_MANAGER, [], "Update")).toBe(false);
   });
 
   it("Suspend of a plane claim whose spec.suspend kubectl set writes only with the choice", async () => {
@@ -831,9 +833,7 @@ describe("a take-over against the API server", () => {
     ).toBe(false);
   });
 
-  it("a move of the plane identity mode that kubectl set fails in the preview with the take-over, and writes nothing", async () => {
-    // The removal of oidc and of the claim pair comes after the apply, and
-    // the CRD refuses the claim between the two writes.
+  it("a move of the plane identity mode that kubectl set saves with the take-over, as the preview shows", async () => {
     const spec = {
       environments: [namespace],
       management: {
@@ -875,17 +875,23 @@ describe("a take-over against the API server", () => {
     const preview = await previewPlaneClaimChange(change);
     const chosen = withTakeOver(change, preview.ownership ?? []);
     const checked = await previewPlaneClaimChange(chosen);
-    expect(checked.errors).toContainEqual(
-      expect.objectContaining({
-        code: "Invalid",
-        path: "spec.management.identityProvider",
-        message: expect.stringContaining("exactly one identity provider"),
-      }),
-    );
-    expect(await applyPlaneClaimChange(chosen)).toMatchObject({ ok: false });
-    expect((await read(made)).metadata.resourceVersion).toBe(
-      live.metadata.resourceVersion,
-    );
+    expect(checked.errors).toEqual([]);
+    const shown = checked.objects[0].after!.spec;
+    expect(await applyPlaneClaimChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const after = await read(made);
+    const management = after.spec.management as {
+      identityProvider: object;
+      identity: { admin: object };
+    };
+    expect(Object.keys(management.identityProvider)).toEqual([
+      "externalKeycloak",
+    ]);
+    expect(management.identity.admin).toEqual({ username: "admin" });
+    expect(shown).toEqual(after.spec);
+    expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
   });
 
   it("the choice is not stored", async () => {
@@ -919,6 +925,43 @@ describe("a take-over against the API server", () => {
     expect(preview.errors).toEqual([
       expect.objectContaining({ code: "Conflict", path: "spec.displayName" }),
     ]);
+  });
+});
+
+describe("a removal save of an Environment against the API server", () => {
+  it("a removal save also removes a field that only the fleet manager set, and the record changes no value", async () => {
+    const made = environment(unique("env"), { displayName: "Stage" });
+    await createClientSideApplied(api, made);
+    await applyAs(
+      APP_FIELD_MANAGER,
+      environment(made.metadata.name, {
+        displayName: "Stage",
+        color: "#123456",
+      }),
+    );
+    const change = updateOf(
+      "Clear the name and the color",
+      await read(made),
+      environment(made.metadata.name, {}),
+    );
+
+    const preview = await previewEnvironmentChange(change);
+    const chosen = withTakeOver(change, preview.ownership ?? []);
+    expect(chosen.takeOver).toBeUndefined();
+    expect(chosen.remove).toEqual({ [keyOf(made)]: ["spec.displayName"] });
+    const checked = await previewEnvironmentChange(chosen);
+    expect(checked.errors).toEqual([]);
+    const shown = checked.objects[0].after!.spec;
+    expect(await applyEnvironmentChange(chosen)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+
+    const after = await read(made);
+    expect(after.spec).not.toHaveProperty("displayName");
+    expect(after.spec).not.toHaveProperty("color");
+    expect(shown).toEqual(after.spec);
+    expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
   });
 });
 
@@ -1038,36 +1081,119 @@ describe("a save of the platform config editor against the API server", () => {
     }
   });
 
-  it("a switch to basic of an OIDC block that kubectl set fails with the rule of the CRD, also with the take-over, and writes nothing", async () => {
+  const basic = (draft: CamundaPlatformConfig["spec"]) => {
+    draft.auth = { method: "basic" };
+  };
+
+  it("a switch to basic of an OIDC block that kubectl set saves with the take-over, as the preview shows", async () => {
     const object = platformConfig(unique("platform"), {
       auth: { method: "oidc", oidc },
     });
     await createClientSideApplied(api, object);
     const live = await read(object);
-    const basic = (draft: CamundaPlatformConfig["spec"]) => {
-      draft.auth = { method: "basic" };
-    };
 
     const given = await edit(object, basic);
     expect(changedPaths(given.preview)).toEqual(["spec.auth.method"]);
     expect(clearedPaths(given.preview)).toEqual(["spec.auth.oidc"]);
-
-    const taken = await edit(object, basic, true);
-    expect(taken.change.remove).toEqual({
-      [keyOf(object)]: ["spec.auth.oidc"],
-    });
-    const refusal = expect.objectContaining({
-      code: "Invalid",
-      message: expect.stringContaining("must not be set when method is basic"),
-    });
-    expect(taken.preview.errors).toEqual([refusal]);
-    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+    expect(await applyPlatformConfigChange(given.change)).toMatchObject({
       ok: false,
-      errors: [refusal],
+      errors: [{ code: "Conflict" }],
     });
     expect((await read(object)).metadata.resourceVersion).toBe(
       live.metadata.resourceVersion,
     );
+
+    const taken = await edit(object, basic, true);
+    expect(taken.change.takeOver).toEqual({
+      [keyOf(object)]: ["spec.auth.method"],
+    });
+    expect(taken.change.remove).toEqual({
+      [keyOf(object)]: ["spec.auth.oidc"],
+    });
+    expect(taken.preview.errors).toEqual([]);
+    const shown = taken.preview.objects[0].after!.spec;
+    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const after = await read(object);
+    expect(after.spec).toEqual({ auth: { method: "basic" } });
+    expect(shown).toEqual(after.spec);
+    expect(
+      owns(after, APP_FIELD_MANAGER, ["f:spec", "f:auth", "f:method"], "Apply"),
+    ).toBe(true);
+    expect(
+      owns(after, "kubectl-client-side-apply", [
+        "f:spec",
+        "f:auth",
+        "f:method",
+      ]),
+    ).toBe(false);
+    expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
+  });
+
+  it("a newer write between the review and the save of a removal fails with Stale and writes nothing", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "oidc", oidc },
+    });
+    await createClientSideApplied(api, object);
+    const taken = await edit(object, basic, true);
+    expect(taken.preview.errors).toEqual([]);
+    await update(
+      "kubectl-edit",
+      platformConfig(object.metadata.name, {
+        images: { keycloak: "mirror.example.com/keycloak" },
+      }),
+    );
+    const moved = await read(object);
+
+    expect(await applyPlatformConfigChange(taken.change)).toMatchObject({
+      ok: false,
+      errors: [{ code: "Stale" }],
+    });
+    const after = await read(object);
+    expect(after.metadata.resourceVersion).toBe(moved.metadata.resourceVersion);
+    expect(after.spec.auth).toEqual({ method: "oidc", oidc });
+  });
+
+  it("a save after an update that did not finish records the fields and drops the Update entry", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "oidc", oidc },
+    });
+    await createClientSideApplied(api, object);
+    const live = await read(object);
+    // The update of a removal save that stopped before it recorded the
+    // fields of the fleet manager.
+    await requestJSON(kc, {
+      method: "PATCH",
+      path: `/apis/core.camunda.io/v1/camundaplatformconfigs/${object.metadata.name}?fieldManager=${APP_FIELD_MANAGER}`,
+      body: [
+        {
+          op: "replace",
+          path: "/metadata/resourceVersion",
+          value: live.metadata.resourceVersion,
+        },
+        { op: "add", path: "/spec", value: { auth: { method: "basic" } } },
+      ],
+      contentType: "application/json-patch+json",
+    });
+    expect(owns(await read(object), APP_FIELD_MANAGER, [], "Update")).toBe(
+      true,
+    );
+
+    const again = await edit(object, basic);
+    expect(again.preview.ownership).toBeUndefined();
+    expect(again.preview.errors).toEqual([]);
+    expect(await applyPlatformConfigChange(again.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const after = await read(object);
+    expect(after.spec).toEqual({ auth: { method: "basic" } });
+    expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
+    expect(
+      owns(after, APP_FIELD_MANAGER, ["f:spec", "f:auth", "f:method"], "Apply"),
+    ).toBe(true);
   });
 });
 
