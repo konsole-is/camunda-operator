@@ -322,6 +322,67 @@ describe("PresetDetail", () => {
     );
   });
 
+  it("saves an edit of an Elasticsearch preset with its empty storage class, empty block, and ConfigMap and pod variables unchanged", async () => {
+    const sources = presetFixtures();
+    const live = sources.elasticsearchPresets[0];
+    const body = {
+      ...live.spec.cluster,
+      storageClassName: "",
+      serviceAccount: {},
+      extraEnv: [
+        {
+          name: "NODE_NAME",
+          valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } },
+        },
+        {
+          name: "ES_SETTINGS",
+          valueFrom: { configMapKeyRef: { name: "es-settings", key: "yml" } },
+        },
+      ],
+    };
+    const preset = { ...live, spec: { cluster: body } };
+    sources.elasticsearchPresets[0] = preset;
+    const { actions } = setup({
+      kind: "ElasticsearchClusterPreset",
+      name: "standard",
+      sources,
+      preview: (change) => ({
+        objects: [
+          {
+            ref: {
+              apiVersion: "core.camunda.io/v1",
+              kind: "ElasticsearchClusterPreset",
+              name: "standard",
+            },
+            before: preset as unknown as KubeObject,
+            after: change.apply[0],
+            diff: [{ op: "added", text: "replicas: 12" }],
+          },
+        ],
+        errors: [],
+      }),
+    });
+    const replicas = within(
+      screen.getByRole("region", { name: "Elasticsearch settings" }),
+    ).getByRole("group", { name: "replicas" });
+    fireEvent.change(within(replicas).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", { name: "Review the preset" });
+    const save = within(review).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(actions.applyChange).toHaveBeenCalledWith(
+        presetUpdateChange(preset, {
+          ...presetDraftOf(preset),
+          body: { ...body, replicas: 12 },
+        }),
+      ),
+    );
+  });
+
   it("a save that changes a field of another tool shows the field and asks", async () => {
     const ref = {
       apiVersion: "core.camunda.io/v1",

@@ -316,6 +316,69 @@ describe("PresetEditor of an Elasticsearch or PostgreSQL preset", () => {
     expect(last()?.body.futureField).toBe("kept");
   });
 
+  it("keeps an empty storage class, an empty block, and variables from a ConfigMap or the pod when another field changes", async () => {
+    const preset = fixtures.elasticsearchPresets[0];
+    const kept = {
+      storageClassName: "",
+      serviceAccount: {},
+      extraEnv: [
+        {
+          name: "NODE_NAME",
+          valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } },
+        },
+        {
+          name: "ES_SETTINGS",
+          valueFrom: { configMapKeyRef: { name: "es-settings", key: "yml" } },
+        },
+      ],
+    };
+    const { last } = setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: { ...preset.spec.cluster, ...kept },
+      },
+    );
+    const replicas = within(
+      screen.getByRole("region", { name: "Elasticsearch settings" }),
+    ).getByRole("group", { name: "replicas" });
+    fireEvent.change(within(replicas).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(last()?.body.replicas).toBe(12));
+    expect(last()?.body).toEqual({
+      ...preset.spec.cluster,
+      ...kept,
+      replicas: 12,
+    });
+  });
+
+  it("keeps an empty storage class and an empty block of a PostgreSQL preset when another field changes", async () => {
+    const preset = fixtures.databasePresets[1];
+    const kept = { storageClassName: "", serviceAccount: {} };
+    const { last } = setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: { ...preset.spec.server, ...kept },
+      },
+    );
+    const instances = within(
+      screen.getByRole("region", { name: "PostgreSQL settings" }),
+    ).getByRole("group", { name: "instances" });
+    fireEvent.change(within(instances).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(last()?.body.instances).toBe(12));
+    expect(last()?.body).toEqual({
+      ...preset.spec.server,
+      ...kept,
+      instances: 12,
+    });
+  });
+
   it("removes a field from a PostgreSQL preset with its reset link", async () => {
     const { last } = setup(fixtures.databasePresets[1]);
     const wal = within(
