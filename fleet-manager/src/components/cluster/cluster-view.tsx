@@ -818,7 +818,10 @@ export function ClusterView({
                 hrefOf={overviewHref}
                 onOpen={openComponent}
               />
-              {claimUnread && <NotRead kinds={["CamundaClusterClaim"]} />}
+              {/* Without a cluster, ClusterWaiting already names the claim kind. */}
+              {claimUnread && live && (
+                <NotRead kinds={["CamundaClusterClaim"]} />
+              )}
               <OverviewConditions
                 cluster={clusterConditions}
                 optimize={

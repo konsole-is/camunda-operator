@@ -2571,6 +2571,17 @@ describe("Before the cluster exists", () => {
     expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
   });
 
+  it("says once that the claim is not current while no cluster exists", () => {
+    live.stale = ["CamundaClusterClaim"];
+    live.overdue = ["CamundaClusterClaim"];
+    render(view({ initial: waiting }));
+    expect(
+      screen.getAllByText(
+        "Not known: the fleet manager has no current list of CamundaClusterClaim.",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("says that the claim is being deleted after its cluster went", () => {
     const deleting = {
       ...waitingClaim,
