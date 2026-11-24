@@ -147,8 +147,8 @@ export function diffView(
  * may not delete, such as a Namespace, can exist again, with the error of
  * that delete beside Stale.
  *
- * A create of an object that exists fails with Stale and writes nothing,
- * also when the object appears after the dry run. An
+ * A create of an object that exists fails with Stale and leaves that
+ * object as it is, also when the object appears after the dry run. An
  * object in a namespace that the same change makes is not dry-run, and the
  * preview shows it as rendered. When such an object fails after apply made
  * its namespace, the namespace stays, and the result names it in

@@ -39,16 +39,16 @@ const AUTH_TYPE = {
 
 /**
  * ContractForm edits the values of draft, a contract of kind in namespace,
- * in the shape that the contract has. The storage type and the auth type
- * show as text, because an edit keeps them. Each field shows its error of errors by
- * spec path. The Secret pickers read the Secrets of namespace; the client
- * secret of a Management Identity contract can be in any of namespaces.
- * databaseConfigs and databaseServerConfigs are the names that the pickers
- * of a reference offer, undefined while the list is not known; a name that
- * a known list lacks shows as not found.
+ * in the shape that the contract has. Without choose, the storage type and
+ * the auth type show as text, because an edit keeps them. Each field shows
+ * its error of errors by spec path. The Secret pickers read the Secrets of
+ * namespace; the client secret of a Management Identity contract can be in
+ * any of namespaces. databaseConfigs and databaseServerConfigs are the
+ * names that the pickers of a reference offer, undefined while the list is
+ * not known; a name that a known list lacks shows as not found.
  *
  * With choose, for a new contract, the storage type and the auth type are
- * radio choices: a pick of a storage type starts its block empty, and a
+ * radio choices: a pick of a storage type replaces the whole spec, and a
  * pick of an auth type keeps the other fields of the block.
  */
 export function ContractForm({

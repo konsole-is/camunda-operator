@@ -130,8 +130,7 @@ const WRITER_FILTER = {
 
 /**
  * ConnectionList is the list page of the connection contracts, with one
- * tab for each contract kind and a link to the create page of its kind.
- * Each of errors shows above the tabs, and the
+ * tab for each contract kind. Each of errors shows above the tabs, and the
  * rows stay. onTab gets the tab that the user opens.
  */
 export function ConnectionList({

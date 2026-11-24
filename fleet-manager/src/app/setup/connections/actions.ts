@@ -56,14 +56,14 @@ export async function previewContractChange(change: Change): Promise<Preview> {
  * Management Identity contract, a list of management planes or plane
  * claims cannot be read, or when a management plane or a plane claim
  * writes a Management Identity contract of that name. It refuses with
- * Stale a change of a contract that is not in the list that the server
- * read, or whose precondition is not the resourceVersion of the copy in
- * that list. Of the other contracts, it refuses with Forbidden a change
- * of a contract that a registration, a management plane, or a controller
- * writes, a delete of a contract that an object uses, and a delete while
- * waitingRequests gives a request for the contract. While a list that
- * these checks read cannot be read, it refuses each change of a contract of
- * that kind or that it can use.
+ * Stale an update or a delete of a contract that is not in the list that
+ * the server read, or whose precondition is not the resourceVersion of the
+ * copy in that list. It refuses an update or a delete with Forbidden when a
+ * registration, a management plane, or a controller writes the contract,
+ * when the delete is of a contract that an object uses, and when
+ * waitingRequests gives a request for the contract for a delete. While a
+ * list that these checks read cannot be read, it refuses each update or
+ * delete of a contract of that kind or that it can use.
  */
 export async function applyContractChange(
   change: Change,
