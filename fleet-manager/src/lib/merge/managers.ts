@@ -193,7 +193,8 @@ export type KeptField = { path: FieldPath; managers: string[] };
 /**
  * keptRemovals returns each field of before that after leaves out while a
  * manager other than the Apply entry of applier owns it in
- * live.metadata.managedFields, with every such manager. An apply of after without force keeps these fields,
+ * live.metadata.managedFields, with every such manager. When applier is
+ * the fleet manager, its Update entry is not such a manager either. An apply of after without force keeps these fields,
  * so result is after with each of them back. An item of a list is one
  * field. A field that a manager owns as a whole names no field below it.
  * The fields are in the order of before.
@@ -206,7 +207,11 @@ export function keptRemovals(
 ): { kept: KeptField[]; result: object } {
   const tree = ownerTree(
     live,
-    (entry) => !entry.subresource && !isApplyOf(entry, applier),
+    (entry) =>
+      !entry.subresource &&
+      !(applier === APP_FIELD_MANAGER
+        ? isOwnEntry(entry)
+        : isApplyOf(entry, applier)),
   );
   const kept: KeptField[] = [];
   const result = restore(tree, before, after, "", kept) as object;
@@ -219,9 +224,10 @@ export type FieldOwner = { manager: string; operation: string };
 /**
  * OwnerTree is the FieldsV1 trees of several managedFields entries merged
  * into one. owners own the node itself, with no child keys or by the key
- * ".". whole are the owners with no child keys: they own a leaf, an atomic
- * list, or an atomic map as one value. children holds the node of each
- * FieldsV1 key below.
+ * ".". whole are the owners with no child keys at a node that no entry
+ * with a manager holds a child of: they own a leaf, an atomic list, or an
+ * atomic map as one value. children holds the node of each FieldsV1 key
+ * below.
  */
 export type OwnerTree = {
   owners: FieldOwner[];
@@ -232,7 +238,9 @@ export type OwnerTree = {
 /**
  * ownerTree merges the FieldsV1 tree of each entry of
  * object.metadata.managedFields that include accepts. An entry without a
- * manager or without fieldsV1 is never in the tree.
+ * manager or without fieldsV1 is never in the tree. An entry that include
+ * does not accept still makes a node granular: whole is empty at a node
+ * that it holds a child of.
  */
 export function ownerTree(
   object: ManagedObject,
@@ -247,7 +255,27 @@ export function ownerTree(
       operation: entry.operation ?? "",
     });
   }
+  const all = newOwners();
+  for (const entry of object.metadata?.managedFields ?? []) {
+    if (!entry.manager || !entry.fieldsV1) continue;
+    addOwner(all, entry.fieldsV1 as Record<string, unknown>, {
+      manager: entry.manager,
+      operation: entry.operation ?? "",
+    });
+  }
+  dropGranularWhole(tree, all);
   return tree;
+}
+
+// The API server records no path below an atomic value, for any manager.
+// So a leaf of one entry under which another entry holds a child is a
+// granular map or list item, and the leaf owns only its presence.
+function dropGranularWhole(at: OwnerTree, all: OwnerTree): void {
+  if (all.children.size > 0) at.whole = [];
+  for (const [key, below] of at.children) {
+    const other = all.children.get(key);
+    if (other !== undefined) dropGranularWhole(below, other);
+  }
 }
 
 /**
@@ -257,6 +285,19 @@ export function ownerTree(
  */
 export function isApplyOf(entry: ManagedFieldsEntry, manager: string): boolean {
   return entry.manager === manager && entry.operation === "Apply";
+}
+
+/**
+ * isOwnEntry reports whether entry is a write of the fleet manager to the
+ * object itself: an entry of APP_FIELD_MANAGER, Apply or Update, without a
+ * subresource.
+ */
+export function isOwnEntry(entry: ManagedFieldsEntry): boolean {
+  return (
+    entry.manager === APP_FIELD_MANAGER &&
+    !entry.subresource &&
+    (entry.operation === "Apply" || entry.operation === "Update")
+  );
 }
 
 /**

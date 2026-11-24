@@ -16,7 +16,11 @@ import {
   type KindInfo,
   type KindName,
 } from "@/lib/k8s/kinds";
-import { APP_FIELD_MANAGER } from "@/lib/merge";
+import {
+  APP_FIELD_MANAGER,
+  isOwnEntry,
+  type ManagedFieldsEntry,
+} from "@/lib/merge";
 import { equalJSON } from "@/lib/policy/json";
 import type { Settings } from "@/lib/settings/keys";
 import { apiErrorsOf, existsError, staleError } from "./errors";
@@ -24,10 +28,12 @@ import { gitWriter } from "./git";
 import { clientSideApplyPatch } from "./merge-patch";
 import {
   foreignFields,
+  laidOver,
   offered,
   partialSaveMessage,
+  prunedFields,
+  removedFields,
   takenFields,
-  withoutFields,
 } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
@@ -49,6 +55,8 @@ export { refKey, refOf } from "./refs";
 
 /** WRITE_TIMEOUT_MS bounds each request of a write. */
 export const WRITE_TIMEOUT_MS = 15_000;
+
+const RECORD_TRIES = 3;
 
 /**
  * WriteOnlyKindMap is every kind that the direct writer writes beside the
@@ -147,14 +155,22 @@ export function diffView(
  * field that a controller of the operator owns, with Invalid for a listed
  * path that names more than one field of the object in ownership, and with
  * Invalid when the lists are not the offered fields of ownership at the
- * precondition. Then a dry run with force must take no field that takeOver
- * does not list, or the object fails with Conflict. apply applies such an
- * object with force only when takeOver lists a field, and then removes the
- * fields of remove with a JSON patch at the resourceVersion that the apply
- * returned. The preview shows the object after the removal. When the
- * removal fails, apply stops, the apply stays, and each error says which
- * fields the fleet manager did not remove. A newer write between the apply
- * and the removal gives Stale.
+ * precondition.
+ *
+ * When remove lists a field, or an object with a precondition holds an
+ * Update entry of the fleet manager, apply writes the object as one
+ * update: a JSON patch at the precondition to laidOver of the live object,
+ * the applied object, the listed fields, and prunedFields. When remove
+ * lists a field, the preview is the dry run of that patch. Both writes refuse the object with Conflict when the update takes
+ * or removes a field of another manager that the lists do not name. A
+ * field of remove can come back with its default value. When an apply of
+ * the change sets other values than the update, or apply cannot record the
+ * fields after the update, apply stops, the update stays, and the error
+ * says that the next save records the fields.
+ *
+ * Any other object with a take-over list is applied with force only when
+ * takeOver lists a field. A dry run with force must then take no field
+ * that takeOver does not list, or the object fails with Conflict.
  */
 export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const send = <T>(
@@ -256,9 +272,78 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       "application/json-patch+json",
     );
 
+  // recordFields writes the managedFields that an apply of object leaves
+  // on written, the answer of its update, without a value change.
+  const recordFields = async (
+    ref: ObjectRef,
+    object: KubeObject,
+    written: KubeObject,
+  ): Promise<ApiError[]> => {
+    let current = written;
+    for (let attempt = 1; ; attempt++) {
+      const resourceVersion = current.metadata.resourceVersion;
+      try {
+        const probe = await applyObject(object, resourceVersion, false, true);
+        if (!equalJSON(applyBody(probe), applyBody(current)))
+          return [
+            {
+              code: "Invalid",
+              message: partialSaveMessage(
+                ref,
+                "An apply of the change sets other values than the update.",
+              ),
+              ref,
+            },
+          ];
+        await send(
+          "PATCH",
+          `${pathOf(ref)}?fieldManager=${encodeURIComponent(APP_FIELD_MANAGER)}`,
+          [
+            {
+              op: "replace",
+              path: "/metadata/resourceVersion",
+              value: resourceVersion,
+            },
+            {
+              op: "replace",
+              path: "/metadata/managedFields",
+              value: [
+                ...entriesOf(current).filter((e) => !isOwnEntry(e)),
+                ...entriesOf(probe).filter(
+                  (e) => isOwnEntry(e) && e.operation === "Apply",
+                ),
+              ],
+            },
+          ],
+          "application/json-patch+json",
+        );
+        return [];
+      } catch (error) {
+        const errors = apiErrorsOf(error, ref, true);
+        // The controller of the kind writes its status after each change
+        // of spec, and that write moves the resourceVersion.
+        const moved =
+          attempt < RECORD_TRIES && errors.every((e) => e.code === "Stale")
+            ? await read(ref).catch(() => undefined)
+            : undefined;
+        if (
+          moved !== undefined &&
+          equalJSON(applyBody(moved), applyBody(written))
+        ) {
+          current = moved;
+          continue;
+        }
+        return (await staleFirst(errors, ref, resourceVersion)).map((e) => ({
+          ...e,
+          message: partialSaveMessage(ref, e.message),
+        }));
+      }
+    }
+  };
+
   // uids holds the uid of each object of the apply list that exists. plans
-  // holds, for each object with a take-over list, whether apply forces it
-  // and the fields that apply then removes.
+  // holds how apply writes each object with a take-over list or an Update
+  // entry of the fleet manager.
   const dryRun = async (
     change: Change,
     options: {
@@ -269,11 +354,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     Preview & {
       uids: Map<RefKey, string>;
       fresh: Set<KubeObject>;
-      plans: Map<RefKey, TakeOverPlan>;
+      plans: Map<RefKey, ObjectPlan>;
     }
   > => {
     const uids = new Map<RefKey, string>();
-    const plans = new Map<RefKey, TakeOverPlan>();
+    const plans = new Map<RefKey, ObjectPlan>();
     const refusals = refsOf(change).flatMap(refusalOf);
     if (refusals.length > 0) {
       return { objects: [], errors: refusals, uids, fresh: new Set(), plans };
@@ -335,6 +420,45 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             errors.push(...refused);
             continue;
           }
+        }
+        const cleared = lists ? foreign!.cleared.filter(offered) : [];
+        // A save that stopped after its update left this entry.
+        const unfinished =
+          before !== undefined &&
+          resourceVersion !== undefined &&
+          options.managers === undefined &&
+          options.mergePatches === undefined &&
+          entriesOf(before).some(isOwnUpdate);
+        if (cleared.length > 0 || unfinished) {
+          const target = laidOver(before!, object, [
+            ...cleared,
+            ...prunedFields(before!, object, change.keep?.[key]),
+          ]);
+          const after = await replaceObject(
+            ref,
+            before!,
+            target,
+            resourceVersion,
+            true,
+          );
+          const refused = [
+            ...unlistedTakes(ref, before!, after, [
+              ...foreign!.changed.filter((f) =>
+                lists?.takeOver.includes(f.path),
+              ),
+              ...cleared,
+            ]),
+            ...unlistedRemovals(ref, before!, after, cleared),
+          ];
+          if (refused.length > 0) {
+            errors.push(...refused);
+            continue;
+          }
+          plans.set(key, { write: "update", before: before!, target });
+          objects.push(previewObject(ref, before, after));
+          continue;
+        }
+        if (lists !== undefined) {
           const force = lists.takeOver.length > 0;
           const after = await applyObject(object, resourceVersion, force, true);
           if (force) {
@@ -349,19 +473,8 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
               continue;
             }
           }
-          const cleared = foreign!.cleared.filter(offered);
-          plans.set(key, { force, cleared });
-          const shown =
-            cleared.length === 0
-              ? after
-              : await replaceObject(
-                  ref,
-                  before!,
-                  withoutFields(after, cleared),
-                  resourceVersion,
-                  true,
-                );
-          objects.push(previewObject(ref, before, shown));
+          plans.set(key, { write: "apply", force });
+          objects.push(previewObject(ref, before, after));
           continue;
         }
         // The API server refuses a dry run in a namespace that does not
@@ -441,9 +554,25 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
       const plan = plans.get(refKey(ref));
-      let written: KubeObject;
+      if (plan?.write === "update") {
+        let written: KubeObject;
+        try {
+          written = await replaceObject(
+            ref,
+            plan.before,
+            plan.target,
+            resourceVersion,
+            false,
+          );
+        } catch (error) {
+          return { ok: false, errors: apiErrorsOf(error, ref, true) };
+        }
+        const failed = await recordFields(ref, object, written);
+        if (failed.length > 0) return { ok: false, errors: failed };
+        continue;
+      }
       try {
-        written = await applyObject(
+        const written = await applyObject(
           object,
           resourceVersion,
           plan?.force ?? change.force ?? false,
@@ -477,25 +606,6 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         }
         return { ok: false, errors: failed };
       }
-      if (plan === undefined || plan.cleared.length === 0) continue;
-      try {
-        await replaceObject(
-          ref,
-          written,
-          withoutFields(written, plan.cleared),
-          written.metadata.resourceVersion,
-          false,
-        );
-      } catch (error) {
-        const paths = plan.cleared.map((f) => f.path);
-        return {
-          ok: false,
-          errors: apiErrorsOf(error, ref, true).map((e) => ({
-            ...e,
-            message: partialSaveMessage(ref, paths, e.message),
-          })),
-        };
-      }
     }
     for (const ref of change.delete ?? []) {
       const preconditions = deletePreconditions(change, ref);
@@ -519,9 +629,19 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 
 type DeletePreconditions = { resourceVersion?: string; uid?: string };
 
-// TakeOverPlan is what apply does for an object with a take-over list:
-// force the apply, and remove cleared after it.
-type TakeOverPlan = { force: boolean; cleared: ForeignField[] };
+// ObjectPlan is how apply writes an object: an apply, with or without
+// force, or one update from before to target.
+type ObjectPlan =
+  | { write: "apply"; force: boolean }
+  | { write: "update"; before: KubeObject; target: KubeObject };
+
+function isOwnUpdate(entry: ManagedFieldsEntry): boolean {
+  return isOwnEntry(entry) && entry.operation === "Update";
+}
+
+function entriesOf(object: KubeObject): ManagedFieldsEntry[] {
+  return (object.metadata.managedFields ?? []) as ManagedFieldsEntry[];
+}
 
 type TakeOverLists = { takeOver: string[]; remove: string[] };
 
@@ -611,6 +731,35 @@ function unlistedTakes(
       f.managers.map((m): ApiError => ({
         code: "Conflict",
         message: `The save would take ${f.path} from ${m.name}, and the review did not list it.`,
+        path: f.path,
+        manager: m.name,
+        ref,
+      })),
+    );
+}
+
+// unlistedRemovals gives a Conflict for each manager of each field of
+// another manager that the update from before to after removes while no
+// field of listed holds it, as a replaced list can drop an item that an
+// apply keeps.
+function unlistedRemovals(
+  ref: ObjectRef,
+  before: KubeObject,
+  after: KubeObject,
+  listed: ForeignField[],
+): ApiError[] {
+  const holds = (field: ForeignField) =>
+    listed.some(
+      (l) =>
+        l.steps.length <= field.steps.length &&
+        l.steps.every((step, i) => equalJSON(step, field.steps[i])),
+    );
+  return removedFields(before, after)
+    .filter((f) => !holds(f))
+    .flatMap((f) =>
+      f.managers.map((m): ApiError => ({
+        code: "Conflict",
+        message: `The save would remove ${f.path} of ${m.name}, and the review did not list it.`,
         path: f.path,
         manager: m.name,
         ref,

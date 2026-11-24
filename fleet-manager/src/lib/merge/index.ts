@@ -38,6 +38,7 @@ export {
   isApplyOf,
   isClaimManager,
   isKnownManager,
+  isOwnEntry,
   itemOwners,
   keptRemovals,
   lastChanged,

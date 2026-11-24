@@ -91,13 +91,9 @@ describe("outcomeOf", () => {
     });
   });
 
-  it("Stale after a save that did not remove each field keeps the message of that save", () => {
+  it("Stale after a save that did not record its fields keeps the message of that save", () => {
     const s = session();
-    const message = partialSaveMessage(
-      ref,
-      ["spec.cluster.zeebe.partitions"],
-      "The claim changed.",
-    );
+    const message = partialSaveMessage(ref, "The claim changed.");
     expect(
       outcomeOf({ ok: false, errors: [{ code: "Stale", message, ref }] }, s),
     ).toEqual({
