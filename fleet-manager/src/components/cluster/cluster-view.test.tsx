@@ -2532,6 +2532,18 @@ describe("Before the cluster exists", () => {
     expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
   });
 
+  it("names the cluster kind, never that the cluster does not exist yet, while the watch of the cluster is not current", () => {
+    live.stale = ["CamundaCluster"];
+    live.overdue = ["CamundaCluster"];
+    render(view({ initial: waiting }));
+    expect(
+      screen.getByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
+  });
+
   it("a failed first read of the cluster is an error until its watch answers", () => {
     live.stale = ["CamundaCluster"];
     render(

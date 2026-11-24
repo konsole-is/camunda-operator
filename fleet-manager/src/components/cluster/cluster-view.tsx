@@ -345,6 +345,11 @@ export function ClusterView({
   ] as const;
   const listFresh = useWatchesFresh(followedLists);
   const listOverdue = useWatchesOverdue(followedLists);
+  const clusterList = [
+    { kind: "CamundaCluster", opts: { namespace: ns, name } },
+  ] as const;
+  const [clusterFresh] = useWatchesFresh(clusterList);
+  const [clusterOverdue] = useWatchesOverdue(clusterList);
   const answered = useAnswered([
     ...followedLists,
     { kind: "CamundaCluster", opts: { namespace: ns, name } },
@@ -445,7 +450,12 @@ export function ClusterView({
     environmentName === undefined
       ? undefined
       : environments.items.find((e) => e.metadata?.name === environmentName);
-  const clusterUnread = errors.some((e) => e.kind === "CamundaCluster");
+  // A watch that lost its connection keeps its last answer, so a cluster
+  // can exist while the page still has none.
+  const clusterStale =
+    !clusterFresh && (answered.has("CamundaCluster") || clusterOverdue);
+  const clusterUnread =
+    clusterStale || errors.some((e) => e.kind === "CamundaCluster");
   const drafted =
     !live && claim && !clusterUnread
       ? claimClusterOf(
@@ -455,7 +465,10 @@ export function ClusterView({
       : undefined;
   const subject = live ?? drafted;
   if (!subject) {
-    const objectUnread = unreadKinds({ errors, stale }).filter(
+    const objectUnread = unreadKinds({
+      errors,
+      stale: clusterStale ? [...stale, "CamundaCluster"] : stale,
+    }).filter(
       (kind) => kind === "CamundaCluster" || kind === "CamundaClusterClaim",
     );
     return (
