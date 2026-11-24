@@ -772,9 +772,9 @@ describe("ClaimReview with fields of another tool", () => {
     ).toBe(true);
   });
 
-  it("a save that did not remove each field says what it saved, and Save stays off", async () => {
+  it("a save that did not record its fields says what it saved, and Save stays off", async () => {
     const message =
-      "The fleet manager saved the CamundaClusterClaim orders, but did not remove spec.cluster.zeebe.partitions. The CamundaClusterClaim orders changed since you opened it.";
+      "The fleet manager saved the CamundaClusterClaim orders, but did not record its fields. The next save of the CamundaClusterClaim records them. The CamundaClusterClaim orders changed since you opened it.";
     fakeWriter.previews = [conflicted, clean];
     fakeWriter.results = [
       { ok: false, errors: [{ code: "Stale", message, ref }] },

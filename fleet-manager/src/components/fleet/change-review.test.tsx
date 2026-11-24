@@ -608,7 +608,7 @@ describe("ChangeReview with fields of another tool", () => {
 
   it("keeps the errors of a refused save when the choice changes", async () => {
     const message =
-      "The fleet manager saved the Environment staging, but did not remove spec.color. The Environment staging changed since you opened it.";
+      "The fleet manager saved the Environment staging, but did not record its fields. The next save of the Environment records them. The Environment staging changed since you opened it.";
     setup({
       change: updated,
       preview: byChange,
