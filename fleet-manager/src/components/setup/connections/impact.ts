@@ -56,6 +56,10 @@ const EFFECTS: Record<ContractKind, Record<string, string>> = {
   },
 };
 
+/** CREATE_EFFECT says what the create of a contract changes. */
+export const CREATE_EFFECT =
+  "A resource that names this contract uses it from now on.";
+
 /**
  * saveEffects returns the lines that the review of a change of a contract
  * of kind shows: each user and what it does on the change. A contract

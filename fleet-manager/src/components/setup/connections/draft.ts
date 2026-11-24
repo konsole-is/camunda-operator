@@ -1,3 +1,5 @@
+import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { DatabaseConfig } from "@/generated/crds/databaseconfig";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
@@ -18,6 +20,28 @@ const API_VERSION = "core.camunda.io/v1";
 
 /** ContractDraft is the spec of one contract as the admin edits it. Its fields can be empty or incomplete. */
 export type ContractDraft = { spec: ContractObject["spec"] };
+
+/** ContractCreateDraft is the form of a new contract: its name, its namespace, "" for a Management Identity contract, and its spec. */
+export type ContractCreateDraft = ContractDraft & {
+  name: string;
+  namespace: string;
+};
+
+// The pattern and the length of spec.managementAuthConfigName of a
+// CamundaManagementClusterClaim, which the create flow of a management
+// plane uses for every contract name.
+const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const NAME_MAX = 253;
+
+const OBJECT_STORAGE_BLOCK = {
+  S3: "s3",
+  GCS: "gcs",
+  AzureBlob: "azureBlob",
+} as const;
+const SECONDARY_STORAGE_BLOCK = {
+  elasticsearch: "elasticsearch",
+  rdbms: "rdbms",
+} as const;
 
 /** draftOf returns a copy of the spec of contract, or an empty spec without a contract. */
 export function draftOf(contract: ContractObject | undefined): ContractDraft {
@@ -177,7 +201,7 @@ function needKey(
 
 /** changeCount counts the fields of the spec that draft changes from the spec of base. An empty string counts as no value. */
 export function changeCount(
-  base: ContractObject | undefined,
+  base: ContractDraft | undefined,
   draft: ContractDraft,
 ): number {
   return countChanged(compact(base?.spec ?? {}), compact(draft.spec));
@@ -250,6 +274,193 @@ export function updateChange(
   );
 }
 
+/**
+ * newSpec returns the spec of a new contract of kind: an S3 object storage
+ * with a workload identity, an Elasticsearch secondary storage, a
+ * PostgreSQL database server, and an empty spec of the other kinds. Each
+ * call gives a new object.
+ */
+export function newSpec(kind: ContractKind): ContractObject["spec"] {
+  const specs: Record<ContractKind, () => Record<string, unknown>> = {
+    ObjectStorageConfig: () => ({
+      type: "S3",
+      s3: { auth: { type: "workloadIdentity" } },
+    }),
+    SecondaryStorageConfig: () => ({
+      type: "elasticsearch",
+      elasticsearch: {},
+    }),
+    DatabaseServerConfig: () => ({ engine: "postgres" }),
+    DatabaseConfig: () => ({}),
+    ManagementAuthConfig: () => ({}),
+  };
+  return specs[kind]() as unknown as ContractObject["spec"];
+}
+
+/**
+ * copyDraft returns current with a copy of the spec of source, or the new
+ * spec of kind without a source. It keeps the name of current, and its
+ * namespace. While current has no namespace, it takes the namespace of
+ * source. A Management Identity contract has none.
+ */
+export function copyDraft(
+  kind: ContractKind,
+  source: ContractObject | undefined,
+  current: ContractCreateDraft,
+): ContractCreateDraft {
+  return {
+    name: current.name,
+    namespace:
+      kind === "ManagementAuthConfig"
+        ? ""
+        : current.namespace || (source?.metadata.namespace ?? ""),
+    spec: source ? draftOf(source).spec : newSpec(kind),
+  };
+}
+
+/**
+ * withStorageType returns the draft of a contract of kind with the storage
+ * type type and a new block of that type: a workload identity for an
+ * object storage type, empty for a secondary storage type. A pick of
+ * another type starts from it, so the spec holds only the block of its
+ * type.
+ */
+export function withStorageType(
+  kind: "ObjectStorageConfig" | "SecondaryStorageConfig",
+  type: string,
+): ContractDraft {
+  const spec =
+    kind === "ObjectStorageConfig"
+      ? {
+          type,
+          [OBJECT_STORAGE_BLOCK[type as keyof typeof OBJECT_STORAGE_BLOCK]]: {
+            auth: { type: "workloadIdentity" },
+          },
+        }
+      : {
+          type,
+          [SECONDARY_STORAGE_BLOCK[
+            type as keyof typeof SECONDARY_STORAGE_BLOCK
+          ]]: {},
+        };
+  return { spec: spec as unknown as ContractDraft["spec"] };
+}
+
+/**
+ * withAuthType returns draft, an object storage contract, with the auth
+ * type type. The block of its storage type keeps its other fields, and the
+ * fields of the old auth type go.
+ */
+export function withAuthType(
+  draft: ContractDraft,
+  type: "workloadIdentity" | "credentials",
+): ContractDraft {
+  const spec = draft.spec as ObjectStorageConfig["spec"];
+  const block = OBJECT_STORAGE_BLOCK[spec.type];
+  const fields = (spec as unknown as Record<string, unknown>)[block];
+  return {
+    spec: {
+      ...spec,
+      [block]: { ...(isObject(fields) ? fields : {}), auth: { type } },
+    } as unknown as ContractDraft["spec"],
+  };
+}
+
+/**
+ * nameErrors returns the error of name for a new contract of kind, with
+ * the path "name", or none. taken are the names of the contracts of kind
+ * in the namespace of the new contract, or all of them for a Management
+ * Identity contract. heldBy is "<namespace>/<name>" of a management plane
+ * or a plane claim that writes a Management Identity contract of name.
+ */
+export function nameErrors(
+  kind: ContractKind,
+  name: string,
+  taken: readonly string[],
+  heldBy?: string,
+): ValidationError[] {
+  const error = (message: string) => [{ path: "name", message }];
+  if (name === "") return error("Give the contract a name.");
+  if (!NAME.test(name) || name.length > NAME_MAX)
+    return error(
+      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
+    );
+  const clusterScoped = kind === "ManagementAuthConfig";
+  if (taken.includes(name))
+    return error(
+      clusterScoped
+        ? "A contract with this name exists."
+        : "A contract with this name exists in this namespace.",
+    );
+  if (clusterScoped && heldBy !== undefined)
+    return error(
+      `The management plane ${heldBy} writes a contract with this name.`,
+    );
+  return [];
+}
+
+/** namespaceErrors returns the error of namespace for a new contract of kind, with the path "namespace", or none. A Management Identity contract has no namespace. */
+export function namespaceErrors(
+  kind: ContractKind,
+  namespace: string,
+): ValidationError[] {
+  return kind !== "ManagementAuthConfig" && namespace === ""
+    ? [{ path: "namespace", message: "Pick the namespace of the contract." }]
+    : [];
+}
+
+/**
+ * planeContractHolder returns "<namespace>/<name>" of the first plane of
+ * planes, then of planeClaims, that writes the Management Identity
+ * contract name, or undefined. A plane writes the contract that
+ * spec.managementAuthConfigName names, or the contract of its own name,
+ * as ContractName of the management cluster component does.
+ */
+export function planeContractHolder(
+  name: string,
+  planes: readonly CamundaManagementCluster[],
+  planeClaims: readonly CamundaManagementClusterClaim[],
+): string | undefined {
+  const holder = [...planes, ...planeClaims].find(
+    (p) => (p.spec?.managementAuthConfigName || p.metadata.name) === name,
+  );
+  return holder && `${holder.metadata.namespace ?? ""}/${holder.metadata.name}`;
+}
+
+/**
+ * createChange creates the contract name of kind in namespace with the
+ * spec of draft, with no labels and no annotations, so the contract shows
+ * as created by hand. A Management Identity contract has no namespace.
+ * The write fails with Stale when the contract exists.
+ */
+export function createChange(
+  kind: ContractKind,
+  namespace: string,
+  name: string,
+  draft: ContractDraft,
+): Change {
+  const ref = {
+    kind,
+    ...(kind !== "ManagementAuthConfig" && { namespace }),
+    name,
+  };
+  return {
+    intent: `Create the ${kindWords(kind)} contract ${name}`,
+    apply: [
+      {
+        apiVersion: API_VERSION,
+        kind,
+        metadata: {
+          name,
+          ...(ref.namespace !== undefined && { namespace: ref.namespace }),
+        },
+        spec: specOf(kind, draft),
+      },
+    ],
+    create: [refKey(ref)],
+  };
+}
+
 /** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: ContractObject): Change {
   return deleteChangeOf(
@@ -278,7 +489,8 @@ const KIND_WORDS: Record<ContractKind, string> = {
   ManagementAuthConfig: "Management Identity",
 };
 
-function kindWords(kind: ContractKind): string {
+/** kindWords returns the words of kind in a sentence, such as object storage. */
+export function kindWords(kind: ContractKind): string {
   return KIND_WORDS[kind];
 }
 
