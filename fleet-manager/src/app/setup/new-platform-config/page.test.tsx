@@ -88,7 +88,6 @@ describe("NewPlatformConfigPage", () => {
       screen.getByRole("heading", { level: 1, name: "New platform config" }),
     ).toBeTruthy();
     expect(screen.getByRole("option", { name: "basic-lab" })).toBeTruthy();
-    expect(dynamic).toBe("force-dynamic");
   });
 
   it("passes the write mode of the settings", async () => {
@@ -116,5 +115,9 @@ describe("NewPlatformConfigPage", () => {
       schemaVersion: 1,
       minors: { "8.9": {} },
     });
+  });
+
+  it("renders on each request", () => {
+    expect(dynamic).toBe("force-dynamic");
   });
 });

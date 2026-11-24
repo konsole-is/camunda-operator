@@ -77,6 +77,7 @@ function setup(opts: { mode?: WriteMode; sources?: PlatformSources } = {}) {
   return { rerender: (sources: PlatformSources) => rerender(view(sources)) };
 }
 
+const user = () => userEvent.setup();
 const nameInput = () =>
   screen.getByLabelText("Name", { exact: true }) as HTMLInputElement;
 const copyFrom = () =>
@@ -100,7 +101,7 @@ function pick(group: string, namespace: string, secret: string, key: string) {
 
 // create opens the review and confirms it. The dry run of the fake writer
 // answers with the object of the change, so the confirm turns on.
-async function create() {
+async function create(u: ReturnType<typeof user>) {
   fakeWriter.previews = [
     {
       objects: [
@@ -112,13 +113,13 @@ async function create() {
       errors: [],
     },
   ];
-  await userEvent.click(screen.getByRole("button", { name: "Review" }));
+  await u.click(screen.getByRole("button", { name: "Review" }));
   const review = screen.getByRole("region", {
     name: "Review the platform config",
   });
   const confirm = within(review).getByRole("button", { name: "Create" });
   await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
-  await userEvent.click(confirm);
+  await u.click(confirm);
   return review;
 }
 
@@ -135,11 +136,12 @@ const withConfig = (name: string): PlatformSources => {
 
 describe("PlatformCreate", () => {
   it("creates a basic-auth config by name with the license Secret", async () => {
+    const u = user();
     const { rerender } = setup();
 
     pick("License key", "camunda-system", "license", "license-key");
-    await userEvent.type(nameInput(), "basic-two");
-    const review = await create();
+    await u.type(nameInput(), "basic-two");
+    const review = await create(u);
 
     expect(within(review).getByText(CREATE_EFFECT)).toBeDefined();
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
@@ -165,31 +167,29 @@ describe("PlatformCreate", () => {
   });
 
   it("creates an OIDC config with the client secret and a management plane client", async () => {
+    const u = user();
     setup();
 
-    await userEvent.type(nameInput(), "oidc-two");
-    await userEvent.click(screen.getByRole("radio", { name: "OIDC" }));
-    await userEvent.type(
+    await u.type(nameInput(), "oidc-two");
+    await u.click(screen.getByRole("radio", { name: "OIDC" }));
+    await u.type(
       screen.getByLabelText("Issuer URL"),
       "https://login.example.com/realms/camunda",
     );
-    await userEvent.type(
-      screen.getAllByLabelText("Client ID")[0],
-      "orchestration",
-    );
+    await u.type(screen.getAllByLabelText("Client ID")[0], "orchestration");
     pick(
       "Client secret",
       "camunda-system",
       "oidc-credentials",
       "client-secret",
     );
-    await userEvent.type(
+    await u.type(
       within(screen.getByRole("group", { name: "Console" })).getByLabelText(
         "Client ID",
       ),
       "console",
     );
-    await create();
+    await create(u);
 
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
     expect(fakeWriter.applied[0].create).toEqual([
@@ -213,9 +213,10 @@ describe("PlatformCreate", () => {
   });
 
   it("creates a copy with its missing license Secret", async () => {
+    const u = user();
     setup();
 
-    await userEvent.selectOptions(copyFrom(), "broken");
+    await u.selectOptions(copyFrom(), "broken");
 
     expect(
       screen.getByText(
@@ -227,8 +228,8 @@ describe("PlatformCreate", () => {
       "camunda-license (not found)",
     );
 
-    await userEvent.type(nameInput(), "broken-copy");
-    await create();
+    await u.type(nameInput(), "broken-copy");
+    await create(u);
 
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
     expect(fakeWriter.applied[0].apply[0]).toEqual({
@@ -248,16 +249,17 @@ describe("PlatformCreate", () => {
   });
 
   it("keeps the typed name and replaces the fields when the copy source changes", async () => {
+    const u = user();
     setup();
 
-    await userEvent.type(nameInput(), "next-config");
-    await userEvent.selectOptions(copyFrom(), "oidc-prod");
+    await u.type(nameInput(), "next-config");
+    await u.selectOptions(copyFrom(), "oidc-prod");
     expect(
       (screen.getByLabelText("Issuer URL") as HTMLInputElement).value,
     ).toBe("https://login.example.com/realms/camunda");
     expect(secretOf("License key")?.value).toBe("camunda-license");
 
-    await userEvent.selectOptions(copyFrom(), "basic-lab");
+    await u.selectOptions(copyFrom(), "basic-lab");
 
     expect(nameInput().value).toBe("next-config");
     expect(screen.getByRole("radio", { name: "Basic" })).toHaveProperty(
@@ -269,12 +271,13 @@ describe("PlatformCreate", () => {
   });
 
   it("writes no oidc block when a copy of an OIDC config switches to basic", async () => {
+    const u = user();
     setup();
 
-    await userEvent.selectOptions(copyFrom(), "oidc-prod");
-    await userEvent.type(nameInput(), "basic-copy");
-    await userEvent.click(screen.getByRole("radio", { name: "Basic" }));
-    await create();
+    await u.selectOptions(copyFrom(), "oidc-prod");
+    await u.type(nameInput(), "basic-copy");
+    await u.click(screen.getByRole("radio", { name: "Basic" }));
+    await create(u);
 
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
     expect(fakeWriter.applied[0].apply[0].spec).toEqual({
@@ -289,10 +292,11 @@ describe("PlatformCreate", () => {
   });
 
   it("blocks a create with a name that exists or that a cluster cannot name", async () => {
+    const u = user();
     setup();
 
     const bar = () => screen.getByRole("region", { name: "Unsaved changes" });
-    await userEvent.type(nameInput(), "oidc-prod");
+    await u.type(nameInput(), "oidc-prod");
 
     expect(
       within(bar()).getByText("A platform config with this name exists."),
@@ -301,8 +305,8 @@ describe("PlatformCreate", () => {
       within(bar()).getByRole("button", { name: "Review" }),
     ).toHaveProperty("disabled", true);
 
-    await userEvent.clear(nameInput());
-    await userEvent.type(nameInput(), "team.a");
+    await u.clear(nameInput());
+    await u.type(nameInput(), "team.a");
 
     expect(
       within(bar()).getByText(
@@ -312,6 +316,7 @@ describe("PlatformCreate", () => {
   });
 
   it("shows the image defaults of the users of a name that resources still name", async () => {
+    const u = user();
     const sources = platformFixtures();
     setup({
       sources: {
@@ -326,7 +331,7 @@ describe("PlatformCreate", () => {
       screen.getByText(/^No cluster or management plane uses this config/),
     ).toBeDefined();
 
-    await userEvent.type(nameInput(), "oidc-prod");
+    await u.type(nameInput(), "oidc-prod");
 
     expect(
       screen.queryByText(/^No cluster or management plane uses/),
@@ -337,7 +342,8 @@ describe("PlatformCreate", () => {
     ).toBe("camunda/web-modeler-restapi");
   });
 
-  it("stays on the page when the create fails", async () => {
+  it("stays on the page with the name when the create fails", async () => {
+    const u = user();
     setup();
     fakeWriter.results = [
       {
@@ -351,8 +357,8 @@ describe("PlatformCreate", () => {
       },
     ];
 
-    await userEvent.type(nameInput(), "basic-two");
-    const review = await create();
+    await u.type(nameInput(), "basic-two");
+    const review = await create(u);
 
     expect(
       await within(review).findByText(
@@ -360,7 +366,7 @@ describe("PlatformCreate", () => {
         { exact: false },
       ),
     ).toBeDefined();
-    await userEvent.click(within(review).getByRole("button", { name: "Back" }));
+    await u.click(within(review).getByRole("button", { name: "Back" }));
     expect(router.push).not.toHaveBeenCalled();
     expect(nameInput().closest("fieldset:disabled")).toBeNull();
     expect(nameInput().value).toBe("basic-two");
