@@ -431,6 +431,7 @@ export function pointInTimeConfirm(
         context.suspension === undefined
           ? "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm."
           : "The operator does not roll the database server back. Roll it back to this time before you confirm.",
+        "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.",
         `If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig ${manual.serverConfig} to the new instance first.`,
         "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
       ]

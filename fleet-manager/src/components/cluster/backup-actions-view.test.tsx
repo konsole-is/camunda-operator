@@ -837,6 +837,8 @@ describe("restore to a point in time", () => {
   const ROLLED = "I rolled the database server back to this time";
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
+  const SHARED =
+    "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const items = (dialog: HTMLElement) =>
@@ -851,7 +853,7 @@ describe("restore to a point in time", () => {
     const dialog = await openPoint();
     expect(items(dialog)).toEqual(["2026-11-07 14:30:05 UTC to now"]);
     pick(dialog, "2026-11-09T09:30:15");
-    expect(items(dialog).slice(1, 3)).toEqual([ROLL, HOST]);
+    expect(items(dialog).slice(1, 4)).toEqual([ROLL, SHARED, HOST]);
   });
 
   it("the typed confirm shows only after the rollback is ticked", async () => {

@@ -99,10 +99,12 @@ spec:
 
 The confirm shows the restore window in UTC. With `operator`, the operator rolls the server back, and the window comes from the archive of the server. With `external`, the default, you roll the server back to the point before you confirm. The window then reaches back as far as the cluster keeps its Zeebe backups, and not more than `retentionPeriodDays`. **Restore to a point in time** is off while `pitr.enabled` is false, and the reason shows under it.
 
+CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
+
 1. With `external`, suspend the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. A cluster that runs writes to the database after the rollback.
-2. With `external`, roll the database server back to the point. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
-3. Select **Restore to a point in time**.
-4. Enter the time in **Time (UTC)**.
+2. Select **Restore to a point in time**.
+3. Enter the time in **Time (UTC)**. The field refuses a time outside the restore window.
+4. With `external`, roll the database server back to that time. Roll back only a server that holds the database of this cluster alone. A rollback undoes every database on the server. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
 5. Read the confirm. The restore loses everything that the cluster wrote after that time.
 6. With `external`, select **I rolled the database server back to this time**.
 7. Type the name of the cluster, and select **Restore**.
@@ -121,8 +123,6 @@ spec:
     name: my-cluster
   timestamp: "2026-11-09T09:30:15Z"
 ```
-
-CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
 
 ## Change the schedule
 

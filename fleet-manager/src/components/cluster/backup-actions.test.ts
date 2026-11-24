@@ -864,6 +864,8 @@ describe("restore confirm", () => {
   const AT = "2026-11-09 09:30:15 UTC";
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
+  const SHARED =
+    "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const READS =
@@ -882,6 +884,7 @@ describe("restore confirm", () => {
     );
     expect(confirm.lines).toEqual([
       ROLL,
+      SHARED,
       HOST,
       READS,
       STARTS,
@@ -903,7 +906,8 @@ describe("restore confirm", () => {
 
   it("with recovery by the operator the confirm names no manual rollback", () => {
     const { lines } = pointInTimeConfirm(context(), AT);
-    for (const line of [ROLL, HOST, READS]) expect(lines).not.toContain(line);
+    for (const line of [ROLL, SHARED, HOST, READS])
+      expect(lines).not.toContain(line);
   });
 
   it.each<[string, Suspension | undefined, string]>([
