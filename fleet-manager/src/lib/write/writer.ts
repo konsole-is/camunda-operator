@@ -157,11 +157,11 @@ export function diffView(
  * Invalid when the lists are not the offered fields of ownership at the
  * precondition.
  *
- * When remove lists a field, or the object holds an Update entry of the
- * fleet manager, the object is one update: a JSON patch at the
- * precondition to laidOver of the live object, the applied object, the
- * listed fields, and prunedFields. The preview is the dry run of that
- * patch. Both writes refuse the object with Conflict when the update takes
+ * When remove lists a field, or an object with a precondition holds an
+ * Update entry of the fleet manager, apply writes the object as one
+ * update: a JSON patch at the precondition to laidOver of the live object,
+ * the applied object, the listed fields, and prunedFields. When remove
+ * lists a field, the preview is the dry run of that patch. Both writes refuse the object with Conflict when the update takes
  * or removes a field of another manager that the lists do not name. A
  * field of remove can come back with its default value. When an apply of
  * the change sets other values than the update, or apply cannot record the

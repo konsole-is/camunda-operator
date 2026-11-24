@@ -219,8 +219,8 @@ export type FieldOwner = { manager: string; operation: string };
 /**
  * OwnerTree is the FieldsV1 trees of several managedFields entries merged
  * into one. owners own the node itself, with no child keys or by the key
- * ".". whole are the owners with no child keys at a node that no entry of
- * the object holds a child of: they own a leaf, an atomic list, or an
+ * ".". whole are the owners with no child keys at a node that no entry
+ * with a manager holds a child of: they own a leaf, an atomic list, or an
  * atomic map as one value. children holds the node of each FieldsV1 key
  * below.
  */

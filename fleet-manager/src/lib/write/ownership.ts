@@ -50,9 +50,7 @@ export function isPartialSave(error: ApiError): boolean {
  * metadata.annotations of live that a server-side apply of applied by the
  * fleet manager changes or clears while another field manager owns them.
  * Every managedFields entry other than an entry of the fleet manager is
- * another manager. The fleet manager writes an Update entry only in a save
- * that removes a field of another tool, and that save drops it again. An
- * entry of a subresource is not another manager.
+ * another manager. An entry of a subresource is not another manager.
  *
  * changed holds each field that applied sets to another value than live.
  * The apply fails on such a field unless it forces. cleared holds the
@@ -94,11 +92,10 @@ export function foreignFields(
 
 /**
  * prunedFields returns the topmost fields of spec, metadata.labels, and
- * metadata.annotations that live holds and applied leaves out, under a
- * field that applied holds, that only entries of the fleet manager own, at
- * them and below: the fields that the fleet manager set and the change
- * drops. keep is as in foreignFields. Each field names its managers. The
- * fields are in the code-unit order of their paths.
+ * metadata.annotations that live holds and applied leaves out, and that
+ * only entries of the fleet manager own, at them and below: the fields
+ * that the fleet manager set and the change drops. keep is as in
+ * foreignFields. The fields are in the code-unit order of their paths.
  */
 export function prunedFields(
   live: KubeObject,
@@ -122,10 +119,11 @@ export function prunedFields(
 
 /**
  * removedFields returns each topmost field of spec, metadata.labels, and
- * metadata.annotations that an entry of before owns, other than an entry
- * of the fleet manager or of a subresource, and that after does not hold,
- * with each such manager. LAST_APPLIED_ANNOTATION is never named. The
- * fields are in the code-unit order of their paths.
+ * metadata.annotations that before holds and after does not hold, and that
+ * an entry of before other than an entry of the fleet manager or of a
+ * subresource owns, at it or below, with each such manager.
+ * LAST_APPLIED_ANNOTATION is never named. The fields are in the code-unit
+ * order of their paths.
  */
 export function removedFields(
   before: KubeObject,
@@ -259,12 +257,13 @@ function walkApplied(
 
 /**
  * laidOver returns live without each field of removed, with applied laid
- * over it: the object that a save writes as one update. A map of applied
- * goes into the map of live key by key. A list, a scalar, and a value that
- * a managedFields entry of live owns whole replace the value of live. It
- * lays over spec, metadata.labels, metadata.annotations, and each other
- * top-level field of applied but apiVersion, kind, metadata, and status.
- * Neither input changes, and a key __proto__ stays a key.
+ * over it. A map of applied goes into the map of live key by key. A list
+ * and a scalar replace the value of live, and so does a map that a
+ * managedFields entry of live owns whole, other than a top-level field,
+ * metadata.labels, or metadata.annotations. It lays over spec,
+ * metadata.labels, metadata.annotations, and each other top-level field
+ * of applied but apiVersion, kind, metadata, and status. Neither input
+ * changes, and a key __proto__ stays a key.
  */
 export function laidOver(
   live: KubeObject,
