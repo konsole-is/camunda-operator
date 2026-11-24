@@ -148,9 +148,28 @@ export function createChange(
   };
 }
 
-/** CREATE_EFFECT says what the create of a preset changes. */
-export const CREATE_EFFECT =
-  "A resource that names this preset uses it from now on. No environment allows it yet.";
+/**
+ * createEffects says what the create of a preset changes. allowed are the
+ * environments that list its name already, or undefined when they cannot
+ * be read.
+ */
+export function createEffects(
+  allowed: readonly string[] | undefined,
+): string[] {
+  const uses = "A resource that names this preset uses it from now on.";
+  if (allowed === undefined)
+    return [
+      uses,
+      "The environments that allow it are not known while the fleet manager cannot read them.",
+    ];
+  if (allowed.length === 0) return [uses, "No environment allows it yet."];
+  return [
+    uses,
+    allowed.length === 1
+      ? `The environment ${allowed[0]} lists its name and allows it at once.`
+      : `The environments ${allowed.join(", ")} list its name and allow it at once.`,
+  ];
+}
 
 function bodyField(kind: PresetKind): "cluster" | "server" {
   return kind === "DatabaseServerPreset" ? "server" : "cluster";

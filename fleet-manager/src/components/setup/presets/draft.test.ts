@@ -6,6 +6,7 @@ import type { KubeObject } from "@/lib/write/types";
 import { refKey } from "@/lib/write/refs";
 import {
   createChange,
+  createEffects,
   nameErrors,
   type PresetDraft,
   presetChangeCount,
@@ -255,5 +256,27 @@ describe("createChange", () => {
         presetDraftOf(undefined),
       ).apply[0].spec,
     ).toEqual({ cluster: {} });
+  });
+});
+
+describe("createEffects", () => {
+  const uses = "A resource that names this preset uses it from now on.";
+
+  it.each([
+    [[], "No environment allows it yet."],
+    [
+      ["staging"],
+      "The environment staging lists its name and allows it at once.",
+    ],
+    [
+      ["production", "staging"],
+      "The environments production, staging list its name and allow it at once.",
+    ],
+    [
+      undefined,
+      "The environments that allow it are not known while the fleet manager cannot read them.",
+    ],
+  ])("says who can use a preset that %j allow", (allowed, line) => {
+    expect(createEffects(allowed)).toEqual([uses, line]);
   });
 });

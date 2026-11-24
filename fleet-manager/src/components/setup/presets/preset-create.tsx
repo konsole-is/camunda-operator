@@ -12,13 +12,14 @@ import {
 } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import { Radio } from "@/components/ui/radio";
+import type { Environment } from "@/generated/crds/environment";
 import type { ReadError } from "@/lib/k8s/unread";
-import type { PresetKind } from "@/lib/usage";
+import { allowedIn, type PresetKind } from "@/lib/usage";
 import type { WriteMode } from "@/lib/write/types";
 import { CannotSetSection } from "./cannot-set-section";
 import {
-  CREATE_EFFECT,
   createChange,
+  createEffects,
   nameErrors,
   type PresetCreateDraft,
   presetChangeCount,
@@ -79,6 +80,14 @@ export function PresetCreate({
   const nameError = nameErrors(draft.name, names)[0]?.message;
   const count =
     presetChangeCount(undefined, draft.preset) + (draft.name !== "" ? 1 : 0);
+  // An Environment can list the name of a preset before the preset exists.
+  const allowed = sources.errors.some((e) => e.kind === "Environment")
+    ? undefined
+    : allowedIn(
+        sources.environments as unknown as Environment[],
+        kind,
+        draft.name,
+      );
   const setBody = (body: Record<string, unknown>) =>
     editor.setDraft((d) => ({ ...d, preset: { ...d.preset, body } }));
 
@@ -167,7 +176,7 @@ export function PresetCreate({
             change={reviewing.change}
             mode={mode}
             diffLabel="Changes to the preset"
-            effects={[CREATE_EFFECT]}
+            effects={createEffects(allowed)}
             confirm={{ label: "Create" }}
             savedMessage={`The preset ${draft.name} is created.`}
             preview={actions.previewChange}

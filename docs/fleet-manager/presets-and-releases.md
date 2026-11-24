@@ -33,7 +33,7 @@ Select **New preset** on the page **Setup > Presets**. Pick the **Kind**: **Clus
 
 Set the fields as on the page of a preset. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new preset opens.
 
-No environment allows a new preset. To offer it to new clusters, allow it on the [Environments](environments.md) page.
+An environment allows a new preset only when it lists the name of the preset already. To offer the preset to new clusters, allow it on the [Environments](environments.md) page.
 
 ### Change a preset
 

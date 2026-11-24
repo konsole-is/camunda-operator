@@ -17,7 +17,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { WriteMode } from "@/lib/write/types";
 import { fakeWriter } from "../../../../test/fakes/writer";
-import { CREATE_EFFECT, createChange } from "./draft";
+import { createChange, createEffects } from "./draft";
 import { presetFixtures } from "./fixtures";
 import { type PresetObject, presetBody, presetsOf } from "./kinds";
 import { PresetCreate } from "./preset-create";
@@ -97,7 +97,7 @@ describe("PresetCreate", () => {
     expect(
       within(
         screen.getByRole("region", { name: "Review the preset" }),
-      ).getByText(CREATE_EFFECT),
+      ).getByText(createEffects([])[1]),
     ).toBeTruthy();
     const confirm = screen.getByRole("button", { name: "Create" });
     await waitFor(() =>
@@ -132,6 +132,37 @@ describe("PresetCreate", () => {
         "/setup/presets/cluster/small-two",
       ),
     );
+  });
+
+  it("names the environments that list the name of the new preset in the review", async () => {
+    const sources = presetFixtures();
+    const u = user();
+    setup({
+      sources: {
+        ...sources,
+        environments: [
+          ...sources.environments,
+          {
+            ...sources.environments[0],
+            metadata: { name: "staging", resourceVersion: "21" },
+            spec: {
+              displayName: "Staging",
+              presets: { elasticsearchCluster: ["search-two"] },
+            },
+          },
+        ],
+      },
+    });
+    await u.click(screen.getByRole("radio", { name: "Elasticsearch" }));
+    await u.type(nameField(), "search-two");
+    await u.click(reviewButton());
+    expect(
+      within(
+        screen.getByRole("region", { name: "Review the preset" }),
+      ).getByText(
+        "The environment staging lists its name and allows it at once.",
+      ),
+    ).toBeTruthy();
   });
 
   it("creates an empty Elasticsearch preset under spec.cluster", async () => {
