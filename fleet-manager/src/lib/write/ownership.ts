@@ -94,7 +94,8 @@ export function foreignFields(
  * prunedFields returns the topmost fields of spec, metadata.labels, and
  * metadata.annotations that live holds and applied leaves out, and that
  * only entries of the fleet manager own, at them and below: the fields
- * that the fleet manager set and the change drops. keep is as in
+ * that the fleet manager set and the change drops. Under a left-out field
+ * that another manager also owns, it names such fields below it. keep is as in
  * foreignFields. The fields are in the code-unit order of their paths.
  */
 export function prunedFields(
@@ -107,11 +108,12 @@ export function prunedFields(
   walkApplied(tree, live, applied, keep, {
     leftOut: (node, path, steps) => {
       const owners = ownersBelow(node);
-      if (
-        owners.length > 0 &&
-        owners.every((o) => o.manager === APP_FIELD_MANAGER)
-      )
+      if (owners.length === 0) return false;
+      if (owners.every((o) => o.manager === APP_FIELD_MANAGER)) {
         pruned.push({ path, steps, managers: foreignManagers(owners, live) });
+        return false;
+      }
+      return node.whole.length === 0;
     },
   });
   return byPath(pruned);
@@ -138,14 +140,19 @@ export function removedFields(
 // field that a node of tree owns whole and that applied sets to another
 // value. Neither gets a field at, under, or holding a path of keep, which
 // names paths through maps only. In place of a left-out field that holds a
-// kept path, leftOut gets the topmost fields under it that hold none.
+// kept path, leftOut gets the topmost fields under it that hold none. When
+// leftOut returns true, the walk goes on below that field as left out.
 function walkApplied(
   tree: OwnerTree,
   live: KubeObject,
   applied: KubeObject,
   keep: readonly FieldPath[],
   on: {
-    leftOut: (node: OwnerTree, path: FieldPath, steps: OwnedStep[]) => void;
+    leftOut: (
+      node: OwnerTree,
+      path: FieldPath,
+      steps: OwnedStep[],
+    ) => boolean | void;
     changed?: (node: OwnerTree, path: FieldPath, steps: OwnedStep[]) => void;
   },
 ): void {
@@ -166,7 +173,15 @@ function walkApplied(
         visitChildren(node, before, {}, path, steps, false);
         return;
       }
-      on.leftOut(node, path, steps);
+      if (on.leftOut(node, path, steps))
+        visitChildren(
+          node,
+          before,
+          Array.isArray(before) ? [] : {},
+          path,
+          steps,
+          false,
+        );
       return;
     }
     if (node.whole.length > 0) {

@@ -1074,6 +1074,30 @@ describe("directWriter with a take-over", () => {
     ]);
   });
 
+  it("a preview with the hints of the Git writer dry-runs an apply, also for an object with an Update entry of the fleet manager", async () => {
+    const live = environment({ color: "red" }, [fleetOwns("Update", "color")]);
+    answer = (r) => ({
+      status: 200,
+      body: r.method === "GET" ? live : environment({ color: "blue" }),
+    });
+
+    const preview = await directWriter(apiConfig).preview({
+      intent: "Recolor",
+      apply: [environment({ color: "blue" })],
+      preconditions: { [key]: "7" },
+      force: true,
+      previewManagers: {},
+      previewMergePatches: [],
+    });
+
+    expect(preview.errors).toEqual([]);
+    const patches = seen.filter((r) => r.method === "PATCH");
+    expect(patches.map((r) => r.contentType)).toEqual([
+      "application/apply-patch+yaml",
+    ]);
+    expect(patches[0].url).toContain("force=true&dryRun=All");
+  });
+
   it("a change without lists sends no forced apply and no update", async () => {
     const live = environment({ color: "red" }, [fleetOwns("Apply", "color")]);
     answer = (r) => ({

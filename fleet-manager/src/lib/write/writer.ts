@@ -426,8 +426,8 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         const unfinished =
           before !== undefined &&
           resourceVersion !== undefined &&
-          options.managers?.[key] === undefined &&
-          !options.mergePatches?.includes(key) &&
+          options.managers === undefined &&
+          options.mergePatches === undefined &&
           entriesOf(before).some(isOwnUpdate);
         if (cleared.length > 0 || unfinished) {
           const target = laidOver(before!, object, [

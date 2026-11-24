@@ -1017,6 +1017,36 @@ describe("prunedFields", () => {
     ]);
   });
 
+  it("names a field that only the fleet manager owns under a left-out map that kubectl also owns", () => {
+    const live = environment(
+      { images: { identity: "mirror/identity", keycloak: "mirror/keycloak" } },
+      [
+        entry("kubectl-client-side-apply", "Update", {
+          "f:spec": { "f:images": { ".": {}, "f:identity": {} } },
+        }),
+        entry("fleet-manager", "Apply", {
+          "f:spec": { "f:images": { "f:keycloak": {} } },
+        }),
+      ],
+    );
+    expect(prunedFields(live, environment({}))).toEqual([
+      {
+        path: "spec.images.keycloak",
+        steps: [{ field: "spec" }, { field: "images" }, { field: "keycloak" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("does not go into a left-out value that another manager owns whole", () => {
+    const live = environment({ selector: { team: "a" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:selector": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([]);
+  });
+
   it("does not name a field at a kept path", () => {
     const live = environment({ color: "", displayName: "Stage" }, [
       entry("fleet-manager", "Apply", {
