@@ -3,6 +3,8 @@ import path from "node:path";
 import {
   type APIRequestContext,
   type Page,
+  type Request,
+  errors,
   expect,
   test,
 } from "@playwright/test";
@@ -29,6 +31,32 @@ const FAILURES = [
 // A story that does not load never sends storyFinished.
 const DONE = ["storyFinished", "docsRendered", "storyMissing", "configError"];
 
+// LIMIT bounds each wait for a page. A healthy story sends its DONE event
+// in seconds, also under heavy load.
+const LIMIT = 60_000;
+
+// ANSWER_LIMIT bounds the question to a stalled page, so that the check
+// still fails soon after LIMIT when the page answers nothing.
+const ANSWER_LIMIT = 5_000;
+
+// within rejects with the message when promise takes longer than limit, for
+// a call such as page.evaluate that takes no timeout.
+async function within<T>(
+  promise: Promise<T>,
+  message: string,
+  limit = LIMIT,
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), limit);
+  });
+  try {
+    return await Promise.race([promise, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 type Entry = { id: string; title: string; name: string; type: string };
 type StoryEvent = { name: string; message: string };
 
@@ -37,10 +65,20 @@ type StoryEvent = { name: string; message: string };
 // function. errorsOf then waits for a DONE event and returns one line for
 // each failure. storyMissing carries no message, so its line holds the
 // console errors of the page, where Storybook logs why the file failed.
+// errorsOf throws when no DONE event comes within LIMIT. label names the
+// story in that message.
 async function recordStoryEvents(page: Page) {
   const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const unfinished = new Map<Request, number>();
   page.on("console", (m) => {
     if (m.type() === "error") consoleErrors.push(m.text());
+  });
+  page.on("request", (r) => unfinished.set(r, Date.now()));
+  page.on("requestfinished", (r) => unfinished.delete(r));
+  page.on("requestfailed", (r) => {
+    unfinished.delete(r);
+    failedRequests.push(`${r.url()}: ${r.failure()?.errorText}`);
   });
   await page.addInitScript((failures) => {
     type Channel = { emit: (name: string, ...args: unknown[]) => void };
@@ -67,23 +105,67 @@ async function recordStoryEvents(page: Page) {
       },
     });
   }, FAILURES);
+  // stall describes a page that sent no DONE event. A network change on
+  // the host, such as a new Docker container, makes Chromium fail the
+  // module requests of the page with ERR_NETWORK_CHANGED, and the preview
+  // of Storybook then never starts.
+  const stall = async (label: string) => {
+    const now = Date.now();
+    const list = (lines: string[]) =>
+      lines.length ? lines.map((l) => `\n  ${l}`).join("") : " none";
+    let shown: string;
+    try {
+      const state = await within(
+        page.evaluate(() => ({
+          preview: "__STORYBOOK_PREVIEW__" in globalThis,
+          resources: performance.getEntriesByType("resource").length,
+        })),
+        "the page did not answer",
+        ANSWER_LIMIT,
+      );
+      shown = `The Storybook preview started: ${state.preview ? "yes" : "no"}. Resources loaded: ${state.resources}.`;
+    } catch {
+      shown = `The page did not answer within ${ANSWER_LIMIT / 1000} s.`;
+    }
+    const open = [...unfinished].map(
+      ([r, at]) => `${r.url()} (for ${Math.round((now - at) / 1000)} s)`,
+    );
+    return [
+      `${label} sent no DONE event within ${LIMIT / 1000} s.`,
+      shown,
+      `Requests that never finished:${list(open)}`,
+      `Failed requests:${list(failedRequests)}`,
+      `Console errors:${list(consoleErrors)}`,
+    ].join("\n");
+  };
   return {
     async open(url: string) {
       consoleErrors.length = 0;
-      await page.goto(url);
+      failedRequests.length = 0;
+      unfinished.clear();
+      await page.goto(url, { timeout: LIMIT });
     },
-    async errorsOf(): Promise<string[]> {
-      await page.waitForFunction(
-        (done) =>
-          (
-            globalThis as unknown as { __storyEvents: StoryEvent[] }
-          ).__storyEvents.some((e) => done.includes(e.name)),
-        DONE,
-      );
-      const events = await page.evaluate(
-        () =>
-          (globalThis as unknown as { __storyEvents: StoryEvent[] })
-            .__storyEvents,
+    async errorsOf(label: string): Promise<string[]> {
+      try {
+        await page.waitForFunction(
+          (done) =>
+            (
+              globalThis as unknown as { __storyEvents: StoryEvent[] }
+            ).__storyEvents.some((e) => done.includes(e.name)),
+          DONE,
+          { timeout: LIMIT },
+        );
+      } catch (error) {
+        if (!(error instanceof errors.TimeoutError)) throw error;
+        throw new Error(await stall(label));
+      }
+      const events = await within(
+        page.evaluate(
+          () =>
+            (globalThis as unknown as { __storyEvents: StoryEvent[] })
+              .__storyEvents,
+        ),
+        `${label} did not answer within ${LIMIT / 1000} s`,
       );
       return events
         .filter((e) => FAILURES.includes(e.name))
@@ -110,7 +192,7 @@ test("the Storybook opens a story under a sub-path", async ({
     if (response.status() >= 400)
       failed.push(`${response.status()} ${response.url()}`);
   });
-  await page.goto(`./?path=/story/${first.id}`);
+  await page.goto(`./?path=/story/${first.id}`, { timeout: LIMIT });
   // The preview frame sets sb-show-main on its body once the story shows.
   await expect(
     page.frameLocator("#storybook-preview-iframe").locator("body"),
@@ -128,11 +210,13 @@ test("a text fragment opens the closed group that holds the text", async ({
 }) => {
   const story =
     "iframe.html?viewMode=story&id=setup-releases-envscopes--no-entries";
-  await page.goto(story);
+  await page.goto(story, { timeout: LIMIT });
   await expect(page.getByText("Variables of Gateway")).toBeAttached({
     timeout: 30_000,
   });
-  await page.goto(`${story}#:~:text=Variables%20of%20Gateway`);
+  await page.goto(`${story}#:~:text=Variables%20of%20Gateway`, {
+    timeout: LIMIT,
+  });
   // The row of each env scope reads its name and its count of entries.
   const toggle = (name: string) =>
     page.getByRole("button", { name: `${name} 0`, exact: true });
@@ -154,15 +238,24 @@ for (const { theme, title } of THEMES)
     await storybook.open(
       `iframe.html?id=ui-button--docs&viewMode=docs&globals=theme:${theme}`,
     );
-    expect.soft(await storybook.errorsOf(), "the Docs page throws").toEqual([]);
+    const label = `The Docs page${title}`;
+    const late = `${label} did not finish its checks within ${LIMIT / 1000} s`;
+    expect
+      .soft(await storybook.errorsOf(label), "the Docs page throws")
+      .toEqual([]);
     await expect(
       page.getByRole("heading", { level: 1, name: "Button" }),
     ).toBeVisible();
     expect
-      .soft(await page.evaluate(() => document.documentElement.className))
+      .soft(
+        await within(
+          page.evaluate(() => document.documentElement.className),
+          late,
+        ),
+      )
       .toBe(theme);
     expect(
-      await blockingViolations(page),
+      await within(blockingViolations(page), late),
       `axe violations in the Docs page${title}`,
     ).toEqual([]);
   });
@@ -204,22 +297,33 @@ for (const { theme, suffix, title } of THEMES)
           await storybook.open(
             `iframe.html?id=${story.id}&viewMode=story&globals=theme:${theme}`,
           );
+          const label = `Story ${story.id} at ${width} px in the ${theme} theme`;
+          const late = `${label} did not finish its checks within ${LIMIT / 1000} s`;
           expect
-            .soft(await storybook.errorsOf(), `story ${story.id} throws`)
+            .soft(await storybook.errorsOf(label), `story ${story.id} throws`)
             .toEqual([]);
 
           expect
             .soft(
-              await page.evaluate(() => document.documentElement.className),
+              await within(
+                page.evaluate(() => document.documentElement.className),
+                late,
+              ),
               `story ${story.id} is not in the ${theme} theme`,
             )
             .toBe(theme);
 
-          await page.evaluate(() => document.fonts.ready);
-          const overflow = await page.evaluate(
-            () =>
-              document.documentElement.scrollWidth -
-              document.documentElement.clientWidth,
+          await within(
+            page.evaluate(() => document.fonts.ready),
+            late,
+          );
+          const overflow = await within(
+            page.evaluate(
+              () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            ),
+            late,
           );
           expect
             .soft(overflow, `story ${story.id} scrolls sideways at ${width} px`)
@@ -227,24 +331,31 @@ for (const { theme, suffix, title } of THEMES)
 
           expect
             .soft(
-              await blockingViolations(page),
+              await within(blockingViolations(page), late),
               `axe violations in story ${story.id} at ${width} px`,
             )
             .toEqual([]);
 
-          await snapshot?.add(page, {
-            id: story.id,
-            title: story.title,
-            name: story.name,
-          });
+          await within(
+            snapshot?.add(page, {
+              id: story.id,
+              title: story.title,
+              name: story.name,
+            }) ?? Promise.resolve(),
+            late,
+          );
 
           const file = `${story.id}-${width}${suffix}.png`;
-          await page.screenshot({ path: path.join(OUT, file), fullPage: true });
+          await page.screenshot({
+            path: path.join(OUT, file),
+            fullPage: true,
+            timeout: LIMIT,
+          });
           // smallTargets scrolls, so it runs after the screenshot, in one theme.
           if (theme === "dark")
             expect
               .soft(
-                await smallTargets(page),
+                await within(smallTargets(page), late),
                 `targets under ${MIN_TARGET} px in story ${story.id} at ${width} px`,
               )
               .toEqual([]);
