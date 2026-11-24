@@ -12,6 +12,7 @@ import {
 import { objectDiff } from "@/lib/diff";
 import { clusterFields, pathFrom, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import { unreadChangeText } from "@/lib/k8s/unread";
 import {
   claimAfter,
   clusterLocks,
@@ -42,9 +43,11 @@ export type ClusterEdit = ClaimEdit<ClusterClaim>;
  * validateClusterClaim and the merged errors that block as its
  * validation. Review adds the reset of allowVersionDowngrade once the
  * downgrade is done, and shows the impacts, cautions, confirm, and merged
- * diff of the cluster. In Git mode, the review keeps each field that the
- * change removes and the dry run of the push still holds. It needs a
- * GitPushesProvider above it.
+ * diff of the cluster. For a drafted cluster, the review shows no impacts,
+ * cautions, or confirm, because no cluster runs yet, and it blocks the save
+ * while context.unread names CamundaCluster. In Git mode, the review keeps
+ * each field that the change removes and the dry run of the push still
+ * holds. It needs a GitPushesProvider above it.
  */
 export function ClusterEditProvider({
   context,
@@ -186,20 +189,26 @@ function clusterReview(
     ? mergedSpecs(changeInputOf(context, saved))
     : undefined;
   return {
-    ...reviewGuards(context, saved, mode, {
-      backupsHref: "?tab=backups",
-      onOpenBackups: () => {
-        close();
-        window.history.replaceState(null, "", "?tab=backups");
-      },
-    }),
+    ...(context.drafted
+      ? { impacts: [] }
+      : reviewGuards(context, saved, mode, {
+          backupsHref: "?tab=backups",
+          onOpenBackups: () => {
+            close();
+            window.history.replaceState(null, "", "?tab=backups");
+          },
+        })),
     mergedLines: merged && objectDiff(merged.before.spec, merged.after.spec),
-    blocking:
-      saved === session
+    blocking: [
+      ...(context.drafted && context.unread.includes("CamundaCluster")
+        ? [unreadChangeText(["CamundaCluster"])]
+        : []),
+      ...(saved === session
         ? []
         : mergedErrorsAfter(context, saved).map(
             (e) => `${e.message} ${KEPT_CAUSE}`,
-          ),
+          )),
+    ],
   };
 }
 

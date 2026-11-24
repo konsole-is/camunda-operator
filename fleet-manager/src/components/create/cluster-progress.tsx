@@ -16,6 +16,8 @@ import { CLAIM_LABEL } from "@/lib/labels";
 
 const READY: FleetCamundaClusterClaimConditionType = "Ready";
 const CLUSTER_READY: FleetCamundaClusterClaimConditionType = "ClusterReady";
+const LINK =
+  "relative self-start text-sm text-info underline-offset-4 hit-area hover:underline";
 
 /**
  * ClusterProgress follows the written claim and its PluginRequests live
@@ -58,6 +60,7 @@ export function ClusterProgress({
           (live.item as CamundaClusterClaim | undefined) ??
           (claim as unknown as CamundaClusterClaim)
         }
+        written={!live.item}
         sections={sections}
         registrations={registrations}
         requests={requests.items as unknown as PluginRequest[]}
@@ -69,14 +72,15 @@ export function ClusterProgress({
 /**
  * ClusterProgressView shows the progress of the cluster claim named name in
  * namespace: its Ready condition, clusterProgressRows, and the precheck
- * refusal of the claim controller. The refusal links the Claim tab only
- * once status.cluster names the cluster, because the cluster page needs
- * the cluster. Once ClusterReady is True, a link opens the cluster page.
+ * refusal of the claim controller. A link opens the Claim tab of the
+ * cluster page, unless written says that claim is not live yet. Once
+ * ClusterReady is True, a link opens the cluster page.
  */
 export function ClusterProgressView({
   name,
   namespace,
   claim,
+  written = false,
   sections,
   registrations,
   requests,
@@ -84,6 +88,7 @@ export function ClusterProgressView({
   name: string;
   namespace: string;
   claim?: CamundaClusterClaim;
+  written?: boolean;
   sections: readonly PluginSection[];
   registrations: readonly PluginRegistration[];
   requests: readonly PluginRequest[];
@@ -106,22 +111,23 @@ export function ClusterProgressView({
         ready={ready}
         rows={clusterProgressRows(claim, sections, registrations, requests)}
         done={
-          clusterReady && (
-            <Link
-              href={page}
-              className="relative self-start text-sm text-info underline-offset-4 hit-area hover:underline"
-            >
-              Open the cluster page
-            </Link>
+          claim && (
+            <div className="flex flex-wrap gap-4">
+              {clusterReady && (
+                <Link href={page} className={LINK}>
+                  Open the cluster page
+                </Link>
+              )}
+              {!written && (
+                <Link href={`${page}?tab=claim`} className={LINK}>
+                  Open the Claim tab
+                </Link>
+              )}
+            </div>
           )
         }
       />
-      {claim && (
-        <PrecheckLine
-          claim={claim}
-          href={claim.status?.cluster ? `${page}?tab=claim` : undefined}
-        />
-      )}
+      {claim && <PrecheckLine claim={claim} />}
     </section>
   );
 }

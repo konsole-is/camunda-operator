@@ -13,6 +13,16 @@ The cluster page shows one Camunda cluster: its processes and pods, their logs a
 
 A cluster that has a claim also has **Change topology**, as [Change the topology](change-a-cluster.md#change-the-topology) shows, and **Delete** in its header.
 
+## Before the cluster exists
+
+The operator makes the cluster when each storage and access option of the claim gives its values, as the **Outputs** box of the option shows. For a built-in option, this takes seconds. For a cloud option, it can take minutes.
+
+Until then, the page shows the claim and its options. The box **The cluster does not exist yet** names each option that the claim waits for, with the name of its request. The **Overview** tab shows a card for each option and the conditions of the claim. Select a card to see why its option waits.
+
+The **Backups** and **Endpoints** tabs say that the cluster does not exist yet. The **Claim** tab and **Delete** in the header work as for a running cluster. When the cluster appears, the page shows it. You do not reload the page.
+
+When the operator refuses the claim, the page shows the reason and the message above the tabs. The refusal shows also on a cluster that runs and is ready. Select **Open the Claim tab**, and change the value that the message names.
+
 ## The tabs of a component
 
 On the **Overview** tab, select a card, for example **Brokers**, to open that component. **All components** goes back to the cards. A component has five tabs:
