@@ -1,6 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { ComponentProps } from "react";
-import { expect, fireEvent, fn, userEvent, within } from "storybook/test";
+import {
+  expect,
+  fireEvent,
+  fn,
+  userEvent,
+  waitFor,
+  within,
+} from "storybook/test";
 import type { WriteResult } from "@/lib/write/types";
 import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
@@ -188,11 +195,14 @@ export const PointInTimeAfterARollbackOutsideTheOperator: Story = {
     fireEvent.change(within(dialog).getByLabelText("Time (UTC)"), {
       target: { value: "2026-11-09T09:30:15" },
     });
-    await expect(
-      within(dialog).getByRole("checkbox", {
-        name: "I rolled the database server back to this time",
-      }),
-    ).toBeVisible();
+    // The dialog fades in, so the checkbox is not visible at once.
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("checkbox", {
+          name: "I rolled the database server back to this time",
+        }),
+      ).toBeVisible(),
+    );
     await expect(
       within(dialog).queryByLabelText("Type orders to confirm"),
     ).toBeNull();
