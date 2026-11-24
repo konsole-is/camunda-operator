@@ -305,9 +305,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           {
             op: "replace",
             path: "/metadata/managedFields",
-            value: (probe.metadata.managedFields ?? []).filter(
-              (e) => !isOwnUpdate(e as ManagedFieldsEntry),
-            ),
+            value: entriesOf(probe).filter((e) => !isOwnUpdate(e)),
           },
         ],
         "application/json-patch+json",
@@ -413,9 +411,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           resourceVersion !== undefined &&
           options.managers?.[key] === undefined &&
           !options.mergePatches?.includes(key) &&
-          (before.metadata.managedFields ?? []).some((e) =>
-            isOwnUpdate(e as ManagedFieldsEntry),
-          );
+          entriesOf(before).some(isOwnUpdate);
         if (cleared.length > 0 || unfinished) {
           const target = laidOver(before!, object, [
             ...cleared,
@@ -624,6 +620,10 @@ type ObjectPlan =
 
 function isOwnUpdate(entry: ManagedFieldsEntry): boolean {
   return isOwnEntry(entry) && entry.operation === "Update";
+}
+
+function entriesOf(object: KubeObject): ManagedFieldsEntry[] {
+  return (object.metadata.managedFields ?? []) as ManagedFieldsEntry[];
 }
 
 type TakeOverLists = { takeOver: string[]; remove: string[] };

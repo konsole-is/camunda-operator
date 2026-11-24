@@ -316,7 +316,9 @@ describe("PlatformDetail", () => {
       remove: { "CamundaPlatformConfig//oidc-prod": [path] },
     });
     expect(applied.force).toBeUndefined();
-    expect(applied.apply[0].spec.auth).toEqual({ method: "basic" });
+    expect((applied.apply[0].spec as { auth: unknown }).auth).toEqual({
+      method: "basic",
+    });
   });
 
   it("blocks the review while a field is invalid", () => {
