@@ -12,6 +12,7 @@ import {
   keptRemovals,
   lastChanged,
   managerKind,
+  ownerTree,
   revisionManager,
   wholeFieldManagers,
 } from "./managers";
@@ -47,6 +48,46 @@ describe("isOwnEntry", () => {
       }),
     ).toBe(false);
     expect(isOwnEntry({ manager: "kubectl", operation: "Apply" })).toBe(false);
+  });
+});
+
+describe("ownerTree", () => {
+  const object = (extra: object[] = []) => ({
+    metadata: {
+      managedFields: [
+        {
+          manager: "kubectl",
+          operation: "Update",
+          fieldsV1: { "f:spec": { "f:auth": {} } },
+        },
+        ...extra,
+      ],
+    },
+  });
+  const auth = (tree: ReturnType<typeof ownerTree>) =>
+    tree.children.get("f:spec")!.children.get("f:auth")!;
+
+  it("a leaf with no child in any entry is owned whole", () => {
+    const node = auth(ownerTree(object(), () => true));
+    expect(node.whole).toEqual([{ manager: "kubectl", operation: "Update" }]);
+  });
+
+  it("a leaf that an entry left out of the tree holds a child of is owned, not whole", () => {
+    const tree = ownerTree(
+      object([
+        {
+          manager: APP_FIELD_MANAGER,
+          operation: "Apply",
+          fieldsV1: { "f:spec": { "f:auth": { "f:method": {} } } },
+        },
+      ]),
+      (entry) => entry.manager !== APP_FIELD_MANAGER,
+    );
+    expect(auth(tree).owners).toEqual([
+      { manager: "kubectl", operation: "Update" },
+    ]);
+    expect(auth(tree).whole).toEqual([]);
+    expect(auth(tree).children.size).toBe(0);
   });
 });
 

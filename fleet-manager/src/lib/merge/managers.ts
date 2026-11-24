@@ -219,9 +219,10 @@ export type FieldOwner = { manager: string; operation: string };
 /**
  * OwnerTree is the FieldsV1 trees of several managedFields entries merged
  * into one. owners own the node itself, with no child keys or by the key
- * ".". whole are the owners with no child keys: they own a leaf, an atomic
- * list, or an atomic map as one value. children holds the node of each
- * FieldsV1 key below.
+ * ".". whole are the owners with no child keys at a node that no entry of
+ * the object holds a child of: they own a leaf, an atomic list, or an
+ * atomic map as one value. children holds the node of each FieldsV1 key
+ * below.
  */
 export type OwnerTree = {
   owners: FieldOwner[];
@@ -232,7 +233,9 @@ export type OwnerTree = {
 /**
  * ownerTree merges the FieldsV1 tree of each entry of
  * object.metadata.managedFields that include accepts. An entry without a
- * manager or without fieldsV1 is never in the tree.
+ * manager or without fieldsV1 is never in the tree. An entry that include
+ * does not accept still makes a node granular: whole is empty at a node
+ * that it holds a child of.
  */
 export function ownerTree(
   object: ManagedObject,
@@ -247,7 +250,27 @@ export function ownerTree(
       operation: entry.operation ?? "",
     });
   }
+  const all = newOwners();
+  for (const entry of object.metadata?.managedFields ?? []) {
+    if (!entry.manager || !entry.fieldsV1) continue;
+    addOwner(all, entry.fieldsV1 as Record<string, unknown>, {
+      manager: entry.manager,
+      operation: entry.operation ?? "",
+    });
+  }
+  dropGranularWhole(tree, all);
   return tree;
+}
+
+// The API server records no path below an atomic value, for any manager.
+// So a leaf of one entry under which another entry holds a child is a
+// granular map or list item, and the leaf owns only its presence.
+function dropGranularWhole(at: OwnerTree, all: OwnerTree): void {
+  if (all.children.size > 0) at.whole = [];
+  for (const [key, below] of at.children) {
+    const other = all.children.get(key);
+    if (other !== undefined) dropGranularWhole(below, other);
+  }
 }
 
 /**

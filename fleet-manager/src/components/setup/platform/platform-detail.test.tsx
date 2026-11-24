@@ -711,3 +711,70 @@ describe("PlatformDetail over the empty values of another tool", () => {
     expect(cleared).toEqual([]);
   });
 });
+
+describe("PlatformDetail after a switch of the sign-in that took over a field", () => {
+  it("a change under spec.auth asks for no take-over when kubectl keeps only spec.auth itself", async () => {
+    const sources = platformFixtures();
+    const config = sources.platformConfigs.find(
+      (c) => c.metadata.name === "oidc-prod",
+    )!;
+    // kubectl made the object, and the fleet manager took the sign-in over:
+    // kubectl keeps spec.auth with no field below it.
+    config.metadata.managedFields = [
+      {
+        manager: "kubectl-client-side-apply",
+        operation: "Update",
+        fieldsV1: { "f:spec": { ".": {}, "f:auth": {} } },
+      },
+      {
+        manager: "fleet-manager",
+        operation: "Apply",
+        fieldsV1: {
+          "f:spec": {
+            "f:auth": {
+              "f:method": {},
+              "f:oidc": { "f:issuerUrl": {}, "f:clientId": {} },
+            },
+          },
+        },
+      },
+    ];
+    const { actions } = setup({ sources });
+    actions.previewChange.mockImplementation(async (change) => {
+      const { changed, cleared } = foreignFields(
+        config as unknown as KubeObject,
+        change.apply[0],
+        change.keep?.["CamundaPlatformConfig//oidc-prod"],
+      );
+      return {
+        objects: [],
+        errors: [],
+        ...(changed.length + cleared.length > 0
+          ? { ownership: [{ ref: CONFIG_REF, changed, cleared }] }
+          : {}),
+      };
+    });
+
+    fireEvent.change(input("Issuer URL"), {
+      target: { value: "https://login.example.com/realms/other" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const review = screen.getByRole("region", {
+      name: "Review the platform config",
+    });
+    await waitFor(() => expect(actions.previewChange).toHaveBeenCalled());
+    const save = within(review).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    expect(
+      within(review).queryByRole("checkbox", {
+        name: "Take over these fields",
+      }),
+    ).toBeNull();
+    expect(
+      within(review).queryByRole("group", {
+        name: "Fields that another tool set",
+      }),
+    ).toBeNull();
+  });
+});

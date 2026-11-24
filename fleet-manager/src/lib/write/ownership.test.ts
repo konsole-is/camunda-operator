@@ -322,6 +322,84 @@ describe("foreignFields", () => {
     });
   });
 
+  it("a leaf of another manager owns nothing below it when an entry holds a child of it", () => {
+    const live = environment({ auth: { method: "basic" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { ".": {}, "f:auth": {} },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:auth": { "f:method": {} } },
+      }),
+    ]);
+    expect(
+      foreignFields(
+        live,
+        environment({ auth: { method: "oidc", oidc: { issuerUrl: "x" } } }),
+      ),
+    ).toEqual({ changed: [], cleared: [] });
+  });
+
+  it("a leaf of another manager owns the whole value when no entry holds a child of it", () => {
+    const live = environment({ auth: { method: "basic" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { ".": {}, "f:auth": {} },
+      }),
+    ]);
+    expect(
+      foreignFields(live, environment({ auth: { method: "oidc" } })),
+    ).toEqual({
+      changed: [
+        {
+          path: "spec.auth",
+          steps: [{ field: "spec" }, { field: "auth" }],
+          managers: [kubectl],
+        },
+      ],
+      cleared: [],
+    });
+  });
+
+  it("an item of a keyed list keeps its owners when another entry holds fields of it", () => {
+    const item = 'k:{"name":"x"}';
+    const live = environment({ allowed: [{ name: "x", label: "X" }] }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:allowed": { [item]: { ".": {}, "f:label": {} } } },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:allowed": { [item]: { ".": {}, "f:name": {} } } },
+      }),
+    ]);
+    expect(
+      foreignFields(live, environment({ allowed: [{ name: "x", label: "Y" }] }))
+        .changed,
+    ).toEqual([
+      {
+        path: "spec.allowed[name=x].label",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+          { field: "label" },
+        ],
+        managers: [kubectl],
+      },
+    ]);
+  });
+
+  it("a leaf of an operator controller with no child in any entry is changed as a whole and not offered", () => {
+    const live = environment({ selector: { team: "a" } }, [
+      entry(`CamundaClusterClaim/cluster/${uid}`, "Apply", {
+        "f:spec": { "f:selector": {} },
+      }),
+    ]);
+    const { changed } = foreignFields(
+      live,
+      environment({ selector: { team: "b" } }),
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.selector"]);
+    expect(changed.map(offered)).toEqual([false]);
+  });
+
   it("skips the last applied annotation and status", () => {
     const live = {
       ...environment(
@@ -982,6 +1060,20 @@ describe("laidOver", () => {
       laidOver(live, environment({ auth: { method: "oidc", oidc: {} } }), [])
         .spec,
     ).toEqual({ auth: { method: "oidc", oidc: {} } });
+  });
+
+  it("lays a map over key by key when an entry holds a child of the leaf of another manager", () => {
+    const live = environment({ auth: { method: "basic", extra: 1 } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:auth": {} },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:auth": { "f:method": {} } },
+      }),
+    ]);
+    expect(
+      laidOver(live, environment({ auth: { method: "oidc" } }), []).spec,
+    ).toEqual({ auth: { method: "oidc", extra: 1 } });
   });
 
   it("leaves out each removed field, also under a list item", () => {
