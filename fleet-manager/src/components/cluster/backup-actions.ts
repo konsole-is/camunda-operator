@@ -426,7 +426,11 @@ export function pointInTimeConfirm(
 ): RestoreConfirm {
   const database = manual
     ? [
-        "The operator does not roll the database server back. Roll it back to this time before you confirm.",
+        // A cluster that runs writes to the database after the rollback,
+        // and Camunda restores the database only with the cluster stopped.
+        context.suspension === undefined
+          ? "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm."
+          : "The operator does not roll the database server back. Roll it back to this time before you confirm.",
         `If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig ${manual.serverConfig} to the new instance first.`,
         "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
       ]

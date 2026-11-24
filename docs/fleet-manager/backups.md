@@ -99,12 +99,14 @@ spec:
 
 The confirm shows the restore window in UTC. With `operator`, the operator rolls the server back, and the window comes from the archive of the server. With `external`, the default, you roll the server back to the point before you confirm. The window then reaches back as far as the cluster keeps its Zeebe backups, and not more than `retentionPeriodDays`. **Restore to a point in time** is off while `pitr.enabled` is false, and the reason shows under it.
 
-1. With `external`, roll the database server back to the point. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
-2. Select **Restore to a point in time**.
-3. Enter the time in **Time (UTC)**.
-4. Read the confirm. The restore loses everything that the cluster wrote after that time.
-5. With `external`, select **I rolled the database server back to this time**.
-6. Type the name of the cluster, and select **Restore**.
+1. With `external`, suspend the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. A cluster that runs writes to the database after the rollback.
+2. With `external`, roll the database server back to the point. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
+3. Select **Restore to a point in time**.
+4. Enter the time in **Time (UTC)**.
+5. Read the confirm. The restore loses everything that the cluster wrote after that time.
+6. With `external`, select **I rolled the database server back to this time**.
+7. Type the name of the cluster, and select **Restore**.
+8. With `external`, resume the cluster when the restore is `Completed`. A cluster that you suspended stays suspended after the restore.
 
 The fleet manager creates a [PointInTimeRestore](../crds/pointintimerestore.md):
 

@@ -863,7 +863,7 @@ describe("restore confirm", () => {
 
   const AT = "2026-11-09 09:30:15 UTC";
   const ROLL =
-    "The operator does not roll the database server back. Roll it back to this time before you confirm.";
+    "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const READS =
@@ -888,6 +888,17 @@ describe("restore confirm", () => {
       NO_ZEEBE,
       BROKEN,
     ]);
+  });
+
+  it("after a manual rollback on a suspended cluster the confirm does not ask to suspend it", () => {
+    const { lines } = pointInTimeConfirm(
+      context({ suspension: "requested" }),
+      AT,
+      { serverConfig: "orders-pg" },
+    );
+    expect(lines[0]).toBe(
+      "The operator does not roll the database server back. Roll it back to this time before you confirm.",
+    );
   });
 
   it("with recovery by the operator the confirm names no manual rollback", () => {

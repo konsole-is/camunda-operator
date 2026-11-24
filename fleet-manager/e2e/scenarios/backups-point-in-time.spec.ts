@@ -21,7 +21,7 @@ test("restore to a point in time after a rollback outside the operator creates t
   await dialog.getByLabel("Time (UTC)").fill(at);
   await expect(
     dialog.getByText(
-      "The operator does not roll the database server back. Roll it back to this time before you confirm.",
+      "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.",
     ),
   ).toBeVisible();
   await expect(

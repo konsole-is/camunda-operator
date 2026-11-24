@@ -836,7 +836,7 @@ describe("restore to a point in time", () => {
   });
   const ROLLED = "I rolled the database server back to this time";
   const ROLL =
-    "The operator does not roll the database server back. Roll it back to this time before you confirm.";
+    "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const items = (dialog: HTMLElement) =>
