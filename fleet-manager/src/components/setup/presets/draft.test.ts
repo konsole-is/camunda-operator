@@ -183,7 +183,7 @@ describe("presetUpdateChange over the empty values of another tool", () => {
 });
 
 const NAME_RULE =
-  "The name has only lowercase letters, digits, and hyphens, and at most 253 characters.";
+  "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.";
 
 describe("nameErrors", () => {
   it.each([

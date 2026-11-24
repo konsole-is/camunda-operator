@@ -12,17 +12,12 @@ import { EditorSection } from "@/components/setup/form-parts";
 import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import { type ReadError, type SourceReads } from "@/lib/k8s/unread";
 import { defaultRepositories } from "@/lib/merge";
-import { equalJSON } from "@/lib/policy";
 import { platformDeleteBlock } from "@/lib/usage";
-import type {
-  Change,
-  Preview,
-  WriteMode,
-  WriteResult,
-} from "@/lib/write/types";
+import type { WriteMode } from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import { AuthSection } from "./auth-section";
 import {
+  changeCount,
   deleteChange,
   draftErrors,
   draftOf,
@@ -33,6 +28,8 @@ import {
 import { ImagesSection } from "./images-section";
 import {
   DELETE_EFFECT,
+  PLATFORM_HREF,
+  platformConfigHref,
   ROLL_NOTICE,
   unreadMinorKinds,
   unreadUserKinds,
@@ -40,23 +37,12 @@ import {
   usersOf,
 } from "./model";
 import {
+  type PlatformActions,
   type PlatformSnapshot,
   type PlatformSources,
   usePlatformSources,
 } from "./sources";
 import { UsersSection } from "./users-section";
-
-/** PlatformActions are the writes of the detail: the server actions on the page, fakes in tests and stories. */
-export type PlatformActions = {
-  previewChange: (change: Change) => Promise<Preview>;
-  applyChange: (change: Change) => Promise<WriteResult>;
-};
-
-const LIST_HREF = "/setup/platform";
-
-function hrefOf(name: string): string {
-  return `${LIST_HREF}/${encodeURIComponent(name)}`;
-}
 
 /**
  * PlatformDetail edits the platform config name of sources with the form
@@ -85,8 +71,8 @@ export function PlatformDetail({
     isNew: false,
     listed: sources.platformConfigs.map((c) => c.metadata.name ?? ""),
     draftOf,
-    listHref: LIST_HREF,
-    hrefOf,
+    listHref: PLATFORM_HREF,
+    hrefOf: platformConfigHref,
   });
   const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
@@ -291,12 +277,4 @@ export function PlatformDetailLive({
       actions={actions}
     />
   );
-}
-
-// changeCount counts the top-level fields of the spec that differ.
-function changeCount(a: PlatformDraft, b: PlatformDraft): number {
-  const before = a as Record<string, unknown>;
-  const after = b as Record<string, unknown>;
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((k) => !equalJSON(before[k], after[k])).length;
 }
