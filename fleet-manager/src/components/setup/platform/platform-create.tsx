@@ -27,7 +27,13 @@ import {
   specOf,
 } from "./draft";
 import { ImagesSection } from "./images-section";
-import { CREATE_EFFECT } from "./model";
+import {
+  CREATE_EFFECT,
+  unreadMinorKinds,
+  unreadUserKinds,
+  userMinors,
+  usersOf,
+} from "./model";
 import type { PlatformActions } from "./platform-detail";
 import {
   type PlatformSnapshot,
@@ -84,6 +90,10 @@ export function PlatformCreate({
   const setSpec = (spec: PlatformDraft) =>
     editor.setDraft((d) => ({ ...d, spec }));
   const namespaces = sources.namespaces.map((n) => n.metadata?.name ?? "");
+  // A resource can still name a config that was deleted, so the new config
+  // can have users from the start.
+  const users = usersOf(draft.name, sources);
+  const unread = unreadUserKinds(sources);
 
   return (
     <div className="flex flex-col gap-6">
@@ -141,8 +151,14 @@ export function PlatformCreate({
           />
           <ImagesSection
             images={draft.spec.images}
-            defaults={defaultRepositories(imagesTable, [])}
+            defaults={defaultRepositories(
+              imagesTable,
+              userMinors(users, sources),
+            )}
             errors={errors}
+            usersKnown={unread.length === 0}
+            unreadMinorKinds={unreadMinorKinds(sources, users)}
+            versionsUnresolved={users.clusters.length + users.planes.length > 0}
             onChange={(images) => setSpec({ ...draft.spec, images })}
           />
         </Fragment>

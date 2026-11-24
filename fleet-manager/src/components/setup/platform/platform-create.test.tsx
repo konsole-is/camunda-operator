@@ -56,7 +56,7 @@ const SECRETS = staticSecretRefs({
   ],
 });
 
-function setup(opts: { mode?: WriteMode } = {}) {
+function setup(opts: { mode?: WriteMode; sources?: PlatformSources } = {}) {
   const mode = "mode" in opts ? opts.mode : fakeWriter.mode;
   const view = (sources: PlatformSources) => (
     <GitPushesProvider>
@@ -73,7 +73,7 @@ function setup(opts: { mode?: WriteMode } = {}) {
       </SecretRefsReaderContext.Provider>
     </GitPushesProvider>
   );
-  const { rerender } = render(view(platformFixtures()));
+  const { rerender } = render(view(opts.sources ?? platformFixtures()));
   return { rerender: (sources: PlatformSources) => rerender(view(sources)) };
 }
 
@@ -309,6 +309,32 @@ describe("PlatformCreate", () => {
         "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
       ),
     ).toBeDefined();
+  });
+
+  it("shows the image defaults of the users of a name that resources still name", async () => {
+    const sources = platformFixtures();
+    setup({
+      sources: {
+        ...sources,
+        platformConfigs: sources.platformConfigs.filter(
+          (c) => c.metadata.name !== "oidc-prod",
+        ),
+      },
+    });
+
+    expect(
+      screen.getByText(/^No cluster or management plane uses this config/),
+    ).toBeDefined();
+
+    await userEvent.type(nameInput(), "oidc-prod");
+
+    expect(
+      screen.queryByText(/^No cluster or management plane uses/),
+    ).toBeNull();
+    expect(
+      screen.getByRole("list", { name: "Defaults of Web Modeler REST API" })
+        .textContent,
+    ).toBe("camunda/web-modeler-restapi");
   });
 
   it("stays on the page when the create fails", async () => {
