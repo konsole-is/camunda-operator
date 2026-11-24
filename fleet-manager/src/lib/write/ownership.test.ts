@@ -5,8 +5,11 @@ import {
   fieldValue,
   foreignFields,
   keepEmpty,
+  laidOver,
   MAX_KEEP_PATHS,
   offered,
+  prunedFields,
+  removedFields,
   takenFields,
   withTakeOver,
   withValuesOf,
@@ -838,6 +841,274 @@ describe("takenFields of a subresource entry", () => {
         path: "spec.replicas",
         managers: [expect.objectContaining({ name: "kubectl" })],
       }),
+    ]);
+  });
+});
+
+const fleetManager = {
+  name: "fleet-manager",
+  operation: "Apply",
+  kind: "other",
+  known: true,
+} as const;
+const kubectl = {
+  name: "kubectl-client-side-apply",
+  operation: "Update",
+  kind: "other",
+  known: true,
+} as const;
+
+describe("prunedFields", () => {
+  it("names a field that only the fleet manager applied and the change drops", () => {
+    const live = environment({ color: "red", displayName: "Stage" }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("kubectl-client-side-apply", "Update", displayName),
+    ]);
+    expect(prunedFields(live, environment({ displayName: "Stage" }))).toEqual([
+      {
+        path: "spec.color",
+        steps: [{ field: "spec" }, { field: "color" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("does not name a field that kubectl also owns", () => {
+    const live = environment({ color: "red" }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:color": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([]);
+    expect(foreignFields(live, environment({})).cleared).toEqual([
+      expect.objectContaining({ path: "spec.color" }),
+    ]);
+  });
+
+  it("names a field that only the Update entry of the fleet manager owns", () => {
+    const live = environment({ color: "red" }, [
+      entry("fleet-manager", "Update", { "f:spec": { "f:color": {} } }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([
+      {
+        path: "spec.color",
+        steps: [{ field: "spec" }, { field: "color" }],
+        managers: [{ ...fleetManager, operation: "Update" }],
+      },
+    ]);
+  });
+
+  it("names a set member that only the fleet manager owns, by its step", () => {
+    const live = environment({ presets: { camundaCluster: ["a", "b"] } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:presets": { "f:camundaCluster": { 'v:"a"': {} } } },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:presets": { "f:camundaCluster": { 'v:"b"': {} } } },
+      }),
+    ]);
+    expect(
+      prunedFields(live, environment({ presets: { camundaCluster: ["a"] } })),
+    ).toEqual([
+      {
+        path: 'spec.presets.camundaCluster[="b"]',
+        steps: [
+          { field: "spec" },
+          { field: "presets" },
+          { field: "camundaCluster" },
+          { value: "b" },
+        ],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("does not name a field at a kept path", () => {
+    const live = environment({ color: "", displayName: "Stage" }, [
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:color": {}, "f:displayName": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}), ["spec.color"])).toEqual([
+      {
+        path: "spec.displayName",
+        steps: [{ field: "spec" }, { field: "displayName" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+});
+
+describe("laidOver", () => {
+  it("lays a map over the map of live key by key and keeps a key that applied leaves out", () => {
+    const live = environment({ a: { x: 1, y: 2 }, b: 1 });
+    expect(laidOver(live, environment({ a: { x: 3 } }), []).spec).toEqual({
+      a: { x: 3, y: 2 },
+      b: 1,
+    });
+  });
+
+  it("replaces a list and a scalar", () => {
+    const live = environment({ l: [1, 2], s: "a" });
+    expect(laidOver(live, environment({ l: [2], s: "b" }), []).spec).toEqual({
+      l: [2],
+      s: "b",
+    });
+  });
+
+  it("replaces a value that a managedFields entry owns whole", () => {
+    const live = environment({ auth: { method: "basic", extra: 1 } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:auth": {} },
+      }),
+    ]);
+    expect(
+      laidOver(live, environment({ auth: { method: "oidc", oidc: {} } }), [])
+        .spec,
+    ).toEqual({ auth: { method: "oidc", oidc: {} } });
+  });
+
+  it("leaves out each removed field, also under a list item", () => {
+    const live = environment({
+      displayName: "Stage",
+      allowed: [
+        { name: "x", label: "X" },
+        { name: "y", label: "Y" },
+      ],
+    });
+    const removed: ForeignField[] = [
+      {
+        path: "spec.displayName",
+        steps: [{ field: "spec" }, { field: "displayName" }],
+        managers: [kubectl],
+      },
+      {
+        path: "spec.allowed[name=x].label",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+          { field: "label" },
+        ],
+        managers: [kubectl],
+      },
+    ];
+    expect(laidOver(live, environment({ color: "red" }), removed).spec).toEqual(
+      {
+        color: "red",
+        allowed: [{ name: "x" }, { name: "y", label: "Y" }],
+      },
+    );
+  });
+
+  it("lays labels and annotations over and keeps the last applied annotation", () => {
+    const live = environment({}, [], {
+      labels: { team: "a" },
+      annotations: { [LAST_APPLIED_ANNOTATION]: "{}", note: "old" },
+    });
+    const applied = environment({}, [], {
+      labels: { tier: "gold" },
+      annotations: { note: "new" },
+    });
+    const result = laidOver(live, applied, []);
+    expect(result.metadata.labels).toEqual({ team: "a", tier: "gold" });
+    expect(result.metadata.annotations).toEqual({
+      [LAST_APPLIED_ANNOTATION]: "{}",
+      note: "new",
+    });
+  });
+
+  it("keeps a null inside a value of applied", () => {
+    const live = environment({ a: { b: 1, c: 2 } });
+    expect(laidOver(live, environment({ a: { b: null } }), []).spec).toEqual({
+      a: { b: null, c: 2 },
+    });
+  });
+
+  it("changes neither input and keeps __proto__ as a key", () => {
+    const live = environment(
+      JSON.parse('{"__proto__":{"a":1},"keep":true}') as object,
+    );
+    const applied = environment(JSON.parse('{"__proto__":{"b":2}}') as object);
+    const liveCopy = structuredClone(live);
+    const appliedCopy = structuredClone(applied);
+    const result = laidOver(live, applied, []);
+    const spec = result.spec as Record<string, unknown>;
+    expect(Object.keys(spec)).toEqual(["__proto__", "keep"]);
+    expect(Object.getPrototypeOf(spec)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(spec, "__proto__")?.value).toEqual({
+      a: 1,
+      b: 2,
+    });
+    expect(live).toEqual(liveCopy);
+    expect(applied).toEqual(appliedCopy);
+  });
+});
+
+describe("removedFields", () => {
+  it("names the topmost field that kubectl owns and after leaves out, with kubectl", () => {
+    const before = environment({ auth: { method: "oidc", oidc: { a: 1 } } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": {
+          "f:auth": { ".": {}, "f:method": {}, "f:oidc": { "f:a": {} } },
+        },
+      }),
+    ]);
+    const after = environment({ auth: { method: "basic" } });
+    expect(removedFields(before, after)).toEqual([
+      {
+        path: "spec.auth.oidc",
+        steps: [{ field: "spec" }, { field: "auth" }, { field: "oidc" }],
+        managers: [kubectl],
+      },
+    ]);
+  });
+
+  it("does not name a field of the fleet manager or of a subresource entry", () => {
+    const before = environment({ color: "red", replicas: 3 }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("fleet-manager", "Update", { "f:spec": { "f:color": {} } }),
+      {
+        ...entry("kubectl", "Update", { "f:spec": { "f:replicas": {} } }),
+        subresource: "scale",
+      },
+    ]);
+    expect(removedFields(before, environment({}))).toEqual([]);
+  });
+
+  it("does not name a field that after still holds", () => {
+    const before = environment({ displayName: "Stage" }, [
+      entry("kubectl-client-side-apply", "Update", displayName),
+    ]);
+    expect(removedFields(before, environment({ displayName: "Prod" }))).toEqual(
+      [],
+    );
+  });
+
+  it("names a list item that kubectl owns and after leaves out", () => {
+    const before = environment({ allowed: [{ name: "x" }, { name: "y" }] }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": {
+          "f:allowed": {
+            'k:{"name":"x"}': { ".": {}, "f:name": {} },
+            'k:{"name":"y"}': { ".": {}, "f:name": {} },
+          },
+        },
+      }),
+    ]);
+    expect(
+      removedFields(before, environment({ allowed: [{ name: "y" }] })),
+    ).toEqual([
+      {
+        path: "spec.allowed[name=x]",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+        ],
+        managers: [kubectl],
+      },
     ]);
   });
 });
