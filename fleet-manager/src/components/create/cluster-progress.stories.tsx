@@ -136,23 +136,6 @@ export const RefusedByThePrecheck: Story = {
   },
 };
 
-export const RefusedAfterTheClusterExists: Story = {
-  name: "Refused by the precheck after the cluster exists",
-  args: {
-    claim: claim({
-      cluster: { name: "orders" },
-      conditions: [
-        condition(
-          "Ready",
-          "False",
-          "WiringCycle",
-          "the inputs of the sections access and encryption-key wait for each other",
-        ),
-      ],
-    }),
-  },
-};
-
 const held =
   'StorageAlreadyAttached: CamundaCluster "fleet-smoke/camundacluster-sample" already holds the backend';
 

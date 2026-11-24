@@ -6,6 +6,7 @@ import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { slotFields } from "@/lib/policy";
 
 const COMPONENTS: readonly {
   id: string;
@@ -82,6 +83,58 @@ export function clusterProgressRows(
       };
     }),
   ];
+}
+
+/**
+ * WaitedRequest is a selection whose outputs the claim waits for. label is
+ * the label of the section, else its name. request is absent while
+ * status.requests of the claim names no request for the selection.
+ */
+export type WaitedRequest = {
+  section: string;
+  label: string;
+  request?: string;
+};
+
+/**
+ * waitedRequests returns, in claim order, the selections of claim whose
+ * section fills a CamundaCluster field from an output that is not ready
+ * yet. The claim makes its cluster only once this list is empty. It
+ * returns undefined when the slot fields of a selection are not known,
+ * for example for a section that does not exist.
+ */
+export function waitedRequests(
+  claim: CamundaClusterClaim,
+  sections: readonly PluginSection[],
+  requests: readonly PluginRequest[],
+): WaitedRequest[] | undefined {
+  const waits: WaitedRequest[] = [];
+  for (const selection of claim.spec.plugins ?? []) {
+    const { section, registration } = selection;
+    const fields = slotFields(
+      "CamundaClusterClaim",
+      sections,
+      [{ section, registration }],
+      requests,
+    );
+    if (!("value" in fields)) return undefined;
+    if (
+      !fields.value.some((f) => f.kind === "CamundaCluster" && !("value" in f))
+    ) {
+      continue;
+    }
+    const request = claim.status?.requests?.find(
+      (r) => r.section === section && r.registration === registration,
+    )?.name;
+    waits.push({
+      section,
+      label:
+        sections.find((s) => s.metadata.name === section)?.spec.label ||
+        section,
+      ...(request && { request }),
+    });
+  }
+  return waits;
 }
 
 function statusOf(value: string | undefined): ConditionLike | undefined {

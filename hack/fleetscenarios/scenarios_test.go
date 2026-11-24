@@ -89,3 +89,19 @@ func TestThePlaneScenarioStartsOptimizeOnAClusterThatHoldsItsBackend(t *testing.
 		)
 	}
 }
+
+func TestTheWaitingClaimScenarioHoldsTheClaimAndNoCluster(t *testing.T) {
+	objs := readOutput(t, "claim-waiting", objectsFile)
+
+	claim := find(t, objs, "CamundaClusterClaim", "team-orders", "orders")
+	assert.Equal(t, "False", condition(t, claim, "RequestsReady")["status"])
+
+	for _, obj := range objs {
+		assert.NotEqual(t, "CamundaCluster", obj.GetKind(), "the claim waits for its storage, so it makes no cluster")
+	}
+}
+
+func TestTheStorageReadyStateHoldsTheClusterOfTheClaim(t *testing.T) {
+	objs := readOutput(t, "claim-waiting", "storage-ready.yaml")
+	find(t, objs, "CamundaCluster", "team-orders", "orders")
+}
