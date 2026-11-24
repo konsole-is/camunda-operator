@@ -193,7 +193,8 @@ export type KeptField = { path: FieldPath; managers: string[] };
 /**
  * keptRemovals returns each field of before that after leaves out while a
  * manager other than the Apply entry of applier owns it in
- * live.metadata.managedFields, with every such manager. An apply of after without force keeps these fields,
+ * live.metadata.managedFields, with every such manager. When applier is
+ * the fleet manager, its Update entry is not such a manager either. An apply of after without force keeps these fields,
  * so result is after with each of them back. An item of a list is one
  * field. A field that a manager owns as a whole names no field below it.
  * The fields are in the order of before.
@@ -206,7 +207,11 @@ export function keptRemovals(
 ): { kept: KeptField[]; result: object } {
   const tree = ownerTree(
     live,
-    (entry) => !entry.subresource && !isApplyOf(entry, applier),
+    (entry) =>
+      !entry.subresource &&
+      !(applier === APP_FIELD_MANAGER
+        ? isOwnEntry(entry)
+        : isApplyOf(entry, applier)),
   );
   const kept: KeptField[] = [];
   const result = restore(tree, before, after, "", kept) as object;

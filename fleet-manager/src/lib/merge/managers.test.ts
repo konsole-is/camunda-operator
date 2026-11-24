@@ -275,6 +275,37 @@ describe("lastChanged", () => {
   });
 });
 
+describe("keptRemovals of a field that the Update entry of the fleet manager owns", () => {
+  const live = {
+    metadata: {
+      managedFields: [
+        {
+          manager: APP_FIELD_MANAGER,
+          operation: "Update",
+          fieldsV1: { "f:spec": { "f:color": {} } },
+        },
+      ],
+    },
+  };
+
+  it("keeps nothing when the fleet manager applies", () => {
+    expect(
+      keptRemovals(live, { spec: { color: "red" } }, { spec: {} }).kept,
+    ).toEqual([]);
+  });
+
+  it("keeps the field when a GitOps tool applies", () => {
+    expect(
+      keptRemovals(
+        live,
+        { spec: { color: "red" } },
+        { spec: {} },
+        "argocd-controller",
+      ).kept,
+    ).toEqual([{ path: "spec.color", managers: [APP_FIELD_MANAGER] }]);
+  });
+});
+
 describe("keptRemovals", () => {
   // The claim and the managedFields entry of kubectl as plane-ready of the
   // page scenarios holds them, cut to the fields that the cases read.
