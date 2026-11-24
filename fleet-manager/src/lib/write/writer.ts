@@ -3,6 +3,7 @@ import type { KubeConfig } from "@kubernetes/client-node";
 import { objectDiff } from "@/lib/diff";
 import {
   isNotFound,
+  KubernetesRequestError,
   kubeConfig,
   requestJSON,
   unlessNotFound,
@@ -71,6 +72,14 @@ export const WriteOnlyKindMap = {
   },
 } as const satisfies Record<string, KindInfo>;
 
+/**
+ * CREATE_ONLY_RESOURCE_VERSION is the resourceVersion that the apply of an
+ * object of create carries. It is the largest revision of etcd, so no
+ * object has it: the API server creates a missing object and refuses the
+ * apply with a conflict when the object exists.
+ */
+export const CREATE_ONLY_RESOURCE_VERSION = "9223372036854775807";
+
 const notAName = new Set<string | undefined>(["", ".", ".."]);
 
 const hiddenValue = "(hidden)";
@@ -138,7 +147,8 @@ export function diffView(
  * may not delete, such as a Namespace, can exist again, with the error of
  * that delete beside Stale.
  *
- * A create of an object that exists fails with Stale in the dry run. An
+ * A create of an object that exists fails with Stale and writes nothing,
+ * also when the object appears after the dry run. An
  * object in a namespace that the same change makes is not dry-run, and the
  * preview shows it as rendered. When such an object fails after apply made
  * its namespace, the namespace stays, and the result names it in
@@ -571,10 +581,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         if (failed.length > 0) return { ok: false, errors: failed };
         continue;
       }
+      const creating = change.create?.includes(refKey(ref)) ?? false;
       try {
         const written = await applyObject(
           object,
-          resourceVersion,
+          creating ? CREATE_ONLY_RESOURCE_VERSION : resourceVersion,
           plan?.force ?? change.force ?? false,
           false,
         );
@@ -592,11 +603,14 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           created.add(ref.name);
         }
       } catch (error) {
-        const failed = await staleFirst(
-          apiErrorsOf(error, ref, resourceVersion !== undefined),
-          ref,
-          resourceVersion,
-        );
+        const failed =
+          creating && isConflict(error)
+            ? [existsError(ref)]
+            : await staleFirst(
+                apiErrorsOf(error, ref, resourceVersion !== undefined),
+                ref,
+                resourceVersion,
+              );
         if (ref.namespace !== undefined && created.has(ref.namespace)) {
           return {
             ok: false,
@@ -628,6 +642,10 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 }
 
 type DeletePreconditions = { resourceVersion?: string; uid?: string };
+
+function isConflict(error: unknown): boolean {
+  return error instanceof KubernetesRequestError && error.statusCode === 409;
+}
 
 // ObjectPlan is how apply writes an object: an apply, with or without
 // force, or one update from before to target.

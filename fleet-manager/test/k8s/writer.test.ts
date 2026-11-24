@@ -16,10 +16,13 @@ import {
 import { withSectionPolicy } from "@/components/setup/environments/sections";
 import { withParameterPolicy } from "@/components/setup/environments/settings";
 import type { Environment } from "@/generated/crds/environment";
+import { requestJSON } from "@/lib/k8s/client";
 import { createChangeOf } from "@/lib/write/create";
 import { withTakeOver } from "@/lib/write/ownership";
 import type { KubeObject, Preview } from "@/lib/write/types";
 import {
+  applyBody,
+  CREATE_ONLY_RESOURCE_VERSION,
   directWriter,
   firstExisting,
   listObjects,
@@ -819,6 +822,122 @@ describe("the direct writer against envtest", () => {
       before.metadata?.resourceVersion,
     );
   });
+
+  // A contract and a platform config, so that a namespaced and a
+  // cluster-scoped kind of the Setup pages are both covered.
+  const creates = [
+    {
+      kind: "ObjectStorageConfig",
+      object: (name: string, bucketName: string): KubeObject => ({
+        apiVersion: "core.camunda.io/v1",
+        kind: "ObjectStorageConfig",
+        metadata: { name, namespace },
+        spec: {
+          type: "S3",
+          s3: {
+            bucketName,
+            region: "eu-west-1",
+            auth: { type: "workloadIdentity" },
+          },
+        },
+      }),
+      path: (name: string) =>
+        `/apis/core.camunda.io/v1/namespaces/${namespace}/objectstorageconfigs/${name}`,
+    },
+    {
+      kind: "CamundaPlatformConfig",
+      object: (name: string, licenseSecret: string): KubeObject => ({
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaPlatformConfig",
+        metadata: { name },
+        spec: {
+          auth: { method: "basic" },
+          licenseSecretRef: { namespace, name: licenseSecret, key: "license" },
+        },
+      }),
+      path: (name: string) =>
+        `/apis/core.camunda.io/v1/camundaplatformconfigs/${name}`,
+    },
+  ];
+  const keyOf = (object: KubeObject) =>
+    refKey({
+      kind: object.kind,
+      namespace: object.metadata.namespace,
+      name: object.metadata.name,
+    });
+  const get = (path: string) =>
+    requestJSON<KubeObject>(kc, { method: "GET", path });
+
+  it.each(creates)(
+    "a create of a missing $kind writes it with the create-only resourceVersion",
+    async ({ object, path }) => {
+      const created = object(name, "one");
+
+      expect(
+        await writer.apply({
+          intent: "Create",
+          apply: [created],
+          create: [keyOf(created)],
+        }),
+      ).toEqual({ ok: true, mode: "direct" });
+      expect((await get(path(name))).spec).toEqual(created.spec);
+    },
+  );
+
+  it.each(creates)(
+    "a second create of a $kind of the same name fails with Stale and changes nothing",
+    async ({ object, path }) => {
+      const first = object(name, "one");
+      await writer.apply({
+        intent: "Create",
+        apply: [first],
+        create: [keyOf(first)],
+      });
+      const before = await get(path(name));
+
+      const second = object(name, "two");
+      const result = await writer.apply({
+        intent: "Create again",
+        apply: [second],
+        create: [keyOf(second)],
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [expect.objectContaining({ code: "Stale" })],
+      });
+      const after = await get(path(name));
+      expect(after.metadata.resourceVersion).toBe(
+        before.metadata.resourceVersion,
+      );
+      expect(after.spec).toEqual(first.spec);
+    },
+  );
+
+  it.each(creates)(
+    "an apply of a $kind with the create-only resourceVersion fails on an object that exists and changes nothing",
+    async ({ object, path }) => {
+      const first = object(name, "one");
+      await writer.apply({ intent: "Create", apply: [first] });
+      const before = await get(path(name));
+
+      // force=true shows that the resourceVersion alone refuses the write,
+      // with no field manager conflict.
+      await expect(
+        requestJSON(kc, {
+          method: "PATCH",
+          path: `${path(name)}?fieldManager=fleet-manager&force=true`,
+          body: applyBody(object(name, "two"), CREATE_ONLY_RESOURCE_VERSION),
+          contentType: "application/apply-patch+yaml",
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      const after = await get(path(name));
+      expect(after.metadata.resourceVersion).toBe(
+        before.metadata.resourceVersion,
+      );
+      expect(after.spec).toEqual(first.spec);
+    },
+  );
 
   it("a preview of a create of an object that exists returns the same error", async () => {
     await writer.apply({
