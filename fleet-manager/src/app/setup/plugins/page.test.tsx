@@ -32,6 +32,7 @@ const chart = (name: string): CatalogChart => ({
   name,
   description: `The ${name} chart.`,
   sections: ["backup-storage"],
+  controllers: [name],
   chart: `oci://example/${name}`,
   version: "0.1.0",
   repository: "https://example.com/charts",
