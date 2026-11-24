@@ -2573,6 +2573,16 @@ describe("Before the cluster exists", () => {
     ).toBeNull();
   });
 
+  it("shows the cluster of the server read while the watch has only an older answer that has none", () => {
+    live.objects.CamundaCluster = [];
+    live.stale = ["CamundaCluster"];
+    render(view({ initial: data() }));
+    expect(screen.getByRole("region", { name: "Topology" })).toBeTruthy();
+    expect(
+      screen.queryByRole("region", { name: "The cluster does not exist yet" }),
+    ).toBeNull();
+  });
+
   it("a failed first read of the cluster is an error until its watch answers", () => {
     live.stale = ["CamundaCluster"];
     render(
