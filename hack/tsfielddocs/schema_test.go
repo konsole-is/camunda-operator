@@ -212,7 +212,7 @@ func TestWalkSchemaKeepsTwoFullSchemasOfOneNameThatDifferOnlyInDescriptions(t *t
 	require.NoError(t, walkSchema(&set, "optimize", fixture, changed, fixture.PkgPath()))
 }
 
-func TestBuildSchemasDescribesTheClaimFields(t *testing.T) {
+func TestBuildSchemasDescribesTheFieldsOfEachRoot(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, manager.AddToScheme(scheme))
 
@@ -238,6 +238,21 @@ func TestBuildSchemasDescribesTheClaimFields(t *testing.T) {
 	assert.Contains(t, optimize, "importer.replicas")
 	assert.Equal(t, fieldSchema{Type: "string"}, optimize["managementAuthConfigRef"])
 
+	elasticsearch := set.Fields["elasticsearch"]
+	assert.Equal(t, fieldSchema{Type: "integer", Format: "int32", Minimum: new(1.0)}, elasticsearch["replicas"])
+	assert.Equal(t, fieldSchema{IntOrString: true}, elasticsearch["storageSize"])
+	whenDeleted := elasticsearch["persistentVolumeClaimRetentionPolicy.whenDeleted"]
+	assert.Equal(t, []string{"Retain", "Delete"}, whenDeleted.Enum)
+	assert.Contains(t, elasticsearch, "monitoring.serviceMonitor.enabled")
+	assert.Contains(t, elasticsearch, "resources")
+	assert.NotContains(t, elasticsearch, "resources.requests")
+
+	server := set.Fields["databaseServer"]
+	assert.Equal(t, fieldSchema{Type: "integer", Format: "int32", Minimum: new(1.0)}, server["instances"])
+	assert.Equal(t, fieldSchema{IntOrString: true}, server["walStorageSize"])
+	assert.Equal(t, fieldSchema{Type: "string"}, server["archive.objectStorageRef"])
+	assert.Equal(t, fieldSchema{Type: "object"}, server["archive"])
+
 	assert.ElementsMatch(t, fullSchemaNames, slices.Collect(maps.Keys(set.Full)))
 	var nodeAffinity map[string]any
 	require.NoError(t, json.Unmarshal(set.Full["nodeAffinity"], &nodeAffinity))
@@ -245,45 +260,109 @@ func TestBuildSchemasDescribesTheClaimFields(t *testing.T) {
 	assert.NotContains(t, string(set.Full["nodeAffinity"]), `"description"`)
 }
 
-// claimCRD is a CamundaClusterClaim CRD with the given schema of spec.
-func claimCRD(spec string) string {
+// crd is a CRD of the given names with the given schema of spec.
+func crd(group, kind, plural, version, spec string) string {
 	return `apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: camundaclusterclaims.fleet.camunda.io
+  name: ` + plural + `.` + group + `
 spec:
-  group: fleet.camunda.io
-  names: {kind: CamundaClusterClaim, plural: camundaclusterclaims}
+  group: ` + group + `
+  names: {kind: ` + kind + `, plural: ` + plural + `}
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - name: ` + version + `
     served: true
     storage: true
     schema: {openAPIV3Schema: {type: object, properties: {spec: ` + spec + `}}}
 `
 }
 
+// writeCRDs writes the claim CRD and the two preset CRDs with the given
+// schemas of spec into dir, without the file named skip.
+func writeCRDs(t *testing.T, dir, claim, elasticsearch, server, skip string) {
+	t.Helper()
+	files := map[string]string{
+		claimCRDFile: crd("fleet.camunda.io", "CamundaClusterClaim", "camundaclusterclaims", "v1alpha1", claim),
+		"core.camunda.io_elasticsearchclusterpresets.yaml": crd(
+			"core.camunda.io",
+			"ElasticsearchClusterPreset",
+			"elasticsearchclusterpresets",
+			"v1",
+			elasticsearch,
+		),
+		"core.camunda.io_databaseserverpresets.yaml": crd(
+			"core.camunda.io",
+			"DatabaseServerPreset",
+			"databaseserverpresets",
+			"v1",
+			server,
+		),
+	}
+	for name, content := range files {
+		if name != skip {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644))
+		}
+	}
+}
+
 func TestBuildSchemasRefuses(t *testing.T) {
+	const (
+		validClaim = `{type: object, properties: {cluster: {type: object}, ` +
+			`attachments: {type: object, properties: {optimize: {type: object}}}}}`
+		validElasticsearch = `{type: object, properties: {cluster: {type: object}}}`
+		validServer        = `{type: object, properties: {server: {type: object}}}`
+	)
 	tests := []struct {
-		name    string
-		spec    string
-		wantErr string
+		name          string
+		claim         string
+		elasticsearch string
+		server        string
+		skip          string
+		wantErr       string
 	}{
 		{
-			name:    "a claim without spec.cluster",
-			spec:    `{type: object, properties: {attachments: {type: object, properties: {optimize: {type: object}}}}}`,
-			wantErr: "spec.cluster",
+			name:          "a claim without spec.cluster",
+			claim:         `{type: object, properties: {attachments: {type: object, properties: {optimize: {type: object}}}}}`,
+			elasticsearch: validElasticsearch,
+			server:        validServer,
+			wantErr:       "spec.cluster",
 		},
 		{
-			name:    "a claim without spec.attachments.optimize",
-			spec:    `{type: object, properties: {cluster: {type: object}, attachments: {type: object}}}`,
-			wantErr: "spec.attachments.optimize",
+			name:          "a claim without spec.attachments.optimize",
+			claim:         `{type: object, properties: {cluster: {type: object}, attachments: {type: object}}}`,
+			elasticsearch: validElasticsearch,
+			server:        validServer,
+			wantErr:       "spec.attachments.optimize",
 		},
 		{
-			name: "a full schema name that no field has",
-			spec: `{type: object, properties: {cluster: {type: object}, ` +
-				`attachments: {type: object, properties: {optimize: {type: object}}}}}`,
-			wantErr: "extraEnvFrom",
+			name:          "a full schema name that no field has",
+			claim:         validClaim,
+			elasticsearch: validElasticsearch,
+			server:        validServer,
+			wantErr:       "extraEnvFrom",
+		},
+		{
+			name:          "an Elasticsearch preset without spec.cluster",
+			claim:         validClaim,
+			elasticsearch: `{type: object}`,
+			server:        validServer,
+			wantErr:       "core.camunda.io_elasticsearchclusterpresets.yaml: the CRD has no field spec.cluster",
+		},
+		{
+			name:          "a database server preset without spec.server",
+			claim:         validClaim,
+			elasticsearch: validElasticsearch,
+			server:        `{type: object}`,
+			wantErr:       "core.camunda.io_databaseserverpresets.yaml: the CRD has no field spec.server",
+		},
+		{
+			name:          "a missing preset CRD",
+			claim:         validClaim,
+			elasticsearch: validElasticsearch,
+			server:        validServer,
+			skip:          "core.camunda.io_databaseserverpresets.yaml",
+			wantErr:       "core.camunda.io_databaseserverpresets.yaml",
 		},
 	}
 
@@ -292,7 +371,7 @@ func TestBuildSchemasRefuses(t *testing.T) {
 			scheme := runtime.NewScheme()
 			require.NoError(t, manager.AddToScheme(scheme))
 			dir := t.TempDir()
-			require.NoError(t, os.WriteFile(filepath.Join(dir, claimCRDFile), []byte(claimCRD(tt.spec)), 0o644))
+			writeCRDs(t, dir, tt.claim, tt.elasticsearch, tt.server, tt.skip)
 
 			_, err := buildSchemas(dir, scheme)
 			require.Error(t, err)
@@ -314,9 +393,9 @@ func TestRenderSchemasWritesTheModule(t *testing.T) {
 // Run make fleet-generate to update it.
 
 /**
- * FieldSchema is the type of one field of a CamundaClusterClaim, from its
- * CRD schema. intOrString marks a field that takes an integer or a string,
- * such as a quantity. items is the type of the items of a list.
+ * FieldSchema is the type of one field, from its CRD schema. intOrString
+ * marks a field that takes an integer or a string, such as a quantity. items
+ * is the type of the items of a list.
  */
 export interface FieldSchema {
   type?: "string" | "integer" | "number" | "boolean" | "object" | "array";
@@ -328,8 +407,12 @@ export interface FieldSchema {
   items?: FieldSchema;
 }
 
-/** SchemaRoot is the part of a CamundaClusterClaim that holds a field: spec.cluster or spec.attachments.optimize. */
-export type SchemaRoot = "cluster" | "optimize";
+/**
+ * SchemaRoot is the part of an object that holds a field: spec.cluster or
+ * spec.attachments.optimize of a CamundaClusterClaim, spec.cluster of an
+ * ElasticsearchClusterPreset, or spec.server of a DatabaseServerPreset.
+ */
+export type SchemaRoot = "cluster" | "optimize" | "elasticsearch" | "databaseServer";
 
 /**
  * FieldSchemas holds the FieldSchema of each field path under each root. A

@@ -13,6 +13,7 @@ import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ReadError } from "@/lib/k8s/unread";
 import type { PresetKind } from "@/lib/usage";
 import type { Change, Preview, WriteMode } from "@/lib/write/types";
+import { CannotSetSection } from "./cannot-set-section";
 import { presetDeleteChange } from "./delete";
 import { presetChangeCount, presetDraftOf, presetUpdateChange } from "./draft";
 import { FactsList } from "./facts-list";
@@ -29,7 +30,6 @@ import {
 } from "./kinds";
 import { PresetEditor } from "./preset-editor";
 import { GIT_DELETE_EFFECT } from "./preset-list";
-import { CannotSetSection, PresetSettings } from "./preset-settings";
 import { RotateAction } from "./rotate-action";
 import { rotationUnread } from "./rotation";
 import { changedLabel, presetRows, usedByLabel } from "./rows";
@@ -188,11 +188,7 @@ export function PresetDetail({
           onErrors={setEditorErrors}
         />
       </fieldset>
-      {kind === "CamundaClusterPreset" ? (
-        <CannotSetSection kind={kind} />
-      ) : (
-        <PresetSettings kind={kind} body={draft.body} />
-      )}
+      <CannotSetSection kind={kind} />
       <EditorSection title="Inheriting resources">
         <InheritingTable
           rows={inheritingRows(shown, sources)}

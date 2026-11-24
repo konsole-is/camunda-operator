@@ -35,7 +35,7 @@ spec:
 4. Read the diff and the clusters that the change reaches.
 5. Select **Save**, or **Push to Git** in Git mode.
 
-A field that the preset sets shows **From preset**. **Remove from the preset** takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one YAML editor in place of the groups.
+A field that the preset sets shows **From preset**. **Remove from the preset** takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one group, **Elasticsearch** or **PostgreSQL**, with each field that the preset can set.
 
 The review lists each cluster that uses the preset, with one mark:
 
@@ -49,7 +49,7 @@ The review lists each cluster that uses the preset, with one mark:
 
 A change with the mark `Pods roll` rolls every cluster that uses the preset, also a cluster that sets the changed field itself. A smaller storage size does not shrink a volume.
 
-A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example **Merged by key** for labels. The [Merge rules](../crds/camundaclusterpreset.md#merge-rules) of `CamundaClusterPreset` list the rules.
+A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example **Merged by key** for labels. The merge rules of [CamundaClusterPreset](../crds/camundaclusterpreset.md#merge-rules), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md#merge-rules), and [DatabaseServerPreset](../crds/databaseserverpreset.md#merge-rules) list the rules.
 
 ### Rotate the admin password
 

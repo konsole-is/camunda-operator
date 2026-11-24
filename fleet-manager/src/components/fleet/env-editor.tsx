@@ -32,17 +32,17 @@ type Row =
  * Secret key. A Secret entry holds only a reference to a key: the editor has
  * no field for a Secret value, and a value typed before the switch to a
  * Secret is dropped. An entry from another source, such as a ConfigMap key
- * or a field of the pod, stays unchanged and read only. onChange gets the
- * entries and the errors after each edit. An error path is
- * "<row>.name" or "<row>.secret", counting rows from 0. describedBy names
- * the hint and error elements of the field for each control of a row.
- * missingIn gives the namespaces that lack a picked Secret key, and the row
- * names them. onErrors gets the errors that it shows, also at mount.
- * checkedEntries are entries of defaultValue that the host checks itself,
- * and that a value below the entries keeps. While its row is unchanged,
- * such an entry shows no error, refuses no change, and is not in the
- * entries that onChange gets. With openedUnchecked, a row of defaultValue
- * shows no error and refuses no change while it is unchanged.
+ * or a field of the pod, stays unchanged and read only, with
+ * otherSourceReason as its lock reason. onChange gets the entries and the
+ * errors after each edit. An error path is "<row>.name" or "<row>.secret",
+ * counting rows from 0. describedBy names the hint and error elements of the
+ * field for each control of a row. missingIn gives the namespaces that lack
+ * a picked Secret key, and the row names them. onErrors gets the errors that
+ * it shows, also at mount. checkedEntries are entries of defaultValue that
+ * the host checks itself, and that a value below the entries keeps. While
+ * its row is unchanged, such an entry shows no error, refuses no change, and
+ * is not in the entries that onChange gets. With openedUnchecked, a row of
+ * defaultValue shows no error and refuses no change while it is unchanged.
  */
 export function EnvEditor({
   label,
@@ -52,6 +52,7 @@ export function EnvEditor({
   missingIn,
   checkedEntries = [],
   openedUnchecked = false,
+  otherSourceReason = "Edit this variable in the YAML of the claim",
   onChange,
   onErrors,
 }: {
@@ -62,6 +63,7 @@ export function EnvEditor({
   missingIn?: (name: string, key: string) => readonly string[];
   checkedEntries?: readonly EnvVar[];
   openedUnchecked?: boolean;
+  otherSourceReason?: string;
   onChange?: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors?: (errors: ValidationError[]) => void;
 }) {
@@ -156,7 +158,7 @@ export function EnvEditor({
                   <LockedField
                     label={row.entry.name}
                     value={describeOther(row.entry)}
-                    reason="Edit this variable in the YAML of the claim"
+                    reason={otherSourceReason}
                   />
                 </div>
               ) : (

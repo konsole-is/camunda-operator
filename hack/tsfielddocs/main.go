@@ -15,7 +15,8 @@ limitations under the License.
 */
 
 // Command tsfielddocs writes two files of the fleet manager: the field docs,
-// and the field schema of CamundaClusterClaim.
+// and the field schema of CamundaClusterClaim, ElasticsearchClusterPreset,
+// and DatabaseServerPreset.
 //
 // The field docs hold, for each kind and field path, the description of the
 // CRD schema and the anchor of the Go type that holds the field in
@@ -30,10 +31,12 @@ limitations under the License.
 // embedded struct belongs to the struct that embeds it, as in the reference.
 //
 // The field schema holds the type, enum, and range of each field under
-// spec.cluster and spec.attachments.optimize of the claim, with no
-// descriptions, so that the browser can load it. Its walk does not go into a
-// list, a map, or a type outside the api module. It also keeps the whole CRD
-// schema of the fields that the YAML editor checks, once for each name.
+// spec.cluster and spec.attachments.optimize of the claim, spec.cluster of
+// the Elasticsearch preset, and spec.server of the database server preset,
+// with no descriptions, so that the browser can load it. Its walk does not
+// go into a list, a map, or a type outside the api module. It also keeps the
+// whole CRD schema of the fields that the YAML editor checks, once for each
+// name.
 //
 // Usage: tsfielddocs -crds <dir> -out <file> -schema-out <file>
 package main
