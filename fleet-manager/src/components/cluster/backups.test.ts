@@ -422,6 +422,7 @@ function input(
     databaseServerConfigs: [],
     databaseServers: [],
     databaseServerPresets: [],
+    databases: [],
     schedules: [],
     now,
     ...rest,
@@ -449,6 +450,8 @@ function rdbmsChain(
     serverStatus?: object;
     owned?: boolean;
     pitr?: object;
+    published?: boolean;
+    databases?: BackupStorageInput["databases"];
   } = {},
 ): BackupStorageInput {
   return input({
@@ -466,7 +469,28 @@ function rdbmsChain(
     databaseConfigs:
       over.databaseConfig === false
         ? []
-        : [obj("DatabaseConfig", "orders-db", { serverRef: "orders-pg" })],
+        : [
+            obj(
+              "DatabaseConfig",
+              "orders-db",
+              { serverRef: "orders-pg" },
+              undefined,
+              over.published
+                ? {
+                    ownerReferences: [
+                      {
+                        apiVersion: "core.camunda.io/v1",
+                        kind: "Database",
+                        name: "orders",
+                        uid: "uid-orders",
+                        controller: true,
+                      },
+                    ],
+                  }
+                : {},
+            ),
+          ],
+    ...("databases" in over ? { databases: over.databases } : {}),
     databaseServerConfigs:
       over.serverConfig === false
         ? []
@@ -1069,7 +1093,59 @@ describe("backupStorageOf", () => {
       serverConfig: "orders-pg",
       endpoint: "orders-pg-rw.team-a.svc:5432",
       pitr: { enabled: true, recovery: "operator", retentionDays: 30 },
+      serverUse: "unpublished",
     });
+  });
+
+  const database = (name: string, serverRef: string) =>
+    obj("Database", name, { serverRef, databaseName: name });
+  const serverUseOf = (data: BackupStorageInput) => {
+    const storage = backupStorageOf(data);
+    return storage.kind === "rdbms" ? storage.database?.serverUse : undefined;
+  };
+
+  it("the server is dedicated when a Database resource created the DatabaseConfig and no other Database uses the server", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          databases: [database("orders", "orders-pg")],
+        }),
+      ),
+    ).toBe("dedicated");
+  });
+
+  it("the server use is unpublished when no Database resource created the DatabaseConfig", () => {
+    expect(serverUseOf(rdbmsChain({ databases: [] }))).toBe("unpublished");
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          databases: [database("payments", "orders-pg")],
+        }),
+      ),
+    ).toBe("unpublished");
+  });
+
+  it("the server is shared when more than one Database resource uses it", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          databases: [
+            database("orders", "orders-pg"),
+            database("payments", "orders-pg"),
+            database("billing", "billing-pg"),
+          ],
+        }),
+      ),
+    ).toBe("shared");
+  });
+
+  it("the server use is unread when the page could not read the Database resources", () => {
+    expect(
+      serverUseOf(rdbmsChain({ published: true, databases: undefined })),
+    ).toBe("unread");
   });
 
   it.each([

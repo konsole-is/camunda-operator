@@ -81,6 +81,7 @@ function data(managed = true): ClusterPageData {
       databaseServerConfigs: [],
       databaseServers: [],
       databaseServerPresets: [],
+      databases: [],
       schedules: [],
     },
     optimizes: [],

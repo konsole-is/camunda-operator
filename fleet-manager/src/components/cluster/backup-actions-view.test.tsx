@@ -19,7 +19,12 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
-import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
+import type {
+  BackupRow,
+  BackupStorage,
+  RestoreInterval,
+  ServerUse,
+} from "./backups";
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -679,6 +684,8 @@ describe("restore to a point in time", () => {
   const archived = (window: RestoreInterval[]): BackupStorage => ({
     ...rdbms,
     database: {
+      serverConfig: "orders-pg",
+      serverUse: "dedicated",
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -826,19 +833,21 @@ describe("restore to a point in time", () => {
       recovery: "external",
       retentionDays: 3,
     },
+    serverUse: ServerUse = "dedicated",
   ): BackupStorage => ({
     ...rdbms,
     database: {
       serverConfig: "orders-pg",
       endpoint: "orders-pg.example.com:5432",
       pitr,
+      serverUse,
     },
   });
   const ROLLED = "I rolled the database server back to this time";
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
-  const SHARED =
-    "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.";
+  const OTHERS =
+    "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const items = (dialog: HTMLElement) =>
@@ -853,7 +862,7 @@ describe("restore to a point in time", () => {
     const dialog = await openPoint();
     expect(items(dialog)).toEqual(["2026-11-07 14:30:05 UTC to now"]);
     pick(dialog, "2026-11-09T09:30:15");
-    expect(items(dialog).slice(1, 4)).toEqual([ROLL, SHARED, HOST]);
+    expect(items(dialog).slice(1, 4)).toEqual([ROLL, OTHERS, HOST]);
   });
 
   it("the typed confirm shows only after the rollback is ticked", async () => {
@@ -965,6 +974,25 @@ describe("restore to a point in time", () => {
       expect(status.textContent).not.toContain("Waiting for GitOps to apply");
     },
   );
+
+  it("the action is off with the reason when another Database resource uses the server", () => {
+    header(
+      context({
+        storage: manual(
+          { enabled: true, recovery: "external", retentionDays: 3 },
+          "shared",
+        ),
+      }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Restore to a point in time",
+    });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "Another Database resource uses the server of DatabaseServerConfig orders-pg. A rollback of the server would roll that database back too.",
+    );
+  });
 
   it("with recovery by the operator the dialog has no rollback tick and no rollback lines", async () => {
     header(context({ storage: archived(window) }));

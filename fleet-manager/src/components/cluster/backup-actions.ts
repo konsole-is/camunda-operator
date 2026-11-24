@@ -431,7 +431,7 @@ export function pointInTimeConfirm(
         context.suspension === undefined
           ? "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm."
           : "The operator does not roll the database server back. Roll it back to this time before you confirm.",
-        "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.",
+        "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.",
         `If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig ${manual.serverConfig} to the new instance first.`,
         "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
       ]
@@ -442,7 +442,11 @@ export function pointInTimeConfirm(
     lead: `The cluster goes back to ${at}. Everything that it wrote after that time is lost.`,
     lines: [
       ...database,
-      startsAgain(context.suspension),
+      // The restore lifts only its own suspension, and the admin suspended
+      // a running cluster for the rollback.
+      manual && context.suspension === undefined
+        ? "A cluster that you suspend for the rollback stays suspended after the restore. Resume it when the restore is Completed."
+        : startsAgain(context.suspension),
       "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
       failed("the broker volumes"),
     ],
@@ -626,8 +630,9 @@ export type PointInTime =
  * is set. There is no action without a DatabaseServerConfig, and with
  * recovery operator but no archive window. It is off when the page cannot
  * write, while a restore of the cluster has not ended, when the
- * DatabaseServerConfig does not enable point-in-time recovery, and when
- * no point can be offered.
+ * DatabaseServerConfig does not enable point-in-time recovery, when the
+ * Database resources do not show that the server holds the database of the
+ * cluster alone, and when no point can be offered.
  */
 export function pointInTime(context: BackupContext): PointInTime | undefined {
   const { storage } = context;
@@ -641,6 +646,7 @@ export function pointInTime(context: BackupContext): PointInTime | undefined {
     );
     return (
       pointInTimeBlock(context) ??
+      serverUseBlock(database) ??
       ("unavailable" in window ? { disabled: window.unavailable } : window)
     );
   }
@@ -657,6 +663,8 @@ export function pointInTime(context: BackupContext): PointInTime | undefined {
       disabled: `DatabaseServerConfig ${serverConfig} does not declare point-in-time recovery, so the operator cannot restore the cluster to a point. When the database server archives its write-ahead log, set spec.pitr.enabled to true.`,
     };
   }
+  const used = serverUseBlock(database);
+  if (used !== undefined) return used;
   const window = manualWindow(
     pitr.retentionDays ?? 0,
     context.retentionWindow,
@@ -677,6 +685,32 @@ function pointInTimeBlock(
     return { disabled: restoringNote(context.restoring) };
   }
   return undefined;
+}
+
+// The operator holds a point-in-time restore on a server that it cannot
+// show to hold the database of the cluster alone (dedicatedServer in
+// internal/controller/pointintimerestore).
+function serverUseBlock(
+  database: DatabaseView | undefined,
+): { disabled: string } | undefined {
+  switch (database?.serverUse) {
+    case "dedicated":
+      return undefined;
+    case "unpublished":
+      return {
+        disabled:
+          "No Database resource created the database of this cluster. The operator restores to a point in time only a database that a Database resource of the operator created.",
+      };
+    case "shared":
+      return {
+        disabled: `Another Database resource uses the server of DatabaseServerConfig ${database.serverConfig}. A rollback of the server would roll that database back too.`,
+      };
+    default:
+      return {
+        disabled:
+          "The fleet manager could not read the Database resources, so it cannot tell which databases the server holds.",
+      };
+  }
 }
 
 function manualPitrOf(

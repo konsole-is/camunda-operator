@@ -28,7 +28,12 @@ import {
   timestampOf,
   waitNote,
 } from "./backup-actions";
-import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
+import type {
+  BackupRow,
+  BackupStorage,
+  RestoreInterval,
+  ServerUse,
+} from "./backups";
 
 const es: BackupStorage = {
   kind: "elasticsearch",
@@ -605,9 +610,14 @@ describe("restore rules", () => {
     });
   });
 
-  const archived = (window?: RestoreInterval[]): BackupStorage => ({
+  const archived = (
+    window?: RestoreInterval[],
+    serverUse: ServerUse = "dedicated",
+  ): BackupStorage => ({
     ...rdbms,
     database: {
+      serverConfig: "orders-pg",
+      serverUse,
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -638,16 +648,20 @@ describe("restore rules", () => {
       pointInTime(context({ storage: archived([]), retentionWindow: "P7D" })),
     ).toEqual({ disabled: "The archive has no restore point yet." });
   });
-  const manual = (pitr: {
-    enabled: boolean;
-    recovery?: string;
-    retentionDays?: number;
-  }): BackupStorage => ({
+  const manual = (
+    pitr: {
+      enabled: boolean;
+      recovery?: string;
+      retentionDays?: number;
+    },
+    serverUse: ServerUse = "dedicated",
+  ): BackupStorage => ({
     ...rdbms,
     database: {
       serverConfig: "orders-pg",
       endpoint: "orders-pg.example.com:5432",
       pitr,
+      serverUse,
     },
   });
   const ROLLED = { serverConfig: "orders-pg" };
@@ -775,6 +789,38 @@ describe("restore rules", () => {
         "spec.pitr.retentionPeriodDays of the DatabaseServerConfig is 0, so no point can be offered.",
     });
   });
+
+  const UNPUBLISHED =
+    "No Database resource created the database of this cluster. The operator restores to a point in time only a database that a Database resource of the operator created.";
+  const SHARED_SERVER =
+    "Another Database resource uses the server of DatabaseServerConfig orders-pg. A rollback of the server would roll that database back too.";
+  const UNREAD =
+    "The fleet manager could not read the Database resources, so it cannot tell which databases the server holds.";
+
+  it.each<[string, (use: ServerUse) => BackupStorage]>([
+    ["recovery by the operator", (use) => archived([{ from: ago(1) }], use)],
+    [
+      "a manual rollback",
+      (use) =>
+        manual({ enabled: true, recovery: "external", retentionDays: 3 }, use),
+    ],
+  ])(
+    "with %s, point in time is off unless one Database resource created the database and uses the server alone",
+    (_, storage) => {
+      expect(pointInTime(context({ storage: storage("dedicated") }))).toEqual(
+        expect.objectContaining({ intervals: expect.any(Array) }),
+      );
+      expect(pointInTime(context({ storage: storage("unpublished") }))).toEqual(
+        { disabled: UNPUBLISHED },
+      );
+      expect(pointInTime(context({ storage: storage("shared") }))).toEqual({
+        disabled: SHARED_SERVER,
+      });
+      expect(pointInTime(context({ storage: storage("unread") }))).toEqual({
+        disabled: UNREAD,
+      });
+    },
+  );
 });
 
 describe("restore confirm", () => {
@@ -864,8 +910,10 @@ describe("restore confirm", () => {
   const AT = "2026-11-09 09:30:15 UTC";
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
-  const SHARED =
-    "Roll back only a database server that holds the database of this cluster alone. A rollback of a shared server also undoes the other databases on it, and the operator keeps that restore Pending.";
+  const OTHERS =
+    "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.";
+  const STAYS =
+    "A cluster that you suspend for the rollback stays suspended after the restore. Resume it when the restore is Completed.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const READS =
@@ -884,10 +932,10 @@ describe("restore confirm", () => {
     );
     expect(confirm.lines).toEqual([
       ROLL,
-      SHARED,
+      OTHERS,
       HOST,
       READS,
-      STARTS,
+      STAYS,
       NO_ZEEBE,
       BROKEN,
     ]);
@@ -906,7 +954,7 @@ describe("restore confirm", () => {
 
   it("with recovery by the operator the confirm names no manual rollback", () => {
     const { lines } = pointInTimeConfirm(context(), AT);
-    for (const line of [ROLL, SHARED, HOST, READS])
+    for (const line of [ROLL, OTHERS, HOST, READS, STAYS])
       expect(lines).not.toContain(line);
   });
 
@@ -926,9 +974,14 @@ describe("restore confirm", () => {
       restoreConfirm(c, snapshot),
       restoreConfirm(c, dump),
       pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC"),
-      pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC", {
-        serverConfig: "orders-pg",
-      }),
+      // On a running cluster, the admin suspends it for a manual rollback.
+      ...(suspension
+        ? [
+            pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC", {
+              serverConfig: "orders-pg",
+            }),
+          ]
+        : []),
     ]) {
       expect(confirm.lines).toContain(line);
       for (const other of [STARTS, OWNER, OTHER].filter((l) => l !== line)) {

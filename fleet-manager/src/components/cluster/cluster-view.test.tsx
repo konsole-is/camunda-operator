@@ -197,6 +197,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
       databaseServerConfigs: [],
       databaseServers: [],
       databaseServerPresets: [],
+      databases: [],
       schedules: [],
     },
     optimizes: [],
@@ -738,6 +739,7 @@ function pgPage(
         ),
       ],
       databaseServerPresets: [],
+      databases: [],
       schedules: [],
     },
   });

@@ -19,6 +19,7 @@ const STORAGE: Record<
   | "archived"
   | "manual"
   | "manualWithoutPitr"
+  | "manualShared"
   | "none",
   BackupStorage
 > = {
@@ -39,6 +40,8 @@ const STORAGE: Record<
     kind: "rdbms",
     bucket: { name: "backups", location: "s3://acme-backups/orders" },
     database: {
+      serverConfig: "orders-db",
+      serverUse: "dedicated",
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -61,6 +64,18 @@ const STORAGE: Record<
       serverConfig: "orders-pg",
       endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
       pitr: { enabled: true, recovery: "external", retentionDays: 3 },
+      serverUse: "dedicated",
+    },
+    schedules: [],
+  },
+  manualShared: {
+    kind: "rdbms",
+    bucket: { name: "backups", location: "s3://acme-backups/orders" },
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
+      pitr: { enabled: true, recovery: "external", retentionDays: 3 },
+      serverUse: "shared",
     },
     schedules: [],
   },
@@ -71,6 +86,7 @@ const STORAGE: Record<
       serverConfig: "orders-pg",
       endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
       pitr: { enabled: false, recovery: "external" },
+      serverUse: "dedicated",
     },
     schedules: [],
   },
@@ -212,4 +228,9 @@ export const PointInTimeAfterARollbackOutsideTheOperator: Story = {
 export const PointInTimeOnAServerWithoutPointInTimeRecovery: Story = {
   name: "Point in time on a server without point-in-time recovery",
   args: { context: context("manualWithoutPitr") },
+};
+
+export const PointInTimeOnASharedServer: Story = {
+  name: "Point in time on a server that another database uses",
+  args: { context: context("manualShared") },
 };

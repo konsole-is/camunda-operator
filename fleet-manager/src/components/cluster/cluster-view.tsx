@@ -127,6 +127,7 @@ export type ClusterPageData = {
     databaseServerConfigs: Resource<"DatabaseServerConfig">[];
     databaseServers: Resource<"DatabaseServer">[];
     databaseServerPresets: Resource<"DatabaseServerPreset">[];
+    databases: Resource<"Database">[];
     schedules: Resource<"BackupSchedule">[];
   };
   optimizes: Resource<"CamundaOptimize">[];
@@ -287,6 +288,11 @@ export function ClusterView({
     {},
     initial.backupStorage.databaseServerPresets,
   );
+  const databases = useResources(
+    "Database",
+    { namespace: ns },
+    initial.backupStorage.databases,
+  );
   const schedules = useResources(
     "BackupSchedule",
     { namespace: ns },
@@ -424,6 +430,7 @@ export function ClusterView({
       ["DatabaseServerConfig", databaseServerConfigs],
       ["DatabaseServer", databaseServers],
       ["DatabaseServerPreset", databaseServerPresets],
+      ["Database", databases],
       ["BackupSchedule", schedules],
       ["CamundaOptimize", optimizes],
       ["PluginSection", sections],
@@ -569,6 +576,10 @@ export function ClusterView({
     databaseServerConfigs: databaseServerConfigs.items,
     databaseServers: databaseServers.items,
     databaseServerPresets: databaseServerPresets.items,
+    // A failed read is not a namespace without Database resources.
+    databases: errors.some((e) => e.kind === "Database")
+      ? undefined
+      : databases.items,
     schedules: schedules.items,
     now: clock,
   });

@@ -208,17 +208,28 @@ export type ArchiveView = {
 };
 
 /**
+ * ServerUse is what the Database resources of the namespace show about the
+ * server of a cluster: dedicated when a Database resource created its
+ * DatabaseConfig and no other Database resource uses the server,
+ * unpublished when no Database resource created the DatabaseConfig, shared
+ * when more than one Database resource uses the server, and unread when
+ * the page could not read the Database resources.
+ */
+export type ServerUse = "dedicated" | "unpublished" | "shared" | "unread";
+
+/**
  * DatabaseView is the PostgreSQL server of a cluster. missing names the
  * first object of the chain from the SecondaryStorageConfig that is not
  * found, such as "DatabaseConfig orders-db", and then no other field is set.
  * archive is set only when a DatabaseServer of the operator publishes the
- * DatabaseServerConfig.
+ * DatabaseServerConfig. serverUse is set with serverConfig.
  */
 export type DatabaseView = {
   missing?: string;
   serverConfig?: string;
   endpoint?: string;
   pitr?: { enabled: boolean; recovery?: string; retentionDays?: number };
+  serverUse?: ServerUse;
   archive?: ArchiveView;
 };
 
@@ -243,7 +254,8 @@ export type BackupStorage =
 /**
  * BackupStorageInput holds what backupStorageOf reads. cluster is the live
  * object and spec its merged spec. The namespaced lists hold the objects of
- * the namespace of the cluster. now is the current time.
+ * the namespace of the cluster. databases is undefined when the page could
+ * not read the Database resources. now is the current time.
  */
 export type BackupStorageInput = {
   cluster: Resource<"CamundaCluster">;
@@ -254,6 +266,7 @@ export type BackupStorageInput = {
   databaseServerConfigs: readonly Resource<"DatabaseServerConfig">[];
   databaseServers: readonly Resource<"DatabaseServer">[];
   databaseServerPresets: readonly Resource<"DatabaseServerPreset">[];
+  databases: readonly Resource<"Database">[] | undefined;
   schedules: readonly Resource<"BackupSchedule">[];
   now: string;
 };
@@ -358,6 +371,7 @@ function databaseOf(
       recovery: pitr?.recovery,
       retentionDays: pitr?.retentionPeriodDays,
     },
+    serverUse: serverUseOf(input.databases, databaseConfig, serverName),
   };
   // The operator rejects a second server that asks for the same config
   // (contractTaken in internal/controller/databaseserver), so only the
@@ -373,6 +387,24 @@ function databaseOf(
     view.archive = archiveOf(input, server, rollback);
   }
   return view;
+}
+
+// A Database resource publishes the DatabaseConfig of the logical database
+// that it runs, as the controller of that DatabaseConfig.
+function serverUseOf(
+  databases: BackupStorageInput["databases"],
+  databaseConfig: Resource<"DatabaseConfig">,
+  serverName: string,
+): ServerUse {
+  if (databases === undefined) return "unread";
+  const onServer = databases.filter((d) => d.spec.serverRef === serverName);
+  if (onServer.length > 1) return "shared";
+  const creator = databaseConfig.metadata?.ownerReferences?.find(
+    (r) => r.controller && r.kind === "Database",
+  );
+  return creator && databases.some((d) => d.metadata?.name === creator.name)
+    ? "dedicated"
+    : "unpublished";
 }
 
 function archiveOf(
