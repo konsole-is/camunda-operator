@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { presetDraftOf } from "./draft";
 import { presetFixtures } from "./fixtures";
 import { PresetEditor } from "./preset-editor";
@@ -27,17 +27,28 @@ type Story = StoryObj<typeof meta>;
 
 export const ClusterPreset: Story = { name: "Cluster preset" };
 
-export const ElasticsearchPresetAsYAML: Story = {
-  name: "Elasticsearch preset as YAML",
+export const ElasticsearchPreset: Story = {
+  name: "Elasticsearch preset",
   args: {
     kind: "ElasticsearchClusterPreset",
     draft: presetDraftOf(es),
     live: es.spec.cluster,
   },
+  play: async ({ canvas }) => {
+    const settings = canvas.getByRole("region", {
+      name: "Elasticsearch settings",
+    });
+    await expect(
+      within(settings).getByRole("group", { name: "replicas" }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("list", { name: "Merge rules of Elasticsearch" }),
+    ).toBeVisible();
+  },
 };
 
-export const PostgreSQLPresetAsYAML: Story = {
-  name: "PostgreSQL preset as YAML",
+export const PostgreSQLPreset: Story = {
+  name: "PostgreSQL preset",
   args: {
     kind: "DatabaseServerPreset",
     draft: presetDraftOf(pg),

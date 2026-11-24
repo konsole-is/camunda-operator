@@ -1,8 +1,48 @@
 import { describe, expect, it } from "vitest";
 import { fullSchemas } from "@/generated/fieldschema";
-import { componentFieldPaths, fieldSchemaOf, fullSchemaOf } from "./schema";
+import {
+  componentFieldPaths,
+  fieldSchemaOf,
+  fullSchemaOf,
+  schemaRootOf,
+} from "./schema";
+
+it("maps each settings group to the root of the field schema that describes it", () => {
+  expect(schemaRootOf("zeebe")).toBe("cluster");
+  expect(schemaRootOf("cluster")).toBe("cluster");
+  expect(schemaRootOf("optimize")).toBe("optimize");
+  expect(schemaRootOf("elasticsearch")).toBe("elasticsearch");
+  expect(schemaRootOf("databaseServer")).toBe("databaseServer");
+  expect(fieldSchemaOf("databaseServer", "instances")).toEqual({
+    type: "integer",
+    format: "int32",
+    minimum: 1,
+  });
+});
 
 describe("componentFieldPaths", () => {
+  it("offers every field of the body of an Elasticsearch or a database server preset", () => {
+    const elasticsearch = componentFieldPaths("elasticsearch");
+    expect(elasticsearch).toEqual(
+      expect.arrayContaining([
+        "replicas",
+        "storageSize",
+        "extraEnv",
+        "monitoring.serviceMonitor.enabled",
+      ]),
+    );
+    expect(elasticsearch).not.toContain("monitoring.serviceMonitor");
+    const server = componentFieldPaths("databaseServer");
+    expect(server).toEqual(
+      expect.arrayContaining([
+        "instances",
+        "walStorageSize",
+        "archive.objectStorageRef",
+      ]),
+    );
+    expect(server).not.toContain("replicas");
+  });
+
   it("offers the fields of a process block, also when no layer sets them", () => {
     const paths = componentFieldPaths("tasklist");
 

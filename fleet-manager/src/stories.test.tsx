@@ -131,7 +131,7 @@ describe("the Storybook stories", () => {
       "ImagesSection",
       "UsersSection",
       "PresetList",
-      "PresetSettings",
+      "CannotSetSection",
       "InheritingTable",
       "PresetDetail",
       "FactsList",
