@@ -4,10 +4,12 @@ import type { ManagedFieldsEntry } from "@/lib/merge";
 import {
   fieldValue,
   foreignFields,
+  isPartialSave,
   keepEmpty,
   laidOver,
   MAX_KEEP_PATHS,
   offered,
+  partialSaveMessage,
   prunedFields,
   removedFields,
   takenFields,
@@ -50,6 +52,19 @@ const entry = (
 ): ManagedFieldsEntry => ({ manager, operation, fieldsV1 });
 
 const displayName = { "f:spec": { "f:displayName": {} } };
+
+describe("partialSaveMessage", () => {
+  it("says that the next save records the fields, and isPartialSave accepts it", () => {
+    const message = partialSaveMessage(ref, "The Environment changed.");
+    expect(message).toBe(
+      "The fleet manager saved the Environment staging, but did not record its fields. The next save of the Environment records them. The Environment changed.",
+    );
+    expect(isPartialSave({ code: "Stale", message, ref })).toBe(true);
+    expect(isPartialSave({ code: "Stale", message: "Changed.", ref })).toBe(
+      false,
+    );
+  });
+});
 
 describe("foreignFields", () => {
   it("names a field that kubectl set and the apply changes", () => {

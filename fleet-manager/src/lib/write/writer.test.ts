@@ -639,55 +639,309 @@ describe("directWriter with a take-over", () => {
     expect(writes().filter((r) => r.method !== "GET")).toEqual([]);
   });
 
-  it("a removal after a newer write fails with Stale and names the fields it did not remove", async () => {
-    const live = environment({ displayName: "Stage", color: "red" }, [
-      kubectlOwns("displayName"),
-    ]);
-    const kept = environment({ displayName: "Stage", color: "blue" }, [
-      kubectlOwns("displayName"),
-    ]);
-    answer = (r) => {
+  // removalAnswers answers a save that removes a field: the GET with live,
+  // the dry run and the update of the JSON patch with updated at the
+  // resourceVersions "7" and "8", the dry-run apply after it with probe, and
+  // the write of managedFields with record.
+  const removalAnswers =
+    (
+      live: object,
+      updated: { metadata: object },
+      probe: object,
+      overrides: {
+        update?: { status: number; body: unknown };
+        record?: { status: number; body: unknown };
+      } = {},
+    ) =>
+    (r: Seen) => {
       if (r.method === "GET") return { status: 200, body: live };
       const dry = r.url.includes("dryRun=All");
       if (r.contentType === "application/apply-patch+yaml")
-        return {
+        return { status: 200, body: probe };
+      if (dry) return { status: 200, body: updated };
+      const ops = r.body as { path: string }[];
+      if (ops.some((op) => op.path === "/metadata/managedFields"))
+        return overrides.record ?? { status: 200, body: probe };
+      return (
+        overrides.update ?? {
           status: 200,
-          body: dry
-            ? kept
-            : { ...kept, metadata: { ...kept.metadata, resourceVersion: "8" } },
-        };
-      return dry
-        ? { status: 200, body: environment({ color: "blue" }) }
-        : { status: 409, body: conflict };
+          body: {
+            ...updated,
+            metadata: { ...updated.metadata, resourceVersion: "8" },
+          },
+        }
+      );
     };
+  const fleetOwns = (operation: string, ...fields: string[]) => ({
+    manager: "fleet-manager",
+    operation,
+    fieldsV1: {
+      "f:spec": Object.fromEntries(fields.map((f) => [`f:${f}`, {}])),
+    },
+  });
+  const clearName = {
+    intent: "Clear the name",
+    apply: [environment({ color: "red" })],
+    preconditions: { [key]: "7" },
+    remove: { [key]: ["spec.displayName"] },
+  };
+  const named = environment({ displayName: "Stage", color: "red" }, [
+    kubectlOwns("displayName"),
+  ]);
+  const probed = environment(
+    { color: "red" },
+    [fleetOwns("Apply", "color"), fleetOwns("Update")],
+    "8",
+  );
+
+  it("a save that removes a field of another tool sends one update at the resourceVersion of the review, then records the fields", async () => {
+    answer = removalAnswers(named, environment({ color: "red" }), probed);
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const sent = writes().filter((r) => r.method !== "GET");
+    expect(sent).toEqual([
+      {
+        method: "PATCH",
+        url: "/apis/fleet.camunda.io/v1alpha1/environments/staging?fieldManager=fleet-manager",
+        contentType: "application/json-patch+json",
+        body: [
+          { op: "replace", path: "/metadata/resourceVersion", value: "7" },
+          { op: "add", path: "/spec", value: { color: "red" } },
+        ],
+      },
+      {
+        method: "PATCH",
+        url: "/apis/fleet.camunda.io/v1alpha1/environments/staging?fieldManager=fleet-manager",
+        contentType: "application/json-patch+json",
+        body: [
+          { op: "replace", path: "/metadata/resourceVersion", value: "8" },
+          {
+            op: "replace",
+            path: "/metadata/managedFields",
+            value: [fleetOwns("Apply", "color")],
+          },
+        ],
+      },
+    ]);
+    const applies = seen.filter(
+      (r) => r.contentType === "application/apply-patch+yaml",
+    );
+    expect(applies).toHaveLength(1);
+    expect(applies[0].url).toContain("force=false&dryRun=All");
+    expect(applies[0].body).toMatchObject({
+      metadata: { resourceVersion: "8" },
+      spec: { color: "red" },
+    });
+  });
+
+  it("the preview of a removal is the dry run of the update that the save sends", async () => {
+    const updated = environment({ color: "red" });
+    answer = removalAnswers(named, updated, probed);
+
+    const preview = await directWriter(apiConfig).preview(clearName);
+
+    const patches = seen.filter((r) => r.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0].contentType).toBe("application/json-patch+json");
+    expect(patches[0].url).toContain("dryRun=All");
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects[0].after).toEqual({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "staging" },
+      spec: { color: "red" },
+    });
+    const shown = patches[0].body;
+    seen = [];
+    await directWriter(apiConfig).apply(clearName);
+    expect(writes().find((r) => r.method === "PATCH")?.body).toEqual(shown);
+  });
+
+  it("refuses an update that would take a field that the lists do not name", async () => {
+    // The walk sees no change of spec.color, but the API server takes it.
+    const live = environment({ displayName: "Stage", color: "red" }, [
+      kubectlOwns("displayName", "color"),
+    ]);
+    answer = removalAnswers(
+      live,
+      environment({ color: "red" }, [fleetOwns("Update", "color")]),
+      probed,
+    );
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          path: "spec.color",
+          manager: "kubectl-client-side-apply",
+          message:
+            "The save would take spec.color from kubectl-client-side-apply, and the review did not list it.",
+        }),
+      ],
+    });
+    expect(writes().filter((r) => r.method !== "GET")).toEqual([]);
+  });
+
+  it("refuses an update that would remove a field that the lists do not name", async () => {
+    const operator =
+      "CamundaClusterClaim/cluster/0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11";
+    const live = environment(
+      { displayName: "Stage", allowed: [{ name: "x" }, { name: "y" }] },
+      [
+        kubectlOwns("displayName"),
+        {
+          manager: operator,
+          operation: "Apply",
+          fieldsV1: {
+            "f:spec": {
+              "f:allowed": { 'k:{"name":"y"}': { ".": {}, "f:name": {} } },
+            },
+          },
+        },
+      ],
+    );
+    answer = removalAnswers(
+      live,
+      environment({ allowed: [{ name: "x" }] }),
+      probed,
+    );
 
     const result = await directWriter(apiConfig).apply({
-      intent: "Clear the name",
-      apply: [environment({ color: "blue" })],
-      preconditions: { [key]: "7" },
-      remove: { [key]: ["spec.displayName"] },
+      ...clearName,
+      apply: [environment({ allowed: [{ name: "x" }] })],
     });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          path: "spec.allowed[name=y]",
+          manager: operator,
+          message: `The save would remove spec.allowed[name=y] of ${operator}, and the review did not list it.`,
+        }),
+      ],
+    });
+    expect(writes().filter((r) => r.method !== "GET")).toEqual([]);
+  });
+
+  it("a newer write before the update fails with Stale and writes nothing", async () => {
+    answer = removalAnswers(named, environment({ color: "red" }), probed, {
+      update: { status: 409, body: conflict },
+    });
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toMatchObject({ ok: false, errors: [{ code: "Stale" }] });
+    const [error] = (result as { errors: { message: string }[] }).errors;
+    expect(error.message).not.toContain("did not record");
+    expect(
+      seen.filter((r) => r.contentType === "application/apply-patch+yaml"),
+    ).toEqual([]);
+    expect(writes().filter((r) => r.method !== "GET")).toHaveLength(1);
+  });
+
+  it("a newer write after the update fails with Stale and says that the next save records the fields", async () => {
+    answer = removalAnswers(named, environment({ color: "red" }), probed, {
+      record: { status: 409, body: conflict },
+    });
+
+    const result = await directWriter(apiConfig).apply(clearName);
 
     expect(result).toMatchObject({ ok: false, errors: [{ code: "Stale" }] });
     const [error] = (result as { errors: { message: string }[] }).errors;
     expect(error.message).toMatch(
-      /^The fleet manager saved the Environment staging, but did not remove spec\.displayName\. /,
+      /^The fleet manager saved the Environment staging, but did not record its fields\. The next save of the Environment records them\. /,
     );
-    const applied = writes().find(
-      (r) => r.contentType === "application/apply-patch+yaml",
-    )!;
-    expect(applied.url).toContain("force=false");
-    expect(applied.body).toMatchObject({ metadata: { resourceVersion: "7" } });
-    const removal = writes().at(-1)!;
-    expect(removal).toMatchObject({
-      method: "PATCH",
-      contentType: "application/json-patch+json",
-      body: [
-        { op: "replace", path: "/metadata/resourceVersion", value: "8" },
-        { op: "add", path: "/spec", value: { color: "blue" } },
+  });
+
+  it("stops before the record when the apply after the update sets other values", async () => {
+    answer = removalAnswers(
+      named,
+      environment({ color: "red" }),
+      environment({ color: "blue" }, [], "8"),
+    );
+
+    const result = await directWriter(apiConfig).apply(clearName);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message:
+            "The fleet manager saved the Environment staging, but did not record its fields. The next save of the Environment records them. An apply of the change sets other values than the update.",
+        }),
       ],
     });
-    expect(removal.url).toContain("fieldManager=fleet-manager");
+    const ops = writes()
+      .filter((r) => r.method === "PATCH")
+      .map((r) => r.body as { path: string }[]);
+    expect(
+      ops.some((o) => o.some((op) => op.path === "/metadata/managedFields")),
+    ).toBe(false);
+  });
+
+  it("a save of an object with an Update entry of the fleet manager goes through the update and drops that entry", async () => {
+    const live = environment({ color: "red" }, [fleetOwns("Update", "color")]);
+    answer = removalAnswers(
+      live,
+      live,
+      environment(
+        { color: "red" },
+        [fleetOwns("Update", "color"), fleetOwns("Apply", "color")],
+        "8",
+      ),
+    );
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Save",
+      apply: [environment({ color: "red" })],
+      preconditions: { [key]: "7" },
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const sent = writes().filter((r) => r.method !== "GET");
+    expect(sent.map((r) => r.contentType)).toEqual([
+      "application/json-patch+json",
+      "application/json-patch+json",
+    ]);
+    expect(sent[1].body).toEqual([
+      { op: "replace", path: "/metadata/resourceVersion", value: "8" },
+      {
+        op: "replace",
+        path: "/metadata/managedFields",
+        value: [fleetOwns("Apply", "color")],
+      },
+    ]);
+  });
+
+  it("a change without lists sends no forced apply and no update", async () => {
+    const live = environment({ color: "red" }, [fleetOwns("Apply", "color")]);
+    answer = (r) => ({
+      status: 200,
+      body: r.method === "GET" ? live : environment({ color: "blue" }),
+    });
+
+    const result = await directWriter(apiConfig).apply({
+      intent: "Recolor",
+      apply: [environment({ color: "blue" })],
+      preconditions: { [key]: "7" },
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const sent = writes().filter((r) => r.method !== "GET");
+    expect(sent).toHaveLength(1);
+    expect(sent[0].contentType).toBe("application/apply-patch+yaml");
+    expect(sent[0].url).toContain("force=false");
+    expect(
+      seen.some((r) => r.contentType === "application/json-patch+json"),
+    ).toBe(false);
   });
 
   it("applies a take-over once with force at the resourceVersion of the review", async () => {

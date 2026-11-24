@@ -32,16 +32,12 @@ type JsonMap = Record<string, unknown>;
 const PARTIAL_SAVE = "The fleet manager saved the ";
 
 /**
- * partialSaveMessage is the message of an error of a save that applied ref
- * and did not remove the fields of paths. message is the error of the
- * removal.
+ * partialSaveMessage is the message of an error of a save that updated ref
+ * and did not record the fields of the fleet manager. message is the error
+ * of that step.
  */
-export function partialSaveMessage(
-  ref: ObjectRef,
-  paths: readonly FieldPath[],
-  message: string,
-): string {
-  return `${PARTIAL_SAVE}${ref.kind} ${ref.name}, but did not remove ${paths.join(", ")}. ${message}`;
+export function partialSaveMessage(ref: ObjectRef, message: string): string {
+  return `${PARTIAL_SAVE}${ref.kind} ${ref.name}, but did not record its fields. The next save of the ${ref.kind} records them. ${message}`;
 }
 
 /** isPartialSave reports whether error has a message of partialSaveMessage. */
