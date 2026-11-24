@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -690,6 +690,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Cluster settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#errors-in-the-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors in the settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-secret-that-the-namespace-does-not-hold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Secret that the namespace does not hold
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -712,63 +740,13 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Review">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#permissions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Permissions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#direct-mode-and-git-mode" class="md-nav__link">
+  <a href="#create-the-cluster" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Direct mode and Git mode
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-step-cannot-read-a-list" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a step cannot read a list
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#a-secret-that-the-namespace-does-not-hold" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A Secret that the namespace does not hold
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-the-write-is-refused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When the write is refused
+        Create the cluster
       
     </span>
   </a>
@@ -1016,7 +994,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -2929,6 +2907,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Cluster settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#errors-in-the-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors in the settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-secret-that-the-namespace-does-not-hold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Secret that the namespace does not hold
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2951,63 +2957,13 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Review">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#permissions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Permissions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
-  <a href="#direct-mode-and-git-mode" class="md-nav__link">
+  <a href="#create-the-cluster" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Direct mode and Git mode
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-a-step-cannot-read-a-list" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When a step cannot read a list
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#a-secret-that-the-namespace-does-not-hold" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A Secret that the namespace does not hold
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#when-the-write-is-refused" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        When the write is refused
+        Create the cluster
       
     </span>
   </a>
@@ -3057,108 +3013,68 @@
 
 
 <h1 id="create-a-cluster">Create a cluster<a class="headerlink" href="#create-a-cluster" title="Permanent link">&para;</a></h1>
-<p>The fleet manager creates a Camunda cluster as a <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a>. The operator then creates the <code>CamundaCluster</code> and the requests of the options from the claim.</p>
+<p>The create form asks for the environment, the preset, the release, and the storage and access options of a new cluster. It then writes the claim of the cluster, and the operator builds the cluster from it. <a href="../install/#what-the-fleet-manager-writes">What the fleet manager writes</a> explains these words.</p>
 <h2 id="open-the-form">Open the form<a class="headerlink" href="#open-the-form" title="Permanent link">&para;</a></h2>
-<p>Open <strong>Fleet</strong> and select <strong>New cluster</strong>. The form has five steps: <strong>Environment and name</strong>, <strong>Storage and access</strong>, <strong>Cluster settings</strong>, <strong>Attachments</strong>, and <strong>Review</strong>. <strong>Next</strong> stays off while this step or an earlier step has an error. The errors show at the bottom of the form, each with the name of its step. You can go back to an earlier step at any time. The fleet manager keeps what you entered.</p>
-<p>While you fill in the form, it shows the changes in the Kubernetes API at once. A namespace, a preset, or a host that changes shows in the errors of its step. While a step has an error, <strong>Create</strong> on the review stays off.</p>
+<p>Open <strong>Fleet</strong> and select <strong>New cluster</strong>. The form has five steps: <strong>Environment and name</strong>, <strong>Storage and access</strong>, <strong>Cluster settings</strong>, <strong>Attachments</strong>, and <strong>Review</strong>.</p>
+<p><strong>Next</strong> stays off while a step has an error. The errors show at the bottom of the form, each with the name of its step. You can go back to an earlier step at any time, and the form keeps what you entered.</p>
 <h2 id="environment-and-name">Environment and name<a class="headerlink" href="#environment-and-name" title="Permanent link">&para;</a></h2>
-<p>Pick the environment of the cluster. The environments show only when at least one <code>Environment</code> exists. An environment that is not ready shows its message, and you cannot pick it. When you pick another environment, the form clears the namespace and the picks of <strong>Storage and access</strong>.</p>
-<p><strong>Name</strong> is the name of the claim and of the cluster. Use lowercase letters, digits, and <code>-</code>, at most 40 characters. The name starts with a letter and ends with a letter or a digit. The step refuses a name that a claim or a cluster of the namespace already has. It then shows <code>The name &lt;name&gt; is taken in this namespace.</code> Under the name, the step shows the hosts that the cluster gets from its access option.</p>
-<p><strong>Namespace</strong> is a namespace of the environment, or a new one when the environment allows <strong>Create a namespace</strong>. A new namespace gets the labels of the environment and a value for each label key that the environment asks for. <a href="../environments/#namespace-creation">Namespace creation</a> lists the rules.</p>
-<p><strong>Preset</strong> shows the cluster presets that the environment allows. Each preset shows its brokers, partitions, CPU, and memory, and the number of clusters that use it.</p>
+<ol>
+<li>Pick the <strong>Environment</strong> of the cluster. An environment that is not ready shows its message, and you cannot pick it.</li>
+<li>Type the <strong>Name</strong>. Use lowercase letters, digits, and <code>-</code>, at most 40 characters. The name starts with a letter and ends with a letter or a digit. It must be new in the namespace.</li>
+<li>Pick the <strong>Namespace</strong>: a namespace of the environment, or a new one when the environment allows <strong>Create a namespace</strong>. A new namespace gets the labels that the environment sets, as <a href="../environments/#namespace-creation">Namespace creation</a> shows.</li>
+<li>Pick the <strong>Preset</strong>. Each preset shows its brokers, partitions, CPU, and memory.</li>
+</ol>
+<p>Under the name, the step shows the hosts that the cluster gets from its access option.</p>
 <h2 id="storage-and-access">Storage and access<a class="headerlink" href="#storage-and-access" title="Permanent link">&para;</a></h2>
-<p>The step shows one group for each section that the environment allows, for example <strong>Secondary storage</strong>, <strong>Backup storage</strong>, and <strong>Access</strong>. Each option of a section is a card with its label. The option with the <strong>Default</strong> label is the default of the environment, and the form picks it for you. Under a picked option, the step shows each parameter that the environment lets the claim set. A parameter that names a config object lists the objects of that kind in the namespace of the cluster. An example is <strong>Name</strong> of <strong>Existing secondary storage</strong>.</p>
-<p>When another cluster or plane already uses a host of the access option, the step shows the conflict under the access cards. Go back to <strong>Environment and name</strong> and pick another name.</p>
-<p><strong>When the cluster is deleted</strong> says what happens to the resources of the options. <strong>Keep the resources</strong> is the deletion policy <code>Orphan</code>, and <strong>Delete the resources</strong> is <code>Delete</code>. <a href="../environments/#when-a-claim-is-deleted">When a claim is deleted</a> explains the default of the environment.</p>
+<p>The step has one group for each storage and access choice that the environment allows, for example <strong>Secondary storage</strong>, <strong>Backup storage</strong>, and <strong>Access</strong>. Each option is a card. The form picks the card with the <strong>Default</strong> label for you. Under the picked card, the step shows the parameters that you can set.</p>
+<p>If another cluster already uses a host of the access option, the step says so. Go back and pick another name.</p>
+<p><strong>When the cluster is deleted</strong> says what happens to the resources of these options, for example a bucket. Pick <strong>Keep the resources</strong> or <strong>Delete the resources</strong>. The default comes from the environment.</p>
 <h2 id="cluster-settings">Cluster settings<a class="headerlink" href="#cluster-settings" title="Permanent link">&para;</a></h2>
 <p>Pick the <strong>Release</strong> and the <strong>Platform config</strong>. Both start at the default of the environment.</p>
-<p>Under them, a note names the preset that you picked in <strong>Environment and name</strong>. Your admin made this preset. It sets each value that shows <strong>From preset</strong>. You can change such a value here. The change applies to this cluster only and does not change the preset.</p>
-<p>The settings come in groups: one group for the whole cluster and one group for each process. Each group starts closed. Select the name of a group to open it or close it. The number next to the name is the count of settings that you changed in the claim. A setting counts as soon as you change it. A value that you typed stays when you close the group.</p>
-<p>The first line of an open group says how many settings the group has and where their values come from, for example <code>14 settings: 3 from the preset, 11 not set</code>. A setting is <code>not set</code> when the preset, the release, and the claim give it no value.</p>
-<p>When a setting of a group shows an error, for example a Secret that the namespace does not hold, the group opens. It opens again each time that one more of its settings shows an error. A red count next to the name then says how many settings have an error, for example <code>1 error</code>. This count stays when you close the group.</p>
-<p>A setting also shows an error when the value that the cluster gets is not valid. Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the setting shows an error that names the preset. An example is <code>The CPU limit of 1 comes from the preset and is below the CPU request of 2</code>. When the preset alone gives a limit below its request, the error names the preset for both values.</p>
-<p><strong>Next</strong> stays off while a setting shows such an error, also when you changed nothing. When the preset changes to such a value after you leave this step, <strong>Create</strong> stays off and names this step. To correct it, set a limit that is not below the request, or a lower request. For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not stop <strong>Next</strong>. Correct it before the process runs on its own, because its resources apply only then.</p>
-<p>An edit of a CPU or memory amount writes only that amount into the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount of the preset, the claim does not set that amount.</p>
-<p>A resource such as <code>ephemeral-storage</code> has no field in the setting. When the claim sets a value for such a resource, <strong>Reset to preset</strong> removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.</p>
-<p>Labels, annotations, and environment variables merge key by key or name by name. The claim can add an entry or change its value, but it cannot remove an entry of the preset. When the preset holds an entry that the setting does not accept, the setting shows an error. The error names the entry and where it comes from, such as the preset. Examples are a label key or an annotation key that is not valid, such as <code>bad key</code>, and a variable without a name. The error stays when you remove the row, and <strong>Next</strong> stays off. Pick another preset, or ask your admin to correct the preset or the release. When only the value of a label is not valid, you can also type a valid value in its row. The claim then sets the value for that key. Some entries reach no object now. Examples are the labels and annotations of an embedded process or of a ServiceMonitor that is off. The annotations of a ServiceAccount whose <code>create</code> is <code>false</code> are another example. For such an entry that the preset or the claim already holds, the error shows as a warning. The same is true for the labels, annotations, and variables of Connectors that are off. When the labels, annotations, or variables reach an object, the error of an entry that the claim already holds turns <strong>Next</strong> off. This is also true while its editor is closed. The variables of an embedded process apply to its host, so their error stops <strong>Next</strong>.</p>
-<p>A setting that an option of <strong>Storage and access</strong> fills shows locked, with the name of its section. A setting that you leave as it is stays out of the claim, so the preset and the release decide its value.</p>
-<p>A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. A new namespace holds no Secret yet. <a href="#a-secret-that-the-namespace-does-not-hold">A Secret that the namespace does not hold</a> says what the step shows then.</p>
-<h2 id="attachments">Attachments<a class="headerlink" href="#attachments" title="Permanent link">&para;</a></h2>
-<p><strong>Attach Optimize</strong> adds a <code>CamundaOptimize</code> for the cluster. Optimize needs Elasticsearch as secondary storage and a <code>ManagementAuthConfig</code>. Without them, the checkbox is off and says which one is missing.</p>
-<p><strong>Back up on a schedule</strong> adds a <code>BackupSchedule</code> for the cluster. It needs a backup storage option. <a href="../change-a-cluster/#change-the-claim-in-the-claim-tab">Change a cluster</a> describes the fields of both attachments.</p>
-<h2 id="review">Review<a class="headerlink" href="#review" title="Permanent link">&para;</a></h2>
-<p>The review shows what the create writes and what the operator creates from it:</p>
-<ul>
-<li>The claim as YAML, at the top of the review.</li>
-<li>One group for each earlier step, with the values that you picked.</li>
-<li><strong>The new namespace</strong>: its YAML. It shows only when the cluster gets a new namespace.</li>
-<li><strong>Permissions the options ask for</strong>: the permissions of the chosen options. <a href="#permissions">Permissions</a> explains them.</li>
-<li><strong>What this change does</strong>: the objects that the create makes. These are the namespace, the claim, one request for each option, and the <code>CamundaCluster</code>. The <code>CamundaOptimize</code> and the <code>BackupSchedule</code> show when you attach them.</li>
-</ul>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">presetRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">small</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-0</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-storage</span>
+<p>Below them, the settings of the cluster come in groups: one for the whole cluster and one for each process, such as <strong>Brokers</strong>. Select the name of a group to open it. Each setting shows where its value comes from, for example <strong>From preset</strong>. A change applies to this cluster only, and does not change the preset. The number next to a group counts the settings that you changed.</p>
+<p>A setting that an option fills, for example the storage class of an encrypted volume, shows locked with the name of its choice.</p>
+<h3 id="errors-in-the-settings">Errors in the settings<a class="headerlink" href="#errors-in-the-settings" title="Permanent link">&para;</a></h3>
+<p>A group with an error opens, and a red count next to its name says how many settings have an error. The most common error is a CPU or memory limit below its request. A request or a limit that you leave empty keeps the value of the preset, so the error can name the preset:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>The CPU limit of 1 comes from the preset and is below the CPU request of 2
 </span></code></pre></div>
-<p>The claim names <code>platformConfigRef</code> only when you picked a platform config that is not the default of the environment. It names <code>deletionPolicy</code> only when your choice is not the default of the environment.</p>
-<p>The review asks the Kubernetes API to check the claim, and saves nothing. When the Kubernetes API refuses the claim, the review shows its message, and <strong>Create</strong> stays off. The Kubernetes API cannot check a claim in a namespace that does not exist yet. So when the cluster gets a new namespace, the review shows the claim unchecked, and the check comes at <strong>Create</strong>. <a href="#when-the-write-is-refused">When the write is refused</a> says what happens then.</p>
-<h3 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h3>
-<p>A plugin can ask for permissions in the cloud for its option, for example an IAM policy for a bucket. The review shows each permission template of each chosen option as the plugin renders it for this claim:</p>
-<ul>
-<li>A choice that you picked shows by its label, for example <code>&lt;policy: SQS access&gt;</code>.</li>
-<li>An output that does not exist yet shows as a placeholder, for example <code>&lt;bucket ARN from Backup storage&gt;</code>.</li>
-<li>An ARN that the admin set shows as <code>&lt;label: Set by your admin&gt;</code>, with the label of the parameter. An ARN that you entered shows as <code>&lt;label: An ARN that you entered&gt;</code>. The review never shows an ARN.</li>
-</ul>
-<p>The review leaves out a template that needs the output of a section that the claim does not select. The plugin asks for no such permission. A template that waits for the output of another chosen section says <code>Only when &lt;section&gt; gives its output</code>. When a template of an option cannot render, each template of that option shows the error. The plugin then asks for none of the permissions of that option. This error does not turn <strong>Create</strong> off.</p>
-<h2 id="direct-mode-and-git-mode">Direct mode and Git mode<a class="headerlink" href="#direct-mode-and-git-mode" title="Permanent link">&para;</a></h2>
-<p>Without Git mode, the fleet manager writes to the Kubernetes API directly. Select <strong>Create</strong> to write the cluster. The fleet manager creates the new namespace first, then the claim. The page then shows the progress of the cluster and the message <code>Created the cluster &lt;name&gt;.</code></p>
-<p>In Git mode, the button reads <strong>Push to Git</strong>. The fleet manager commits the claim to the repository, and the new namespace too when the cluster needs one, in one commit. The message then shows <code>Waiting for GitOps to apply</code> and the first seven characters of the commit. The message changes to <code>Created the cluster &lt;name&gt;.</code> after your GitOps tool applies the claim with the revision of the push. <a href="../settings/#git-mode">Git mode</a> says how to turn on Git mode and where the files go.</p>
-<h2 id="when-a-step-cannot-read-a-list">When a step cannot read a list<a class="headerlink" href="#when-a-step-cannot-read-a-list" title="Permanent link">&para;</a></h2>
-<p>The form reads the lists that it needs from the Kubernetes API, for example the environments, the options, and the presets. When the fleet manager cannot read a list, the step that needs it shows <code>The fleet manager could not read the &lt;kind&gt; objects:</code> and the error. <strong>Next</strong> stays off, because the step cannot check your picks against that list. On the review, the line reads <code>The fleet manager could not read the &lt;kind&gt; objects. The review can miss what the create makes, so Create stays off.</code></p>
-<p>The error goes away when the fleet manager can read the list again. If it stays, make sure that the fleet manager can reach the API server. Also make sure that its role can list that kind. Then open the form again.</p>
-<h2 id="a-secret-that-the-namespace-does-not-hold">A Secret that the namespace does not hold<a class="headerlink" href="#a-secret-that-the-namespace-does-not-hold" title="Permanent link">&para;</a></h2>
-<p>A setting that names a Secret needs that Secret, with its key, in the namespace of the cluster. When it is not there, the errors at the bottom of the form show an error with the path of the setting, for example:</p>
+<p>Set a limit that is not below the request, or a lower request. If the preset itself holds a wrong value, pick another preset. You can also ask your admin to correct it.</p>
+<h3 id="a-secret-that-the-namespace-does-not-hold">A Secret that the namespace does not hold<a class="headerlink" href="#a-secret-that-the-namespace-does-not-hold" title="Permanent link">&para;</a></h3>
+<p>A setting that names a Secret, such as an OIDC client secret, lists the Secrets of the namespace of the cluster. If the Secret is not there, for example after you picked another namespace, the step shows an error:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>auth.clientSecretRef: The namespace team-b holds no Secret orders-oidc. Pick a Secret of team-b, or reset the field.
 </span></code></pre></div>
-<p>A setting of <strong>Cluster settings</strong> also shows the error under its editor, without the path, and its group opens. This happens when you pick another namespace after you picked the Secret. Pick a Secret of the new namespace, or reset the field. A new namespace holds no Secret, so the step asks you to reset the field. A reference that sets <code>optional: true</code> gets no error.</p>
-<h2 id="when-the-write-is-refused">When the write is refused<a class="headerlink" href="#when-the-write-is-refused" title="Permanent link">&para;</a></h2>
-<p>A refused write shows its message and keeps the form as it is. Correct the cause and select <strong>Create</strong> again.</p>
-<p>When the fleet manager created the new namespace and the claim was refused, the namespace stays. The form then uses that namespace as an existing namespace and says so. The next <strong>Create</strong> writes only the claim.</p>
-<p>Another claim with the same name can appear while the review is open. The form then says <code>A claim &lt;name&gt; exists in &lt;namespace&gt; already. This create did not make it.</code> Go back to <strong>Environment and name</strong> and pick another name.</p>
-<p>The answer of a write can get lost, for example when the connection to the fleet manager drops. The write can then have landed or not. <strong>Create</strong> stays off, and the form shows <strong>Try again</strong>. <strong>Try again</strong> asks the Kubernetes API to check the claim again. When the claim of your write shows up meanwhile, the form shows <strong>Follow the claim</strong>, which opens its progress.</p>
-<h2 id="follow-the-creation">Follow the creation<a class="headerlink" href="#follow-the-creation" title="Permanent link">&para;</a></h2>
-<p>After the write, the page shows the progress of the cluster. On top, it shows the <code>Ready</code> condition of the claim and its message. Then it shows one row for each option. A row shows the name of the request, the state of its outputs and of its <code>Ready</code> condition, and its first summary line. The rows <strong>Requests</strong>, <strong>Cluster</strong>, and <strong>Attachments</strong> follow. Each shows the state of its condition of the claim and its message. The row <strong>Cluster</strong> shows the reason and the message of the <code>CamundaCluster</code>, for example <code>StorageAlreadyAttached: …</code>.</p>
-<p>While an option waits for the output of another section, the message of the claim names that section. The page shows that message on top. <code>kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o yaml</code> shows it in the status. This part of the status holds the message and the requests:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequestsReady</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Blocked</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">waiting for the outputs of encryption-key</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'cluster:</span><span class="nv"> </span><span class="s">Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key)'</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">requests</span><span class="p">:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-encryption-key</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encryption-key</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-kms-key</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-volume-encryption</span>
-</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">volume-encryption</span>
-</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-encrypted-volumes</span>
+<p>A new namespace holds no Secret yet, so reset the field.</p>
+<h2 id="attachments">Attachments<a class="headerlink" href="#attachments" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Attach Optimize</strong> adds Optimize to the cluster. Optimize needs Elasticsearch as secondary storage and a <code>ManagementAuthConfig</code>.</li>
+<li><strong>Back up on a schedule</strong> adds a backup schedule. It needs a backup storage option.</li>
+</ul>
+<p>A checkbox that is off says what is missing. <a href="../change-a-cluster/#change-the-claim-in-the-claim-tab">The Claim tab</a> describes the fields of both.</p>
+<h2 id="review">Review<a class="headerlink" href="#review" title="Permanent link">&para;</a></h2>
+<p>The review shows the claim as YAML, the values of each step, and what the create makes:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">presetRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">small</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-0</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-storage</span>
 </span></code></pre></div>
-<p>When the operator refuses the claim, the page shows the reason and the message, for example <code>NotAllowed</code>. The <a href="../../crds/camundaclusterclaim/#status">Status</a> section of the claim lists each reason and what to do. A claim that the operator refuses at creation gets no <code>CamundaCluster</code>. The cluster then has no page, and the line has no link to the Claim tab. Correct the cause, for example in the <code>Environment</code>. The claim then checks itself again. When the <code>CamundaCluster</code> exists, the line also has the link <strong>Open the Claim tab</strong>. When the cluster is ready, the link <strong>Open the cluster page</strong> shows under the rows.</p>
+<p>The Kubernetes API checks the claim before you create it. If it refuses the claim, the review shows the message, and <strong>Create</strong> stays off. The API cannot check a claim in a namespace that does not exist yet, so for a new namespace the check comes at <strong>Create</strong>.</p>
+<p><strong>Permissions the options ask for</strong> lists the cloud permissions of the options, for example an IAM policy for a bucket. A value that does not exist yet shows as a placeholder, such as <code>&lt;bucket ARN from Backup storage&gt;</code>.</p>
+<h2 id="create-the-cluster">Create the cluster<a class="headerlink" href="#create-the-cluster" title="Permanent link">&para;</a></h2>
+<p>Select <strong>Create</strong>. The page then shows the progress of the cluster, and <code>Created the cluster &lt;name&gt;.</code></p>
+<p>In Git mode, the button is <strong>Push to Git</strong>. The fleet manager commits the claim, and the new namespace when the cluster needs one. The page shows <code>Waiting for GitOps to apply</code> until your GitOps tool applies the commit. <a href="../settings/#git-mode">Git mode</a> shows how to turn it on.</p>
+<p>If the create fails, the form keeps your values and shows the message. Correct the cause and select <strong>Create</strong> again. A new namespace that the fleet manager already created stays, and the form uses it.</p>
+<h2 id="follow-the-creation">Follow the creation<a class="headerlink" href="#follow-the-creation" title="Permanent link">&para;</a></h2>
+<p>After <strong>Create</strong>, the page shows the <code>Ready</code> condition of the claim and its message. Then it shows one row for each option, and the rows <strong>Requests</strong>, <strong>Cluster</strong>, and <strong>Attachments</strong>. A request, a <code>PluginRequest</code>, is what the operator writes for each option so that the option builds its resources. When the cluster is ready, the link <strong>Open the cluster page</strong> shows.</p>
+<p>While an option waits for another option, the message names the choice that it waits for.</p>
+<p>If the operator refuses the claim, the page shows the reason, for example <code>NotAllowed</code>, and the message. Correct the cause, for example in the environment. The operator then checks the claim again. The <a href="../../crds/camundaclusterclaim/#status">Status</a> section of <code>CamundaClusterClaim</code> lists each reason and what to do.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../change-a-cluster/">Change a cluster</a></li>

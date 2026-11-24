@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -789,10 +789,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#membership" class="md-nav__link">
+  <a href="#namespaces" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Membership
+        Namespaces
       
     </span>
   </a>
@@ -811,10 +811,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#sections-and-options" class="md-nav__link">
+  <a href="#storage-and-access-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Sections and options
+        Storage and access options
       
     </span>
   </a>
@@ -830,9 +830,10 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
+    <nav class="md-nav" aria-label="Settings of the options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#template-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -842,8 +843,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#limits-set-at-install" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -851,6 +852,11 @@
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -877,10 +883,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#changes-apply-to-new-claims-only" class="md-nav__link">
+  <a href="#save-a-change" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Changes apply to new claims only
+        Save a change
       
     </span>
   </a>
@@ -988,7 +994,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -2860,10 +2866,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#membership" class="md-nav__link">
+  <a href="#namespaces" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Membership
+        Namespaces
       
     </span>
   </a>
@@ -2882,10 +2888,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#sections-and-options" class="md-nav__link">
+  <a href="#storage-and-access-options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Sections and options
+        Storage and access options
       
     </span>
   </a>
@@ -2901,9 +2907,10 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
+    <nav class="md-nav" aria-label="Settings of the options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#template-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2913,8 +2920,8 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
+        
+          <li class="md-nav__item">
   <a href="#limits-set-at-install" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2922,6 +2929,11 @@
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2948,10 +2960,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#changes-apply-to-new-claims-only" class="md-nav__link">
+  <a href="#save-a-change" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Changes apply to new claims only
+        Save a change
       
     </span>
   </a>
@@ -3001,12 +3013,10 @@
 
 
 <h1 id="environments">Environments<a class="headerlink" href="#environments" title="Permanent link">&para;</a></h1>
-<p>An environment holds the policy for the claims in its namespaces. A claim asks for a Camunda cluster or a management plane. The policy names the platform config, the presets, and the releases that a claim can use. It sets the options that a claim can pick in each section, and the values of their parameters. It also sets the deletion default and the rules for a new namespace. The page <strong>Setup &gt; Environments</strong> of the fleet manager lists the environments and edits each one. The <a href="../../crds/environment/">Environment</a> reference lists the fields.</p>
-<p>The list shows each environment with its color, the number of its namespaces, its clusters, its management planes, and its status. Select an environment to open its editor. Select <strong>New environment</strong> to create one.</p>
-<p>A count shows <code>Not known</code> while the fleet manager has no current list of the objects that it counts. A failed read shows <code>Could not read &lt;kind&gt;: &lt;message&gt;</code> at the top of the page. A list that is out of date shows <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code></p>
-<p>If the fleet manager cannot read its settings, the editor shows <code>Changes are off: the fleet manager could not read its settings.</code> and accepts no change. Reload the page when the settings can be read again.</p>
-<h2 id="membership">Membership<a class="headerlink" href="#membership" title="Permanent link">&para;</a></h2>
-<p>A namespace belongs to the environment that its label <code>fleet.camunda.io/environment</code> names. A namespace belongs to one environment at most.</p>
+<p>An environment sets the rules for the clusters and management planes in its namespaces. It names the platform config, the presets, and the releases that they can use. It sets the storage and access options that they can pick, and the values of the parameters of these options. It also sets what happens to the resources on delete, and the rules for a new namespace. The <a href="../../crds/environment/">Environment</a> reference lists the fields.</p>
+<p>The page <strong>Setup &gt; Environments</strong> lists the environments with their color, their namespaces, their clusters, their management planes, and their status. Select an environment to open its editor, or select <strong>New environment</strong>.</p>
+<h2 id="namespaces">Namespaces<a class="headerlink" href="#namespaces" title="Permanent link">&para;</a></h2>
+<p>A namespace belongs to the environment that its label <code>fleet.camunda.io/environment</code> names:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Namespace</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3014,32 +3024,13 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">labels</span><span class="p">:</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">fleet.camunda.io/environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
 </span></code></pre></div>
-<p>In the editor, the section <strong>Namespaces</strong> lists the namespaces of the environment and their claims. To add a namespace, pick it in <strong>Add a namespace</strong> and select <strong>Add</strong>. The list offers only namespaces without an environment label. The review shows the label change, and <strong>Add the namespace</strong> writes it. The review also names each claim of the namespace that names no release or no platform config. Such a claim moves to the default of the environment.</p>
-<p>The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.</p>
-<p>When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist. The banner does not show while the fleet manager has no current list of the environments, the namespaces, the claims, or the clusters.</p>
-<table>
-<thead>
-<tr>
-<th>Reason in the banner</th>
-<th>Meaning</th>
-<th>What to do</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>NoEnvironment</code></td>
-<td>The namespace has no label <code>fleet.camunda.io/environment</code>. Its claims take no change.</td>
-<td>Add the namespace to an environment.</td>
-</tr>
-<tr>
-<td><code>UnknownEnvironment</code></td>
-<td>The label names an environment that does not exist. Its claims take no change.</td>
-<td>Create that environment, or change the label.</td>
-</tr>
-</tbody>
-</table>
+<p>To add a namespace, pick it in <strong>Add a namespace</strong> and select <strong>Add</strong>. Then confirm with <strong>Add the namespace</strong>. The list offers only namespaces without an environment. A new environment has no namespaces yet, so save it first. The label goes straight to the Kubernetes API, also in Git mode.</p>
+<div class="admonition warning">
+<p class="admonition-title">A namespace without an environment</p>
+<p>Once one environment exists, the operator refuses each claim in a namespace without the label. A new cluster there is not created, and an existing cluster takes no change. The list of environments shows a banner with each such namespace. Add the namespace to an environment.</p>
+</div>
 <h2 id="platform-config-presets-and-releases">Platform config, presets, and releases<a class="headerlink" href="#platform-config-presets-and-releases" title="Permanent link">&para;</a></h2>
-<p>The sections <strong>Platform config</strong>, <strong>Presets</strong>, and <strong>Releases</strong> of the editor set these fields:</p>
+<p>The parts <strong>Platform config</strong>, <strong>Presets</strong>, and <strong>Releases</strong> of the editor set these fields:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3061,11 +3052,10 @@
 </span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">default</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-23</span>
 </span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
 </span></code></pre></div>
-<p>A claim can use only the presets and the releases that the environment allows. The Elasticsearch presets and the PostgreSQL presets are the presets of the built-in Elasticsearch and PostgreSQL options of a claim. An empty list allows none, and the page says so under the list. The default release is one of the allowed releases. The page refuses a save with another default, and it shows <code>The default release must be one of the allowed releases.</code></p>
-<p>A claim that names no release uses the default release. A claim that names no platform config uses the platform config of the environment. These two defaults are not part of the recorded policy of a claim (see <a href="#changes-apply-to-new-claims-only">Changes apply to new claims only</a>). So a change of either default moves such a claim to the new value.</p>
-<p>A list can hold a name that no object has. The editor shows that name checked, with <strong>Not found</strong>. Clear the box to remove the name.</p>
-<h2 id="sections-and-options">Sections and options<a class="headerlink" href="#sections-and-options" title="Permanent link">&para;</a></h2>
-<p>A section is one choice of a claim, for example <strong>Backup storage</strong> or <strong>Access</strong>. An option is a <code>PluginRegistration</code> that serves the section, for example the registration <code>rustfs</code> for backups. The YAML names an option by the name of its registration. The section <strong>Sections</strong> of the editor has a row for each section, in one group for clusters and one for management planes. The section <strong>Access</strong> is in both groups, and both rows edit one policy.</p>
+<p>A cluster can use only the presets and the releases that its environment allows. The Elasticsearch and PostgreSQL presets are for the built-in options <strong>New Elasticsearch cluster</strong> and <strong>New PostgreSQL server</strong>. An empty list allows none. The default release must be one of the allowed releases.</p>
+<p>A cluster that names no release uses the default release. A cluster that names no platform config uses the one of the environment. So a change of either default moves such clusters to the new value.</p>
+<h2 id="storage-and-access-options">Storage and access options<a class="headerlink" href="#storage-and-access-options" title="Permanent link">&para;</a></h2>
+<p>Each storage and access choice of a cluster, such as <strong>Backup storage</strong> or <strong>Access</strong>, has a row in the part <strong>Sections</strong> of the editor. The API calls such a choice a section. An option is a registration that serves the choice, for example <code>rustfs</code> for backups:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3081,15 +3071,14 @@
 </span></code></pre></div>
 <p>Each row has three settings:</p>
 <ul>
-<li><strong>Allowed options</strong> are the options that a claim of the environment can pick. A section without an allowed option offers only its empty option, for example <strong>No backups</strong>.</li>
-<li><strong>Default option</strong> is the option that the create flow selects first. It must be one of the allowed options, and the page refuses a save with another default.</li>
-<li><strong>Required</strong> makes a claim pick an allowed option. The create flow then does not offer the empty option.</li>
+<li><strong>Allowed options</strong>: the options that a cluster of the environment can pick. Without an allowed option, the choice offers only its empty option, for example <strong>No backups</strong>.</li>
+<li><strong>Default option</strong>: the option that the create form picks first. It must be one of the allowed options.</li>
+<li><strong>Required</strong>: a cluster must pick an allowed option. The create form then does not offer the empty option.</li>
 </ul>
-<p>The row offers only the registrations that have the condition <code>Accepted=True</code>. An option that is not ready shows <code>Not ready:</code> and the message of its <code>Ready</code> condition. You can allow it, and the create flow offers it when it is ready.</p>
-<p>An option can need a value from another section, for example an encryption key for encrypted volumes. If that section has no default, the option shows <code>Needs an option of Encryption key. Set a default in Encryption key.</code> The note does not block a save. A claim that picks the option must also pick an encryption key, or it is refused with <code>MissingInput</code>. A default in the other section makes the create flow pick one first.</p>
-<p>An allowed name that no accepted registration of the section has shows checked, with <strong>Not offered</strong>. Clear the box to remove the name. A section or an option that the environment names and that does not exist keeps the environment from being ready. The editor lists each one with <strong>Remove</strong>. A claim that exists keeps an option that it picked, also when the edit removes that option. The options are part of its recorded policy.</p>
+<p>The row offers only the options that the operator accepted. An option that is not ready shows <code>Not ready:</code> and its message. You can allow it, and the create form offers it when it is ready.</p>
+<p>Some options need a value from another choice, for example encrypted volumes need an <strong>Encryption key</strong>. Set a default in that other choice, so that the create form picks one.</p>
 <h2 id="settings-of-the-options">Settings of the options<a class="headerlink" href="#settings-of-the-options" title="Permanent link">&para;</a></h2>
-<p>The section <strong>Settings of the options</strong> has an entry for each option that a section allows. An option that no section allows keeps its entry while the environment has settings for it, so that you can clear them. Each entry lists the parameters of the option. A field follows the type of the parameter. A number field shows its range, and a parameter with a fixed set of values is a select.</p>
+<p>The part <strong>Settings of the options</strong> lists the parameters of each allowed option:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3108,14 +3097,11 @@
 </span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">            </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arn:aws:iam::aws:policy/AmazonSQSFullAccess</span>
 </span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
 </span></code></pre></div>
-<p>A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example <code>From the registration: 3</code>. When the option sets a map, the editor of the map shows <strong>Set to an empty map</strong> while it has no rows. Select it to make the environment value <code>{}</code>, a map with no entries. <strong>Use the inherited value</strong> goes back to the map of the option. <strong>A claim can change it</strong> lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.</p>
-<p>When <strong>A claim can change it</strong> is on, the parameter can get a list of choices, <code>allowed</code> in the YAML. Select <strong>Add a choice</strong> and give each choice a name, a label, and a value. The value of a map can be <strong>Set to an empty map</strong>, <code>{}</code>. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn <strong>A claim can change it</strong> off, the choices go too.</p>
-<p>A choice that another tool set stays when you remove it, unless you take it over in the review. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says how. While such a choice is in the list, a save that turns <strong>A claim can change it</strong> off can fail with <code>allowed needs claimEditable: true</code>. Then remove the choice first, with the take-over, and save. Turn <strong>A claim can change it</strong> off in a second save.</p>
-<p>A host pattern of an access option shows the host that it gives the first claim of the environment, for example <code>orders in team-a gets orders.team-a.example.com</code>. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section <strong>Presets</strong> allows. With an empty list, a new claim of the option is refused with <code>NotAllowed</code>, and the page says so.</p>
-<p>A parameter that the option requires needs a value from the environment or from the option, or <strong>A claim can change it</strong>. Without one, the page shows <code>This parameter needs a value.</code> under the parameter of an option that a section allows. You can still save. The create flow refuses a new claim that picks the option. When another tool writes such a claim, the request of the claim is refused with the reason <code>InvalidParameters</code>. The claim then waits with <code>RequestsReady</code> at <code>False</code>.</p>
-<p>A cluster claim gives its release to a parameter <code>releaseRef</code> of type string. A management plane claim gives its databases to the parameter <code>databases</code> in a section with the slot <code>managementDatabases</code>. These parameters need no value there. When only some claims of the option get no value, the warning names each claim kind and section, for example <code>a management plane claim in Access</code>.</p>
-<h2 id="template-parameters">Template parameters<a class="headerlink" href="#template-parameters" title="Permanent link">&para;</a></h2>
-<p>Some parameters are templates, for example the inline policy of the Connectors role. Such a parameter gets an editor with a chip for each placeholder. Select a chip to put the placeholder at the cursor.</p>
+<p>A value of the environment replaces the default of the option. While the field is empty, the page shows the default under it, for example <code>From the registration: 3</code>.</p>
+<p><strong>A claim can change it</strong> lets each cluster of the environment set its own value. With it on, <strong>Add a choice</strong> builds a list of named values. A cluster can then pick only a name of the list, and only the option gets the value, for example the ARN of a policy.</p>
+<p>A parameter that the option requires needs a value from the environment or from the option, or <strong>A claim can change it</strong>. Without one, the page shows <code>This parameter needs a value.</code>, and the create form refuses the option.</p>
+<h3 id="template-parameters">Template parameters<a class="headerlink" href="#template-parameters" title="Permanent link">&para;</a></h3>
+<p>Some parameters are templates, for example the inline policy of the Connectors role. The editor has a chip for each placeholder:</p>
 <table>
 <thead>
 <tr>
@@ -3126,7 +3112,7 @@
 <tbody>
 <tr>
 <td><code>{{ .namespace }}</code></td>
-<td>The namespace of the claim.</td>
+<td>The namespace of the cluster.</td>
 </tr>
 <tr>
 <td><code>{{ .claim }}</code></td>
@@ -3134,11 +3120,11 @@
 </tr>
 <tr>
 <td><code>{{ .request }}</code></td>
-<td>The name of the request of the claim for this option.</td>
+<td>The name of the <code>PluginRequest</code> that the operator writes for this option of the cluster.</td>
 </tr>
 <tr>
 <td><code>{{ .serviceAccount }}</code></td>
-<td>The ServiceAccount that the request gives the permissions to.</td>
+<td>The ServiceAccount that gets the permissions.</td>
 </tr>
 <tr>
 <td><code>{{ .parameters.&lt;name&gt; }}</code></td>
@@ -3146,13 +3132,11 @@
 </tr>
 </tbody>
 </table>
-<p>A template parameter cannot read <code>.outputs</code>. The editor shows <code>the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs</code> at the field. An unknown placeholder shows an error such as <code>unknown placeholder .claimName</code>. The page refuses a save while a template has an error.</p>
-<p>The preview under the editor renders the template for a claim of the environment, which you pick. It shows what a new claim gets. An existing claim keeps the policy it recorded. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim <code>example</code> in the first namespace by name. If the environment has no namespace, the preview asks you to add one first. If no section of the option applies to a cluster claim or a management plane claim, the preview says so.</p>
-<p>A template cannot read a parameter whose value is an object, a list, or null. The preview shows the error that the plugin gives for such a request, for example <code>parameter "extraPolicyArns" is a list: a template prints only a string, a number, or a boolean</code>. The page saves such a template, but the plugin refuses each request of the option with this error and the reason <code>InvalidParameters</code>.</p>
-<h2 id="limits-set-at-install">Limits set at install<a class="headerlink" href="#limits-set-at-install" title="Permanent link">&para;</a></h2>
-<p>An option can have limits that its install sets, for example a permissions boundary for the role of each cluster. The page shows each limit by its label, as <strong>Permissions boundary (limit set at install)</strong>, with its value. The page cannot change a limit. The Helm chart that installs the registration sets it.</p>
+<p>The preview under the editor shows the template for a cluster of the environment that you pick.</p>
+<h3 id="limits-set-at-install">Limits set at install<a class="headerlink" href="#limits-set-at-install" title="Permanent link">&para;</a></h3>
+<p>An option can have limits that its Helm chart sets, for example a permissions boundary for the role of each cluster. The page shows them, for example as <strong>Permissions boundary (limit set at install)</strong>, but cannot change them.</p>
 <h2 id="namespace-creation">Namespace creation<a class="headerlink" href="#namespace-creation" title="Permanent link">&para;</a></h2>
-<p>In the section <strong>Namespaces</strong>, <strong>The create flow can create a namespace</strong> lets the create flow make a new namespace in the environment. <strong>Fixed labels of a new namespace</strong> are labels that each new namespace gets. <strong>Required label keys</strong> are keys, for example <code>team</code>. The create flow asks for a value of each key.</p>
+<p>In the part <strong>Namespaces</strong>, <strong>The create flow can create a namespace</strong> lets the create form make a new namespace in the environment. <strong>Fixed labels of a new namespace</strong> are labels that each new namespace gets. For each key of <strong>Required label keys</strong>, the create form asks for a value:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3166,9 +3150,8 @@
 </span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cost-center</span>
 </span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
 </span></code></pre></div>
-<p>The create flow sets the label <code>fleet.camunda.io/environment</code> itself. Neither list can hold it, and the editor shows <code>The fleet manager sets fleet.camunda.io/environment itself.</code> when you type it. An environment can have 16 required label keys at most.</p>
 <h2 id="when-a-claim-is-deleted">When a claim is deleted<a class="headerlink" href="#when-a-claim-is-deleted" title="Permanent link">&para;</a></h2>
-<p>The section <strong>When a claim is deleted</strong> sets the default for new claims. <strong>Delete the resources of the claim</strong> is <code>Delete</code>, and <strong>Keep the resources of the claim</strong> is <code>Orphan</code>. A claim that sets its own policy keeps it.</p>
+<p>The part <strong>When a claim is deleted</strong> sets the default for new clusters and planes. The choices are <strong>Delete the resources of the claim</strong> (<code>Delete</code>) and <strong>Keep the resources of the claim</strong> (<code>Orphan</code>). The resources are those of the storage and access options, for example a bucket.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3177,91 +3160,33 @@
 </span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
 </span></code></pre></div>
-<h2 id="changes-apply-to-new-claims-only">Changes apply to new claims only<a class="headerlink" href="#changes-apply-to-new-claims-only" title="Permanent link">&para;</a></h2>
-<p>A claim records the policy of its environment when it is created. A later change of the environment does not change that recorded policy. While the editor has changes, a note above <strong>Review</strong> counts the claims that keep the policy they recorded:</p>
+<h2 id="save-a-change">Save a change<a class="headerlink" href="#save-a-change" title="Permanent link">&para;</a></h2>
+<p><strong>Review</strong> shows the change before the save. In Git mode, the save pushes a commit, and the form stays locked until GitOps applies it.</p>
+<p>A cluster keeps the rules that applied when it was created, so most changes reach only new clusters. A note above <strong>Review</strong> counts the clusters and planes that keep their rules:</p>
 <blockquote>
 <p>Changes apply to new claims only. 2 clusters and 1 management plane keep the policy they recorded at creation.</p>
 </blockquote>
-<p>The note also names each claim that the change touches:</p>
-<table>
-<thead>
-<tr>
-<th>Note</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>orders in team-a uses release 8.9.22, which this change no longer allows.</code></td>
-<td>The cluster keeps running. A later change of its release must pick an allowed release. The same note exists for a cluster preset, an Elasticsearch preset, and a PostgreSQL preset.</td>
-</tr>
-<tr>
-<td><code>orders in team-a names no release and moves to 8.9.23.</code></td>
-<td>The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time.</td>
-</tr>
-<tr>
-<td><code>orders in team-a names no release, and its cluster refuses the move to 8.9.0 (VersionDowngradeRefused).</code></td>
-<td>The new default release is older than the version that the cluster reports, or skips a minor after that version (<code>VersionSkipRefused</code>). A downgrade that the claim or the cluster approves gets no such note, see <a href="../../crds/camundaclusterclaim/#downgrade">Downgrade</a>. If the cluster reports no version, the note compares the new default with the old default. The cluster keeps running and takes no further change.</td>
-</tr>
-<tr>
-<td><code>orders in team-a names no platform config and moves to shared.</code></td>
-<td>The claim follows the default platform config.</td>
-</tr>
-<tr>
-<td><code>The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.</code></td>
-<td>A read of a list that the note counts failed, or the list is out of date. The count and the other notes can be incomplete. This note takes the place of <code>Changes apply to new claims only.</code> An alert at the top of the page shows the error of a failed read.</td>
-</tr>
-<tr>
-<td><code>This is the first environment. The claims in legacy have no environment label, …</code></td>
-<td>Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. This note does not show while the note <code>The fleet manager has no current list of …</code> shows.</td>
-</tr>
-<tr>
-<td><code>orders in team-a names no release, and this change removes the default release.</code></td>
-<td>The cluster keeps running, but the claim is not ready and its cluster takes no further change. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports <code>MissingInput</code> and takes no further change.</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Review</strong> shows the change to the environment before the save. Another tool, such as <code>kubectl apply</code> or a GitOps tool, can set a field that the change changes or removes. The review names such a field and the tool. It asks before the save takes the field over, as <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says. In Git mode, a field of another tool that the change removes stays, and the review names it: <code>spec.sections.backup-storage stays, because another tool set it.</code></p>
-<p>If the environment changed after you opened the page, the save writes nothing. It shows <code>The Environment production changed since you opened it.</code> Select <strong>Discard</strong> to load the current environment, then make your change again.</p>
-<p>In Git mode, the save pushes a commit, and the page waits until GitOps applied it. The form stays locked while it waits.</p>
+<p>The note also names each cluster that the change moves, for example a cluster that follows the default release:</p>
+<blockquote>
+<p>orders in team-a names no release and moves to 8.9.23.</p>
+</blockquote>
+<p>Such a cluster restarts its brokers one at a time.</p>
 <h2 id="delete-an-environment">Delete an environment<a class="headerlink" href="#delete-an-environment" title="Permanent link">&para;</a></h2>
-<p>The section <strong>Delete the environment</strong> offers the delete only when no namespace carries the label of the environment. The fleet manager must also be able to read the namespaces. The delete is also off while the review of a new namespace is open. Remove the label from each namespace first, for example with <code>kubectl label namespace my-cluster-ns fleet.camunda.io/environment-</code>. The page does not remove a label. Then type the name of the environment and select <strong>Review the delete</strong>. The review shows the dry run of the delete, and <strong>Delete the environment</strong> deletes it.</p>
-<p>In Git mode the delete is a commit that removes the file of the environment, and the button reads <strong>Push the delete to Git</strong>. GitOps must prune the Environment to delete it from the cluster.</p>
-<h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
-<p>The editor shows the <code>Ready</code> condition of the environment. When a name in the spec has no object, the editor shows the message of the condition:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InvalidReference</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"The</span><span class="nv"> </span><span class="s">spec</span><span class="nv"> </span><span class="s">names</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">do</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">exist:</span><span class="nv"> </span><span class="s">CamundaRelease</span><span class="nv"> </span><span class="s">camunda-8-9-9"</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">namespaces</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<p>The delete is possible only when no namespace carries the label of the environment. Remove the label from each namespace first:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>label<span class="w"> </span>namespace<span class="w"> </span>my-cluster-ns<span class="w"> </span>fleet.camunda.io/environment-
 </span></code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Type</th>
-<th>Reason</th>
-<th>Meaning</th>
-<th>What to do</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>Ready</code></td>
-<td><code>Healthy</code></td>
-<td>Each object that the spec names exists.</td>
-<td>Nothing.</td>
-</tr>
-<tr>
-<td><code>Ready</code></td>
-<td><code>InvalidReference</code></td>
-<td>The spec names an object that does not exist. The message names each one.</td>
-<td>Create the object, or clear its name in the editor.</td>
-</tr>
-</tbody>
-</table>
-<p>A new environment has no status until the operator counts its namespaces. Until then, the list of environments shows the number of namespaces with the label.</p>
+<p>Then type the name of the environment, select <strong>Review the delete</strong>, and select <strong>Delete the environment</strong>. In Git mode, the button is <strong>Push the delete to Git</strong>.</p>
+<h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
+<p>The editor shows the <code>Ready</code> condition of the environment. When the environment names an object that does not exist, the message names it:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InvalidReference</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">"The</span><span class="nv"> </span><span class="s">spec</span><span class="nv"> </span><span class="s">names</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">that</span><span class="nv"> </span><span class="s">do</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">exist:</span><span class="nv"> </span><span class="s">CamundaRelease</span><span class="nv"> </span><span class="s">camunda-8-9-9"</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">namespaces</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span></code></pre></div>
+<p>Create the object, or clear its name in the editor. A name without an object shows <strong>Not found</strong> in the editor.</p>
 
 
 

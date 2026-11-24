@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1008,7 +1008,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -3110,7 +3110,7 @@ The management plane is a <code>CamundaManagementCluster</code>. It runs Managem
 </span></code></pre></div>
 <p>With Podman, use <code>podman exec</code>.</p>
 <p>Each step shows a manifest. Save it to a file and apply it with <code>kubectl apply -f &lt;file&gt;</code>.</p>
-<p>The <a href="../fleet-manager/management-planes/#a-plane-that-no-claim-made">fleet manager</a> shows the management plane of this guide, but does not change it, because no claim made it. You can change the presets, the release, and the platform config of this guide on the <a href="../fleet-manager/presets-and-releases/">Presets and releases</a> and <a href="../fleet-manager/platform-and-connections/#platform-config">Platform config</a> pages.</p>
+<p>The <a href="../fleet-manager/management-planes/#planes-without-a-claim">fleet manager</a> shows the management plane of this guide, but does not change it, because no claim made it. You can change the presets, the release, and the platform config of this guide on the <a href="../fleet-manager/presets-and-releases/">Presets and releases</a> and <a href="../fleet-manager/platform-and-connections/#platform-config">Platform config</a> pages.</p>
 <h2 id="1-create-the-namespaces">1. Create the namespaces<a class="headerlink" href="#1-create-the-namespaces" title="Permanent link">&para;</a></h2>
 <p>The management plane runs in <code>my-management-ns</code>. The orchestration cluster runs in <code>my-cluster-ns</code>.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>

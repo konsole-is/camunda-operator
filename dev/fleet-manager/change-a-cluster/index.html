@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -685,9 +685,21 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Change the settings of a component">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-a-value-comes-from" class="md-nav__link">
+    <span class="md-ellipsis">
       
-        <li class="md-nav__item">
+        Where a value comes from
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-a-change-writes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -695,6 +707,22 @@
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#embedded-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embedded apps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -742,50 +770,6 @@
     <span class="md-ellipsis">
       
         Save or discard the changes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#a-claim-made-outside-the-fleet-manager" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A claim made outside the fleet manager
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-state-of-a-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The state of a field
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#embedded-apps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Embedded apps
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#storage-size" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage size
       
     </span>
   </a>
@@ -983,7 +967,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -2863,9 +2847,21 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Change the settings of a component">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-a-value-comes-from" class="md-nav__link">
+    <span class="md-ellipsis">
       
-        <li class="md-nav__item">
+        Where a value comes from
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-a-change-writes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2873,6 +2869,22 @@
       
     </span>
   </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#embedded-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Embedded apps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2926,50 +2938,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#a-claim-made-outside-the-fleet-manager" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        A claim made outside the fleet manager
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-state-of-a-field" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The state of a field
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#embedded-apps" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Embedded apps
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#storage-size" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage size
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -2991,65 +2959,43 @@
 
 
 <h1 id="change-a-cluster">Change a cluster<a class="headerlink" href="#change-a-cluster" title="Permanent link">&para;</a></h1>
-<p>The cluster page of the fleet manager changes a cluster through its <code>CamundaClusterClaim</code>. Each change edits the claim. The fleet manager does not write the <code>CamundaCluster</code> itself. A cluster that no claim made shows <strong>Not managed</strong> and has no editors.</p>
+<p>You change a cluster on its <a href="../cluster-page/">cluster page</a>. Each change goes into the <a href="../install/#what-the-fleet-manager-writes">claim</a> of the cluster, and the operator then changes the cluster. A cluster that shows <strong>Not managed</strong> has no editors.</p>
+<p>Your changes collect as unsaved changes until you save them, as <a href="#save-or-discard-the-changes">Save or discard the changes</a> shows.</p>
 <h2 id="change-the-settings-of-a-component">Change the settings of a component<a class="headerlink" href="#change-the-settings-of-a-component" title="Permanent link">&para;</a></h2>
-<p>Open the cluster page, then select the card of a component on the <strong>Overview</strong> tab. The <strong>Settings</strong> tab of the component shows each field with its value and where the value comes from. Below the table, the button <strong>Edit settings</strong> opens one editor for each field.</p>
-<p>A component also offers the fields that neither the preset nor the claim sets, for example <code>replicas</code> of Tasklist. The type of each field decides its editor:</p>
+<ol>
+<li>Open the cluster page, and select the card of a component on the <strong>Overview</strong> tab, for example <strong>Brokers</strong>.</li>
+<li>Open the <strong>Settings</strong> tab. It shows each setting with its value and where the value comes from.</li>
+<li>Select <strong>Edit settings</strong>.</li>
+<li>Change the values.</li>
+</ol>
+<p>Each editor fits its setting. For example, <code>replicas</code> is a number, <code>resources</code> is a request and a limit, and <code>podLabels</code> has one row for each key. A list such as <code>scheduling.nodeAffinity</code> is YAML, checked against the schema of the field. <strong>From a Secret</strong> lists the Secrets of the namespace by name, never their values.</p>
+<h3 id="where-a-value-comes-from">Where a value comes from<a class="headerlink" href="#where-a-value-comes-from" title="Permanent link">&para;</a></h3>
+<p>Below each editor, the page says where the value comes from, for example <strong>From preset</strong> or <strong>Changed in the claim</strong>. <strong>Reset to preset</strong> removes your value, so the value of the preset applies again.</p>
+<p>Some settings show their value and a reason, with no editor:</p>
 <table>
 <thead>
 <tr>
-<th>Field</th>
-<th>Editor</th>
+<th>Reason</th>
+<th>What to change</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>A string, such as <code>storageClassName</code> of the brokers</td>
-<td>A text input.</td>
+<td>Filled by <em>choice</em>, for example <strong>Filled by Volume encryption</strong></td>
+<td>The option of that choice sets the value. Change the parameters of the option on the <strong>Claim</strong> tab.</td>
 </tr>
 <tr>
-<td>A number, such as <code>replicas</code></td>
-<td>A number input. A value outside the range of the field shows an error.</td>
+<td>Set by the release</td>
+<td>Pick another release.</td>
 </tr>
 <tr>
-<td><code>true</code> or <code>false</code>, such as <code>enabled</code></td>
-<td>A checkbox.</td>
-</tr>
-<tr>
-<td>A field with a fixed list of values, such as <code>mode</code></td>
-<td>A list of the values, and <strong>Not set</strong>.</td>
-</tr>
-<tr>
-<td><code>resources</code></td>
-<td>The CPU and the memory, each as a request and a limit with a unit.</td>
-</tr>
-<tr>
-<td><code>storageSize</code></td>
-<td>An amount and a unit.</td>
-</tr>
-<tr>
-<td><code>extraEnv</code></td>
-<td>One row for each variable: a name, then a value or <strong>From a Secret</strong>.</td>
-</tr>
-<tr>
-<td><code>podLabels</code>, <code>podAnnotations</code>, and the other maps</td>
-<td>One row for each key and value. A label needs a key and a value that Kubernetes accepts as a label. An annotation needs a key that Kubernetes accepts, such as <code>example.com/note</code>. Upper case letters are allowed in an annotation key. A row that you type or change must follow these rules.</td>
-</tr>
-<tr>
-<td><code>scheduling.tolerations</code></td>
-<td>One row for each toleration.</td>
-</tr>
-<tr>
-<td><code>scheduling.nodeAffinity</code>, <code>scheduling.podAffinity</code>, <code>extraEnvFrom</code>, and the other lists</td>
-<td>YAML, checked against the schema of the field.</td>
+<td>Fixed by the claim controller</td>
+<td>The operator sets the value. You cannot change it.</td>
 </tr>
 </tbody>
 </table>
-<p>A value that the editor of its field cannot keep as it is opens in YAML. Examples are a toleration with a field that the rows do not show and a variable with both a value and a Secret key.</p>
-<p><strong>From a Secret</strong> shows the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.</p>
-<p>The preset and the release can add their own <code>extraEnvFrom</code> sources. In the pods, these sources come before the sources of the claim. For this reason, the editor of <code>extraEnvFrom</code> shows only the sources of the claim. It also shows how many sources the preset and the release add.</p>
-<h2 id="what-a-change-writes">What a change writes<a class="headerlink" href="#what-a-change-writes" title="Permanent link">&para;</a></h2>
-<p>A change of a field writes the field at its path in <code>spec.cluster</code> of the claim. The block of the component comes first in the path, for example <code>spec.cluster.zeebe.replicas</code> for the replicas of the brokers. When you set <code>replicas</code> of Tasklist to 2, the claim gets this value:</p>
+<h3 id="what-a-change-writes">What a change writes<a class="headerlink" href="#what-a-change-writes" title="Permanent link">&para;</a></h3>
+<p>A change writes the setting in <code>spec.cluster</code> of the claim. The settings of Optimize go into <code>spec.attachments.optimize</code>. When you set <code>replicas</code> of Tasklist to 2, the claim gets:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3061,57 +3007,38 @@
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
-<p>The settings of Optimize go into <code>spec.attachments.optimize</code> of the claim.</p>
-<p>The preset can set a block such as <code>scheduling</code> as one value. A claim value of the block then replaces the whole block of the preset. For this reason, a change of one part writes the whole block into the claim, with the other parts as the preset sets them. For example, the preset sets <code>scheduling.nodeAffinity</code>, and you add a toleration. The claim then gets <code>scheduling</code> with the node affinity of the preset and your toleration.</p>
-<p>When you empty a field, for example when you remove the last label, the claim no longer sets the field. The value of the preset then applies again.</p>
+<p>A setting that you leave as it is stays out of the claim, so the preset decides it. One exception is a block such as <code>scheduling</code>: a change of one part writes the whole block into the claim. The other parts keep their values, but they no longer follow the preset.</p>
+<p>A volume cannot become smaller. A smaller <code>storageSize</code> keeps the current size of the volumes.</p>
+<h3 id="embedded-apps">Embedded apps<a class="headerlink" href="#embedded-apps" title="Permanent link">&para;</a></h3>
+<p>Operate, Tasklist, and Admin run inside the gateway unless their <code>mode</code> is <code>Standalone</code>. Their settings, such as Tasklist <code>replicas</code>, apply only when they run standalone, except <code>extraEnv</code> and <code>extraEnvFrom</code>.</p>
 <h2 id="change-the-topology">Change the topology<a class="headerlink" href="#change-the-topology" title="Permanent link">&para;</a></h2>
-<p>The topology of a cluster shows where each process runs. The <strong>Topology</strong> panel on the <strong>Overview</strong> tab of the cluster page draws it. On a cluster that a claim made, the panel has the button <strong>Change topology</strong>.</p>
-<p><strong>Change topology</strong> opens a dialog with a choice for the gateway, Operate, Tasklist, and Admin:</p>
+<p>The <strong>Topology</strong> panel on the <strong>Overview</strong> tab shows where each process runs. <strong>Change topology</strong> opens a choice for the gateway, Operate, Tasklist, and Admin:</p>
 <ul>
 <li><strong>Standalone</strong>: the process gets its own Deployment and Service.</li>
 <li><strong>Embedded</strong>: the gateway runs in the brokers. Operate, Tasklist, and Admin run in the gateway, or in the brokers when the gateway is embedded too.</li>
 </ul>
-<p>The brokers and Connectors have no choice. The dialog changes only where the processes run. The number of brokers is <code>replicas</code>, and the number of partitions is <code>partitions</code>. Both are fields of the <strong>Settings</strong> tab of the brokers, as <a href="#change-the-settings-of-a-component">Change the settings of a component</a> shows.</p>
-<p>A pick writes <code>mode</code> in the block of the process, for example <code>spec.cluster.operate.mode</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">operate</span><span class="p">:</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Standalone</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
-</span></code></pre></div>
-<p>If the claim does not set the mode, a pick of the current mode writes nothing. To undo a pick before you save, pick the mode that the process had before. Then the pick leaves nothing to save. <strong>Discard</strong> on the bar removes every unsaved change. To undo a saved change, pick the other mode and save again. The claim then keeps <code>mode</code> with that value.</p>
-<p>Below the choices, the dialog shows the topology <strong>Now</strong> and <strong>After the change</strong>. The list <strong>What happens</strong> names what the change creates, removes, and restarts. When Operate of <code>my-cluster</code> becomes standalone, the list is:</p>
+<p>The dialog shows the topology <strong>Now</strong> and <strong>After the change</strong>. The list <strong>What happens</strong> names what the change creates, removes, and restarts. When Operate of <code>my-cluster</code> becomes standalone, the list is:</p>
 <ul>
 <li>Creates Deployment my-cluster-operate and Service my-cluster-operate.</li>
 <li>Operate starts from the workload settings of the preset: replicas, CPU, and memory.</li>
 <li>Gateway pods restart.</li>
 </ul>
-<p>When the claim already holds settings for Operate, the second line is "Operate starts with the settings prepared in the claim (<em>n</em> fields)." <a href="#embedded-apps">Embedded apps</a> shows how to prepare them. When Operate goes back into the gateway, the list says "Removes Deployment my-cluster-operate and Service my-cluster-operate. Operate runs in the gateway, which restarts." When the gateway goes into the brokers, the list says "Removes Deployment my-cluster-gateway and Service my-cluster-gateway. Gateway runs in the brokers, which restarts."</p>
-<p>The list covers every unsaved change of the cluster, not only the picks of the dialog. The dialog then says "These lines include the other pending changes of this cluster."</p>
-<p>A mode that you cannot change shows its value and the reason, with no choice. The table in <a href="#the-state-of-a-field">The state of a field</a> gives each reason and where to change the value.</p>
-<p>Each pick is an unsaved change. When you close the dialog, the picks stay, and the bar at the bottom of the page counts them. <strong>Review</strong> in the dialog opens the review of every unsaved change, as <a href="#save-or-discard-the-changes">Save or discard the changes</a> shows. When the page blocks the review, for example while an editor shows an error, the dialog stays open. It says "Review is blocked. The change bar says why."</p>
+<p>The number of brokers and partitions is on the <strong>Settings</strong> tab of the brokers, not in this dialog.</p>
 <h3 id="a-running-backup">A running backup<a class="headerlink" href="#a-running-backup" title="Permanent link">&para;</a></h3>
-<p>A change that restarts the brokers, or that changes the Camunda version, can make a running backup of the cluster fail. A mode change of the gateway restarts the brokers, because the gateway moves into or out of them. A running backup does not stop the change. The review warns before you save, for example:</p>
+<p>A change that restarts the brokers can make a running backup fail. A change of the Camunda version or of the gateway mode restarts the brokers. The review then warns, and the save button reads <strong>Change anyway</strong>, or <strong>Push anyway</strong> in Git mode:</p>
 <blockquote>
 <p>CAUTION: Wait until backup my-cluster-manual-1 finishes. This change can restart the brokers, which can fail a running backup.</p>
 </blockquote>
-<p>The confirm button is then <strong>Change anyway</strong>, or <strong>Push anyway</strong> in Git mode, in place of <strong>Save</strong> or <strong>Push to Git</strong>. The caution has a link to the <strong>Backups</strong> tab. In Git mode, the caution adds that a backup that runs when GitOps applies the change can fail. A backup that starts after the change waits until the rollout is done.</p>
-<p>A change that does not restart the brokers shows no caution. The review then adds the line "Backup my-cluster-manual-1 is running. This change does not roll the brokers, so it does not affect the backup." A change of Operate, Tasklist, or Admin between the gateway and standalone is such a change. <a href="../backups/">Back up and restore a cluster</a> describes the backups.</p>
 <h2 id="change-the-claim-in-the-claim-tab">Change the claim in the Claim tab<a class="headerlink" href="#change-the-claim-in-the-claim-tab" title="Permanent link">&para;</a></h2>
-<p>The <strong>Claim</strong> tab shows the choices for the whole cluster in panels. Each panel that you can change has an <strong>Edit</strong> button. One panel is open at a time. <strong>Done</strong> closes the panel and keeps its changes as unsaved changes.</p>
-<p><strong>Basics</strong> shows the name, the namespace, and the environment as <strong>Set at creation</strong>. You cannot change them. <strong>Suspend the cluster</strong> sets <code>spec.suspend</code> of the claim. Then every workload goes to zero, and the volumes stay.</p>
+<p>The <strong>Claim</strong> tab shows the choices for the whole cluster in panels. Select <strong>Edit</strong> on a panel, make the change, and select <strong>Done</strong>.</p>
+<p><strong>Basics</strong> shows the name, the namespace, and the environment. You cannot change them. <strong>Suspend the cluster</strong> stops every workload of the cluster and keeps the volumes.</p>
 <p><strong>Release and preset</strong> has three lists:</p>
 <ul>
-<li><strong>Release</strong> lists the releases that the environment allows, newest first. The default release of the environment has the word <strong>Default</strong>. The current release stays in the list also when the environment no longer allows it.</li>
-<li><strong>Preset</strong> lists the presets that the environment allows. The review of a new preset shows each field of the cluster that changes.</li>
-<li><strong>Platform config</strong> lists the <code>CamundaPlatformConfig</code> objects. The first choice removes <code>platformConfigRef</code> from the claim, so that the platform config of the environment applies. Its name is <strong>Default of the environment</strong> when the environment names one.</li>
+<li><strong>Release</strong> lists the releases that the environment allows, newest first.</li>
+<li><strong>Preset</strong> lists the presets that the environment allows. The review shows each setting that the new preset changes.</li>
+<li><strong>Platform config</strong> lists the platform configs. <strong>Default of the environment</strong> uses the one of the environment.</li>
 </ul>
-<p>The fleet manager checks a new release against the version that the cluster runs:</p>
+<p>The <strong>Release</strong> list marks a release that you cannot move to yet:</p>
 <table>
 <thead>
 <tr>
@@ -3122,107 +3049,31 @@
 <tbody>
 <tr>
 <td>Skips 8.<em>n</em>. Move to an 8.<em>n</em> release first.</td>
-<td>The release is one minor too far. Move to a release of the minor between them first.</td>
+<td>The release is more than one minor ahead. Move to a release of the minor between them first.</td>
 </tr>
 <tr>
 <td>downgrade</td>
-<td>The release has a lower version. The review asks you to confirm the downgrade with <strong>Downgrade</strong>, or <strong>Push downgrade</strong> in Git mode.</td>
-</tr>
-<tr>
-<td>The version checks run when the cluster resumes.</td>
-<td>The cluster is suspended, so it reports no version. No release shows as a downgrade or a skip.</td>
-</tr>
-<tr>
-<td>The version checks run when the cluster reports its version.</td>
-<td>The cluster reports no version yet, or a version that is not of the form <code>8.9.4</code>.</td>
+<td>The release has a lower version. The review asks you to confirm the downgrade.</td>
 </tr>
 </tbody>
 </table>
-<p>A downgrade writes the release and <code>allowVersionDowngrade</code> with the target version:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-1</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">allowVersionDowngrade</span><span class="p">:</span><span class="w"> </span><span class="s">"8.9.1"</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
-</span></code></pre></div>
-<p>The operator removes the annotation <code>camunda.io/allow-version-downgrade</code> from the <code>CamundaCluster</code> when the downgrade is complete. After that, the next save also removes <code>allowVersionDowngrade</code> from the claim. The review shows this removal as a line of the change. With no other unsaved change, the panel shows <strong>Clear</strong>, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.</p>
-<p>Each storage and access option has its own panel. The option shows <strong>Chosen at creation</strong>, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. The schema of the parameter in the <code>PluginRegistration</code> decides its editor, also when the parameter has the name of a cluster field. For example, a <code>storageSize</code> string is a text input, and a <code>tolerations</code> list is YAML. Only the parts of <code>overrides</code> get the editor of a field of the same name, such as an amount and a unit for <code>overrides.storageSize</code>. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in <code>spec.plugins</code> of the claim. When you remove the last row of a map, the claim no longer sets the parameter, and the value of the environment applies again.</p>
-<p>To replace that value with no entries, use an empty map. A map that has a value when the editor opens shows <strong>Set to an empty map</strong> while it has no rows. Select it, and the editor shows <strong>Empty map, overrides the inherited value</strong>. The claim then sets the parameter to <code>{}</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-storage</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rustfs</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">        </span><span class="nt">labels</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
-</span></code></pre></div>
-<p>Next to the empty map, <strong>Use the inherited value</strong> removes <code>{}</code> from the claim. The value of the environment then applies again.</p>
+<p>After a downgrade, the panel offers <strong>Clear</strong> to remove the downgrade approval from the claim. <a href="../../crds/camundacluster/#downgrade-on-purpose">Downgrade on purpose</a> tells when a downgrade is safe.</p>
+<p>Each storage and access option has its own panel. You cannot change the option after creation. You can change each parameter that the environment lets a cluster change.</p>
 <p><strong>Attachments</strong> has two parts:</p>
 <ul>
-<li><strong>Attach Optimize</strong> adds <code>spec.attachments.optimize</code> with the first <code>ManagementAuthConfig</code> by name. Then you can pick another <strong>ManagementAuthConfig</strong> and enter the <strong>External URL</strong>. The URL shows <strong>Filled by Access</strong> when an access option gives it. <strong>Open Optimize</strong> opens Optimize on the <strong>Overview</strong> tab. Its <strong>Settings</strong> tab holds the other settings of Optimize. Optimize needs Elasticsearch as secondary storage and a <code>ManagementAuthConfig</code>. Without them, the checkbox is disabled and says which one is missing.</li>
-<li><strong>Back up on a schedule</strong> adds <code>spec.attachments.backupSchedule</code> with the cron <code>0 2 * * *</code>. Then you can change the <strong>Schedule (cron, UTC)</strong>, <strong>Completed backups to keep</strong>, and <strong>Failed backups to keep</strong>. <strong>Completed backups to keep</strong> is 1 or more, and <strong>Failed backups to keep</strong> is 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.</li>
+<li><strong>Attach Optimize</strong> adds Optimize. Pick the <strong>ManagementAuthConfig</strong>, and enter the <strong>External URL</strong> when no access option fills it. <strong>Open Optimize</strong> opens its page, where its <strong>Settings</strong> tab holds its other settings.</li>
+<li><strong>Back up on a schedule</strong> adds a schedule with the cron <code>0 2 * * *</code>. You can change the <strong>Schedule (cron, UTC)</strong>, <strong>Completed backups to keep</strong>, and <strong>Failed backups to keep</strong>.</li>
 </ul>
-<p><strong>Change schedule</strong> on the <strong>Backups</strong> tab opens the <strong>Attachments</strong> panel.</p>
-<p><strong>Deletion policy</strong> decides if the resources of the storage and access options stay when the claim is deleted. <strong>Keep the resources</strong> writes <code>Orphan</code>, and <strong>Delete the resources</strong> writes <code>Delete</code>. The policy that the claim gets without a choice has the word <strong>Default</strong>. When an option always deletes what it made, <strong>Keep the resources</strong> is disabled. The panel shows that option with <strong>Always deleted</strong>. When the registration of an option does not exist, <strong>Keep the resources</strong> is disabled too. The option then shows with <strong>Registration does not exist</strong>.</p>
+<p><strong>Deletion policy</strong> says if the resources of the storage and access options stay when the cluster is deleted: <strong>Keep the resources</strong> or <strong>Delete the resources</strong>. When an option always deletes what it made, the panel shows it with <strong>Always deleted</strong>, and <strong>Keep the resources</strong> is off.</p>
 <h2 id="save-or-discard-the-changes">Save or discard the changes<a class="headerlink" href="#save-or-discard-the-changes" title="Permanent link">&para;</a></h2>
-<p>The bar at the bottom of the page shows the number of unsaved changes, with <strong>Discard</strong> and <strong>Review</strong>:</p>
+<p>The bar at the bottom of the page counts your unsaved changes:</p>
 <ol>
-<li>Select <strong>Review</strong> to see the change of the claim.</li>
-<li>Select <strong>Save</strong> to write the claim. In Git mode, the button is <strong>Push to Git</strong>.</li>
+<li>Select <strong>Review</strong> to see the change of the claim and what it does.</li>
+<li>Select <strong>Save</strong>. In Git mode, the button is <strong>Push to Git</strong>.</li>
 </ol>
-<p><strong>Discard</strong> removes every unsaved change. The editors then show the live values again.</p>
-<p>A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, <strong>Review</strong> is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable <strong>Review</strong> again. Closing the editor does not clear an error of the merged value, which the next paragraphs describe. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.</p>
-<p>Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the editor shows an error that names the preset. An example is <code>The CPU limit of 1 comes from the preset and is below the CPU request of 2</code>. When the preset alone gives a limit below its request, the error names the preset for both values as soon as the editor opens.</p>
-<p>While the error shows, also before you change anything, <strong>Review</strong> is disabled. The bar names the setting and the error, also when its editor is closed. Set a limit that is not below the request, or a lower request.</p>
-<p>For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable <strong>Review</strong>. Correct it before the process runs on its own, because its resources apply only then.</p>
-<p>An edit of a CPU or memory amount changes only that amount in the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount that the saved claim sets, the amount is no longer a change. When the saved claim does not set the amount, the same is true for the amount of the preset.</p>
-<p>The bar counts each changed amount as one unsaved change. After <strong>Reset to preset</strong> of the setting, the reset and the amounts that you change after it count together as one change. An amount that you then set to the value of the preset stays on the preset.</p>
-<p>A resource such as <code>ephemeral-storage</code> has no field in the editor. When the claim sets a value for such a resource, <strong>Reset to preset</strong> removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.</p>
-<p>Labels, annotations, and environment variables merge key by key or name by name. The claim cannot remove an entry of the preset. When the preset holds an entry that the editor does not accept, the editor shows an error. The error names the entry and where it comes from, such as the preset. <strong>Review</strong> is then disabled. Examples are a label key that is not valid, such as <code>bad key</code>, and a variable without a name. The error stays when you remove the row. Pick another preset, or ask your admin to correct the preset or the release. When only the value of a label is not valid, you can also type a valid value in its row. The claim then sets the value for that key. Some entries reach no object now. Examples are the labels and annotations of an embedded process or of a ServiceMonitor that is off. The annotations of a ServiceAccount whose <code>create</code> is <code>false</code> are another example. For such an entry that the preset or the claim already holds, the error shows as a warning. The same is true for the labels, annotations, and variables of Connectors that are off. When the labels, annotations, or variables reach an object, the error of an entry that the claim already holds turns <strong>Review</strong> off. This is also true while its editor is closed. The settings of Optimize show no such warning. Their editor checks a row of a ServiceMonitor that is off only after you change the row. The variables of an embedded process apply to its host, so their error disables <strong>Review</strong>.</p>
-<p><strong>Review</strong> checks the topology after your unsaved changes too. When <strong>Change topology</strong> makes an embedded process run on its own, an error of its resources, labels, or annotations disables <strong>Review</strong>. This is also true when its card is not open.</p>
-<h2 id="a-claim-made-outside-the-fleet-manager">A claim made outside the fleet manager<a class="headerlink" href="#a-claim-made-outside-the-fleet-manager" title="Permanent link">&para;</a></h2>
-<p>You can change a claim that you made with <code>kubectl apply</code> or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. With the choice, a removed field that has a default gets its default value again, and the review names that value. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. The review also checks the values that the cluster gets from that claim. A field that stays keeps the value of the other tool. When that value makes a limit go below its request, the review shows the error, and <strong>Save</strong> stays off. For example, you clear a CPU request of 2 that the other tool set, and you set the CPU limit to 1. The save keeps the request of 2, so the review shows the error. Go back and change the edit, or take the fields over. In Git mode, the review offers no take-over. It checks the claim that the dry run of the push leaves. A field that another tool keeps stays in that claim, and the review names it, so the same error stops <strong>Push to Git</strong>. An earlier save of the fleet manager can set a field that the first sync of your GitOps tool keeps. Before that first sync, the dry run cannot show such a field. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says what a take-over does, and what <code>kubectl apply</code> does after it.</p>
-<h2 id="the-state-of-a-field">The state of a field<a class="headerlink" href="#the-state-of-a-field" title="Permanent link">&para;</a></h2>
-<p>Below each editor, the page says where the value comes from, for example <strong>From preset</strong> or <strong>Changed in the claim</strong>. A field that the claim sets has the link <strong>Reset to preset</strong>. The link removes the value from the claim, so that the value of the preset applies again. The reset is an unsaved change, as each other change is.</p>
-<p>When the claim sets a block such as <code>scheduling</code> as one value, each field of the block has the link <strong>Reset scheduling to preset</strong>. This link removes the whole block from the claim. Every <code>scheduling</code> field of the claim then goes back to the preset, also <code>scheduling.nodeAffinity</code>.</p>
-<p>A field that you cannot change shows its value and the reason, with no editor:</p>
-<table>
-<thead>
-<tr>
-<th>Reason</th>
-<th>What sets the field</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Filled by <em>section</em></td>
-<td>A selection of that section, for example <strong>Filled by Volume encryption</strong> for <code>storageClassName</code> of the brokers. Change the selection of the section in the claim.</td>
-</tr>
-<tr>
-<td>Set by the release</td>
-<td>The <code>CamundaRelease</code> of the claim, such as <code>version</code>. Change the release of the claim.</td>
-</tr>
-<tr>
-<td>Fixed by the claim controller</td>
-<td>The operator, such as <code>serviceAccount.name</code>.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="embedded-apps">Embedded apps<a class="headerlink" href="#embedded-apps" title="Permanent link">&para;</a></h2>
-<p>Operate, Tasklist, and Admin run inside the gateway unless their <code>mode</code> is <code>Standalone</code>. When the gateway <code>mode</code> is <code>Embedded</code>, the gateway and these apps run inside the brokers. The <strong>Settings</strong> tab of the host shows the fields of each app that runs inside it, below the fields of the host. A note above them says that these fields apply only when the app runs standalone. The note also names the two exceptions, <code>extraEnv</code> and <code>extraEnvFrom</code>.</p>
-<p>A change of an embedded app writes to the block of the app, for example <code>spec.cluster.tasklist</code> for Tasklist. While the app runs inside its host, these values have no effect, except <code>extraEnv</code> and <code>extraEnvFrom</code>. When the <code>mode</code> of the app changes to <code>Standalone</code>, the app starts with them. You can prepare the settings of an app before it runs standalone.</p>
-<p>The <code>extraEnv</code> and <code>extraEnvFrom</code> of an embedded app apply to its host. For example, an <code>extraEnv</code> variable of an embedded Tasklist goes to the pods of the gateway. When the gateway is embedded too, it goes to the brokers.</p>
-<h2 id="storage-size">Storage size<a class="headerlink" href="#storage-size" title="Permanent link">&para;</a></h2>
-<p>A volume cannot become smaller. When you enter a <code>storageSize</code> below the current size, the editor shows "Volumes cannot shrink. The operator keeps the current size." The claim gets the value, and the volumes keep their current size.</p>
+<p><strong>Discard</strong> removes every unsaved change.</p>
+<p>While an editor shows an error, <strong>Review</strong> is off, and the bar names the setting and the error. Correct the value, or reset it. The most common error is a CPU or memory limit below its request, as <a href="../create-a-cluster/#errors-in-the-settings">Errors in the settings</a> shows.</p>
+<p>If another tool, such as <code>kubectl apply</code>, set a field that your change touches, the review asks before it takes the field over. <a href="../settings/#fields-that-another-tool-set">Fields that another tool set</a> says what that means.</p>
 
 
 

@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -961,7 +961,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -2947,69 +2947,45 @@
 
 
 <h1 id="the-fleet-view">The fleet view<a class="headerlink" href="#the-fleet-view" title="Permanent link">&para;</a></h1>
-<p>The <strong>Fleet</strong> page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button <strong>New cluster</strong> opens the create flow, which <a href="../create-a-cluster/">Create a cluster</a> describes.</p>
-<p>The page updates live. A new cluster, a change of status, or a new backup shows without a reload. The warnings of the pods update every 15 seconds.</p>
-<p>When the page cannot read a list, it shows <code>Could not read &lt;kind&gt;:</code> and the error. A list can also be not current, for example the copy of an earlier visit. The page then shows <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code> In both cases, the page does not say that there is no cluster or no plane. The line goes away when the page gets a current list.</p>
+<p>The <strong>Fleet</strong> page lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. <strong>New cluster</strong> opens the create form, as <a href="../create-a-cluster/">Create a cluster</a> shows. The page updates live, without a reload.</p>
+<p>When the fleet manager cannot read a list, each page says so, and never shows that list as empty.</p>
 <h2 id="needs-attention">Needs attention<a class="headerlink" href="#needs-attention" title="Permanent link">&para;</a></h2>
-<p>The panel <strong>Needs attention</strong> is at the top of the page, above the tabs. It shows the same list on every tab, and the filters do not apply to it. It lists, in this order:</p>
+<p>The panel <strong>Needs attention</strong> at the top of the page lists what is wrong now. It shows the same list on every tab, and the filters do not apply to it:</p>
 <table>
 <thead>
 <tr>
 <th>Entry</th>
 <th>When it shows</th>
-<th>Link</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Cluster</td>
-<td>The <code>Ready</code> condition of the cluster, or of a claim without a cluster, is <code>False</code>.</td>
-<td>The cluster page. A claim without a cluster has no link.</td>
+<td>The <code>Ready</code> condition of the cluster is <code>False</code>. The entry links to the cluster page.</td>
 </tr>
 <tr>
 <td>Backup</td>
-<td>A backup has the phase <code>Failed</code>, and it finished in the last 24 hours. A backup without a completion time counts from the time it was created.</td>
-<td>The <strong>Backups</strong> tab of its cluster.</td>
+<td>A backup failed in the last 24 hours. The entry links to the <strong>Backups</strong> tab of its cluster.</td>
 </tr>
 <tr>
 <td>Option</td>
-<td>The <code>Accepted</code> or the <code>Ready</code> condition of a <code>PluginRegistration</code> is <code>False</code>. The entry shows the label of the option, or its name.</td>
-<td>No link.</td>
+<td>An option is not accepted or not ready. See <a href="../registrations/">Plugins</a>.</td>
 </tr>
 <tr>
 <td>Management plane</td>
 <td>The <code>Ready</code> condition of the plane is <code>False</code>.</td>
-<td>No link.</td>
 </tr>
 </tbody>
 </table>
-<p>Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When one of these lists is not read or not current, the panel says "Some lists could not be read, so this list can miss entries."</p>
+<p>Each entry shows the reason and the message. When nothing is wrong, the panel says "Nothing needs attention."</p>
 <h2 id="environments-and-tabs">Environments and tabs<a class="headerlink" href="#environments-and-tabs" title="Permanent link">&para;</a></h2>
-<p>A namespace belongs to the <code>Environment</code> that its label <code>fleet.camunda.io/environment</code> names, as <a href="../../crds/environment/">Environment</a> shows. The page has one tab for each <code>Environment</code>, in the order of their names. Each tab shows the display name of the environment, its color, and the number of its clusters. The tab <strong>All</strong> comes first and shows every cluster, with one table for each environment.</p>
-<p>The color comes from <code>spec.color</code> of the <code>Environment</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">displayName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Production</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">color</span><span class="p">:</span><span class="w"> </span><span class="s">"#2E7D32"</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
+<p>The page has one tab for each environment, and the tab <strong>All</strong> with every cluster. A namespace belongs to the environment that its label <code>fleet.camunda.io/environment</code> names. A tab takes its color from <code>spec.color</code> of the <code>Environment</code>, a hex color such as <code>#2E7D32</code>.</p>
+<p>The tab <strong>No environment</strong> holds the clusters whose namespace belongs to no environment. To move a cluster into an environment, label its namespace:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>label<span class="w"> </span>--overwrite<span class="w"> </span>namespace<span class="w"> </span>team-orders<span class="w"> </span>fleet.camunda.io/environment<span class="o">=</span>production
 </span></code></pre></div>
-<p>The page shows the color only when it is a hex color with three or six digits, such as <code>#2E7D32</code> or <code>#2E7</code>. An environment without such a color has a tab with no color.</p>
-<p>The tab <strong>No environment</strong> holds the clusters in a namespace that belongs to no environment. The page has this tab only while such a cluster exists. A namespace without the label belongs to no environment. A namespace whose label names an <code>Environment</code> that does not exist also belongs to no environment. To move a cluster into an environment, give its namespace the label with the name of the <code>Environment</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>label<span class="w"> </span>--overwrite<span class="w"> </span>namespace<span class="w"> </span>team-orders<span class="w"> </span>fleet.camunda.io/environment<span class="o">=</span>production
-</span></code></pre></div>
-<p><code>--overwrite</code> replaces a label that names another environment.</p>
 <p>When no <code>Environment</code> exists, the page has no tabs. It shows one table of every cluster.</p>
 <h2 id="management-planes">Management planes<a class="headerlink" href="#management-planes" title="Permanent link">&para;</a></h2>
-<p>The table <strong>Management planes</strong> lists the management planes of the selected tab:</p>
-<ul>
-<li>On <strong>All</strong>, and on a page without tabs, it lists every management plane.</li>
-<li>On the tab of an environment, it lists the planes that serve that environment. A plane serves the environments that its claim names, as <a href="../../crds/camundamanagementclusterclaim/">CamundaManagementClusterClaim</a> shows.</li>
-<li>On <strong>No environment</strong>, it lists the planes that serve a namespace that belongs to no environment.</li>
-</ul>
-<p>When the tab has no plane, the page says "No management plane serves this environment." When no plane exists at all, it says "No management plane yet." on <strong>All</strong>. When the page has no current list of the planes, it says <code>Not known: the fleet manager has no current list of &lt;kind&gt;.</code> in place of these lines.</p>
+<p>The table <strong>Management planes</strong> lists the planes that serve the environment of the tab. On <strong>All</strong>, it lists every plane. <a href="../management-planes/">Management planes</a> shows how to create and change a plane.</p>
 <h2 id="clusters">Clusters<a class="headerlink" href="#clusters" title="Permanent link">&para;</a></h2>
 <p>Each table of clusters has these columns:</p>
 <table>
@@ -3022,120 +2998,78 @@
 <tbody>
 <tr>
 <td>Cluster</td>
-<td>The name, which opens <a href="../cluster-page/">the cluster page</a>, and the namespace below it. A cluster that no claim made shows <strong>Not managed</strong>.</td>
+<td>The name, which opens <a href="../cluster-page/">the cluster page</a>, and the namespace. A cluster without a claim shows <strong>Not managed</strong>.</td>
 </tr>
 <tr>
 <td>Status</td>
-<td>The <code>Ready</code> condition of the cluster, such as <code>Ready</code> or <code>Not ready · Degraded</code>. A ready cluster shows its reason too when the reason is not <code>Healthy</code>, such as <code>Ready · Suspended</code>. The message of the condition shows when you hold the pointer on the status.</td>
+<td>The <code>Ready</code> condition, such as <code>Ready</code> or <code>Not ready · Degraded</code>. Hold the pointer on it to see the message.</td>
 </tr>
 <tr>
 <td>Version</td>
-<td>The Camunda version that the cluster runs, from <code>status.management.version</code>, and the preset below it. A suspended cluster shows <code>-</code>.</td>
+<td>The Camunda version that the cluster runs, and its preset.</td>
 </tr>
 <tr>
 <td>Components</td>
-<td>One dot for each component of the cluster, as the next section shows.</td>
+<td>One dot for each part of the cluster, as the next section shows.</td>
 </tr>
 <tr>
 <td>Last backup</td>
-<td>The phase and the start time of the newest backup of the cluster, or <strong>No backups</strong>.</td>
+<td>The phase and the start time of the newest backup, or <strong>No backups</strong>.</td>
 </tr>
 <tr>
 <td>Warnings</td>
-<td>One chip for each warning of the cluster, errors first, as <a href="#warnings">Warnings</a> shows. A cluster without a warning shows <code>-</code>.</td>
+<td>One chip for each warning, errors first, as <a href="#warnings">Warnings</a> shows.</td>
 </tr>
 </tbody>
 </table>
-<p>A cluster shows <strong>Not managed</strong> when you applied the <code>CamundaCluster</code> with <code>kubectl</code> or a GitOps tool, and not through a <code>CamundaClusterClaim</code>. You can read such a cluster in the fleet manager, but you cannot change it there.</p>
-<p>A claim that has no <code>CamundaCluster</code> yet shows as a row too, with the <code>Ready</code> condition of the claim. For example, a claim that the environment does not allow shows <code>Not ready · NotAllowed</code>. The row has no link and no component dots until the cluster exists. The message of the condition says what to change, as <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a> shows.</p>
+<p>A new cluster shows before the operator has built it. Its row shows the <code>Ready</code> condition of its <a href="../install/#what-the-fleet-manager-writes">claim</a>, for example <code>Not ready · NotAllowed</code> when the environment does not allow a choice. The message says what to change.</p>
 <h3 id="component-dots">Component dots<a class="headerlink" href="#component-dots" title="Permanent link">&para;</a></h3>
-<p>The dots show the components of the cluster in this order:</p>
-<ol>
-<li>The Camunda processes that run in their own pods: Brokers, Gateway, Operate, Tasklist, Admin, and Connectors. A process that runs embedded in the gateway or in the brokers has no dot of its own.</li>
-<li>Optimize, when a <code>CamundaOptimize</code> names the cluster.</li>
-<li>For a cluster of a claim, one dot for each section in which the claim selects an option. An example is <code>Secondary storage (New Elasticsearch cluster)</code>.</li>
-<li>For a cluster that is not managed, one dot for the secondary storage that <code>spec.storageRef</code> names, such as <code>Secondary storage (Elasticsearch)</code>.</li>
-</ol>
-<p>The color of a dot is the <code>Ready</code> state of its component. Green is ready, red is not ready, and yellow is unknown. Disabled Connectors, and Optimize for a cluster without a <code>CamundaOptimize</code>, show a grey dot. A component that has no status yet also shows a grey dot. Hold the pointer on the dots, or move the keyboard focus to them, to see a list of the components. The list gives the state of each component and the message of its condition.</p>
+<p>The dots show the Camunda processes that run in their own pods, Optimize, and each storage and access option of the cluster. Green is ready, red is not ready, yellow is unknown, and grey is off or has no status yet. Hold the pointer on the dots to see the state and the message of each part.</p>
 <h2 id="warnings">Warnings<a class="headerlink" href="#warnings" title="Permanent link">&para;</a></h2>
-<p>A warning is a fact that needs your attention, also while the cluster is ready. The column <strong>Warnings</strong> shows one chip for each warning. Hold the pointer on a chip, or move the keyboard focus to it, to see the details. The details say what happened and, when the fact has a time, how long ago it happened.</p>
+<p>A warning is a fact that needs your attention, also while the cluster is ready. Hold the pointer on a chip to see the details.</p>
 <table>
 <thead>
 <tr>
 <th>Warning</th>
 <th>When it shows</th>
-<th>Severity</th>
-<th>Source</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Out of memory</td>
-<td>A container or an init container of the cluster stopped with the reason <code>OOMKilled</code> in the last hour.</td>
-<td>Error</td>
-<td>The <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-states">state of the container</a> in the pod status</td>
+<td>A container stopped with <code>OOMKilled</code> in the last hour.</td>
 </tr>
 <tr>
 <td>Restarts</td>
-<td>A container or an init container restarted more than 3 times, and its last restart was in the last hour.</td>
-<td>Warning</td>
-<td>The restart count and the last state of the container in the pod status</td>
+<td>A container restarted more than 3 times, and its last restart was in the last hour.</td>
 </tr>
 <tr>
 <td>Near memory limit, near CPU limit</td>
-<td>A pod uses 75 % or more of its memory or CPU limit. At 90 % or more the chip is an error. A pod without a limit has no such warning.</td>
-<td>Warning or Error</td>
-<td>metrics-server, through the <a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/">resource metrics pipeline</a></td>
+<td>A pod uses 75 % or more of its limit. At 90 % the chip is an error.</td>
 </tr>
 <tr>
 <td>Backpressure</td>
 <td>The brokers dropped more than 1 % of the requests in the last 5 minutes.</td>
-<td>Warning</td>
-<td>Prometheus</td>
 </tr>
 <tr>
 <td>Backup failed</td>
-<td>The newest backup of the cluster has the phase <code>Failed</code>. The chip stays until a newer backup of the cluster exists.</td>
-<td>Warning</td>
-<td>The backup</td>
+<td>The newest backup of the cluster failed.</td>
 </tr>
 <tr>
-<td>An item of a request summary</td>
-<td>An option reports an item with the severity <code>Warning</code> or <code>Error</code> in the summary of its request. The chip shows the label of the item.</td>
-<td>The severity of the item</td>
-<td>The <code>PluginRequest</code></td>
+<td><code>&lt;choice&gt;</code> not ready, such as <code>Backup storage not ready</code></td>
+<td>The storage or access option of that choice is not ready.</td>
 </tr>
 <tr>
-<td><code>&lt;section&gt;</code> not ready</td>
-<td>The <code>Ready</code> condition of the request of a section is <code>False</code>. The tooltip shows its reason and its message.</td>
-<td>Error</td>
-<td>The <code>PluginRequest</code></td>
+<td>The label that an option gives</td>
+<td>A storage or access option reports a warning or an error.</td>
 </tr>
 </tbody>
 </table>
-<p>The restart count of a container counts every restart since the pod started. So the Restarts warning uses the time of the last restart, and it goes away one hour after the last restart.</p>
-<p>The backpressure share is <code>zeebe_dropped_request_count_total</code> divided by <code>zeebe_received_request_count_total</code> of the brokers of the cluster. Camunda documents both metrics in <a href="https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning">Backpressure tuning</a>. Prometheus must keep the labels <code>namespace</code> and <code>pod</code> on these metrics, as <a href="../settings/#metrics-of-the-charts">Metrics of the charts</a> shows. The fleet manager reads the backpressure share for each Camunda 8.9 patch release. A cluster that reports another version, or no version, has no Backpressure warning.</p>
-<p>The near limit warnings need metrics-server. The Backpressure warning needs Prometheus at the address that <strong>Prometheus URL</strong> (<code>prometheus.url</code>) of <a href="../settings/">Fleet manager settings</a> gives. When one of them does not answer, its warnings do not show, and the page says so once, above the clusters:</p>
-<ul>
-<li><code>metrics-server is not found, so the near memory and CPU limit warnings do not show.</code></li>
-<li><code>Prometheus is not set or does not answer, so the backpressure warning does not show.</code></li>
-</ul>
-<p>The other warnings still show. When the fleet manager cannot read the pods, the page says <code>The warnings of the pods do not show, because the fleet manager could not read them.</code> The warnings of the backups and of the requests still show then.</p>
+<p>The near limit warnings need metrics-server. The Backpressure warning needs Prometheus at <strong>Prometheus URL</strong> of the <a href="../settings/">settings</a>, and a cluster on Camunda 8.9. When one of them does not answer, the page says once which warnings do not show.</p>
 <h2 id="filters">Filters<a class="headerlink" href="#filters" title="Permanent link">&para;</a></h2>
-<p>Three filters apply to every table of clusters on the tab:</p>
-<ul>
-<li><strong>Search clusters</strong> keeps the clusters whose name holds the text. Upper case and lower case are the same.</li>
-<li><strong>Namespace</strong> keeps the clusters of one namespace.</li>
-<li><strong>Status</strong> keeps the clusters of one state:<ul>
-<li><strong>Not ready</strong> keeps the clusters whose <code>Ready</code> condition is not <code>True</code>, also a cluster that has no status yet.</li>
-<li><strong>With warnings</strong> keeps the clusters that have at least one warning.</li>
-</ul>
-</li>
-</ul>
-<p>The filters do not apply to the management planes. When no cluster passes the filters, the page says "No cluster matches the search and the filters."</p>
+<p><strong>Search clusters</strong>, <strong>Namespace</strong>, and <strong>Status</strong> filter the tables of clusters on the tab. <strong>Status</strong> has two values: <strong>Not ready</strong>, and <strong>With warnings</strong>. The filters do not apply to the management planes.</p>
 <h2 id="waiting-for-gitops">Waiting for GitOps<a class="headerlink" href="#waiting-for-gitops" title="Permanent link">&para;</a></h2>
-<p>In Git mode, a new cluster goes to the Git repository first, as <a href="../settings/#git-mode">Fleet manager settings</a> shows. Until your GitOps tool applies the claim, the page shows it in the table <strong>Waiting for GitOps</strong>. This table is above the tables of clusters, on every tab. The row shows the file in the repository and the time since the push. The row goes away when the claim exists in the cluster, and the claim then shows in the table of its environment.</p>
-<p>Only the browser tab that pushed the claim shows its row. The browser tab keeps the list of its pushes, and a reload of the page clears it. The fleet manager reads the clusters from the Kubernetes API. So another browser tab or another user does not see a claim that is only in Git.</p>
+<p>In Git mode, a new cluster goes to the Git repository first, as <a href="../settings/#git-mode">Git mode</a> shows. Until your GitOps tool applies it, the table <strong>Waiting for GitOps</strong> shows the file and the time since the push. Only the browser tab that pushed the cluster shows this row, and a reload clears it.</p>
 
 
 

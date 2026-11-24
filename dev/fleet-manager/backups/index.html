@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -820,7 +820,7 @@
   <span class="md-ellipsis">
     
   
-    Registrations
+    Plugins
   
 
     
@@ -949,17 +949,6 @@
     <span class="md-ellipsis">
       
         Change the schedule
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#git-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Git mode
       
     </span>
   </a>
@@ -2871,17 +2860,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#git-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Git mode
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2913,10 +2891,15 @@
 
 
 <h1 id="back-up-and-restore-a-cluster-from-the-fleet-manager">Back up and restore a cluster from the fleet manager<a class="headerlink" href="#back-up-and-restore-a-cluster-from-the-fleet-manager" title="Permanent link">&para;</a></h1>
-<p>The <strong>Backups</strong> tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. On a cluster that a <code>CamundaClusterClaim</code> made, the tab also has the actions on this page. A cluster that shows <strong>Not managed</strong> in <a href="../fleet-view/">the fleet view</a> has no actions. Its backups are read only in the fleet manager.</p>
+<p>The <strong>Backups</strong> tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. A cluster that shows <strong>Not managed</strong> has no actions here.</p>
+<p>Backups and restores go straight to the Kubernetes API, also in Git mode. They are not in the Git repository. A restore changes <code>spec.suspend</code> and <code>spec.version</code> of the <code>CamundaCluster</code>. If your GitOps tool owns the cluster, read <a href="../../guides/operations/#a-gitops-tool-that-owns-the-camundacluster">A GitOps tool that owns the CamundaCluster</a> before the restore.</p>
 <h2 id="back-up-now">Back up now<a class="headerlink" href="#back-up-now" title="Permanent link">&para;</a></h2>
-<p><strong>Back up now</strong> is at the top of the <strong>Backups</strong> tab. It opens a form with one field, <strong>Name</strong>. The field holds a name of the cluster and the current time in UTC, such as <code>my-cluster-manual-20261110-143005</code>. You can change the name. The name must be a DNS subdomain name, and no other backup of the namespace can have it. <strong>Start backup</strong> stays off until the name is correct.</p>
-<p><strong>Start backup</strong> creates one backup of the kind that the secondary storage of the cluster needs. A cluster on Elasticsearch gets a <a href="../../crds/logicalbackupelasticsearch/">LogicalBackupElasticsearch</a>. A cluster on PostgreSQL gets a <a href="../../crds/logicalbackuprdbms/">LogicalBackupRDBMS</a>. The backup names the cluster and nothing more:</p>
+<ol>
+<li>Select <strong>Back up now</strong> at the top of the <strong>Backups</strong> tab.</li>
+<li>Keep the <strong>Name</strong>, or type another one. The default is the cluster name and the time in UTC, such as <code>my-cluster-manual-20261110-143005</code>.</li>
+<li>Select <strong>Start backup</strong>.</li>
+</ol>
+<p>The fleet manager creates the backup kind that the secondary storage needs. A cluster on Elasticsearch gets a <a href="../../crds/logicalbackupelasticsearch/">LogicalBackupElasticsearch</a>, and a cluster on PostgreSQL a <a href="../../crds/logicalbackuprdbms/">LogicalBackupRDBMS</a>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LogicalBackupElasticsearch</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -2926,8 +2909,8 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span></code></pre></div>
-<p>The page says "Backup my-cluster-manual-20261110-143005 created." when the backup exists. The new backup then shows in the table of backups, where you follow its phase. If the name is taken by then, the backup is not created, and the page shows the error.</p>
-<p><strong>Back up now</strong> is off, with the reason under it, in these cases:</p>
+<p>The new backup shows in the table of backups, where you follow its phase.</p>
+<p><strong>Back up now</strong> is off when the cluster cannot take a backup, and the reason shows under it. The common reasons are:</p>
 <table>
 <thead>
 <tr>
@@ -2938,38 +2921,21 @@
 <tbody>
 <tr>
 <td>"This cluster has no backup storage."</td>
-<td>The claim chose no bucket in its <strong>Backup storage</strong> section when it was created. The sections of a claim are fixed after creation. To back up from the fleet manager, create a cluster with a bucket in that section.</td>
-</tr>
-<tr>
-<td>"<code>SecondaryStorageConfig &lt;name&gt;</code> not found, so the kind of backup is not known."</td>
-<td>Create the <code>SecondaryStorageConfig</code> that <code>spec.storageRef</code> of the cluster names.</td>
+<td>The backup storage of a cluster is fixed at creation. Create a cluster with a bucket in <strong>Backup storage</strong>.</td>
 </tr>
 <tr>
 <td>"The cluster is suspended. A backup waits until it runs again, so resume the cluster first."</td>
-<td><code>spec.suspend</code> of the cluster is <code>true</code>. Resume the cluster, as <a href="../../guides/operations/#suspend-and-resume">Suspend and resume</a> shows.</td>
+<td>Resume the cluster, as <a href="../../guides/operations/#suspend-and-resume">Suspend and resume</a> shows.</td>
 </tr>
 <tr>
-<td>"A suspension hold keeps the cluster suspended, and a backup waits until the cluster runs again. A failed restore keeps its hold until you delete that restore."</td>
-<td>Find the failed restore in the table of restores, and read its failure. Then delete the restore, as <a href="../../crds/camundacluster/#suspension-holds">Suspension holds</a> shows.</td>
-</tr>
-<tr>
-<td>"Another cluster holds the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Give this cluster storage of its own, or delete the cluster that holds the storage."</td>
-<td>Do one of the two, as <a href="../../crds/camundacluster/#a-second-cluster-on-a-held-backend">A second cluster on a held backend</a> shows.</td>
-</tr>
-<tr>
-<td>"Something else still writes the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Wait, or remove what the Ready condition of the cluster names."</td>
-<td>Read the message of the <code>Ready</code> condition of the <code>CamundaCluster</code>, as <a href="../../crds/camundacluster/#waiting-for-a-handover">Waiting for a handover</a> shows.</td>
-</tr>
-<tr>
-<td>"Changes are off: the fleet manager could not read its settings."</td>
-<td>Make sure that the fleet manager can read the ConfigMap <code>fleet-manager-settings</code>, as <a href="../settings/">Fleet manager settings</a> shows.</td>
+<td>A message about a suspension hold or about the secondary storage</td>
+<td>The cluster is held suspended. Do what the message says.</td>
 </tr>
 </tbody>
 </table>
-<p>A cluster holds one backup or one restore at a time, as <a href="../../guides/operations/#one-backup-or-restore-at-a-time">One backup or restore at a time</a> shows. While a backup or a restore of the cluster runs, <strong>Back up now</strong> stays on. The form then says, for example, "Restore my-cluster-restore-1 is running. The new backup waits until it ends." The new backup waits in <code>Pending</code> and starts on its own. A restore also suspends the cluster while it runs. This suspension does not turn <strong>Back up now</strong> off, because it ends with the restore. Any other suspension turns it off.</p>
-<p>An Elasticsearch backup that ended as <code>Failed</code> with the reason <code>ResumeFailed</code> also holds the cluster, until you delete it. The form then says "Backup my-cluster-manual-20261110-143005 ended as ResumeFailed and still holds the cluster. The new backup waits until you delete that backup."</p>
+<p>A cluster takes one backup or one restore at a time. While another backup or restore runs, the new backup waits in <code>Pending</code> and then starts on its own.</p>
 <h2 id="delete-a-backup">Delete a backup<a class="headerlink" href="#delete-a-backup" title="Permanent link">&para;</a></h2>
-<p>Each row of the table of backups has <strong>Delete</strong>. It opens a confirm in the row that lists what goes and what stays. <strong>Delete backup</strong> deletes the backup resource. The page then says "Backup my-cluster-manual-20261110-143005 deleted."</p>
+<p>Select <strong>Delete</strong> on the row of the backup, then <strong>Delete backup</strong>.</p>
 <table>
 <thead>
 <tr>
@@ -2981,7 +2947,7 @@
 <tbody>
 <tr>
 <td>Elasticsearch</td>
-<td>The backup, with its Elasticsearch snapshots and its Zeebe partition backup in the bucket</td>
+<td>The backup, with its Elasticsearch snapshots and its Zeebe backup in the bucket</td>
 <td>Nothing</td>
 </tr>
 <tr>
@@ -2991,32 +2957,25 @@
 </tr>
 </tbody>
 </table>
-<p>When you delete a backup that is still <code>Pending</code> or <code>Running</code>, its run stops too. On Elasticsearch, the operator resumes exporting on the cluster if the backup paused it. On PostgreSQL, the operator deletes the dump Job of the backup.</p>
-<p>A backup of a schedule shows <strong>Scheduled</strong> in the column <strong>Origin</strong>. When you delete such a backup, the other backups of the schedule stay. The schedule deletes the oldest of them beyond the counts that it keeps, as <a href="../../crds/backupschedule/">BackupSchedule</a> shows.</p>
-<p><strong>Delete</strong> is off while a restore that has not ended reads the backup. The reason under it names the restore:</p>
-<blockquote>
-<p>Restore my-cluster-restore-1 reads this backup. Delete the backup after the restore ends.</p>
-</blockquote>
-<p>If such a restore starts after the page showed the backup, <strong>Delete backup</strong> deletes nothing. The page then shows the reason:</p>
-<blockquote>
-<p>Restore my-cluster-restore-1 reads the backup my-cluster-manual-20261110-143005. Delete the backup after the restore ends.</p>
-</blockquote>
-<p>A delete during the restore can leave the secondary storage of the cluster empty, as <a href="../../crds/logicalrestoreelasticsearch/">LogicalRestoreElasticsearch</a> shows. When the page cannot read its settings, <strong>Delete</strong> is off with the same reason as <strong>Back up now</strong>.</p>
-<p><strong>Delete backup</strong> deletes only the backup that the page showed. Someone can delete that backup and create a new backup with the same name after the page showed it. Then <strong>Delete backup</strong> deletes nothing. The new backup stays, and the page shows the kind and the name of the backup:</p>
-<blockquote>
-<p>The LogicalBackupElasticsearch my-cluster-manual-20261110-143005 changed since you opened it.</p>
-</blockquote>
-<p>A PostgreSQL backup shows <code>LogicalBackupRDBMS</code> as its kind.</p>
-<p>The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of <a href="../../crds/logicalbackupelasticsearch/#deletion">LogicalBackupElasticsearch</a> and <a href="../../crds/logicalbackuprdbms/#deletion">LogicalBackupRDBMS</a> names the cases.</p>
+<p>A backup of a schedule shows <strong>Scheduled</strong> in the column <strong>Origin</strong>. The schedule deletes its oldest backups beyond the counts that it keeps. <strong>Delete</strong> is off while a restore reads the backup.</p>
 <h2 id="restore-from-a-backup">Restore from a backup<a class="headerlink" href="#restore-from-a-backup" title="Permanent link">&para;</a></h2>
-<p>Each row of a <code>Completed</code> backup has <strong>Restore</strong>. A backup in another phase has no <strong>Restore</strong>. <strong>Restore</strong> opens a confirm. Its first line says that the restore loses everything that the cluster wrote after the backup. Under it, the confirm lists these facts:</p>
+<ol>
+<li>Select <strong>Restore</strong> on the row of a <code>Completed</code> backup.</li>
+<li>Read the confirm. The restore loses everything that the cluster wrote after the backup.</li>
+<li>Type the name of the cluster.</li>
+<li>Select <strong>Restore</strong>.</li>
+</ol>
+<p>The confirm lists what the restore does:</p>
 <ul>
-<li>The Camunda version of the backup and the Camunda version of the cluster. The restore sets the version of the cluster to the version of the backup.</li>
-<li>What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup drops the tables in the database of the cluster, and restores the tables of the backup with <code>pg_restore</code>. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.</li>
-<li>Whether the cluster starts again. The restore suspends a running cluster while it runs, and starts it again when it completes. A cluster that you suspended yourself stays suspended after the restore, and you resume it. A cluster that a suspension hold or its secondary storage keeps suspended stays suspended until that suspension ends.</li>
-<li>What a failed restore leaves. The Camunda indices or the database, and the broker volumes, can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and create a new restore, as <a href="../../guides/operations/#when-the-cluster-starts-again">When the cluster starts again</a> shows.</li>
+<li>It sets the Camunda version of the cluster to the version of the backup.</li>
+<li>It replaces the data in Elasticsearch or in the database, and the broker volumes, with the data of the backup.</li>
+<li>It suspends a running cluster while it runs, and starts it again when it completes. A cluster that you suspended yourself stays suspended.</li>
 </ul>
-<p>Type the name of the cluster, then select <strong>Restore</strong>. The fleet manager creates one restore of the kind that the backup needs. A <code>LogicalBackupElasticsearch</code> gets a <a href="../../crds/logicalrestoreelasticsearch/">LogicalRestoreElasticsearch</a>. A <code>LogicalBackupRDBMS</code> gets a <a href="../../crds/logicalrestorerdbms/">LogicalRestoreRDBMS</a>. The name is the cluster, <code>restore</code>, and the current time in UTC:</p>
+<div class="admonition warning">
+<p class="admonition-title">A failed restore</p>
+<p>A failed restore can leave the data and the broker volumes empty or half written. The cluster then stays suspended. Do not resume it. Correct the cause and create a new restore, as <a href="../../guides/operations/#when-the-cluster-starts-again">When the cluster starts again</a> shows.</p>
+</div>
+<p>The fleet manager creates a <a href="../../crds/logicalrestoreelasticsearch/">LogicalRestoreElasticsearch</a> or a <a href="../../crds/logicalrestorerdbms/">LogicalRestoreRDBMS</a>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">LogicalRestoreRDBMS</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3028,60 +2987,16 @@
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">targetClusterRef</span><span class="p">:</span>
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span></code></pre></div>
-<p>If a restore of the namespace has that name, the fleet manager adds <code>-2</code>, <code>-3</code>, and so on. The page then says "Restore my-cluster-restore-20261110-143005 created." with the name that it used, and the restore shows in the table of restores. What the restore does to the cluster, and what to do when it fails, is in <a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a>.</p>
-<p><strong>Restore</strong> is off, with the reason under it, in these cases:</p>
-<table>
-<thead>
-<tr>
-<th>Reason on the page</th>
-<th>What to do</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>"Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends."</td>
-<td>Wait until the restore is <code>Completed</code> or <code>Failed</code>.</td>
-</tr>
-<tr>
-<td>"Backup my-cluster-manual-1 recorded no Camunda version, so it cannot be restored."</td>
-<td>Choose another backup. A backup without a version of the form <code>x.y.z</code> does not restore.</td>
-</tr>
-<tr>
-<td>"Changes are off: the fleet manager could not read its settings."</td>
-<td>Make sure that the fleet manager can read the ConfigMap <code>fleet-manager-settings</code>, as <a href="../settings/">Fleet manager settings</a> shows.</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Restore</strong> has one version rule for both kinds: the backup recorded a version of the form <code>x.y.z</code>. The restore sets that version on the cluster, as <a href="../../crds/logicalrestoreelasticsearch/#compatibility">LogicalRestoreElasticsearch: Compatibility</a> and <a href="../../crds/logicalrestorerdbms/#compatibility">LogicalRestoreRDBMS: Compatibility</a> show. A cluster that ran a newer version comes back on the version of the backup. <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a> shows how to upgrade it again.</p>
-<p><strong>Restore</strong> stays on for a backup more than one minor newer than the brokers of the cluster. Such a restore fails at once with the reason <code>IncompatibleTarget</code>, and it leaves the cluster as it was. <a href="../../crds/logicalrestorerdbms/#a-backup-more-than-one-minor-newer-than-the-brokers">LogicalRestoreRDBMS: A backup more than one minor newer than the brokers</a> says what to do. The same rule applies to an Elasticsearch backup.</p>
-<p>While a backup of the cluster runs, <strong>Restore</strong> stays on, and the confirm says that the new restore waits. For example:</p>
-<blockquote>
-<p>Backup my-cluster-manual-1 is running. The new restore waits until it ends.</p>
-</blockquote>
-<p>A cluster holds one backup or one restore at a time, as <a href="../../guides/operations/#one-backup-or-restore-at-a-time">One backup or restore at a time</a> shows.</p>
-<p>When you select <strong>Restore</strong>, the fleet manager reads the backup and the restores of the namespace again. The page can be older than these objects. So the fleet manager creates nothing, and the page shows the reason, in these cases:</p>
-<ul>
-<li>After the page chose the name, another restore took that name.</li>
-<li>A restore of the cluster has not ended.</li>
-<li>The backup does not exist, it is not <code>Completed</code>, or it is being deleted.</li>
-<li>The backup is a backup of another cluster.</li>
-</ul>
+<p>A backup that is more than one minor newer than the brokers of the cluster cannot restore. The restore then fails at once with <code>IncompatibleTarget</code>, and the cluster stays as it was. <a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a> says more about a restore.</p>
 <h2 id="restore-to-a-point-in-time">Restore to a point in time<a class="headerlink" href="#restore-to-a-point-in-time" title="Permanent link">&para;</a></h2>
-<p><strong>Restore to a point in time</strong> is at the top of the <strong>Backups</strong> tab of a cluster on PostgreSQL. It shows only when the operator rolls the database server back, that is when the <code>DatabaseServerConfig</code> of the cluster has <code>pitr.recovery: operator</code>. A server with <code>pitr.recovery: external</code> gets no point-in-time restore in the fleet manager. <a href="../../crds/pointintimerestore/#who-rolls-the-database-back">PointInTimeRestore: Who rolls the database back</a> shows the two values.</p>
-<p>The confirm lists the restore window. The window holds the times that are inside both of these:</p>
-<ul>
-<li>The archive window of the database server, as the <strong>Backups</strong> tab shows it.</li>
-<li>The time in which Zeebe keeps its primary-storage backups. <code>spec.backup.primaryStorage.retention.window</code> of the cluster sets it, and the default is <code>P7D</code>.</li>
-</ul>
-<p>Each interval of the window shows its start and its end in UTC. An interval that ends where the uploads of the archive started to fail says "Uploads are failing after this point."</p>
-<p>Enter a time in UTC in <strong>Time (UTC)</strong>. A time outside the window, or a time in the future, shows an error. A time inside the window shows the confirm. Its first line says that the restore loses everything that the cluster wrote after that time. Under it, the confirm lists these facts:</p>
-<ul>
-<li>The database server rolls back to the time. The restore deletes the broker volumes and creates them again from the Zeebe backup that covers the point.</li>
-<li>Whether the cluster starts again, as for <strong>Restore</strong>.</li>
-<li>If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.</li>
-<li>What a failed restore leaves, as for <strong>Restore</strong>. The broker volumes can be empty or half written.</li>
-</ul>
-<p>Type the name of the cluster, then select <strong>Restore</strong>. The fleet manager creates a <a href="../../crds/pointintimerestore/">PointInTimeRestore</a>. The name is the cluster, <code>pitr</code>, and the current time in UTC:</p>
+<p>A cluster on PostgreSQL has <strong>Restore to a point in time</strong> when the operator rolls its database server back. Its <code>DatabaseServerConfig</code> then has <code>pitr.recovery: operator</code>. See <a href="../../crds/pointintimerestore/#who-rolls-the-database-back">PointInTimeRestore</a>.</p>
+<ol>
+<li>Select <strong>Restore to a point in time</strong>. The confirm shows the restore window in UTC.</li>
+<li>Enter a time inside the window in <strong>Time (UTC)</strong>.</li>
+<li>Read the confirm. The restore loses everything that the cluster wrote after that time.</li>
+<li>Type the name of the cluster, and select <strong>Restore</strong>.</li>
+</ol>
+<p>The fleet manager creates a <a href="../../crds/pointintimerestore/">PointInTimeRestore</a>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PointInTimeRestore</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3092,38 +3007,9 @@
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-11-09T09:30:15Z"</span>
 </span></code></pre></div>
-<p>The window shows where a restore can reach. The fleet manager cannot see the Zeebe backups, so it cannot prove that a backup covers the point.</p>
-<p>CAUTION: Choose a point at least one period of <code>spec.backup.primaryStorage.schedule</code> before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. <a href="../../crds/pointintimerestore/#choose-the-point-to-restore-to">PointInTimeRestore: Choose the point to restore to</a> shows how to read the real window.</p>
-<p>A point-in-time restore writes no version on the cluster. While a backup of the cluster runs, <strong>Restore to a point in time</strong> stays on, and the confirm says that the new restore waits.</p>
-<p><strong>Restore to a point in time</strong> is off, with the reason under it, in these cases:</p>
-<table>
-<thead>
-<tr>
-<th>Reason on the page</th>
-<th>What to do</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>"The archive has no restore point yet."</td>
-<td>Wait until the database server archives its first base backup.</td>
-</tr>
-<tr>
-<td>"No point is inside both the archive window and the P7D in which Zeebe keeps its backups."</td>
-<td>The archive holds no point that Zeebe still covers. <code>P7D</code> is the <code>retention.window</code> of the cluster. Use <strong>Restore</strong> with a backup instead.</td>
-</tr>
-<tr>
-<td>"Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends."</td>
-<td>Wait until the restore is <code>Completed</code> or <code>Failed</code>.</td>
-</tr>
-<tr>
-<td>"Changes are off: the fleet manager could not read its settings."</td>
-<td>Make sure that the fleet manager can read the ConfigMap <code>fleet-manager-settings</code>, as <a href="../settings/">Fleet manager settings</a> shows.</td>
-</tr>
-</tbody>
-</table>
+<p>CAUTION: Choose a point at least one period of <code>spec.backup.primaryStorage.schedule</code> before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. <a href="../../crds/pointintimerestore/#choose-the-point-to-restore-to">Choose the point to restore to</a> shows how to read the real window.</p>
 <h2 id="change-the-schedule">Change the schedule<a class="headerlink" href="#change-the-schedule" title="Permanent link">&para;</a></h2>
-<p><strong>Change schedule</strong> opens the attachments on the <strong>Claim</strong> tab of the cluster. The claim holds the schedule of its cluster in <code>spec.attachments.backupSchedule</code>, so you change the schedule there:</p>
+<p><strong>Change schedule</strong> opens the attachments on the <strong>Claim</strong> tab of the cluster. The schedule is a five-field cron expression in UTC:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3135,14 +3021,11 @@
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
-<p>The schedule is a five-field cron expression in UTC. The claim then writes the <code>BackupSchedule</code> <code>my-cluster-backups</code>, as <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a> shows. A change of the schedule is a change of the claim, so in Git mode it goes to the repository as a commit.</p>
-<h2 id="git-mode">Git mode<a class="headerlink" href="#git-mode" title="Permanent link">&para;</a></h2>
-<p>The top of the tab says that backups and restores go straight to the cluster, also in Git mode. In Git mode, the fleet manager commits each claim change to the repository and waits for your GitOps tool to apply it. A backup, a restore, and the delete of a backup do not go to Git. The fleet manager writes them to the Kubernetes API at once, and the page does not wait for GitOps. These backups and restores are not in the repository, so your GitOps tool does not see them. A restore writes <code>spec.suspend</code> and <code>spec.version</code> on the <code>CamundaCluster</code>. If your GitOps tool owns the cluster, read <a href="../../guides/operations/#a-gitops-tool-that-owns-the-camundacluster">A GitOps tool that owns the CamundaCluster</a> before the restore.</p>
+<p>A change of the schedule is a change of the cluster, so in Git mode it goes to the repository as a commit.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../guides/backup/">Backup</a>: set up the bucket and take a backup with <code>kubectl</code>.</li>
 <li><a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a>: what a restore does to the cluster, and a failed restore.</li>
-<li><a href="../fleet-view/">The fleet view</a>: the list of clusters and their last backup.</li>
 </ul>
 
 
@@ -3181,7 +3064,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../registrations/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Registrations">
+          <a href="../registrations/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Plugins">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3191,7 +3074,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Registrations
+                Plugins
               </div>
             </div>
           </a>
