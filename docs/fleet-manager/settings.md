@@ -1,4 +1,5 @@
 # Fleet manager settings
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, cluster-es-backups -->
 
 The settings of the fleet manager name this Kubernetes cluster, the Git repository for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap `fleet-manager-settings` in the release namespace, `camunda-operator-system` in the examples on this page.
 
@@ -45,6 +46,8 @@ Open **Setup > Settings**. The page has a field for each setting, with its key i
 
 Select **Git mode** to show the Git settings. Clear it to turn Git mode off. The other Git settings stay for the next time.
 
+![The Settings page with Git mode on and the fields of the repository, the branch, the path, and the credentials.](images/settings-page-git-mode.png)
+
 **Test the connection** tests the Git repository, and **Test the query** tests Prometheus. Both use the saved settings, so save a change before you test it.
 
 If someone changed the ConfigMap after you opened the page, **Save** writes nothing. Select **Reload**, then make your change again.
@@ -72,6 +75,8 @@ spec.displayName: kubectl-client-side-apply set it. The save changes it.
 ```
 
 Without **Take over these fields**, a changed field stops the save, and **Save** stays off. A field that the save removes stays on the object. Go back and leave the fields as they are, or take them over. With the take-over, the save writes your values, and the fields belong to the fleet manager from then on. The review asks again on each save.
+
+![The box Fields that another tool set, with a field that kubectl set and Take over these fields not ticked.](images/review-fields-another-tool-set.png)
 
 After a take-over, the other tool can set its value again:
 

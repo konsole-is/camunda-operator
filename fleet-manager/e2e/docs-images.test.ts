@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  GUIDE_IMAGES_DIR,
+  type ImageFile,
   docShots,
   guideImages,
   imageProblems,
@@ -302,4 +306,84 @@ it("pngWidth reads the width from the IHDR chunk", () => {
   const head = new Uint8Array(24);
   head.set([0x00, 0x00, 0x05, 0xa0], 16); // 1440
   expect(pngWidth(head)).toBe(1440);
+});
+
+describe("the repository", () => {
+  const root = path.resolve("..");
+  const readDoc = (page: string) =>
+    fs.readFileSync(path.join(root, "docs", page), "utf8");
+
+  // The fleet manager pages in the nav of mkdocs.yml, as fleet-manager/<page>.md.
+  const navPages = fs
+    .readFileSync(path.join(root, "mkdocs.yml"), "utf8")
+    .match(/fleet-manager\/[a-z-]+\.md/g)!;
+
+  function readRepository() {
+    const guide = path.join(root, "docs/fleet-manager");
+    const scenarios = path.resolve("e2e/scenarios");
+    const images = path.join(root, GUIDE_IMAGES_DIR);
+    return {
+      pages: fs
+        .readdirSync(guide)
+        .filter((f) => f.endsWith(".md"))
+        .map((page) => ({
+          page,
+          markdown: fs.readFileSync(path.join(guide, page), "utf8"),
+        })),
+      specs: fs
+        .readdirSync(scenarios)
+        .filter((f) => f.endsWith(".spec.ts"))
+        .map((file) => ({
+          file,
+          source: fs.readFileSync(path.join(scenarios, file), "utf8"),
+        })),
+      images: (fs.existsSync(images) ? fs.readdirSync(images) : [])
+        .filter((f) => f.endsWith(".png"))
+        .map((f): ImageFile => {
+          const bytes = fs.readFileSync(path.join(images, f));
+          return {
+            name: f.replace(/\.png$/, ""),
+            bytes: bytes.length,
+            width: pngWidth(bytes.subarray(0, 24)),
+          };
+        }),
+    };
+  }
+
+  // sectionOf returns the text of markdown from heading to the next heading
+  // of the same level or higher.
+  function sectionOf(markdown: string, heading: string): string {
+    const start = markdown.indexOf(`${heading}\n`);
+    expect(start, heading).toBeGreaterThanOrEqual(0);
+    const level = heading.split(" ")[0];
+    const rest = markdown.slice(start + heading.length);
+    const end = rest.search(new RegExp(`\\n#{1,${level.length}} `));
+    return end < 0 ? rest : rest.slice(0, end);
+  }
+
+  it("the guide pages, the docShot calls, and docs/fleet-manager/images agree", () => {
+    expect(imageProblems(readRepository())).toEqual([]);
+  });
+
+  it("every guide page but the install page shows a screenshot", () => {
+    expect(navPages.length).toBeGreaterThan(1);
+    for (const page of navPages) {
+      if (page === "fleet-manager/install.md") continue;
+      expect(guideImages(page, readDoc(page)), page).not.toEqual([]);
+    }
+  });
+
+  it("the plugin CRD pages link the create step that shows a section and its options", () => {
+    for (const page of ["pluginsection.md", "pluginregistration.md"]) {
+      expect(readDoc(`crds/${page}`)).toContain(
+        "(../fleet-manager/create-a-cluster.md#storage-and-access)",
+      );
+    }
+    expect(
+      sectionOf(
+        readDoc("fleet-manager/create-a-cluster.md"),
+        "## Storage and access",
+      ),
+    ).toContain("(images/create-cluster-storage-and-access.png)");
+  });
 });

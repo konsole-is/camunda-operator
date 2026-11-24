@@ -156,6 +156,11 @@ run `make setup-envtest`.
 Run `make fleet-scenarios` for every change, not only a change under `fleet-manager/`. A change
 to any reconciler can change a scenario. It needs Go and envtest, not Node.js.
 
+Run `make fleet-docs-screenshots` before a release, and in a change that adds, renames, or
+removes a screenshot of a page under `docs/fleet-manager/`. It replaces
+`docs/fleet-manager/images` and needs make setup-envtest. `make fleet-test` fails while the
+images, their tests, and the guide pages disagree. CI never compares the pixels.
+
 Two traps that cost time before:
 
 - `make all` builds. It does not lint. Run `make lint` yourself.

@@ -1,4 +1,5 @@
 # Change a cluster
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready -->
 
 You change a cluster on its [cluster page](cluster-page.md). Each change goes into the [claim](install.md#what-the-fleet-manager-writes) of the cluster, and the operator then changes the cluster. A cluster that shows **Not managed** has no editors.
 
@@ -12,6 +13,8 @@ Your changes collect as unsaved changes until you save them, as [Save or discard
 4. Change the values.
 
 Each editor fits its setting. For example, `replicas` is a number, `resources` is a request and a limit, and `podLabels` has one row for each key. A list such as `scheduling.nodeAffinity` is YAML, checked against the schema of the field. **From a Secret** lists the Secrets of the namespace by name, never their values.
+
+![The Settings tab of the brokers in edit mode, with replicas changed in the claim and one unsaved change.](images/cluster-component-settings-editor.png)
 
 ### Where a value comes from
 
@@ -65,6 +68,8 @@ The dialog shows the topology **Now** and **After the change**. The list **What 
 
 The number of brokers and partitions is on the **Settings** tab of the brokers, not in this dialog.
 
+![The Change topology dialog with Operate made standalone, the topology now and after the change, and what happens.](images/cluster-topology-dialog.png)
+
 ### A running backup
 
 A change that restarts the brokers can make a running backup fail. A change of the Camunda version or of the gateway mode restarts the brokers. The review then warns, and the save button reads **Change anyway**, or **Push anyway** in Git mode:
@@ -100,6 +105,8 @@ Each storage and access option has its own panel. You cannot change the option a
 - **Back up on a schedule** adds a schedule with the cron `0 2 * * *`. You can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**.
 
 **Deletion policy** says if the resources of the storage and access options stay when the cluster is deleted: **Keep the resources** or **Delete the resources**. When an option always deletes what it made, the panel shows it with **Always deleted**, and **Keep the resources** is off.
+
+![The Claim tab with the panels Basics, Release and preset, Secondary storage, Attachments, and Deletion policy.](images/cluster-claim-tab.png)
 
 ## Save or discard the changes
 
