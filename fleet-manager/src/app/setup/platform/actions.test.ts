@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { platformFixtures } from "@/components/setup/platform/fixtures";
+import { createChange } from "@/components/setup/platform/draft";
 import { PLATFORM_SOURCE_KINDS } from "@/components/setup/platform/source-kinds";
 import type { PlatformSources } from "@/components/setup/platform/sources";
 import type { Change } from "@/lib/write/types";
@@ -156,6 +157,15 @@ describe("applyPlatformConfigChange", () => {
     expect(fakeWriter.applied).toEqual([configChange()]);
   });
 
+  it("writes the create of a new config", async () => {
+    const change = createChange("basic-two", {});
+    expect(await applyPlatformConfigChange(change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([change]);
+  });
+
   it("refuses a change of another kind and writes nothing", async () => {
     const result = await applyPlatformConfigChange(configChange("Environment"));
     expect(!result.ok && result.errors[0].code).toBe("Invalid");
@@ -173,6 +183,15 @@ describe("previewPlatformConfigChange", () => {
   it("returns the dry run of the writer", async () => {
     await previewPlatformConfigChange(configChange());
     expect(fakeWriter.previewed).toEqual([configChange()]);
+  });
+
+  it("previews the create of a new config", async () => {
+    const change = createChange("basic-two", {});
+    expect(await previewPlatformConfigChange(change)).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fakeWriter.previewed).toEqual([change]);
   });
 
   it("refuses a change of another kind", async () => {

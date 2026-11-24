@@ -131,6 +131,20 @@ describe("SecretRefPicker", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("shows the reference that it keeps and emptyText when no Secret can be picked", () => {
+    render(
+      <SecretRefPicker
+        label="Password"
+        secrets={[]}
+        defaultValue={{ name: "oidc-client", key: "secret" }}
+        emptyText="Pick a Secret later."
+      />,
+    );
+    expect(screen.getByText("oidc-client/secret")).toBeTruthy();
+    expect(screen.getByText("Pick a Secret later.")).toBeTruthy();
+    expect(screen.queryByText("No Secrets in this namespace")).toBeNull();
+  });
+
   it("says so when the namespace has no Secret", () => {
     render(<SecretRefPicker label="Password" secrets={[]} />);
     expect(screen.getByText("No Secrets in this namespace")).toBeTruthy();

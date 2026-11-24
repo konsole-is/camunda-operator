@@ -372,8 +372,11 @@ describe("RegistrationListLive", () => {
     const panel = screen.getByRole("region", {
       name: "Charts you can install",
     });
-    expect(within(panel).queryByText("aws-kms", { exact: true })).toBeNull();
-    expect(within(panel).getByText("rustfs", { exact: true })).toBeTruthy();
+    expect(
+      within(panel)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(["gateway-access", "rustfs"]);
   });
 
   it("shows nothing as empty, healthy, or not installed while a watch has not answered", () => {

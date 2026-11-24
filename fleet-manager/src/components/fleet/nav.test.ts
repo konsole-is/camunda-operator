@@ -41,7 +41,9 @@ describe("SETUP_ITEMS", () => {
       SETUP_ITEMS.flatMap((item) => (item.create ? [item.create] : [])),
     ).toEqual([
       { href: "/setup/new-environment", label: "New environment" },
+      { href: "/setup/new-preset", label: "New preset" },
       { href: "/setup/new-release", label: "New release" },
+      { href: "/setup/new-platform-config", label: "New platform config" },
     ]);
   });
 });

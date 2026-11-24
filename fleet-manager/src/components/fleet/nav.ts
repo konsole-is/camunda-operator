@@ -4,7 +4,8 @@ export type Section = "fleet" | "setup";
 /**
  * SetupItem is one Setup page. href is its list. create is the create page
  * of a page that creates objects: /setup/new-<kind>, beside the lists, so
- * the name of an object never takes its path.
+ * the name of an object never takes its path. Its label is New and the
+ * kind, with a space for each hyphen.
  */
 export type SetupItem = {
   slug: string;
@@ -18,16 +19,19 @@ const item = (slug: string, label: string, kind?: string): SetupItem => ({
   label,
   href: `/setup/${slug}`,
   ...(kind && {
-    create: { href: `/setup/new-${kind}`, label: `New ${kind}` },
+    create: {
+      href: `/setup/new-${kind}`,
+      label: `New ${kind.replaceAll("-", " ")}`,
+    },
   }),
 });
 
 /** The Setup pages, in the order of the Setup side navigation. */
 export const SETUP_ITEMS: readonly SetupItem[] = [
   item("environments", "Environments", "environment"),
-  item("presets", "Presets"),
+  item("presets", "Presets", "preset"),
   item("releases", "Releases", "release"),
-  item("platform", "Platform"),
+  item("platform", "Platform", "platform-config"),
   item("connections", "Connections"),
   item("plugins", "Plugins"),
   item("settings", "Settings"),

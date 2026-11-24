@@ -4,9 +4,12 @@ import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject } from "@/lib/write/types";
 import {
+  changeCount,
+  createChange,
   deleteChange,
   draftErrors,
   draftOf,
+  nameErrors,
   type PlatformDraft,
   specOf,
   updateChange,
@@ -372,5 +375,98 @@ describe("deleteChange", () => {
       preconditions: { "CamundaPlatformConfig//basic-lab": "21" },
       uids: { "CamundaPlatformConfig//basic-lab": "uid-basic-lab" },
     });
+  });
+});
+
+const NAME_RULE =
+  "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.";
+
+describe("nameErrors", () => {
+  it.each([
+    ["", "Give the platform config a name."],
+    ["team.a", NAME_RULE],
+    ["Basic", NAME_RULE],
+    ["-basic", NAME_RULE],
+    ["basic-", NAME_RULE],
+    ["a".repeat(254), NAME_RULE],
+    ["oidc-prod", "A platform config with this name exists."],
+  ])("refuses the name %j", (name, message) => {
+    expect(nameErrors(name, ["oidc-prod"])).toEqual([
+      { path: "name", message },
+    ]);
+  });
+
+  it("accepts a name that a cluster can name", () => {
+    expect(nameErrors("basic-two", ["oidc-prod"])).toEqual([]);
+    expect(nameErrors("a", [])).toEqual([]);
+    expect(nameErrors("a".repeat(253), [])).toEqual([]);
+  });
+});
+
+describe("createChange", () => {
+  const license = {
+    namespace: "camunda-system",
+    name: "camunda-license",
+    key: "license-key",
+  };
+
+  it("creates with the name and the spec only, without a precondition", () => {
+    expect(createChange("basic-two", { licenseSecretRef: license })).toEqual({
+      intent: "Create the platform config basic-two",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "CamundaPlatformConfig",
+          metadata: { name: "basic-two" },
+          spec: { auth: { method: "basic" }, licenseSecretRef: license },
+        },
+      ],
+      create: ["CamundaPlatformConfig//basic-two"],
+    });
+  });
+
+  it("writes the spec as a save writes it", () => {
+    const draft = {
+      auth: {
+        method: "oidc",
+        oidc: {
+          issuerUrl: "https://login.example.com",
+          clientId: "orchestration",
+          audience: "",
+        },
+      },
+      images: { camunda: "" },
+    } as PlatformDraft;
+
+    expect(createChange("oidc-two", draft).apply[0].spec).toEqual({
+      auth: {
+        method: "oidc",
+        oidc: {
+          issuerUrl: "https://login.example.com",
+          clientId: "orchestration",
+        },
+      },
+    });
+  });
+});
+
+describe("changeCount", () => {
+  it("counts each top-level field of the spec that differs", () => {
+    expect(changeCount(specOf({}), specOf({}))).toBe(0);
+    expect(
+      changeCount(
+        specOf({}),
+        specOf({ images: { camunda: "mirror.example.com/camunda/camunda" } }),
+      ),
+    ).toBe(1);
+    expect(
+      changeCount(
+        specOf({}),
+        specOf({
+          licenseSecretRef: { namespace: "a", name: "b", key: "c" },
+          images: { camunda: "mirror.example.com/camunda/camunda" },
+        }),
+      ),
+    ).toBe(2);
   });
 });

@@ -15,7 +15,14 @@ import { useAnswered } from "@/lib/k8s/answered";
 import { useWatchesFresh } from "@/lib/k8s/hooks";
 import { useLive } from "@/lib/k8s/live";
 import { currentReadErrors, type ReadError } from "@/lib/k8s/unread";
+import type { Change, Preview, WriteResult } from "@/lib/write/types";
 import { PLATFORM_SOURCE_KINDS } from "./source-kinds";
+
+/** PlatformActions are the writes of the Platform pages: the server actions on the page, fakes in tests and stories. */
+export type PlatformActions = {
+  previewChange: (change: Change) => Promise<Preview>;
+  applyChange: (change: Change) => Promise<WriteResult>;
+};
 
 /** PlatformSources holds every list that the Platform pages read, in all namespaces. */
 export type PlatformSources = {

@@ -27,7 +27,9 @@ export function secretRefsOf(
  * it never has a Secret value. onChange gets the reference when both are
  * picked, and undefined otherwise. When secrets no longer hold the picked
  * Secret or key, onChange gets undefined if its last value was a reference.
- * describedBy gives the ids for aria-describedby of both selects.
+ * describedBy gives the ids for aria-describedby of both selects. Without
+ * secrets it shows the reference of defaultValue, when it has one, and
+ * emptyText.
  */
 export function SecretRefPicker({
   label,
@@ -35,6 +37,7 @@ export function SecretRefPicker({
   defaultValue,
   invalid = false,
   describedBy,
+  emptyText = "No Secrets in this namespace",
   onChange,
 }: {
   label: string;
@@ -42,6 +45,7 @@ export function SecretRefPicker({
   defaultValue?: SecretKeyRef;
   invalid?: boolean;
   describedBy?: string;
+  emptyText?: string;
   onChange?: (ref: SecretKeyRef | undefined) => void;
 }) {
   const id = useId();
@@ -67,7 +71,16 @@ export function SecretRefPicker({
   });
 
   if (secrets.length === 0) {
-    return <p className="text-sm text-muted">No Secrets in this namespace</p>;
+    return (
+      <div className="flex flex-col gap-0.5 text-sm">
+        {defaultValue?.name && defaultValue.key && (
+          <span className="font-mono break-all text-text-2">
+            {defaultValue.name}/{defaultValue.key}
+          </span>
+        )}
+        <p className="text-muted">{emptyText}</p>
+      </div>
+    );
   }
 
   return (

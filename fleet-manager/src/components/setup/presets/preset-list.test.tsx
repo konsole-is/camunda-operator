@@ -74,6 +74,13 @@ function setup(
 const rowOf = (name: RegExp) => screen.getByRole("row", { name });
 
 describe("PresetList", () => {
+  it("links New preset to the create page", () => {
+    setup();
+    expect(
+      screen.getByRole("link", { name: "New preset" }).getAttribute("href"),
+    ).toBe("/setup/new-preset");
+  });
+
   it("shows name, kind, key facts, Allowed in, Used by, and last changed of each preset", () => {
     setup();
     const row = rowOf(/medium/);

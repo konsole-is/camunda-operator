@@ -15,6 +15,11 @@ const catalog = parseCatalog(JSON.parse(text));
 const CHART_REGISTRY =
   "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts";
 const REPOSITORY = "https://github.com/konsole-is/camunda-operator-plugins";
+// The chart aws turns on none of its controllers by default, and refuses
+// to install with none on.
+const SWITCHES: Record<string, string> = {
+  aws: " --set identity.enabled=true --set connectorsRole.enabled=true --set kms.enabled=true --set ebs.enabled=true --set s3.enabled=true",
+};
 
 describe("catalog/official-plugins.json", () => {
   it("lists each planned official chart with the section that it serves", () => {
@@ -23,11 +28,29 @@ describe("catalog/official-plugins.json", () => {
     ).toEqual({
       "gateway-access": ["access"],
       rustfs: ["backup-storage"],
-      "aws-identity": ["cloud-identity"],
-      "aws-kms": ["encryption-key"],
-      "aws-ebs": ["volume-encryption"],
-      "aws-s3": ["backup-storage"],
-      "aws-connectors-role": ["connectors-permissions"],
+      aws: [
+        "cloud-identity",
+        "encryption-key",
+        "volume-encryption",
+        "backup-storage",
+        "connectors-permissions",
+      ],
+    });
+  });
+
+  it("names the controllers whose registrations each chart publishes", () => {
+    expect(
+      Object.fromEntries(catalog.charts.map((c) => [c.name, c.controllers])),
+    ).toEqual({
+      "gateway-access": ["gateway-access"],
+      rustfs: ["rustfs"],
+      aws: [
+        "aws-identity",
+        "aws-connectors-role",
+        "aws-kms",
+        "aws-ebs",
+        "aws-s3",
+      ],
     });
   });
 
@@ -45,10 +68,10 @@ describe("catalog/official-plugins.json", () => {
     expect([...versions][0]).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
   });
 
-  it("installs the chart at its version with the install command", () => {
+  it("installs the chart at its version, with the controllers on, with the install command", () => {
     for (const c of catalog.charts) {
       expect(c.installCommand).toBe(
-        `helm install ${c.name} ${c.chart} --version ${c.version} --namespace camunda-operator-plugins --create-namespace`,
+        `helm install ${c.name} ${c.chart} --version ${c.version} --namespace camunda-operator-plugins --create-namespace${SWITCHES[c.name] ?? ""}`,
       );
     }
   });

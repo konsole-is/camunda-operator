@@ -5,16 +5,16 @@ import type { CatalogChart } from "@/startup/bundled-data";
 export type CatalogRead = { charts: CatalogChart[] } | { error: string };
 
 /**
- * missingCharts returns the charts of the catalog that no registration
- * names as its controller, in catalog order. A chart whose controller runs
- * under another name counts as missing.
+ * missingCharts returns the charts of the catalog of which no registration
+ * names a controller, in catalog order. A chart whose controller runs under
+ * another name counts as missing.
  */
 export function missingCharts(
   charts: readonly CatalogChart[],
   registrations: readonly PluginRegistration[],
 ): CatalogChart[] {
-  const controllers = new Set(
+  const named = new Set(
     registrations.flatMap((r) => r.spec.controller?.name ?? []),
   );
-  return charts.filter((c) => !controllers.has(c.name));
+  return charts.filter((c) => !c.controllers.some((n) => named.has(n)));
 }

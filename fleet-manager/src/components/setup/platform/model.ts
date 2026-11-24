@@ -12,6 +12,14 @@ import {
 } from "@/lib/usage";
 import type { PlatformSources } from "./sources";
 
+/** PLATFORM_HREF is the path of the Platform page. */
+export const PLATFORM_HREF = "/setup/platform";
+
+/** platformConfigHref returns the path of the page of the platform config name. */
+export function platformConfigHref(name: string): string {
+  return `${PLATFORM_HREF}/${encodeURIComponent(name)}`;
+}
+
 /** Condition is the Ready condition of a platform config as the list shows it. */
 export type Condition = {
   status: "True" | "False" | "Unknown";
@@ -42,6 +50,10 @@ export const MINOR_KINDS: readonly KindName[] = [
 /** ROLL_NOTICE says which users a change of a platform config changes. */
 export const ROLL_NOTICE =
   "A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.";
+
+/** CREATE_EFFECT says what the create of a platform config changes. */
+export const CREATE_EFFECT =
+  "A resource or an environment that names this config uses it from now on.";
 
 /** DELETE_EFFECT says what a delete does to the users of a platform config. */
 export const DELETE_EFFECT =

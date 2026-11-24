@@ -46,6 +46,6 @@ A limit that the chart sets, for example a permissions boundary, cannot change i
 
 ## Install an official chart
 
-The panel **Charts you can install** lists the official plugin charts that are not installed. Each chart shows what it does and the Helm command that installs it. Select **Copy the command**, then run the command with access to the cluster.
+The panel **Charts you can install** lists the official plugin charts that are not installed. A chart counts as installed when one of its options exists. Each chart shows what it does and the Helm command that installs it. Select **Copy the command**, then run the command with access to the cluster.
 
 Keep the default controller name when you install a chart, or the panel still lists the chart as not installed.
