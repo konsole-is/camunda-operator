@@ -1,1 +1,0 @@
-import{t as e}from"./iframe-CWIXWix9.js";e();
