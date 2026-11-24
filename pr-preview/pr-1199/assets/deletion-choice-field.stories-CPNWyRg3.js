@@ -1,0 +1,31 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";import{t as n}from"./jsx-runtime-CndCZlyt.js";import{a as r,n as i}from"./deletion-choice-o4Ri0n1M.js";function a(e){let[t,n]=(0,s.useState)(e.choice.policy);return(0,o.jsx)(i,{...e,choice:{...e.choice,policy:t},onChange:t=>{e.onChange(t),n(t)}})}var o,s,c,l,u,d,f;function p(){return(p=e((()=>{o=n(),s=t(),r(),{fn:c}=__STORYBOOK_MODULE_TEST__,l={title:`fleet/DeletionChoiceField`,component:i,args:{subject:`cluster`,onChange:c()},decorators:[e=>(0,o.jsx)(`div`,{className:`max-w-3xl`,children:(0,o.jsx)(e,{})})],render:e=>(0,o.jsx)(a,{...e},JSON.stringify(e.choice))},u={name:`Deletion choice with Keep refused`,args:{choice:{defaultPolicy:`Orphan`,keepAllowed:!1,alwaysDeleted:[{section:`backup-storage`,label:`Archive bucket (Backup storage)`},{section:`access`,label:`Gateway (Access)`}],policy:`Delete`}}},d={name:`Deletion choice with a missing registration`,args:{choice:{defaultPolicy:`Delete`,keepAllowed:!1,alwaysDeleted:[],missing:[{section:`access`,label:`gateway-access (Access)`}],policy:`Delete`}}},f=[`DeletionChoiceWithKeepRefused`,`DeletionChoiceWithMissingRegistration`],u.parameters={...u.parameters,docs:{...u.parameters?.docs,source:{originalSource:`{
+  name: "Deletion choice with Keep refused",
+  args: {
+    choice: {
+      defaultPolicy: "Orphan",
+      keepAllowed: false,
+      alwaysDeleted: [{
+        section: "backup-storage",
+        label: "Archive bucket (Backup storage)"
+      }, {
+        section: "access",
+        label: "Gateway (Access)"
+      }],
+      policy: "Delete"
+    }
+  }
+}`,...u.parameters?.docs?.source}}},d.parameters={...d.parameters,docs:{...d.parameters?.docs,source:{originalSource:`{
+  name: "Deletion choice with a missing registration",
+  args: {
+    choice: {
+      defaultPolicy: "Delete",
+      keepAllowed: false,
+      alwaysDeleted: [],
+      missing: [{
+        section: "access",
+        label: "gateway-access (Access)"
+      }],
+      policy: "Delete"
+    }
+  }
+}`,...d.parameters?.docs?.source}}}})))()}p();export{u as DeletionChoiceWithKeepRefused,d as DeletionChoiceWithMissingRegistration,f as __namedExportsOrder,l as default};
