@@ -1183,6 +1183,16 @@ describe("backupStorageOf", () => {
     ).toEqual({ state: "dedicated" });
   });
 
+  it("the server use is unheld while the collision key of the one Database resource names another database, as after a rename", () => {
+    const renamed = database("orders-db");
+    (renamed.status as { collisionKey: string }).collisionKey =
+      "7300/orders-old";
+    expect(serverUseOf(rdbmsChain({ databases: [renamed] }))).toEqual({
+      state: "unheld",
+      database: "orders-db",
+    });
+  });
+
   it("the server use is unheld when no Database resource on the server holds the database of the DatabaseConfig", () => {
     expect(serverUseOf(rdbmsChain({ databases: [] }))).toEqual({
       state: "unheld",

@@ -429,7 +429,9 @@ function serverUseOf(
   const unplaced = sorted.find((d) => !placed.includes(d));
   if (unplaced) return { state: "unplaced", database: nameOf(unplaced) };
   const [only] = onServer;
-  return only !== undefined && only.spec.databaseName === name
+  return only !== undefined &&
+    only.spec.databaseName === name &&
+    only.status?.collisionKey === `${identity}/${name}`
     ? { state: "dedicated" }
     : { state: "unheld", database: name };
 }
