@@ -27,6 +27,7 @@ import {
   presetBody,
   presetHref,
   presetLabel,
+  presetsOf,
 } from "./kinds";
 import { PresetEditor } from "./preset-editor";
 import { GIT_DELETE_EFFECT } from "./preset-list";
@@ -65,7 +66,7 @@ export function PresetDetail({
   mode?: WriteMode;
   actions: PresetActions;
 }): ReactNode {
-  const list = listOf(kind, sources);
+  const list = presetsOf(kind, sources);
   const live = list.find((p) => p.metadata.name === name);
   const [writing, setWriting] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -345,17 +346,6 @@ function specsOf(
       change.apply[0]?.spec ??
       base.spec) as PresetObject["spec"],
   };
-}
-
-function listOf(kind: PresetKind, sources: PresetSources): PresetObject[] {
-  switch (kind) {
-    case "CamundaClusterPreset":
-      return sources.clusterPresets;
-    case "ElasticsearchClusterPreset":
-      return sources.elasticsearchPresets;
-    case "DatabaseServerPreset":
-      return sources.databasePresets;
-  }
 }
 
 /** PresetDetailLive is PresetDetail on the live sources, starting from initial. */

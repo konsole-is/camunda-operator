@@ -1,5 +1,6 @@
 import type { Resource } from "@/lib/k8s/kinds";
 import type { PresetKind } from "@/lib/usage";
+import type { PresetSources } from "./sources";
 
 /** PresetObject is a preset of any of the three kinds. */
 export type PresetObject =
@@ -50,4 +51,19 @@ export function presetBody(
     server?: Record<string, unknown>;
   };
   return preset.kind === "DatabaseServerPreset" ? spec.server : spec.cluster;
+}
+
+/** presetsOf returns the list of sources that holds the presets of kind. */
+export function presetsOf(
+  kind: PresetKind,
+  sources: PresetSources,
+): PresetObject[] {
+  switch (kind) {
+    case "CamundaClusterPreset":
+      return sources.clusterPresets;
+    case "ElasticsearchClusterPreset":
+      return sources.elasticsearchPresets;
+    case "DatabaseServerPreset":
+      return sources.databasePresets;
+  }
 }
