@@ -116,9 +116,7 @@ export function ClusterProgressView({
           )
         }
       />
-      {claim && (
-        <PrecheckLine claim={claim} href={`${page}?tab=claim`} />
-      )}
+      {claim && <PrecheckLine claim={claim} href={`${page}?tab=claim`} />}
     </section>
   );
 }
