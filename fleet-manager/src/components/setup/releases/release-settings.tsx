@@ -178,7 +178,7 @@ export function ReleaseSettings({
               label="Release name"
               value={draft.name}
               mono
-              hint="A DNS name of at most 253 characters. It cannot change later."
+              hint="Lowercase letters, digits, and hyphens. It cannot change later."
               error={errorAt("name")}
               onChange={(n) => editor.setDraft((d) => ({ ...d, name: n }))}
             />

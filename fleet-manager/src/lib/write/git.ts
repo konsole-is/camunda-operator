@@ -113,7 +113,9 @@ type Remote = {
  * field of GitOps that the change leaves out, except the revision
  * annotation. Any other object is dry-run as the app. A delete of an
  * object without a file, and a file behind a symbolic link of the
- * repository, are Invalid, in the preview too for an object to delete. The
+ * repository, are Invalid, in the preview too for an object to delete. A
+ * name whose file name has more than 255 bytes is Invalid, in the preview
+ * too. The
  * UID is checked only before the push: GitOps later deletes the object of
  * that name, whatever its UID. A change with takeOver or remove and
  * without directOnly is Invalid in the preview and in apply: GitOps applies
@@ -709,6 +711,10 @@ function takeOverRefusalsOf(change: Change): ApiError[] {
   }));
 }
 
+// Linux and most other file systems refuse a file name of more than 255
+// bytes, so the clone cannot hold such a file.
+const FILE_NAME_MAX_BYTES = 255;
+
 function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
   if (refusals.length > 0) return refusals;
@@ -724,6 +730,17 @@ function gitRefusalOf(ref: ObjectRef): ApiError[] {
       {
         code: "Invalid",
         message: `The name or the namespace of the ${ref.kind} is not a valid name.`,
+        ref,
+      },
+    ];
+  }
+  const file = path.posix.basename(gitPath("", kindInfoOf(ref.kind)!, ref));
+  const bytes = Buffer.byteLength(file);
+  if (bytes > FILE_NAME_MAX_BYTES) {
+    return [
+      {
+        code: "Invalid",
+        message: `The name of the ${ref.kind} ${ref.name} is too long for a file in the Git repository. Its file name has ${bytes} bytes. The limit is ${FILE_NAME_MAX_BYTES} bytes.`,
         ref,
       },
     ];
@@ -748,6 +765,12 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
       message: `${target.url} refused the credentials.`,
     };
   }
+  if (nameTooLong(error)) {
+    return {
+      code: "Invalid",
+      message: `A file name in ${target.url} is too long for the file system of the fleet manager. The fleet manager committed nothing.`,
+    };
+  }
   if (code === "NotFoundError" && target.branch) {
     return {
       code: "Unavailable",
@@ -758,6 +781,13 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
     code: "Unavailable",
     message: `Could not reach ${target.url}: ${reasonOf(error)}`,
   };
+}
+
+// A clone gives the error of a file that it cannot write inside a
+// MultipleGitError.
+function nameTooLong(error: unknown): boolean {
+  const { code, errors } = error as { code?: string; errors?: unknown[] };
+  return code === "ENAMETOOLONG" || (errors ?? []).some(nameTooLong);
 }
 
 function appliedRef(change: Change, ref: ObjectRef): boolean {

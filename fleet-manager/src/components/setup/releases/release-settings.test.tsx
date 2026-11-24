@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
@@ -363,6 +364,36 @@ describe("ReleaseSettings", () => {
         extraEnv: releaseFixtures().releases[0].spec.extraEnv,
       },
     });
+  });
+
+  it("refuses a typed release name with a dot and says the rule", async () => {
+    setup({ name: undefined, copyFrom: "camunda-8-9-0", secrets: {} });
+    const user = userEvent.setup();
+    expect(
+      screen.getByText(
+        "Lowercase letters, digits, and hyphens. It cannot change later.",
+      ),
+    ).toBeTruthy();
+
+    await user.type(field("Release name"), "camunda.8-9-2");
+
+    expect(
+      screen.getAllByText(
+        "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+
+    await user.clear(field("Release name"));
+    await user.type(field("Release name"), "camunda-8-9-2");
+
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 
   it("keeps the typed name when the copy source changes", () => {

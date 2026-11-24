@@ -1340,6 +1340,111 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  const release = (name: string, resourceVersion?: string): KubeObject => ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaRelease",
+    metadata: { name, ...(resourceVersion ? { resourceVersion } : {}) },
+    spec: { version: "8.9.0" },
+  });
+  const tooLong = (object: KubeObject, bytes: number) => ({
+    code: "Invalid",
+    message: `The name of the ${object.kind} ${object.metadata.name} is too long for a file in the Git repository. Its file name has ${bytes} bytes. The limit is 255 bytes.`,
+    ref: refOf(object),
+  });
+
+  it.each([
+    ["the create of a release", release("r".repeat(253)), 258, false],
+    ["the create of a claim", claim("team-a", "c".repeat(251)), 256, false],
+    ["the update of a release", release("u".repeat(252), "7"), 257, true],
+  ])(
+    "refuses %s whose file name is longer than 255 bytes in the preview and in the apply, and writes nothing",
+    async (_, object, bytes, update) => {
+      repo = await serveBareRepository();
+      if (update) live.set(refKey(refOf(object)), object);
+      const change: Change = {
+        intent: "Save",
+        apply: [object],
+        ...(update
+          ? { preconditions: { [refKey(refOf(object))]: "7" } }
+          : { create: [refKey(refOf(object))] }),
+      };
+
+      const preview = await writerFor().preview(change);
+      const result = await writerFor().apply(change);
+
+      expect(preview.errors).toEqual([tooLong(object, bytes)]);
+      expect(result).toEqual({ ok: false, errors: [tooLong(object, bytes)] });
+      expect(directPreview).not.toHaveBeenCalled();
+      expect(await repo.log()).toEqual(["Initial commit"]);
+    },
+  );
+
+  it("commits a release whose file name has 255 bytes", async () => {
+    repo = await serveBareRepository();
+    const name = "r".repeat(250);
+
+    const result = await writerFor().apply({
+      intent: "Create",
+      apply: [release(name)],
+    });
+
+    expect(ok(result).paths).toEqual({
+      [refKey(refOf(release(name)))]: `_cluster/camundareleases/${name}.yaml`,
+    });
+  });
+
+  it("a file in the repository whose name is too long for the clone is not a connection failure", async () => {
+    repo = await serveBareRepository();
+    // Git stores the name. Only the checkout of the clone cannot write it.
+    const git = (args: string[], input?: string) =>
+      new Promise<string>((resolve, reject) => {
+        const child = execFile(
+          "git",
+          ["-C", repo.dir, ...args],
+          { env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" } },
+          (error, stdout) => (error ? reject(error) : resolve(stdout.trim())),
+        );
+        if (input !== undefined) child.stdin?.end(input);
+      });
+    const blob = await git(["hash-object", "-w", "--stdin"], "x\n");
+    const tree = await git(
+      ["mktree"],
+      `100644 blob ${blob}\t${"f".repeat(256)}\n`,
+    );
+    const commit = await git([
+      "-c",
+      "user.name=Other admin",
+      "-c",
+      "user.email=other@example.com",
+      "commit-tree",
+      tree,
+      "-p",
+      "main",
+      "-m",
+      "Add a long file name",
+    ]);
+    await git(["update-ref", "refs/heads/main", commit]);
+
+    const result = await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Invalid",
+          message: `A file name in ${repo.url} is too long for the file system of the fleet manager. The fleet manager committed nothing.`,
+        },
+      ],
+    });
+    expect(await repo.log()).toEqual([
+      "Add a long file name",
+      "Initial commit",
+    ]);
+  });
+
   it("refuses to write through a symbolic link of the repository", async () => {
     repo = await serveBareRepository();
     const outside = await mkdtemp(path.join(os.tmpdir(), "fleet-outside-"));
