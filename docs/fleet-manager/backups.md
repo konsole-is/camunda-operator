@@ -81,12 +81,30 @@ A backup that is more than one minor newer than the brokers of the cluster canno
 
 ## Restore to a point in time
 
-A cluster on PostgreSQL has **Restore to a point in time** when the operator rolls its database server back. Its `DatabaseServerConfig` then has `pitr.recovery: operator`. See [PointInTimeRestore](../crds/pointintimerestore.md#who-rolls-the-database-back).
+A cluster on PostgreSQL has **Restore to a point in time**. `pitr.recovery` on the `DatabaseServerConfig` of the cluster says who rolls the database server back. See [PointInTimeRestore](../crds/pointintimerestore.md#who-rolls-the-database-back).
 
-1. Select **Restore to a point in time**. The confirm shows the restore window in UTC.
-2. Enter a time inside the window in **Time (UTC)**.
-3. Read the confirm. The restore loses everything that the cluster wrote after that time.
-4. Type the name of the cluster, and select **Restore**.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    retentionPeriodDays: 7
+    recovery: external
+  # ... the rest of your server config
+```
+
+The confirm shows the restore window in UTC. With `operator`, the operator rolls the server back, and the window comes from the archive of the server. With `external`, the default, you roll the server back to the point before you confirm. The window then reaches back as far as the cluster keeps its Zeebe backups, and not more than `retentionPeriodDays`. **Restore to a point in time** is off while `pitr.enabled` is false, and the reason shows under it.
+
+1. With `external`, roll the database server back to the point. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
+2. Select **Restore to a point in time**.
+3. Enter the time in **Time (UTC)**.
+4. Read the confirm. The restore loses everything that the cluster wrote after that time.
+5. With `external`, select **I rolled the database server back to this time**.
+6. Type the name of the cluster, and select **Restore**.
 
 The fleet manager creates a [PointInTimeRestore](../crds/pointintimerestore.md):
 
