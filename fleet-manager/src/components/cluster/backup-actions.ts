@@ -713,7 +713,7 @@ function serverUseBlock(
     default:
       return {
         disabled:
-          "The fleet manager could not read the Database resources, so it cannot tell which databases the server holds.",
+          "The fleet manager has no current read of the Database, DatabaseConfig, or DatabaseServerConfig resources, so it cannot tell which databases the server holds.",
       };
   }
 }

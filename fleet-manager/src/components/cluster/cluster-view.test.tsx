@@ -691,13 +691,24 @@ function pgPage(
           {
             host: "orders-pg-rw.team-a.svc",
             port: 5432,
+            adminCredentialsSecretRef: {
+              name: "pg-admin",
+              usernameKey: "username",
+              passwordKey: "password",
+            },
             pitr: {
               enabled: true,
               recovery: "operator",
               retentionPeriodDays: 30,
             },
           },
-          { systemIdentifier: "7300" },
+          {
+            systemIdentifier: "7300",
+            probedAt: "2026-10-11T00:00:00Z",
+            probedEndpoint: "orders-pg-rw.team-a.svc:5432",
+            probedSecretName: "pg-admin",
+            probedSecretKeys: "username/password",
+          },
           {
             ownerReferences: [
               {
@@ -900,6 +911,26 @@ describe("Backups tab", () => {
     expect(use()).toBe("unpublished");
     live.stale = ["Database"];
     rerender();
+    expect(use()).toBe("unread");
+  });
+
+  it.each(["DatabaseConfig", "DatabaseServerConfig"])(
+    "the server use is unread while the watch of the %s resources lost its connection",
+    (kind) => {
+      const { rerender, use } = serverUseSeen(pgPage());
+      expect(use()).toBe("unpublished");
+      live.stale = [kind];
+      rerender();
+      expect(use()).toBe("unread");
+    },
+  );
+
+  it("the server use is unread while the first read of the DatabaseServerConfig resources failed", () => {
+    live.stale = ["DatabaseServerConfig"];
+    const { use } = serverUseSeen({
+      ...pgPage(),
+      readErrors: [{ kind: "DatabaseServerConfig", message: "forbidden" }],
+    });
     expect(use()).toBe("unread");
   });
 

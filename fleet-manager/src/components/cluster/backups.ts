@@ -214,8 +214,8 @@ export type ArchiveView = {
  * unpublished when no Database resource created the DatabaseConfig, shared
  * when more than one Database resource uses the server, unknown while a
  * DatabaseServerConfig of a Database resource has published no identity of
- * its server, and unread when the page could not read the Database
- * resources.
+ * its server, and unread when the page has no current read of the
+ * resources that place the Database resources.
  */
 export type ServerUse =
   "dedicated" | "unpublished" | "shared" | "unknown" | "unread";
@@ -257,8 +257,9 @@ export type BackupStorage =
 /**
  * BackupStorageInput holds what backupStorageOf reads. cluster is the live
  * object and spec its merged spec. The namespaced lists hold the objects of
- * the namespace of the cluster. databases is undefined when the page could
- * not read the Database resources. now is the current time.
+ * the namespace of the cluster. databases is undefined when the page has no
+ * current read of the Database, DatabaseConfig, or DatabaseServerConfig
+ * resources. now is the current time.
  */
 export type BackupStorageInput = {
   cluster: Resource<"CamundaCluster">;
@@ -402,9 +403,11 @@ function serverUseOf(
 ): ServerUse {
   const { databases } = input;
   if (databases === undefined) return "unread";
-  const identityOf = (name: string) =>
-    byName(input.databaseServerConfigs, name)?.status?.systemIdentifier;
-  const identity = serverConfig.status?.systemIdentifier;
+  const identityOf = (name: string) => {
+    const config = byName(input.databaseServerConfigs, name);
+    return config && identityOfServer(config);
+  };
+  const identity = identityOfServer(serverConfig);
   const placed = databases.map((d) => identityOf(d.spec.serverRef));
   if (identity && placed.filter((id) => id === identity).length > 1) {
     return "shared";
@@ -416,6 +419,22 @@ function serverUseOf(
   return creator && databases.some((d) => d.metadata?.name === creator.name)
     ? "dedicated"
     : "unpublished";
+}
+
+// identityOfServer gives the system identifier of the server only when the
+// last probe reached the endpoint and the Secret that the spec names now, as
+// DatabaseServerConfig.ProbedForCurrentSpec in api/v1 says.
+function identityOfServer(
+  config: Resource<"DatabaseServerConfig">,
+): string | undefined {
+  const { spec, status } = config;
+  const ref = spec.adminCredentialsSecretRef;
+  const current =
+    status?.probedAt !== undefined &&
+    status.probedEndpoint === `${spec.host}:${spec.port}` &&
+    status.probedSecretName === ref?.name &&
+    status.probedSecretKeys === `${ref?.usernameKey}/${ref?.passwordKey}`;
+  return current ? status.systemIdentifier || undefined : undefined;
 }
 
 function archiveOf(

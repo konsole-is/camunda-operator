@@ -797,7 +797,7 @@ describe("restore rules", () => {
   const UNKNOWN =
     "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.";
   const UNREAD =
-    "The fleet manager could not read the Database resources, so it cannot tell which databases the server holds.";
+    "The fleet manager has no current read of the Database, DatabaseConfig, or DatabaseServerConfig resources, so it cannot tell which databases the server holds.";
 
   it.each<[string, (use: ServerUse) => BackupStorage]>([
     ["recovery by the operator", (use) => archived([{ from: ago(1) }], use)],

@@ -350,6 +350,7 @@ export function ClusterView({
     { kind: "LogicalRestoreRDBMS", opts: { namespace: ns } },
     { kind: "PointInTimeRestore", opts: { namespace: ns } },
     { kind: "Database", opts: { namespace: ns } },
+    { kind: "DatabaseServerConfig", opts: { namespace: ns } },
   ] as const;
   const listFresh = useWatchesFresh(followedLists);
   const listOverdue = useWatchesOverdue(followedLists);
@@ -368,7 +369,6 @@ export function ClusterView({
       kind: "Pod",
       opts: { namespace: ns, labelSelector: initial.podSelector },
     },
-    { kind: "DatabaseServerConfig", opts: { namespace: ns } },
     "DatabaseServerPreset",
     { kind: "BackupSchedule", opts: { namespace: ns } },
     { kind: "CamundaOptimize", opts: { namespace: ns } },
@@ -577,8 +577,9 @@ export function ClusterView({
     databaseServerConfigs: databaseServerConfigs.items,
     databaseServers: databaseServers.items,
     databaseServerPresets: databaseServerPresets.items,
-    // A failed or stale read is not a namespace without Database resources.
-    databases: [...stale, ...errors.map((e) => e.kind)].includes("Database")
+    databases: [...stale, ...errors.map((e) => e.kind)].some((kind) =>
+      PLACING_KINDS.includes(kind),
+    )
       ? undefined
       : databases.items,
     schedules: schedules.items,
@@ -966,6 +967,14 @@ const SETTINGS_KINDS: readonly string[] = [
   "PluginSection",
   "PluginRegistration",
   "Environment",
+];
+
+// PLACING_KINDS are the kinds of the lists that place the Database resources
+// on the server of the cluster.
+const PLACING_KINDS: readonly string[] = [
+  "Database",
+  "DatabaseConfig",
+  "DatabaseServerConfig",
 ];
 
 function NoClaim({ managed, name }: { managed: boolean; name?: string }) {

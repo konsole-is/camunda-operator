@@ -442,6 +442,22 @@ const s3Backups = osc("backups", {
   s3: { bucketName: "acme-backups", basePath: "orders", region: "eu-west-1" },
 });
 
+const ADMIN = {
+  name: "pg-admin",
+  usernameKey: "username",
+  passwordKey: "password",
+};
+
+// probed is the status of a DatabaseServerConfig whose last probe reached
+// endpoint with ADMIN and read identity.
+const probed = (identity: string, endpoint: string) => ({
+  systemIdentifier: identity,
+  probedAt: "2026-09-22T06:00:00Z",
+  probedEndpoint: endpoint,
+  probedSecretName: ADMIN.name,
+  probedSecretKeys: "username/password",
+});
+
 function rdbmsChain(
   over: {
     databaseConfig?: boolean;
@@ -453,6 +469,7 @@ function rdbmsChain(
     published?: boolean;
     databases?: BackupStorageInput["databases"];
     identity?: string | null;
+    probedEndpoint?: string;
     otherServerConfigs?: Resource<"DatabaseServerConfig">[];
   } = {},
 ): BackupStorageInput {
@@ -503,6 +520,7 @@ function rdbmsChain(
               {
                 host: "orders-pg-rw.team-a.svc",
                 port: 5432,
+                adminCredentialsSecretRef: ADMIN,
                 pitr: over.pitr ?? {
                   enabled: true,
                   recovery: "operator",
@@ -511,7 +529,10 @@ function rdbmsChain(
               },
               over.identity === null
                 ? undefined
-                : { systemIdentifier: over.identity ?? "7300" },
+                : probed(
+                    over.identity ?? "7300",
+                    over.probedEndpoint ?? "orders-pg-rw.team-a.svc:5432",
+                  ),
               over.owned === false ? {} : { ownerReferences: [publisher] },
             ),
             ...(over.otherServerConfigs ?? []),
@@ -1160,8 +1181,12 @@ describe("backupStorageOf", () => {
             obj(
               "DatabaseServerConfig",
               "orders-pg-direct",
-              { host: "10.0.0.5", port: 5432 },
-              { systemIdentifier: "7300" },
+              {
+                host: "10.0.0.5",
+                port: 5432,
+                adminCredentialsSecretRef: ADMIN,
+              },
+              probed("7300", "10.0.0.5:5432"),
             ),
           ],
         }),
@@ -1193,6 +1218,18 @@ describe("backupStorageOf", () => {
               port: 5432,
             }),
           ],
+        }),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("an identity that a probe of an earlier endpoint read counts as no identity", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          probedEndpoint: "orders-pg-old.team-a.svc:5432",
+          databases: [database("orders", "orders-pg")],
         }),
       ),
     ).toBe("unknown");
