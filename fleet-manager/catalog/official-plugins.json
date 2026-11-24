@@ -31,7 +31,7 @@
     },
     {
       "name": "aws",
-      "description": "Gives each cluster on AWS an IAM role, a KMS key, encrypted EBS volumes, an S3 bucket, and an IAM role for its Connectors. The command turns on all five parts. A part stays off without its --set, so remove the --set of each part that you do not need.",
+      "description": "Gives each cluster on AWS an IAM role, a KMS key, encrypted EBS volumes, an S3 bucket, and an IAM role for its Connectors. The command turns on all five controllers. Remove the --set of each controller that you do not need.",
       "sections": [
         "cloud-identity",
         "encryption-key",
