@@ -7,7 +7,12 @@ import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
 import type { BackupRow, BackupStorage } from "./backups";
 
 const STORAGE: Record<
-  "elasticsearch" | "rdbms" | "archived" | "manual" | "manualWithoutPitr" | "none",
+  | "elasticsearch"
+  | "rdbms"
+  | "archived"
+  | "manual"
+  | "manualWithoutPitr"
+  | "none",
   BackupStorage
 > = {
   elasticsearch: {

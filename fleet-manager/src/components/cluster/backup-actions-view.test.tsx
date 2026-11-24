@@ -862,7 +862,9 @@ describe("restore to a point in time", () => {
       within(dialog).queryByLabelText("Type orders to confirm"),
     ).toBeNull();
     await userEvent.click(rolled(dialog));
-    expect(within(dialog).getByLabelText("Type orders to confirm")).toBeTruthy();
+    expect(
+      within(dialog).getByLabelText("Type orders to confirm"),
+    ).toBeTruthy();
   });
 
   it("a new time clears the tick, because the rollback was for the old time", async () => {
@@ -903,7 +905,9 @@ describe("restore to a point in time", () => {
   });
 
   it("the action is off with the reason when the DatabaseServerConfig does not enable point-in-time recovery", () => {
-    header(context({ storage: manual({ enabled: false, recovery: "external" }) }));
+    header(
+      context({ storage: manual({ enabled: false, recovery: "external" }) }),
+    );
     const button = screen.getByRole("button", {
       name: "Restore to a point in time",
     });
@@ -966,6 +970,8 @@ describe("restore to a point in time", () => {
     pick(dialog, "2026-11-09T09:30:15");
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
     expect(within(dialog).queryByText(ROLL)).toBeNull();
-    expect(within(dialog).getByLabelText("Type orders to confirm")).toBeTruthy();
+    expect(
+      within(dialog).getByLabelText("Type orders to confirm"),
+    ).toBeTruthy();
   });
 });

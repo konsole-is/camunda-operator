@@ -315,7 +315,10 @@ function PointInTimeAction({
                   checked={rolledBack}
                   onCheckedChange={(on) => setRolledBack(on === true)}
                 />
-                <label htmlFor={`${id}-rolled`} className="font-medium text-text">
+                <label
+                  htmlFor={`${id}-rolled`}
+                  className="font-medium text-text"
+                >
                   I rolled the database server back to this time
                 </label>
               </div>
