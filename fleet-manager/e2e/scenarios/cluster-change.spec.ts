@@ -48,6 +48,13 @@ test("Change topology shows the topology now and after the change", async ({
       .getByRole("listitem")
       .filter({ hasText: "Deployment orders-operate" }),
   ).toBeVisible();
+  // Review turns on with the pick and fades in from its disabled look. axe
+  // reads a low contrast during the fade.
+  const review = dialog.getByRole("button", { name: "Review" });
+  await expect(review).toBeEnabled();
+  await review.evaluate((el) =>
+    Promise.all(el.getAnimations().map((a) => a.finished)),
+  );
   await checkPage(page, "cluster-topology-dialog");
   await docShot(page, "cluster-topology-dialog", {
     ready: dialog,
