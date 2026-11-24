@@ -428,6 +428,34 @@ describe("ContractCreate", () => {
     expect(field("Namespace").value).toBe("team-a");
   });
 
+  it("reads no Secret before a namespace is picked", async () => {
+    const read = vi.fn(SECRETS);
+    render(
+      <GitPushesProvider>
+        <SecretRefsReaderContext.Provider value={read}>
+          <ContractCreate
+            tab="databases"
+            sources={{ ...withTeamB(), errors: [], stale: [] }}
+            mode="direct"
+            actions={{
+              previewChange: previewContractChange,
+              applyChange: applyContractChange,
+            }}
+          />
+        </SecretRefsReaderContext.Provider>
+      </GitPushesProvider>,
+    );
+
+    expect(
+      screen.getByText("Pick the namespace of the contract first."),
+    ).toBeDefined();
+    expect(screen.queryByRole("group", { name: "Credentials" })).toBeNull();
+    select("Namespace", "team-a");
+    expect(screen.getByRole("group", { name: "Credentials" })).toBeDefined();
+    expect(read).toHaveBeenCalledWith("team-a");
+    expect(read).not.toHaveBeenCalledWith("");
+  });
+
   it("disables the form while changes are off", () => {
     setup("databases", { mode: undefined });
 

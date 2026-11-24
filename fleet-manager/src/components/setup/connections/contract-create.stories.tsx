@@ -42,10 +42,19 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// inTeamA picks the namespace team-a, so the form of the contract shows.
+const inTeamA = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.selectOptions(
+    within(canvasElement).getByLabelText("Namespace", { exact: true }),
+    "team-a",
+  );
+};
+
 export const ObjectStorage: Story = {
   name: "Object storage",
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+  play: async (context) => {
+    await inTeamA(context);
+    const canvas = within(context.canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "GCS" }));
     await expect(canvas.getByLabelText("Bucket name")).toBeVisible();
     await expect(canvas.queryByLabelText("Region")).toBeNull();
@@ -55,16 +64,19 @@ export const ObjectStorage: Story = {
 export const SecondaryStorage: Story = {
   name: "Secondary storage",
   args: { tab: "secondary-storage" },
+  play: inTeamA,
 };
 
 export const DatabaseServer: Story = {
   name: "Database server",
   args: { tab: "database-servers" },
+  play: inTeamA,
 };
 
 export const Database: Story = {
   name: "Database",
   args: { tab: "databases" },
+  play: inTeamA,
 };
 
 export const ManagementIdentity: Story = {

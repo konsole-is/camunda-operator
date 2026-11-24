@@ -198,19 +198,27 @@ export function ContractCreate({
             Copy from again and drop its focus. */}
         <Fragment key={`${editor.generation}-${copy}`}>
           <EditorSection title="Settings">
-            <ContractForm
-              kind={kind}
-              namespace={draft.namespace}
-              draft={draft}
-              errors={errors}
-              namespaces={namespaces}
-              databaseConfigs={referenceNames("DatabaseConfig")}
-              databaseServerConfigs={referenceNames("DatabaseServerConfig")}
-              choose
-              onChange={(next) =>
-                editor.setDraft((d) => ({ ...d, spec: next.spec }))
-              }
-            />
+            {/* A Secret picker with no namespace reads the Secrets of
+                every namespace. */}
+            {namespaced && draft.namespace === "" ? (
+              <p className="text-sm text-muted">
+                Pick the namespace of the contract first.
+              </p>
+            ) : (
+              <ContractForm
+                kind={kind}
+                namespace={draft.namespace}
+                draft={draft}
+                errors={errors}
+                namespaces={namespaces}
+                databaseConfigs={referenceNames("DatabaseConfig")}
+                databaseServerConfigs={referenceNames("DatabaseServerConfig")}
+                choose
+                onChange={(next) =>
+                  editor.setDraft((d) => ({ ...d, spec: next.spec }))
+                }
+              />
+            )}
           </EditorSection>
         </Fragment>
       </fieldset>
