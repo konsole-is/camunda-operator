@@ -169,34 +169,164 @@ describe("PresetEditor of a cluster preset", () => {
 });
 
 describe("PresetEditor of an Elasticsearch or PostgreSQL preset", () => {
-  it("edits an Elasticsearch preset as YAML and reports a parse error", async () => {
-    const { last, errors } = setup(fixtures.elasticsearchPresets[0]);
-    const yaml = screen.getByLabelText("spec.cluster");
-    fireEvent.change(yaml, { target: { value: "replicas: 5\n" } });
-    await waitFor(() => expect(last()?.body).toEqual({ replicas: 5 }));
-    fireEvent.change(yaml, { target: { value: "replicas: [5\n" } });
-    await waitFor(() => expect(errors.mock.calls.at(-1)?.[0]).toHaveLength(1));
-    expect(last()?.body).toEqual({ replicas: 5 });
-  });
-
-  it("labels the body of a PostgreSQL preset spec.server", () => {
-    setup(fixtures.databasePresets[1]);
-    expect(
-      (screen.getByLabelText("spec.server") as HTMLTextAreaElement).value,
-    ).toContain("walStorageSize: 5Gi");
-  });
-
-  it("refuses a body that is not a map", async () => {
-    const { errors } = setup(fixtures.databasePresets[1]);
-    fireEvent.change(screen.getByLabelText("spec.server"), {
-      target: { value: "- a\n" },
+  it("edits a field of an Elasticsearch preset with its field editor and writes it into the body", async () => {
+    const { last } = setup(fixtures.elasticsearchPresets[0]);
+    const settings = screen.getByRole("region", {
+      name: "Elasticsearch settings",
     });
+    const replicas = within(settings).getByRole("group", { name: "replicas" });
+    fireEvent.change(within(replicas).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(last()?.body.replicas).toBe(12));
+    expect(last()?.body.storageSize).toBe("64Gi");
+  });
+
+  it("edits a field of a PostgreSQL preset with its field editor and writes it into the body", async () => {
+    const { last } = setup(fixtures.databasePresets[1]);
+    const settings = screen.getByRole("region", {
+      name: "PostgreSQL settings",
+    });
+    const instances = within(settings).getByRole("group", {
+      name: "instances",
+    });
+    fireEvent.change(within(instances).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(last()?.body.instances).toBe(12));
+    expect(last()?.body.walStorageSize).toBe("5Gi");
+  });
+
+  it("shows the merge rule of each field that an Elasticsearch or a PostgreSQL preset sets", () => {
+    setup(fixtures.elasticsearchPresets[0]);
+    const elasticsearch = screen.getByRole("list", {
+      name: "Merge rules of Elasticsearch",
+    });
+    expect(
+      within(elasticsearch).getByText("replicas").closest("li")?.textContent,
+    ).toContain("A resource value replaces it");
+    expect(
+      within(elasticsearch).getByText("resources").closest("li")?.textContent,
+    ).toContain("Replaces whole");
+    cleanup();
+    setup(fixtures.databasePresets[1]);
+    const server = screen.getByRole("list", {
+      name: "Merge rules of PostgreSQL",
+    });
+    expect(
+      within(server).getByText("walStorageSize").closest("li")?.textContent,
+    ).toContain("A resource value replaces it");
+  });
+
+  it("offers no editor for a field that an Elasticsearch or a PostgreSQL preset cannot set", () => {
+    setup(fixtures.elasticsearchPresets[0]);
+    const elasticsearch = screen.getByRole("region", {
+      name: "Elasticsearch settings",
+    });
+    for (const label of [
+      "presetRef",
+      "releaseRef",
+      "secondaryStorageConfig",
+      "suspend",
+      "version",
+    ])
+      expect(
+        within(elasticsearch).queryByRole("group", { name: label }),
+      ).toBeNull();
+    cleanup();
+    setup(fixtures.databasePresets[1]);
+    const server = screen.getByRole("region", { name: "PostgreSQL settings" });
+    for (const label of [
+      "presetRef",
+      "releaseRef",
+      "databaseServerConfig",
+      "suspend",
+      "version",
+    ])
+      expect(within(server).queryByRole("group", { name: label })).toBeNull();
+    expect(
+      within(server).getByRole("group", { name: "platformConfigRef" }),
+    ).toBeTruthy();
+  });
+
+  it("edits extraEnv of an Elasticsearch preset as a setting that replaces the list of a resource", () => {
+    const preset = fixtures.elasticsearchPresets[0];
+    setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: {
+          ...preset.spec.cluster,
+          extraEnv: [{ name: "ES_JAVA_OPTS", value: "-Xms2g" }],
+        },
+      },
+    );
+    const settings = screen.getByRole("region", {
+      name: "Elasticsearch settings",
+    });
+    expect(
+      within(
+        // The env editor names its own group after the setting too.
+        within(settings).getAllByRole("group", { name: "extraEnv" })[0],
+      ).getByDisplayValue("ES_JAVA_OPTS"),
+    ).toBeTruthy();
+    const rules = screen.getByRole("list", {
+      name: "Merge rules of Elasticsearch",
+    });
+    expect(
+      within(rules).getByText("extraEnv").closest("li")?.textContent,
+    ).toContain("Replaces whole");
+  });
+
+  it("refuses a replicas value below the minimum of the CRD and keeps the last valid body", async () => {
+    const { last, errors } = setup(fixtures.elasticsearchPresets[0]);
+    const replicas = within(
+      screen.getByRole("region", { name: "Elasticsearch settings" }),
+    ).getByRole("group", { name: "replicas" });
+    fireEvent.change(within(replicas).getByRole("spinbutton"), {
+      target: { value: "0" },
+    });
+    expect(await within(replicas).findByText("Enter 1 or more")).toBeTruthy();
     await waitFor(() =>
       expect(errors.mock.calls.at(-1)?.[0]).toEqual([
-        "The body must be a map of fields.",
+        "replicas: Enter 1 or more",
       ]),
     );
-    expect(screen.getByText("The body must be a map of fields.")).toBeTruthy();
+    expect(last()?.body.replicas ?? 3).toBe(3);
+  });
+
+  it("keeps a body field that the field schema does not know when another field changes", async () => {
+    const preset = fixtures.elasticsearchPresets[0];
+    const { last } = setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: { ...preset.spec.cluster, futureField: "kept" },
+      },
+    );
+    const replicas = within(
+      screen.getByRole("region", { name: "Elasticsearch settings" }),
+    ).getByRole("group", { name: "replicas" });
+    fireEvent.change(within(replicas).getByRole("spinbutton"), {
+      target: { value: "12" },
+    });
+    await waitFor(() => expect(last()?.body.replicas).toBe(12));
+    expect(last()?.body.futureField).toBe("kept");
+  });
+
+  it("removes a field from a PostgreSQL preset with its reset link", async () => {
+    const { last } = setup(fixtures.databasePresets[1]);
+    const wal = within(
+      screen.getByRole("region", { name: "PostgreSQL settings" }),
+    ).getByRole("group", { name: "walStorageSize" });
+    fireEvent.click(
+      within(wal).getByRole("button", { name: "Remove from the preset" }),
+    );
+    await waitFor(() =>
+      expect(last()?.body).not.toHaveProperty("walStorageSize"),
+    );
   });
 
   it("shows a Secret key that is missing in a user namespace", () => {
