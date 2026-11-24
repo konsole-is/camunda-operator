@@ -5,25 +5,28 @@ import { loadClusterPage } from "./load";
 const k8s = vi.hoisted(() => ({
   cluster: undefined as unknown,
   lists: [] as { kind: string; opts: unknown }[],
+  claims: [] as unknown[],
   failing: "",
 }));
 vi.mock("@/lib/k8s/read", () => ({
-  get: async (kind: string, _namespace: string, name: string) =>
-    kind === "CamundaCluster"
-      ? (k8s.cluster as { metadata: { name: string } } | undefined)?.metadata
-          .name === name
-        ? k8s.cluster
-        : undefined
-      : undefined,
+  get: async (kind: string, _namespace: string, name: string) => {
+    if (kind !== "CamundaCluster") return undefined;
+    if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
+    return (k8s.cluster as { metadata: { name: string } } | undefined)?.metadata
+      .name === name
+      ? k8s.cluster
+      : undefined;
+  },
   list: async (kind: string, opts: unknown) => {
     k8s.lists.push({ kind, opts });
     if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
-    return [];
+    return kind === "CamundaClusterClaim" ? k8s.claims : [];
   },
 }));
 
 beforeEach(() => {
   k8s.lists = [];
+  k8s.claims = [];
   k8s.failing = "";
 });
 
@@ -34,11 +37,77 @@ const named = (name: string) => {
   };
 };
 const listOf = (kind: string) => k8s.lists.find((l) => l.kind === kind)?.opts;
+const claimNamed = (name: string, spec: object = {}) => ({
+  kind: "CamundaClusterClaim",
+  metadata: { namespace: "team-a", name },
+  spec,
+});
 
 describe("loadClusterPage", () => {
-  it("returns undefined when the cluster does not exist", async () => {
+  it("returns undefined when neither the cluster nor a claim of the name exists", async () => {
     named("orders");
+    k8s.claims = [claimNamed("orders")];
     expect(await loadClusterPage("team-a", "payments")).toBeUndefined();
+  });
+
+  it("returns the page of a claim that has no cluster yet", async () => {
+    k8s.cluster = undefined;
+    k8s.claims = [claimNamed("orders")];
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data?.ref).toEqual({ namespace: "team-a", name: "orders" });
+    expect(data?.cluster).toBeUndefined();
+    expect(data?.claims.map((c) => c.metadata?.name)).toEqual(["orders"]);
+    expect(listOf("PluginRequest")).toEqual({
+      namespace: "team-a",
+      labelSelector: "fleet.camunda.io/claim=orders",
+    });
+    expect(data?.readErrors).toEqual([]);
+  });
+
+  it("gives the docs of the fields of the cluster that the claim would make", async () => {
+    k8s.cluster = undefined;
+    k8s.claims = [
+      claimNamed("orders", { cluster: { zeebe: { replicas: 3 } } }),
+    ];
+    const data = await loadClusterPage("team-a", "orders");
+    expect(
+      data?.fieldDocs["CamundaCluster:spec.zeebe.replicas"]?.description,
+    ).toBeTruthy();
+  });
+
+  it("shows a failed read of the cluster as an error, never as a missing page", async () => {
+    k8s.cluster = undefined;
+    k8s.failing = "CamundaCluster";
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data).toBeDefined();
+    expect(data?.cluster).toBeUndefined();
+    expect(data?.readErrors).toContainEqual({
+      kind: "CamundaCluster",
+      message: "CamundaCluster is forbidden",
+    });
+  });
+
+  it("gives the docs of the cluster that the claim would make also while the cluster read failed", async () => {
+    k8s.cluster = undefined;
+    k8s.failing = "CamundaCluster";
+    k8s.claims = [
+      claimNamed("orders", { cluster: { zeebe: { replicas: 3 } } }),
+    ];
+    const data = await loadClusterPage("team-a", "orders");
+    expect(
+      data?.fieldDocs["CamundaCluster:spec.zeebe.replicas"]?.description,
+    ).toBeTruthy();
+  });
+
+  it("shows a failed read of the claims as an error, never as a missing page", async () => {
+    k8s.cluster = undefined;
+    k8s.failing = "CamundaClusterClaim";
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data).toBeDefined();
+    expect(data?.readErrors).toContainEqual({
+      kind: "CamundaClusterClaim",
+      message: "CamundaClusterClaim is forbidden",
+    });
   });
 
   it("lists the pods of the cluster by its label", async () => {
@@ -135,7 +204,7 @@ describe("loadClusterPage", () => {
     named("orders");
     k8s.failing = "LogicalBackupRDBMS";
     const data = await loadClusterPage("team-a", "orders");
-    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.cluster?.metadata?.name).toBe("orders");
     expect(data?.backups.rdbms).toEqual([]);
   });
 
@@ -143,7 +212,7 @@ describe("loadClusterPage", () => {
     named("orders");
     k8s.failing = "BackupSchedule";
     const data = await loadClusterPage("team-a", "orders");
-    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.cluster?.metadata?.name).toBe("orders");
     expect(data?.backupStorage.schedules).toEqual([]);
   });
 

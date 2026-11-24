@@ -45,6 +45,7 @@ afterEach(cleanup);
 // false leaves out the claim label.
 function data(managed = true): ClusterPageData {
   return {
+    ref: { namespace: "team-a", name: "orders" },
     cluster: {
       kind: "CamundaCluster",
       metadata: {
@@ -92,6 +93,9 @@ function data(managed = true): ClusterPageData {
     fieldDocs: {},
   };
 }
+
+// claimOnly is the page of the claim orders before its cluster exists.
+const claimOnly = (): ClusterPageData => ({ ...data(), cluster: undefined });
 
 function gitResultFor(key: RefKey): WriteResult {
   return {
@@ -194,5 +198,34 @@ describe("ClusterPage", () => {
       screen.getByText("This cluster was not made from a claim."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+  });
+
+  it("the Claim tab of a claim without its cluster has the Claim editor", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    page("direct", undefined, claimOnly());
+    expect(
+      within(screen.getByRole("region", { name: "Basics" })).getByRole(
+        "button",
+        { name: "Edit Basics" },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a claim without its cluster has Delete in the header", () => {
+    page("direct", undefined, claimOnly());
+    expect(
+      screen.getByRole("link", { name: "Delete" }).getAttribute("href"),
+    ).toBe("/fleet/clusters/team-a/orders/delete");
+  });
+
+  it("shows the waiting line of the pushed claim before its cluster exists", async () => {
+    await act(async () => {
+      page(
+        "git",
+        gitResultFor("CamundaClusterClaim/team-a/orders"),
+        claimOnly(),
+      );
+    });
+    expect(waitingLine()).toContain("1 change waiting for GitOps");
   });
 });

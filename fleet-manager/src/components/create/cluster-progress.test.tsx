@@ -119,7 +119,7 @@ describe("ClusterProgressView", () => {
     ).toBe("Ready: Not ready (Blocked)");
   });
 
-  it("shows a precheck refusal without a Claim tab link while no cluster exists", () => {
+  it("links the Claim tab for a precheck refusal before the cluster exists", () => {
     view(
       claimWith([
         condition(
@@ -133,30 +133,36 @@ describe("ClusterProgressView", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "The sections wait for each other.",
     );
-    expect(
-      screen.queryByRole("link", { name: "Open the Claim tab" }),
-    ).toBeNull();
+    const links = screen.getAllByRole("link", { name: "Open the Claim tab" });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe(
+      "/fleet/clusters/team-a/orders?tab=claim",
+    );
   });
 
-  it("links the Claim tab for a precheck refusal once the cluster exists", () => {
+  it("links the Claim tab at once while the claim waits for its requests", () => {
     view(
-      claimWith(
-        [
-          condition(
-            "Ready",
-            "False",
-            "WiringCycle",
-            "The sections wait for each other.",
-          ),
-        ],
-        { name: "orders" },
-      ),
+      claimWith([
+        condition(
+          "Ready",
+          "False",
+          "PrerequisiteNotMet",
+          "waiting for condition RequestsReady",
+        ),
+      ]),
     );
     expect(
       screen
         .getByRole("link", { name: "Open the Claim tab" })
         .getAttribute("href"),
     ).toBe("/fleet/clusters/team-a/orders?tab=claim");
+  });
+
+  it("links no Claim tab before the claim exists", () => {
+    view();
+    expect(
+      screen.queryByRole("link", { name: "Open the Claim tab" }),
+    ).toBeNull();
   });
 
   it("links the cluster page once the cluster is ready", () => {
@@ -275,6 +281,35 @@ describe("ClusterProgress", () => {
         .getAllByRole("img")
         .map((dot) => dot.getAttribute("aria-label")),
     ).toEqual(["Outputs: No status", "Ready: No status"]);
+  });
+
+  it("links the Claim tab only once the live claim exists", () => {
+    const { rerender } = render(
+      <ClusterProgress
+        claim={written}
+        sections={sections}
+        registrations={registrations}
+      />,
+    );
+    expect(
+      screen.queryByRole("link", { name: "Open the Claim tab" }),
+    ).toBeNull();
+    read.claim = {
+      ...written,
+      metadata: { ...written.metadata, generation: 1 },
+    };
+    rerender(
+      <ClusterProgress
+        claim={written}
+        sections={sections}
+        registrations={registrations}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Open the Claim tab" })
+        .getAttribute("href"),
+    ).toBe("/fleet/clusters/team-a/orders?tab=claim");
   });
 
   it("shows the live claim and its requests once the watch sends them", () => {
