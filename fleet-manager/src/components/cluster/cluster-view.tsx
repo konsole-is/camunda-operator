@@ -161,8 +161,8 @@ export type ClusterPageData = {
  * its section cards, its conditions, and what it waits for. Its Claim tab
  * and slots get claimClusterOf of the claim as the cluster, with drafted
  * set. With neither, or while the cluster could not be read, the page shows
- * only the read errors and the kinds that it could not read, or says that
- * the cluster no longer exists.
+ * only the read errors, and names the cluster or claim kind that it could
+ * not read, or says that the cluster no longer exists.
  */
 export function ClusterView({
   initial,

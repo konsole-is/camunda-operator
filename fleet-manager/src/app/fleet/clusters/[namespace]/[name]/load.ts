@@ -17,11 +17,9 @@ import { mergeCluster } from "@/lib/merge";
  * loadClusterPage reads the first snapshot of the cluster page from the
  * cache of the server. It returns undefined only when it read the
  * CamundaCluster and the claims of the namespace, and neither the cluster
- * nor a claim of that name exists. Without a cluster, the page is that of
- * the claim of that name: its requests are those of the claim, and
- * fieldDocs are those of claimClusterOf of the claim. A failed read of the
- * cluster gives no cluster and an entry in readErrors. A failed read of
- * another kind gives no objects of that kind and an entry in readErrors.
+ * nor a claim of that name exists. A failed read of the cluster gives no
+ * cluster and an entry in readErrors. A failed read of another kind gives
+ * no objects of that kind and an entry in readErrors.
  */
 export async function loadClusterPage(
   namespace: string,
