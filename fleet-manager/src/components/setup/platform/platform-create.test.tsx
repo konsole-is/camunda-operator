@@ -277,8 +277,14 @@ describe("PlatformCreate", () => {
     await create();
 
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
-    expect(fakeWriter.applied[0].apply[0].spec?.auth).toEqual({
-      method: "basic",
+    expect(fakeWriter.applied[0].apply[0].spec).toEqual({
+      auth: { method: "basic" },
+      licenseSecretRef: {
+        namespace: "camunda-system",
+        name: "camunda-license",
+        key: "license-key",
+      },
+      images: { camunda: "registry.example.com/camunda/camunda" },
     });
   });
 
