@@ -31,16 +31,24 @@ const FAILURES = [
 // A story that does not load never sends storyFinished.
 const DONE = ["storyFinished", "docsRendered", "storyMissing", "configError"];
 
-// LIMIT bounds each wait for a page. Under a load of 40 on 16 processors,
-// the slowest of 9,000 stories sent its DONE event after 11 s.
+// LIMIT bounds each wait for a page. A healthy story sends its DONE event
+// in seconds, also under heavy load.
 const LIMIT = 60_000;
 
-// within rejects with the message when promise takes longer than LIMIT, for
+// ANSWER_LIMIT bounds the question to a stalled page, so that the check
+// still fails soon after LIMIT when the page answers nothing.
+const ANSWER_LIMIT = 5_000;
+
+// within rejects with the message when promise takes longer than limit, for
 // a call such as page.evaluate that takes no timeout.
-async function within<T>(promise: Promise<T>, message: string): Promise<T> {
+async function within<T>(
+  promise: Promise<T>,
+  message: string,
+  limit = LIMIT,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), LIMIT);
+    timer = setTimeout(() => reject(new Error(message)), limit);
   });
   try {
     return await Promise.race([promise, late]);
@@ -57,8 +65,8 @@ type StoryEvent = { name: string; message: string };
 // function. errorsOf then waits for a DONE event and returns one line for
 // each failure. storyMissing carries no message, so its line holds the
 // console errors of the page, where Storybook logs why the file failed.
-// errorsOf throws when no DONE event comes within LIMIT, with what the page
-// shows of the stall. label names the story in that message.
+// errorsOf throws when no DONE event comes within LIMIT. label names the
+// story in that message.
 async function recordStoryEvents(page: Page) {
   const consoleErrors: string[] = [];
   const failedRequests: string[] = [];
@@ -113,10 +121,11 @@ async function recordStoryEvents(page: Page) {
           resources: performance.getEntriesByType("resource").length,
         })),
         "the page did not answer",
+        ANSWER_LIMIT,
       );
       shown = `The Storybook preview started: ${state.preview ? "yes" : "no"}. Resources loaded: ${state.resources}.`;
     } catch {
-      shown = `The page did not answer within ${LIMIT / 1000} s.`;
+      shown = `The page did not answer within ${ANSWER_LIMIT / 1000} s.`;
     }
     const open = [...unfinished].map(
       ([r, at]) => `${r.url()} (for ${Math.round((now - at) / 1000)} s)`,
