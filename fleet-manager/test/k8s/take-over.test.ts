@@ -1195,6 +1195,41 @@ describe("a save of the platform config editor against the API server", () => {
       owns(after, APP_FIELD_MANAGER, ["f:spec", "f:auth", "f:method"], "Apply"),
     ).toBe(true);
   });
+
+  it("after the switch to basic, the API server takes the next change under spec.auth without force", async () => {
+    const object = platformConfig(unique("platform"), {
+      auth: { method: "oidc", oidc },
+    });
+    await createClientSideApplied(api, object);
+    const taken = await edit(object, basic, true);
+    expect(await applyPlatformConfigChange(taken.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    const switched = await read(object);
+    const kubectl = (
+      (switched.metadata.managedFields ?? []) as ManagedFieldsEntry[]
+    ).find((e) => e.manager === "kubectl-client-side-apply");
+    expect(
+      (kubectl?.fieldsV1 as { "f:spec": object } | undefined)?.["f:spec"],
+    ).toEqual({ ".": {}, "f:auth": {} });
+
+    const back = await requestJSON<KubeObject>(kc, {
+      method: "PATCH",
+      path: `/apis/core.camunda.io/v1/camundaplatformconfigs/${object.metadata.name}?fieldManager=${APP_FIELD_MANAGER}&force=false&dryRun=All`,
+      body: {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaPlatformConfig",
+        metadata: {
+          name: object.metadata.name,
+          resourceVersion: switched.metadata.resourceVersion,
+        },
+        spec: { auth: { method: "oidc", oidc } },
+      },
+      contentType: "application/apply-patch+yaml",
+    });
+    expect(back.spec).toEqual({ auth: { method: "oidc", oidc } });
+  });
 });
 
 describe("a save of the contract editor against the API server", () => {
