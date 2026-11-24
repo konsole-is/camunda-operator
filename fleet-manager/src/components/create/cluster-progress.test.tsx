@@ -119,7 +119,7 @@ describe("ClusterProgressView", () => {
     ).toBe("Ready: Not ready (Blocked)");
   });
 
-  it("shows a precheck refusal without a Claim tab link while no cluster exists", () => {
+  it("links the Claim tab for a precheck refusal before the cluster exists", () => {
     view(
       claimWith([
         condition(
@@ -132,25 +132,6 @@ describe("ClusterProgressView", () => {
     );
     expect(screen.getByRole("status").textContent).toContain(
       "The sections wait for each other.",
-    );
-    expect(
-      screen.queryByRole("link", { name: "Open the Claim tab" }),
-    ).toBeNull();
-  });
-
-  it("links the Claim tab for a precheck refusal once the cluster exists", () => {
-    view(
-      claimWith(
-        [
-          condition(
-            "Ready",
-            "False",
-            "WiringCycle",
-            "The sections wait for each other.",
-          ),
-        ],
-        { name: "orders" },
-      ),
     );
     expect(
       screen

@@ -69,9 +69,9 @@ export function ClusterProgress({
 /**
  * ClusterProgressView shows the progress of the cluster claim named name in
  * namespace: its Ready condition, clusterProgressRows, and the precheck
- * refusal of the claim controller. The refusal links the Claim tab only
- * once status.cluster names the cluster, because the cluster page needs
- * the cluster. Once ClusterReady is True, a link opens the cluster page.
+ * refusal of the claim controller. The refusal links the Claim tab of the
+ * cluster page, which opens from the claim. Once ClusterReady is True, a
+ * link opens the cluster page.
  */
 export function ClusterProgressView({
   name,
@@ -117,10 +117,7 @@ export function ClusterProgressView({
         }
       />
       {claim && (
-        <PrecheckLine
-          claim={claim}
-          href={claim.status?.cluster ? `${page}?tab=claim` : undefined}
-        />
+        <PrecheckLine claim={claim} href={`${page}?tab=claim`} />
       )}
     </section>
   );
