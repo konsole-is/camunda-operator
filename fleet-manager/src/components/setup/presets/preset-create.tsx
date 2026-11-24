@@ -160,6 +160,7 @@ export function PresetCreate({
           draft={draft.preset}
           secrets={{}}
           secretsUnread={[]}
+          noSecretsText="To pick a Secret, open the page of the preset once an environment allows it."
           onDraft={(update) =>
             editor.setDraft((d) => ({ ...d, preset: update(d.preset) }))
           }

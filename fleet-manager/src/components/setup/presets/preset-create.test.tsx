@@ -273,6 +273,53 @@ describe("PresetCreate", () => {
     });
   });
 
+  it("keeps a Secret reference of the copied body", async () => {
+    const sources = presetFixtures();
+    const body = {
+      auth: { clientSecretRef: { name: "oidc-client", key: "secret" } },
+    };
+    const oidc = {
+      ...sources.clusterPresets[1],
+      metadata: { name: "oidc", resourceVersion: "42" },
+      spec: { cluster: body },
+    } as Resource<"CamundaClusterPreset">;
+    const u = user();
+    setup({
+      sources: {
+        ...sources,
+        clusterPresets: [...sources.clusterPresets, oidc],
+      },
+    });
+    await u.selectOptions(copyFrom(), "oidc");
+    const general = screen.getByRole("region", { name: "General settings" });
+    expect(within(general).getByText("oidc-client/secret")).toBeTruthy();
+    expect(
+      within(general).getByText(
+        "To pick a Secret, open the page of the preset once an environment allows it.",
+      ),
+    ).toBeTruthy();
+    await u.type(nameField(), "oidc-copy");
+    await create(u);
+    expect(fakeWriter.applied[0].apply[0].spec).toEqual({ cluster: body });
+  });
+
+  it("keeps the typed name and description and starts empty when the kind changes", async () => {
+    const u = user();
+    setup();
+    await u.type(nameField(), "lab-two");
+    await u.type(screen.getByLabelText("Description"), "For labs.");
+    await u.type(spinbutton("Brokers settings", "replicas"), "12");
+    await u.click(screen.getByRole("radio", { name: "Elasticsearch" }));
+    expect(nameField().value).toBe("lab-two");
+    await create(u);
+    expect(fakeWriter.applied).toEqual([
+      createChange("ElasticsearchClusterPreset", "lab-two", {
+        body: {},
+        description: "For labs.",
+      }),
+    ]);
+  });
+
   it("keeps the typed name and description and replaces the body when the copy source changes", async () => {
     const u = user();
     setup();

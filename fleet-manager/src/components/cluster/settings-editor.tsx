@@ -66,7 +66,9 @@ import type { SettingsGroup } from "./settings";
  * merged error that blocks. It opens each time that number of errors
  * grows, and settingsSummary is the first line of its body. It holds no
  * session. otherSourceReason is the lock reason of a variable that the
- * editor of variables cannot change, as EnvEditor takes it.
+ * editor of variables cannot change, as EnvEditor takes it. noSecretsText
+ * replaces the text of a Secret reference setting that has no Secret to
+ * pick.
  */
 export function SettingsEditor({
   group,
@@ -78,6 +80,7 @@ export function SettingsEditor({
   reset,
   invalid,
   otherSourceReason,
+  noSecretsText,
 }: {
   group: SettingsGroup;
   settings: readonly Setting[];
@@ -88,6 +91,7 @@ export function SettingsEditor({
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
   otherSourceReason?: string;
+  noSecretsText?: string;
 }) {
   const [resets, setResets] = useState(0);
   // The keys of the settings whose row shows an error.
@@ -133,6 +137,7 @@ export function SettingsEditor({
           onShows={collapsed ? report(setting.key) : undefined}
           onReset={() => setResets((n) => n + 1)}
           otherSourceReason={otherSourceReason}
+          noSecretsText={noSecretsText}
         />
       ))}
     </div>
@@ -203,6 +208,7 @@ export function SettingRow({
   onShows,
   onReset,
   otherSourceReason,
+  noSecretsText,
 }: {
   setting: Setting;
   secrets?: SecretRefs;
@@ -213,6 +219,7 @@ export function SettingRow({
   onShows?: (shows: boolean) => void;
   onReset: () => void;
   otherSourceReason?: string;
+  noSecretsText?: string;
 }) {
   const [mounted] = useState(setting.value);
   const [mountedPending] = useState(setting.layers?.pending ?? []);
@@ -304,6 +311,7 @@ export function SettingRow({
         onRefused={own(() => {})}
         onShown={setEditorError}
         otherSourceReason={otherSourceReason}
+        noSecretsText={noSecretsText}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -372,8 +380,8 @@ function useShownError(
 // onAmounts reach only the editor of resources. With onAmounts, that editor
 // reports the amounts of each valid change to it, in place of onChange.
 // checkedEntries and openedUnchecked reach only the editors of environment
-// and maps of strings, and otherSourceReason only the editor of
-// environment.
+// and maps of strings, otherSourceReason only the editor of environment,
+// and noSecretsText only the editor of a Secret reference.
 function Editor({
   label,
   editor,
@@ -390,6 +398,7 @@ function Editor({
   onRefused,
   onShown,
   otherSourceReason,
+  noSecretsText,
 }: {
   label: string;
   editor: SettingEditor;
@@ -406,6 +415,7 @@ function Editor({
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
   otherSourceReason?: string;
+  noSecretsText?: string;
 }) {
   const initial = editorValueOf(editor, value);
   const onErrors = (errors: readonly ValidationError[]) =>
@@ -545,6 +555,7 @@ function Editor({
           label={label}
           secrets={secrets}
           defaultValue={initial as SecretKeyRef | undefined}
+          emptyText={noSecretsText}
           onChange={onChange}
         />
       );
@@ -627,11 +638,13 @@ function SecretRefEditor({
   label,
   secrets,
   defaultValue,
+  emptyText,
   onChange,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue: SecretKeyRef | undefined;
+  emptyText?: string;
   onChange: (value: unknown) => void;
 }) {
   const { mark, only } = useUserEdit(secrets);
@@ -642,6 +655,7 @@ function SecretRefEditor({
         label={label}
         secrets={secrets}
         defaultValue={defaultValue}
+        emptyText={emptyText}
         onChange={only(onChange)}
       />
     </div>
