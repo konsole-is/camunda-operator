@@ -14,7 +14,7 @@ import {
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { ValidationError } from "@/lib/schema";
 import { ContractForm } from "./contract-form";
-import { type ContractDraft, draftOf } from "./draft";
+import { type ContractDraft, draftOf, newSpec } from "./draft";
 import type { ContractObject } from "./facts";
 import { connectionFixtures } from "./fixtures";
 
@@ -44,25 +44,38 @@ const sources = connectionFixtures();
 const find = <T extends ContractObject>(list: readonly T[], name: string) =>
   list.find((c) => c.metadata.name === name)!;
 
-function setup(contract: ContractObject, errors: ValidationError[] = []) {
+function setup(
+  contract: ContractObject,
+  errors: ValidationError[] = [],
+  {
+    choose = false,
+    draft = draftOf(contract),
+  }: { choose?: boolean; draft?: ContractDraft } = {},
+) {
   const onChange = vi.fn<(draft: ContractDraft) => void>();
-  render(
+  const form = (draft: ContractDraft) => (
     <SecretRefsReaderContext.Provider value={SECRETS}>
       <ContractForm
         kind={contract.kind}
         namespace={contract.metadata.namespace}
-        draft={draftOf(contract)}
+        draft={draft}
         errors={errors}
         namespaces={["camunda-system", "platform", "team-a"]}
         databaseConfigs={["orders-db", "billing-db"]}
         databaseServerConfigs={["postgres"]}
+        choose={choose}
         onChange={onChange}
       />
-    </SecretRefsReaderContext.Provider>,
+    </SecretRefsReaderContext.Provider>
   );
+  const { rerender } = render(form(draft));
   const last = () =>
     onChange.mock.lastCall![0].spec as unknown as Record<string, never>;
-  return { onChange, last };
+  return {
+    onChange,
+    last,
+    rerender: (next: ContractDraft) => rerender(form(next)),
+  };
 }
 
 const type = (label: string, value: string) =>
@@ -180,6 +193,85 @@ describe("ContractForm", () => {
     );
     expect(screen.queryByRole("radio")).toBeNull();
     expect(screen.queryByRole("combobox", { name: /type/i })).toBeNull();
+  });
+
+  it("offers the storage type and the auth type as choices on a new contract", () => {
+    setup(s3Keys, [], {
+      choose: true,
+      draft: { spec: newSpec("ObjectStorageConfig") },
+    });
+    const storage = within(screen.getByRole("group", { name: "Storage type" }));
+    expect(
+      (storage.getByRole("radio", { name: "S3" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(storage.getByRole("radio", { name: "GCS" })).toBeTruthy();
+    expect(storage.getByRole("radio", { name: "Azure Blob" })).toBeTruthy();
+    const auth = within(screen.getByRole("group", { name: "Auth" }));
+    expect(
+      (
+        auth.getByRole("radio", {
+          name: "Workload identity",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(auth.getByRole("radio", { name: "Credentials" })).toBeTruthy();
+  });
+
+  it("starts the GCS block empty on a pick of GCS", () => {
+    const { last } = setup(s3Keys, [], {
+      choose: true,
+      draft: {
+        spec: {
+          type: "S3",
+          s3: {
+            bucketName: "acme",
+            region: "eu-west-1",
+            auth: { type: "workloadIdentity" },
+          },
+        },
+      },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "GCS" }));
+    expect(last()).toEqual({
+      type: "GCS",
+      gcs: { auth: { type: "workloadIdentity" } },
+    });
+  });
+
+  it("keeps the bucket and shows the key picker on a pick of credentials", () => {
+    const gcs = {
+      spec: {
+        type: "GCS",
+        gcs: { bucketName: "acme-docs", auth: { type: "workloadIdentity" } },
+      },
+    } as ContractDraft;
+    const { last, rerender } = setup(s3Keys, [], { choose: true, draft: gcs });
+    fireEvent.click(screen.getByRole("radio", { name: "Credentials" }));
+    expect(last()).toEqual({
+      type: "GCS",
+      gcs: { bucketName: "acme-docs", auth: { type: "credentials" } },
+    });
+
+    rerender({ spec: last() as unknown as ContractDraft["spec"] });
+    expect(
+      within(screen.getByRole("group", { name: "Credentials" })).getByRole(
+        "combobox",
+        { name: "Secret" },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers Elasticsearch and RDBMS on a new secondary storage contract", () => {
+    const { last } = setup(
+      find(sources.secondaryStorageConfigs, "shared-es"),
+      [],
+      {
+        choose: true,
+        draft: { spec: newSpec("SecondaryStorageConfig") },
+      },
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "RDBMS" }));
+    expect(last()).toEqual({ type: "rdbms", rdbms: {} });
   });
 
   it("changes the endpoint of an Elasticsearch contract", () => {

@@ -41,7 +41,7 @@ export type RefKey = `${string}/${string}/${string}`;
  * for an object of delete: the Git writer and runClaimDelete refuse its
  * delete with Stale when the live object has another one. create lists
  * objects of apply that must not exist yet. A write fails with Stale, and
- * writes nothing, when one exists as the write begins. force sends each apply of the change with the force option of
+ * changes no object of create, when one exists. force sends each apply of the change with the force option of
  * server-side apply. A change with directOnly goes to the API in Git mode
  * too.
  *

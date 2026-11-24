@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CONNECTION_SOURCE_KINDS } from "@/components/setup/connections/source-kinds";
+import { createChange } from "@/components/setup/connections/draft";
 import { connectionFixtures } from "@/components/setup/connections/fixtures";
 import type { ConnectionSources } from "@/components/setup/connections/sources";
+import { REGISTRATION_LABEL } from "@/lib/labels";
+import type { ContractKind } from "@/lib/usage";
 import type { Change } from "@/lib/write/types";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import { applyContractChange, previewContractChange } from "./actions";
@@ -119,6 +122,10 @@ async function refusedWith(change: Change, code: string) {
   });
 }
 
+function create(kind: ContractKind, namespace: string, name: string): Change {
+  return createChange(kind, namespace, name, { spec: {} as never });
+}
+
 describe("applyContractChange", () => {
   it("writes a contract in a namespace of the cluster that no Environment holds", async () => {
     const change = update("ObjectStorageConfig", "camunda-system", "archive");
@@ -172,11 +179,112 @@ describe("applyContractChange", () => {
     await refusedWith(change, "Invalid");
   });
 
-  it("refuses a create", async () => {
-    const change = update("ObjectStorageConfig", "team-a", "new-bucket");
-    delete change.preconditions;
-    change.create = ["ObjectStorageConfig/team-a/new-bucket"];
+  it("writes a create of a new contract by hand", async () => {
+    const change = create("ObjectStorageConfig", "team-a", "new-bucket");
+    expect(await applyContractChange(change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([change]);
+  });
+
+  it("writes a create of a Management Identity contract without namespace", async () => {
+    const change = create("ManagementAuthConfig", "", "optimize-two");
+    expect((await applyContractChange(change)).ok).toBe(true);
+    expect(fakeWriter.applied).toEqual([change]);
+  });
+
+  it("writes a create of a name that another namespace holds", async () => {
+    expect(
+      (
+        await applyContractChange(
+          create("ObjectStorageConfig", "team-a", "archive"),
+        )
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["ObjectStorageConfig", "team-a", "backups"],
+    ["ObjectStorageConfig", "team-a", "orders-backup"],
+    ["ManagementAuthConfig", "", "plane-a-optimize"],
+  ] as const)(
+    "refuses with Stale a create of %s %s/%s that the server lists",
+    async (kind, namespace, name) => {
+      expect(await refusedWith(create(kind, namespace, name), "Stale")).toEqual(
+        [`The ${kind} ${name} exists already. Pick another name.`],
+      );
+    },
+  );
+
+  it("refuses a create with labels, and writes nothing", async () => {
+    const change = create("ObjectStorageConfig", "team-a", "new-bucket");
+    change.apply[0].metadata.labels = { [REGISTRATION_LABEL]: "aws-s3" };
+    expect(await refusedWith(change, "Invalid")).toEqual([
+      expect.stringContaining(
+        "A create must write one contract with only its name and namespace.",
+      ),
+    ]);
+  });
+
+  it("refuses a create with annotations, and writes nothing", async () => {
+    const change = create("ObjectStorageConfig", "team-a", "new-bucket");
+    change.apply[0].metadata.annotations = { note: "x" };
     await refusedWith(change, "Invalid");
+  });
+
+  it("refuses a create whose key is not its object, and writes nothing", async () => {
+    const change = create("ObjectStorageConfig", "team-a", "new-bucket");
+    change.create = ["ObjectStorageConfig/team-a/backups"];
+    await refusedWith(change, "Invalid");
+  });
+
+  it("refuses a create into a namespace that the cluster does not have", async () => {
+    await refusedWith(
+      create("ObjectStorageConfig", "team-z", "new-bucket"),
+      "Invalid",
+    );
+  });
+
+  it("refuses a create while the contracts of the kind cannot be read", async () => {
+    cache.failing = ["DatabaseConfig"];
+    expect(
+      await refusedWith(
+        create("DatabaseConfig", "team-a", "orders-two"),
+        "Forbidden",
+      ),
+    ).toEqual([
+      "The fleet manager cannot read DatabaseConfig, so DatabaseConfig team-a/orders-two is not created.",
+    ]);
+  });
+
+  it("refuses a Management Identity contract that a plane claim writes", async () => {
+    cache.lists.CamundaManagementClusterClaim = [
+      {
+        metadata: { namespace: "platform", name: "ops" },
+        spec: { managementAuthConfigName: "ops-auth" },
+      },
+    ];
+    expect(
+      await refusedWith(
+        create("ManagementAuthConfig", "", "ops-auth"),
+        "Forbidden",
+      ),
+    ).toEqual([
+      "The management plane platform/ops writes ManagementAuthConfig ops-auth. Pick another name.",
+    ]);
+  });
+
+  it("refuses a Management Identity contract while the plane claims cannot be read", async () => {
+    cache.failing = ["CamundaManagementClusterClaim"];
+    expect(
+      await refusedWith(
+        create("ManagementAuthConfig", "", "optimize-two"),
+        "Forbidden",
+      ),
+    ).toEqual([
+      "The fleet manager cannot read CamundaManagementClusterClaim, so ManagementAuthConfig optimize-two is not created.",
+    ]);
   });
 
   it("refuses every namespaced contract when the namespaces cannot be read", async () => {
@@ -461,6 +569,12 @@ describe("previewContractChange", () => {
       objects: [],
       errors: [],
     });
+    expect(fakeWriter.previewed).toEqual([change]);
+  });
+
+  it("previews a create of a new contract", async () => {
+    const change = create("DatabaseConfig", "team-a", "orders-two");
+    await previewContractChange(change);
     expect(fakeWriter.previewed).toEqual([change]);
   });
 

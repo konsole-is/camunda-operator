@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   type V1Namespace,
   KubeConfig,
@@ -16,10 +18,13 @@ import {
 import { withSectionPolicy } from "@/components/setup/environments/sections";
 import { withParameterPolicy } from "@/components/setup/environments/settings";
 import type { Environment } from "@/generated/crds/environment";
+import { type KubernetesRequestError, requestJSON } from "@/lib/k8s/client";
 import { createChangeOf } from "@/lib/write/create";
 import { withTakeOver } from "@/lib/write/ownership";
 import type { KubeObject, Preview } from "@/lib/write/types";
 import {
+  applyBody,
+  CREATE_ONLY_RESOURCE_VERSION,
   directWriter,
   firstExisting,
   listObjects,
@@ -819,6 +824,187 @@ describe("the direct writer against envtest", () => {
       before.metadata?.resourceVersion,
     );
   });
+
+  // A contract and a platform config, so that a namespaced and a
+  // cluster-scoped kind of the Setup pages are both covered.
+  const creates = [
+    {
+      kind: "ObjectStorageConfig",
+      object: (name: string, bucketName: string): KubeObject => ({
+        apiVersion: "core.camunda.io/v1",
+        kind: "ObjectStorageConfig",
+        metadata: { name, namespace },
+        spec: {
+          type: "S3",
+          s3: {
+            bucketName,
+            region: "eu-west-1",
+            auth: { type: "workloadIdentity" },
+          },
+        },
+      }),
+      path: (name: string) =>
+        `/apis/core.camunda.io/v1/namespaces/${namespace}/objectstorageconfigs/${name}`,
+    },
+    {
+      kind: "CamundaPlatformConfig",
+      object: (name: string, licenseSecret: string): KubeObject => ({
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaPlatformConfig",
+        metadata: { name },
+        spec: {
+          auth: { method: "basic" },
+          licenseSecretRef: { namespace, name: licenseSecret, key: "license" },
+        },
+      }),
+      path: (name: string) =>
+        `/apis/core.camunda.io/v1/camundaplatformconfigs/${name}`,
+    },
+  ];
+  const keyOf = (object: KubeObject) =>
+    refKey({
+      kind: object.kind,
+      namespace: object.metadata.namespace,
+      name: object.metadata.name,
+    });
+  const get = (path: string) =>
+    requestJSON<KubeObject>(kc, { method: "GET", path });
+
+  it.each(creates)(
+    "a create of a missing $kind writes it with the create-only resourceVersion",
+    async ({ object, path }) => {
+      const created = object(name, "one");
+
+      expect(
+        await writer.apply({
+          intent: "Create",
+          apply: [created],
+          create: [keyOf(created)],
+        }),
+      ).toEqual({ ok: true, mode: "direct" });
+      expect((await get(path(name))).spec).toEqual(created.spec);
+    },
+  );
+
+  it.each(creates)(
+    "a create of a $kind fails with Stale and changes nothing when another tool creates it after the dry run",
+    async ({ object, path }) => {
+      const created = object(name, "one");
+      const theirs = {
+        ...created,
+        metadata: { ...created.metadata, labels: { owner: "other-tool" } },
+      };
+      // A proxy to the API server lets another tool create the object
+      // between the dry run and the apply of the create.
+      let before: KubeObject | undefined;
+      const proxy = http.createServer((request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (c: Buffer) => chunks.push(c));
+        request.on("end", async () => {
+          const text = Buffer.concat(chunks).toString();
+          const url = request.url ?? "";
+          try {
+            if (
+              request.method === "PATCH" &&
+              !url.includes("dryRun=All") &&
+              before === undefined
+            ) {
+              const collection = url.split("?")[0].replace(/\/[^/]+$/, "");
+              before = await requestJSON<KubeObject>(kc, {
+                method: "POST",
+                path: `${collection}?fieldManager=other-tool`,
+                body: theirs,
+              });
+            }
+            const answer = await requestJSON(kc, {
+              method: request.method as "GET" | "PATCH",
+              path: url,
+              body: text === "" ? undefined : JSON.parse(text),
+              contentType: request.headers["content-type"],
+            });
+            response.writeHead(200, { "Content-Type": "application/json" });
+            response.end(JSON.stringify(answer));
+          } catch (error) {
+            const failed = error as KubernetesRequestError;
+            response.writeHead(failed.statusCode ?? 500, {
+              "Content-Type": "application/json",
+            });
+            response.end(
+              JSON.stringify(failed.status ?? { message: failed.message }),
+            );
+          }
+        });
+      });
+      await new Promise<void>((resolve) =>
+        proxy.listen(0, "127.0.0.1", resolve),
+      );
+      const proxied = new KubeConfig();
+      proxied.loadFromOptions({
+        clusters: [
+          {
+            name: "proxy",
+            server: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
+            skipTLSVerify: true,
+          },
+        ],
+        users: [{ name: "proxy" }],
+        contexts: [{ name: "proxy", cluster: "proxy", user: "proxy" }],
+        currentContext: "proxy",
+      });
+
+      let result: Awaited<ReturnType<typeof writer.apply>> | undefined;
+      try {
+        result = await directWriter(proxied).apply({
+          intent: "Create",
+          apply: [created],
+          create: [keyOf(created)],
+        });
+      } finally {
+        await new Promise((resolve) => proxy.close(resolve));
+      }
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          expect.objectContaining({
+            code: "Stale",
+            message: expect.stringContaining(`${name} exists already`),
+          }),
+        ],
+      });
+      const after = await get(path(name));
+      expect(before).toBeDefined();
+      expect(after.metadata.resourceVersion).toBe(
+        before?.metadata.resourceVersion,
+      );
+      expect(after.metadata.labels).toEqual({ owner: "other-tool" });
+    },
+  );
+
+  it.each(creates)(
+    "an apply of a $kind with the create-only resourceVersion fails on an object that exists and changes nothing",
+    async ({ object, path }) => {
+      const first = object(name, "one");
+      await writer.apply({ intent: "Create", apply: [first] });
+      const before = await get(path(name));
+
+      // force=true shows that the resourceVersion alone refuses the write,
+      // with no field manager conflict.
+      await expect(
+        requestJSON(kc, {
+          method: "PATCH",
+          path: `${path(name)}?fieldManager=fleet-manager&force=true`,
+          body: applyBody(object(name, "two"), CREATE_ONLY_RESOURCE_VERSION),
+          contentType: "application/apply-patch+yaml",
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      const after = await get(path(name));
+      expect(after.metadata.resourceVersion).toBe(
+        before.metadata.resourceVersion,
+      );
+      expect(after.spec).toEqual(first.spec);
+    },
+  );
 
   it("a preview of a create of an object that exists returns the same error", async () => {
     await writer.apply({

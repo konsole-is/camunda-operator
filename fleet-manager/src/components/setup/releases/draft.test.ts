@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
@@ -25,6 +27,9 @@ const noUsers: ReleaseUsage = {
   databaseServers: [],
   claims: [],
 };
+
+const NAME_RULE =
+  "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.";
 
 const errorsOf = (
   spec: Parameters<typeof specOf>[0]["spec"],
@@ -83,12 +88,42 @@ describe("draftErrors", () => {
     expect(errorsOf({ version: "8.9.0" }, "", opts)).toEqual([
       { path: "name", message: "Give the release a name." },
     ]);
-    expect(errorsOf({ version: "8.9.0" }, "Bad_Name", opts)).toEqual([
-      {
-        path: "name",
-        message: "The name must be a DNS name of at most 253 characters.",
-      },
-    ]);
+    for (const name of ["Bad_Name", "camunda.8-9", "-r", "r-", "r".repeat(254)])
+      expect(errorsOf({ version: "8.9.0" }, name, opts)).toEqual([
+        { path: "name", message: NAME_RULE },
+      ]);
+  });
+
+  // A claim names its release in spec.releaseRef, so a name that the field
+  // refuses gives a release that no claim can use.
+  it("accepts a new name only when spec.releaseRef of a claim accepts it", () => {
+    const crd = parse(
+      readFileSync(
+        new URL(
+          "../../../../../config/crd/bases/fleet.camunda.io_camundaclusterclaims.yaml",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    const field =
+      crd.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties
+        .releaseRef;
+    const referable = (name: string) =>
+      new RegExp(field.pattern).test(name) && name.length <= field.maxLength;
+    const opts = { isNew: true, taken: [] };
+    for (const name of [
+      "camunda-8-9-2",
+      "7",
+      "camunda.8-9-2",
+      "a.b",
+      "Camunda",
+      "r".repeat(253),
+      "r".repeat(254),
+    ])
+      expect(errorsOf({ version: "8.9.0" }, name, opts), name).toEqual(
+        referable(name) ? [] : [{ path: "name", message: NAME_RULE }],
+      );
   });
 
   it("refuses a taken name for a new release only", () => {

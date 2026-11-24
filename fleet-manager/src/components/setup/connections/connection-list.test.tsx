@@ -15,7 +15,8 @@ import {
 import { ownerName } from "@/lib/labels/owner-name";
 import { connectionFixtures } from "./fixtures";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
-import { CONNECTION_TABS, type ConnectionTab } from "./tabs";
+import { kindWords } from "./draft";
+import { CONNECTION_TABS, type ConnectionTab, newContractHref } from "./tabs";
 
 const failing = vi.hoisted(() => ({ kind: "", fresh: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
@@ -62,6 +63,15 @@ function rowOf(name: string): HTMLElement {
 }
 
 describe("ConnectionList", () => {
+  it.each(CONNECTION_TABS)("links the create page from the tab $value", (t) => {
+    show(t.value);
+    expect(
+      within(screen.getByRole("tabpanel"))
+        .getByRole("link", { name: `New ${kindWords(t.kind)} contract` })
+        .getAttribute("href"),
+    ).toBe(newContractHref(t.value));
+  });
+
   it("has the five tabs, including Databases", () => {
     show("object-storage");
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual([

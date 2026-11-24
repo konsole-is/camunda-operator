@@ -44,6 +44,10 @@ describe("SETUP_ITEMS", () => {
       { href: "/setup/new-preset", label: "New preset" },
       { href: "/setup/new-release", label: "New release" },
       { href: "/setup/new-platform-config", label: "New platform config" },
+      {
+        href: "/setup/new-connection-contract",
+        label: "New connection contract",
+      },
     ]);
   });
 });

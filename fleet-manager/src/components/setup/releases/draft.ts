@@ -2,7 +2,7 @@ import type {
   CamundaRelease,
   CamundaReleaseSpec,
 } from "@/generated/crds/camundarelease";
-import { isDNSSubdomain, LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ReleaseUsage } from "@/lib/usage";
@@ -66,6 +66,9 @@ export function specOf(draft: ReleaseDraft): CamundaReleaseSpec {
   return spec as unknown as CamundaReleaseSpec;
 }
 
+// The pattern and the length of spec.releaseRef of a CamundaClusterClaim.
+const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const NAME_MAX = 253;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const MAJOR = /^\d+$/;
 
@@ -82,8 +85,11 @@ export function draftErrors(
   const add = (path: string, message: string) => errors.push({ path, message });
   if (opts.isNew) {
     if (draft.name === "") add("name", "Give the release a name.");
-    else if (draft.name.length > 253 || !isDNSSubdomain(draft.name))
-      add("name", "The name must be a DNS name of at most 253 characters.");
+    else if (!NAME.test(draft.name) || draft.name.length > NAME_MAX)
+      add(
+        "name",
+        "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
+      );
     else if (opts.taken.includes(draft.name))
       add("name", "A release with this name exists.");
   }
