@@ -19,6 +19,11 @@ export default defineConfig({
     timezoneId: "UTC",
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
+    // With more than one raster thread, Chromium draws the edge of a rounded
+    // box in one of two ways, so the same page gives other bytes.
+    launchOptions: {
+      args: ["--num-raster-threads=1", "--disable-partial-raster"],
+    },
   },
   projects: [
     {

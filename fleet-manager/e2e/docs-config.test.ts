@@ -18,3 +18,12 @@ it("docs config bounds every wait and stops at the first failure", () => {
     expect.objectContaining({ name: DOCS_PROJECT }),
   ]);
 });
+
+it("docs config rasters on one thread, so the same page gives the same bytes", () => {
+  expect(config.use?.launchOptions?.args).toEqual(
+    expect.arrayContaining([
+      "--num-raster-threads=1",
+      "--disable-partial-raster",
+    ]),
+  );
+});

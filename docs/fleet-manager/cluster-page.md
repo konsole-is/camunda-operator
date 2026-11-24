@@ -81,7 +81,7 @@ The tab shows the time, the level, the logger, and the message of a JSON line in
 
 The tab shows the log of the container as it runs now. For the log before the last restart, use `kubectl logs --previous`. When the tab cannot read a log, it names the pod and the cause below the lines. Reload the page to read it again.
 
-![The Logs tab of the brokers with a line from each broker pod, and the pods that it cannot read.](images/cluster-component-logs.png)
+![The Logs tab of the brokers with the lines of the pod camundacluster-sample-zeebe-0.](images/cluster-component-logs.png)
 
 ## Events
 
