@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -151,6 +152,7 @@ test("the Logs tab of the brokers shows a line of each broker pod", async ({
     log.getByText("camundacluster-sample-zeebe-1").first(),
   ).toBeVisible();
   await checkPage(page, "component-logs");
+  await docShot(page, "cluster-component-logs", { ready: log });
 });
 
 test("the Events tab of the brokers shows the events of the cluster", async ({

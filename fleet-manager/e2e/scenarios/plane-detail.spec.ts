@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -85,6 +86,7 @@ test("the Overview shows a card for each component that runs", async ({
     cards.getByRole("img", { name: "Management Identity: Ready" }),
   ).toBeVisible();
   await checkPage(page, "plane-overview-cards");
+  await docShot(page, "plane-overview", { ready: cards });
 });
 
 test("a card opens the component detail with its condition and its settings", async ({

@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -40,6 +41,14 @@ test("the Plugins page groups the built-in registrations by section", async ({
   // it has not read.
   await expect(page.getByText(/^Not read:/)).toHaveCount(0);
   await checkPage(page, "plugins");
+  await docShot(page, "plugins-options-by-section", {
+    ready: row,
+    target: storage,
+  });
+  await docShot(page, "plugins-charts-to-install", {
+    ready: catalog,
+    target: catalog,
+  });
 });
 
 test("a registration opens with its tabs and the claims that use it", async ({

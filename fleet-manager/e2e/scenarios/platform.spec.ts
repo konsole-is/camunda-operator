@@ -1,5 +1,6 @@
 import type { CamundaPlatformConfig } from "../../src/generated/crds/camundaplatformconfig";
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -66,6 +67,7 @@ test("New platform config creates a basic config with the license Secret", async
   await license.getByLabel("Namespace").selectOption("camunda-system");
   await license.getByLabel("Secret").selectOption("camunda-license");
   await license.getByLabel("Key").selectOption("license-key");
+  await docShot(page, "platform-config-create", { ready: license });
   await page.getByRole("button", { name: "Review" }).click();
   const create = page.getByRole("button", { name: "Create" });
   await expect(create).toBeEnabled();

@@ -1,5 +1,6 @@
 import type { CamundaRelease } from "../../src/generated/crds/camundarelease";
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -51,6 +52,7 @@ test("the release page shows the settings, the default images, and the Environme
     "camunda-8-9-0",
   );
   await checkPage(page, "release-settings");
+  await docShot(page, "release-settings", { ready: card });
 });
 
 test("New release copies a release and creates it", async ({
