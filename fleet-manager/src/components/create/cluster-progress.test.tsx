@@ -283,6 +283,35 @@ describe("ClusterProgress", () => {
     ).toEqual(["Outputs: No status", "Ready: No status"]);
   });
 
+  it("links the Claim tab only once the live claim exists", () => {
+    const { rerender } = render(
+      <ClusterProgress
+        claim={written}
+        sections={sections}
+        registrations={registrations}
+      />,
+    );
+    expect(
+      screen.queryByRole("link", { name: "Open the Claim tab" }),
+    ).toBeNull();
+    read.claim = {
+      ...written,
+      metadata: { ...written.metadata, generation: 1 },
+    };
+    rerender(
+      <ClusterProgress
+        claim={written}
+        sections={sections}
+        registrations={registrations}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Open the Claim tab" })
+        .getAttribute("href"),
+    ).toBe("/fleet/clusters/team-a/orders?tab=claim");
+  });
+
   it("shows the live claim and its requests once the watch sends them", () => {
     const { rerender } = render(
       <ClusterProgress
