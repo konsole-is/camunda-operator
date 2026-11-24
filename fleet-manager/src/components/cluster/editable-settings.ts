@@ -142,10 +142,8 @@ export function settingsOf(input: {
   }));
   const used = new Set<string>();
 
-  const settings = secretRefPaths(
-    root,
-    componentFieldPaths(group.component),
-  ).map(({ path, secretRef }): Setting => {
+  const paths = settingPathsOf(group.component);
+  const settings = paths.map(({ path, secretRef }): Setting => {
     const names = path.split(".");
     const mine = fields.filter(
       ({ names: f }) => startsWith(f, names) || startsWith(names, f),
@@ -801,6 +799,27 @@ function propertiesOf(schema: unknown): Record<string, unknown> {
   return isObject(schema) && isObject(schema.properties)
     ? schema.properties
     : {};
+}
+
+// settingPaths keeps the paths of each group: they come from the generated
+// field schema only, and finding them scans the schema once for each path.
+const settingPaths = new Map<
+  SettingsGroup["component"],
+  readonly { path: string; secretRef: boolean }[]
+>();
+
+function settingPathsOf(
+  component: SettingsGroup["component"],
+): readonly { path: string; secretRef: boolean }[] {
+  let paths = settingPaths.get(component);
+  if (!paths) {
+    paths = secretRefPaths(
+      schemaRootOf(component),
+      componentFieldPaths(component),
+    );
+    settingPaths.set(component, paths);
+  }
+  return paths;
 }
 
 // secretRefPaths folds the name and key leaves of each Secret reference of
