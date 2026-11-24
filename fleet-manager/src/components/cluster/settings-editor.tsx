@@ -65,7 +65,8 @@ import type { SettingsGroup } from "./settings";
  * in the claim and, when there are any, the settings with an error or a
  * merged error that blocks. It opens each time that number of errors
  * grows, and settingsSummary is the first line of its body. It holds no
- * session.
+ * session. otherSourceReason is the lock reason of a variable that the
+ * editor of variables cannot change, as EnvEditor takes it.
  */
 export function SettingsEditor({
   group,
@@ -76,6 +77,7 @@ export function SettingsEditor({
   set,
   reset,
   invalid,
+  otherSourceReason,
 }: {
   group: SettingsGroup;
   settings: readonly Setting[];
@@ -85,6 +87,7 @@ export function SettingsEditor({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
+  otherSourceReason?: string;
 }) {
   const [resets, setResets] = useState(0);
   // The keys of the settings whose row shows an error.
@@ -129,6 +132,7 @@ export function SettingsEditor({
           invalid={invalid}
           onShows={collapsed ? report(setting.key) : undefined}
           onReset={() => setResets((n) => n + 1)}
+          otherSourceReason={otherSourceReason}
         />
       ))}
     </div>
@@ -198,6 +202,7 @@ export function SettingRow({
   invalid,
   onShows,
   onReset,
+  otherSourceReason,
 }: {
   setting: Setting;
   secrets?: SecretRefs;
@@ -207,6 +212,7 @@ export function SettingRow({
   invalid?: (steps: Step[], message: string | undefined) => void;
   onShows?: (shows: boolean) => void;
   onReset: () => void;
+  otherSourceReason?: string;
 }) {
   const [mounted] = useState(setting.value);
   const [mountedPending] = useState(setting.layers?.pending ?? []);
@@ -297,6 +303,7 @@ export function SettingRow({
         onAmounts={setting.layers && changeAmounts}
         onRefused={own(() => {})}
         onShown={setEditorError}
+        otherSourceReason={otherSourceReason}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -365,7 +372,8 @@ function useShownError(
 // onAmounts reach only the editor of resources. With onAmounts, that editor
 // reports the amounts of each valid change to it, in place of onChange.
 // checkedEntries and openedUnchecked reach only the editors of environment
-// and maps of strings.
+// and maps of strings, and otherSourceReason only the editor of
+// environment.
 function Editor({
   label,
   editor,
@@ -381,6 +389,7 @@ function Editor({
   onAmounts,
   onRefused,
   onShown,
+  otherSourceReason,
 }: {
   label: string;
   editor: SettingEditor;
@@ -396,6 +405,7 @@ function Editor({
   onAmounts?: (amounts: Readonly<Record<string, string>>) => void;
   onRefused: () => void;
   onShown: (message: string | undefined) => void;
+  otherSourceReason?: string;
 }) {
   const initial = editorValueOf(editor, value);
   const onErrors = (errors: readonly ValidationError[]) =>
@@ -500,6 +510,7 @@ function Editor({
           describedBy={describedBy}
           checkedEntries={checkedEntries as EnvVar[]}
           openedUnchecked={openedUnchecked}
+          otherSourceReason={otherSourceReason}
           onChange={valid}
           onErrors={onErrors}
         />
@@ -580,6 +591,7 @@ function EnvSetting({
   describedBy,
   checkedEntries,
   openedUnchecked,
+  otherSourceReason,
   onChange,
   onErrors,
 }: {
@@ -589,6 +601,7 @@ function EnvSetting({
   describedBy?: string;
   checkedEntries: readonly EnvVar[];
   openedUnchecked: boolean;
+  otherSourceReason?: string;
   onChange: (env: EnvVar[], errors: ValidationError[]) => void;
   onErrors: (errors: ValidationError[]) => void;
 }) {
@@ -602,6 +615,7 @@ function EnvSetting({
         describedBy={describedBy}
         checkedEntries={checkedEntries}
         openedUnchecked={openedUnchecked}
+        otherSourceReason={otherSourceReason}
         onChange={only(onChange)}
         onErrors={onErrors}
       />
