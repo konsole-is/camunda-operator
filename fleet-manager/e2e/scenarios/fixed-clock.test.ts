@@ -2,34 +2,43 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const MODULE = path.resolve("e2e/scenarios/shifted-clock.mts");
+const MODULE = path.resolve("e2e/scenarios/fixed-clock.mts");
 
-function run(script: string, start?: string) {
-  const env = { ...process.env, FLEET_CLOCK_START: start };
-  if (start === undefined) delete env.FLEET_CLOCK_START;
+function run(script: string, fixed?: string) {
+  const env = { ...process.env, FLEET_FIXED_NOW: fixed };
+  if (fixed === undefined) delete env.FLEET_FIXED_NOW;
   return spawnSync(process.execPath, ["--import", MODULE, "-e", script], {
     env,
     encoding: "utf8",
   });
 }
 
-describe("shifted-clock", () => {
-  it("starts the clock of the process at FLEET_CLOCK_START and lets it run", () => {
+describe("fixed-clock", () => {
+  it("reads FLEET_FIXED_NOW as the time, also after time passed", () => {
     const out = run(
       `const a = Date.now();
-       const t = new Date().toISOString();
        const until = performance.now() + 50;
        while (performance.now() < until) {}
-       console.log(JSON.stringify({ a, t, b: Date.now() }));`,
+       console.log(JSON.stringify([a, Date.now(), new Date().toISOString(), Date()]));`,
       "2026-01-03T10:00:00Z",
     );
     expect(out.stderr).toBe("");
-    const { a, t, b } = JSON.parse(out.stdout);
     const start = Date.parse("2026-01-03T10:00:00Z");
-    expect(a - start).toBeGreaterThanOrEqual(0);
-    expect(a - start).toBeLessThan(5_000);
-    expect(Date.parse(t) - start).toBeLessThan(5_000);
-    expect(b - a).toBeGreaterThanOrEqual(50);
+    expect(JSON.parse(out.stdout)).toEqual([
+      start,
+      start,
+      "2026-01-03T10:00:00.000Z",
+      new Date(start).toString(),
+    ]);
+  });
+
+  it("leaves timers on their real durations", () => {
+    const out = run(
+      `const t = performance.now();
+       setTimeout(() => console.log(performance.now() - t >= 40), 50);`,
+      "2026-01-03T10:00:00Z",
+    );
+    expect(out.stdout.trim()).toBe("true");
   });
 
   it("leaves a Date of a given time, Date.parse, and instanceof as they are", () => {
@@ -40,7 +49,6 @@ describe("shifted-clock", () => {
          Date.parse("2025-05-05T05:05:05Z"),
          Date.UTC(2025, 0, 1),
          new Date() instanceof Date,
-         typeof Date(),
        ]));`,
       "2026-01-03T10:00:00Z",
     );
@@ -50,14 +58,13 @@ describe("shifted-clock", () => {
       Date.parse("2025-05-05T05:05:05Z"),
       Date.UTC(2025, 0, 1),
       true,
-      "string",
     ]);
   });
 
-  it("refuses to start without FLEET_CLOCK_START", () => {
+  it("refuses to start without FLEET_FIXED_NOW", () => {
     const out = run("console.log('started')");
     expect(out.status).not.toBe(0);
     expect(out.stdout).toBe("");
-    expect(out.stderr).toContain("Set FLEET_CLOCK_START");
+    expect(out.stderr).toContain("Set FLEET_FIXED_NOW");
   });
 });

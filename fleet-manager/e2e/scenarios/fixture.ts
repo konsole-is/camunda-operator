@@ -44,7 +44,7 @@ type ScenarioApps = { open(file: string): Promise<ScenarioApp> };
  * gets its own envtest, the scenario, and a server of the envtest build
  * that reads the scenario as APP_USER. The tests of a file share them and
  * run in order. baseURL is the app. In the docs project, the page and the
- * app server start at DOCS_NOW.
+ * app server read DOCS_NOW as the time.
  */
 export const test = base.extend<
   { scenario: ScenarioHandle; scenarioApp: ScenarioApp },
@@ -117,7 +117,7 @@ async function startScenarioApp(
           FLEET_NAMESPACE: APP_NAMESPACE,
           FLEET_SETTINGS_PROMETHEUS_URL: prometheus.url,
           [OBSERVE_FILE_VARIABLE]: path.join(dir, "observe.yaml"),
-          ...(docs ? shiftedClock() : {}),
+          ...(docs ? fixedClock() : {}),
         },
       };
     },
@@ -128,10 +128,10 @@ async function startScenarioApp(
   return { file, app, scenario: handle! };
 }
 
-function shiftedClock(): Record<string, string> {
-  const preload = `--import=${path.resolve("e2e/scenarios/shifted-clock.mts")}`;
+function fixedClock(): Record<string, string> {
+  const preload = `--import=${path.resolve("e2e/scenarios/fixed-clock.mts")}`;
   return {
-    FLEET_CLOCK_START: DOCS_NOW,
+    FLEET_FIXED_NOW: DOCS_NOW,
     NODE_OPTIONS: [process.env.NODE_OPTIONS, preload].filter(Boolean).join(" "),
   };
 }
