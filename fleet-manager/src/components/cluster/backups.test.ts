@@ -466,7 +466,6 @@ function rdbmsChain(
     serverStatus?: object;
     owned?: boolean;
     pitr?: object;
-    published?: boolean;
     databases?: BackupStorageInput["databases"];
     identity?: string | null;
     probedEndpoint?: string;
@@ -489,25 +488,10 @@ function rdbmsChain(
       over.databaseConfig === false
         ? []
         : [
-            obj(
-              "DatabaseConfig",
-              "orders-db",
-              { serverRef: "orders-pg" },
-              undefined,
-              over.published
-                ? {
-                    ownerReferences: [
-                      {
-                        apiVersion: "core.camunda.io/v1",
-                        kind: "Database",
-                        name: "orders",
-                        uid: "uid-orders",
-                        controller: true,
-                      },
-                    ],
-                  }
-                : {},
-            ),
+            obj("DatabaseConfig", "orders-db", {
+              serverRef: "orders-pg",
+              databaseName: "orders-db",
+            }),
           ],
     ...("databases" in over ? { databases: over.databases } : {}),
     databaseServerConfigs:
@@ -1119,126 +1103,153 @@ describe("backupStorageOf", () => {
       serverConfig: "orders-pg",
       endpoint: "orders-pg-rw.team-a.svc:5432",
       pitr: { enabled: true, recovery: "operator", retentionDays: 30 },
-      serverUse: "unpublished",
+      serverUse: { state: "unheld", database: "orders-db" },
     });
   });
 
-  const database = (name: string, serverRef: string) =>
-    obj("Database", name, { serverRef, databaseName: name });
+  // database is a Database resource of namespace that holds databaseName.
+  // It reports Ready and the collision key of the server identity by
+  // default.
+  const database = (
+    name: string,
+    over: {
+      identity?: string;
+      ready?: boolean;
+      namespace?: string;
+      databaseName?: string;
+    } = {},
+  ) => {
+    const databaseName = over.databaseName ?? name;
+    const identity = over.identity ?? "7300";
+    return {
+      kind: "Database",
+      metadata: { namespace: over.namespace ?? "team-a", name },
+      spec: { serverRef: "orders-pg", databaseName },
+      status: {
+        ...(identity ? { collisionKey: `${identity}/${databaseName}` } : {}),
+        conditions: [
+          {
+            type: "Ready",
+            status: over.ready === false ? "False" : "True",
+            reason: over.ready === false ? "ConnectionFailed" : "Healthy",
+          },
+        ],
+      },
+    } as unknown as Resource<"Database">;
+  };
   const serverUseOf = (data: BackupStorageInput) => {
     const storage = backupStorageOf(data);
     return storage.kind === "rdbms" ? storage.database?.serverUse : undefined;
   };
 
-  it("the server is dedicated when a Database resource created the DatabaseConfig and no other Database uses the server", () => {
+  it("the server is dedicated when one Database resource on it holds the database that the DatabaseConfig names", () => {
     expect(
-      serverUseOf(
-        rdbmsChain({
-          published: true,
-          databases: [database("orders", "orders-pg")],
-        }),
-      ),
-    ).toBe("dedicated");
+      serverUseOf(rdbmsChain({ databases: [database("orders-db")] })),
+    ).toEqual({ state: "dedicated" });
   });
 
-  it("the server use is unpublished when no Database resource created the DatabaseConfig", () => {
-    expect(serverUseOf(rdbmsChain({ databases: [] }))).toBe("unpublished");
+  it("a hand-written DatabaseConfig is dedicated when the one Database resource on the server holds its database", () => {
     expect(
       serverUseOf(
         rdbmsChain({
-          published: true,
-          databases: [database("payments", "orders-pg")],
+          databases: [database("orders", { databaseName: "orders-db" })],
         }),
       ),
-    ).toBe("unpublished");
+    ).toEqual({ state: "dedicated" });
   });
 
-  it("the server is shared when more than one Database resource uses it", () => {
+  it("a Database resource on another server instance does not count, also when its DatabaseServerConfig changed host since its last probe", () => {
     expect(
       serverUseOf(
         rdbmsChain({
-          published: true,
           databases: [
-            database("orders", "orders-pg"),
-            database("payments", "orders-pg"),
-            database("billing", "billing-pg"),
-          ],
-        }),
-      ),
-    ).toBe("shared");
-  });
-
-  it("two DatabaseServerConfigs of one server instance count as one server", () => {
-    expect(
-      serverUseOf(
-        rdbmsChain({
-          published: true,
-          databases: [
-            database("orders", "orders-pg"),
-            database("payments", "orders-pg-direct"),
+            database("orders-db"),
+            database("payments-db", { identity: "9100" }),
           ],
           otherServerConfigs: [
             obj(
               "DatabaseServerConfig",
-              "orders-pg-direct",
+              "payments-pg",
               {
-                host: "10.0.0.5",
+                host: "payments-new.team-a.svc",
                 port: 5432,
                 adminCredentialsSecretRef: ADMIN,
               },
-              probed("7300", "10.0.0.5:5432"),
+              probed("9100", "payments-old.team-a.svc:5432"),
             ),
           ],
         }),
       ),
-    ).toBe("shared");
+    ).toEqual({ state: "dedicated" });
   });
 
-  it("the server use is unknown while a DatabaseServerConfig of a Database resource has published no identity of its server", () => {
+  it("the server use is unheld when no Database resource on the server holds the database of the DatabaseConfig", () => {
+    expect(serverUseOf(rdbmsChain({ databases: [] }))).toEqual({
+      state: "unheld",
+      database: "orders-db",
+    });
+    expect(
+      serverUseOf(rdbmsChain({ databases: [database("payments-db")] })),
+    ).toEqual({ state: "unheld", database: "orders-db" });
+  });
+
+  it("the server is shared when more than one Database resource of any namespace is on it, and names the other one", () => {
     expect(
       serverUseOf(
         rdbmsChain({
-          published: true,
-          identity: null,
-          databases: [database("orders", "orders-pg")],
-        }),
-      ),
-    ).toBe("unknown");
-    expect(
-      serverUseOf(
-        rdbmsChain({
-          published: true,
           databases: [
-            database("orders", "orders-pg"),
-            database("payments", "payments-pg"),
-          ],
-          otherServerConfigs: [
-            obj("DatabaseServerConfig", "payments-pg", {
-              host: "payments",
-              port: 5432,
-            }),
+            database("orders-db"),
+            database("billing-db", { identity: "9100" }),
+            database("payments-db", { namespace: "team-b" }),
           ],
         }),
       ),
-    ).toBe("unknown");
+    ).toEqual({ state: "shared", other: "team-b/payments-db" });
   });
 
-  it("an identity that a probe of an earlier endpoint read counts as no identity", () => {
+  it("the server use is unprobed while the DatabaseServerConfig of the cluster has no identity from a probe of its current spec", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({ identity: null, databases: [database("orders-db")] }),
+      ),
+    ).toEqual({ state: "unprobed" });
     expect(
       serverUseOf(
         rdbmsChain({
-          published: true,
           probedEndpoint: "orders-pg-old.team-a.svc:5432",
-          databases: [database("orders", "orders-pg")],
+          databases: [database("orders-db")],
         }),
       ),
-    ).toBe("unknown");
+    ).toEqual({ state: "unprobed" });
+  });
+
+  it("the server use is unplaced while a Database resource reports no Ready or no collision key, and names it", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          databases: [
+            database("orders-db"),
+            database("payments-db", { namespace: "team-b", ready: false }),
+          ],
+        }),
+      ),
+    ).toEqual({ state: "unplaced", database: "team-b/payments-db" });
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          databases: [
+            database("orders-db"),
+            database("billing-db", { identity: "" }),
+          ],
+        }),
+      ),
+    ).toEqual({ state: "unplaced", database: "team-a/billing-db" });
   });
 
   it("the server use is unread when the page could not read the Database resources", () => {
-    expect(
-      serverUseOf(rdbmsChain({ published: true, databases: undefined })),
-    ).toBe("unread");
+    expect(serverUseOf(rdbmsChain({ databases: undefined }))).toEqual({
+      state: "unread",
+    });
   });
 
   it.each([

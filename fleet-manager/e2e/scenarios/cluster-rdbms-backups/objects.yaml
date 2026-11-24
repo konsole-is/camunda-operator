@@ -2546,9 +2546,6 @@ metadata:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
-      f:metadata:
-        f:ownerReferences:
-          k:{"uid":"00000000-0000-0000-0000-000000000001"}: {}
       f:spec:
         f:credentialsSecretRef:
           f:name: {}
@@ -2581,12 +2578,6 @@ metadata:
     time: "2026-01-01T00:00:00Z"
   name: camundacluster-sample-db
   namespace: team-a
-  ownerReferences:
-  - apiVersion: core.camunda.io/v1
-    controller: true
-    kind: Database
-    name: camundacluster-sample-db
-    uid: 00000000-0000-0000-0000-000000000001
   uid: a65c9a2f-cdfc-54ac-9ea5-0a8e5d6a84c3
 spec:
   credentialsSecretRef:

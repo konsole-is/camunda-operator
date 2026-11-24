@@ -102,16 +102,16 @@ The confirm shows the restore window in UTC. With `operator`, the operator rolls
 **Restore to a point in time** is off in these cases, and the reason shows under it:
 
 - With `external`, `pitr.enabled` is false.
-- No [Database](../crds/database.md) resource created the database of the cluster. The operator restores to a point in time only a database that a `Database` resource created.
-- Another `Database` resource uses the same server. A rollback of the server rolls that database back too.
-- A `DatabaseServerConfig` of the namespace has not published the identity of its server yet. The fleet manager then cannot tell which databases the server holds.
+- No [Database](../crds/database.md) resource on the server holds the database that the `DatabaseConfig` of the cluster names. The operator restores to a point in time only a database that a `Database` resource holds.
+- Another `Database` resource, in any namespace, uses the same server. A rollback of the server rolls that database back too.
+- The `DatabaseServerConfig` of the cluster has not published the identity of its server, or a `Database` resource does not report `Ready`. The fleet manager then cannot tell which databases the server holds.
 
 CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
 
 1. With `external`, select **Suspend the cluster** in **Basics** on the **Claim** tab. See [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab). A cluster that runs writes to the database after the rollback.
 2. Select **Restore to a point in time**.
 3. Enter the time in **Time (UTC)**. The field refuses a time outside the restore window.
-4. With `external`, roll the database server back to that time. Roll back only a server that holds no other database. The fleet manager sees only the `Database` resources of the namespace. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
+4. With `external`, roll the database server back to that time. Roll back only a server that holds no other database. A rollback also undoes a database that no `Database` resource describes. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
 5. Read the confirm. The restore loses everything that the cluster wrote after that time.
 6. With `external`, select **I rolled the database server back to this time**.
 7. Type the name of the cluster, and select **Restore**.

@@ -290,7 +290,7 @@ export function ClusterView({
   );
   const databases = useResources(
     "Database",
-    { namespace: ns },
+    {},
     initial.backupStorage.databases,
   );
   const schedules = useResources(
@@ -349,7 +349,7 @@ export function ClusterView({
     { kind: "LogicalRestoreElasticsearch", opts: { namespace: ns } },
     { kind: "LogicalRestoreRDBMS", opts: { namespace: ns } },
     { kind: "PointInTimeRestore", opts: { namespace: ns } },
-    { kind: "Database", opts: { namespace: ns } },
+    { kind: "Database", opts: {} },
     { kind: "DatabaseServerConfig", opts: { namespace: ns } },
   ] as const;
   const listFresh = useWatchesFresh(followedLists);

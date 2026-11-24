@@ -431,7 +431,7 @@ export function pointInTimeConfirm(
         context.suspension === undefined
           ? "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm."
           : "The operator does not roll the database server back. Roll it back to this time before you confirm.",
-        "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.",
+        "A rollback also undoes a database on the server that no Database resource describes. Roll back only a server that holds no such database.",
         `If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig ${manual.serverConfig} to the new instance first.`,
         "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
       ]
@@ -693,22 +693,25 @@ function pointInTimeBlock(
 function serverUseBlock(
   database: DatabaseView | undefined,
 ): { disabled: string } | undefined {
-  switch (database?.serverUse) {
+  const use = database?.serverUse;
+  switch (use?.state) {
     case "dedicated":
       return undefined;
-    case "unpublished":
+    case "unheld":
       return {
-        disabled:
-          "No Database resource created the database of this cluster. The operator restores to a point in time only a database that a Database resource of the operator created.",
+        disabled: `No Database resource holds the database ${use.database} of this cluster on its server. The operator restores to a point in time only a database that a Database resource holds.`,
       };
     case "shared":
       return {
-        disabled: `Another Database resource uses the server of DatabaseServerConfig ${database.serverConfig}. A rollback of the server would roll that database back too.`,
+        disabled: `Database ${use.other} also uses the server of this cluster. A rollback of the server rolls that database back too.`,
       };
-    case "unknown":
+    case "unprobed":
       return {
-        disabled:
-          "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.",
+        disabled: `DatabaseServerConfig ${database?.serverConfig ?? ""} has not published the identity of its server for its current spec yet, so the fleet manager cannot tell which databases the server holds.`,
+      };
+    case "unplaced":
+      return {
+        disabled: `Database ${use.database} does not report Ready, so the fleet manager cannot tell which server it uses.`,
       };
     default:
       return {

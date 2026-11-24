@@ -612,7 +612,7 @@ describe("restore rules", () => {
 
   const archived = (
     window?: RestoreInterval[],
-    serverUse: ServerUse = "dedicated",
+    serverUse: ServerUse = { state: "dedicated" },
   ): BackupStorage => ({
     ...rdbms,
     database: {
@@ -654,7 +654,7 @@ describe("restore rules", () => {
       recovery?: string;
       retentionDays?: number;
     },
-    serverUse: ServerUse = "dedicated",
+    serverUse: ServerUse = { state: "dedicated" },
   ): BackupStorage => ({
     ...rdbms,
     database: {
@@ -790,12 +790,14 @@ describe("restore rules", () => {
     });
   });
 
-  const UNPUBLISHED =
-    "No Database resource created the database of this cluster. The operator restores to a point in time only a database that a Database resource of the operator created.";
+  const UNHELD =
+    "No Database resource holds the database orders-db of this cluster on its server. The operator restores to a point in time only a database that a Database resource holds.";
   const SHARED_SERVER =
-    "Another Database resource uses the server of DatabaseServerConfig orders-pg. A rollback of the server would roll that database back too.";
-  const UNKNOWN =
-    "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.";
+    "Database team-b/payments-db also uses the server of this cluster. A rollback of the server rolls that database back too.";
+  const UNPROBED =
+    "DatabaseServerConfig orders-pg has not published the identity of its server for its current spec yet, so the fleet manager cannot tell which databases the server holds.";
+  const UNPLACED =
+    "Database team-b/payments-db does not report Ready, so the fleet manager cannot tell which server it uses.";
   const UNREAD =
     "The fleet manager has no current read of the Database, DatabaseConfig, or DatabaseServerConfig resources, so it cannot tell which databases the server holds.";
 
@@ -807,23 +809,24 @@ describe("restore rules", () => {
         manual({ enabled: true, recovery: "external", retentionDays: 3 }, use),
     ],
   ])(
-    "with %s, point in time is off unless one Database resource created the database and uses the server alone",
+    "with %s, point in time is off unless one Database resource on the server holds the database of the cluster",
     (_, storage) => {
-      expect(pointInTime(context({ storage: storage("dedicated") }))).toEqual(
+      const off = (use: ServerUse) =>
+        pointInTime(context({ storage: storage(use) }));
+      expect(off({ state: "dedicated" })).toEqual(
         expect.objectContaining({ intervals: expect.any(Array) }),
       );
-      expect(pointInTime(context({ storage: storage("unpublished") }))).toEqual(
-        { disabled: UNPUBLISHED },
-      );
-      expect(pointInTime(context({ storage: storage("shared") }))).toEqual({
+      expect(off({ state: "unheld", database: "orders-db" })).toEqual({
+        disabled: UNHELD,
+      });
+      expect(off({ state: "shared", other: "team-b/payments-db" })).toEqual({
         disabled: SHARED_SERVER,
       });
-      expect(pointInTime(context({ storage: storage("unread") }))).toEqual({
-        disabled: UNREAD,
-      });
-      expect(pointInTime(context({ storage: storage("unknown") }))).toEqual({
-        disabled: UNKNOWN,
-      });
+      expect(off({ state: "unprobed" })).toEqual({ disabled: UNPROBED });
+      expect(
+        off({ state: "unplaced", database: "team-b/payments-db" }),
+      ).toEqual({ disabled: UNPLACED });
+      expect(off({ state: "unread" })).toEqual({ disabled: UNREAD });
     },
   );
 });
@@ -916,7 +919,7 @@ describe("restore confirm", () => {
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
   const OTHERS =
-    "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.";
+    "A rollback also undoes a database on the server that no Database resource describes. Roll back only a server that holds no such database.";
   const STAYS =
     "A cluster that you suspend for the rollback stays suspended after the restore. Resume it when the restore is Completed.";
   const HOST =

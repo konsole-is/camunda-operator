@@ -4,8 +4,8 @@ description: >-
   cluster of cluster-es-backups, with an rdbms SecondaryStorageConfig whose
   DatabaseConfig names the DatabaseServerConfig postgres. That config has
   pitr.recovery external, so the admin rolls the database server back before
-  a point-in-time restore. The Database camundacluster-sample-db created the
-  DatabaseConfig and is the only Database on the server. No DatabaseServer
+  a point-in-time restore. The Database camundacluster-sample-db holds the
+  database camunda that the DatabaseConfig names. No DatabaseServer
   publishes the server, and envtest reaches no database and no bucket, so
   the server publishes no identity and the cluster takes no backup.
 seed:
@@ -139,20 +139,11 @@ seed:
     spec:
       serverRef: postgres
       databaseName: camunda
-  # The Database never reaches the server, so the seed writes the
-  # DatabaseConfig that it would publish. envtest runs no garbage collector,
-  # so the made-up uid of the owner reference stays.
   - apiVersion: core.camunda.io/v1
     kind: DatabaseConfig
     metadata:
       name: camundacluster-sample-db
       namespace: team-a
-      ownerReferences:
-        - apiVersion: core.camunda.io/v1
-          kind: Database
-          name: camundacluster-sample-db
-          uid: 00000000-0000-0000-0000-000000000001
-          controller: true
     spec:
       serverRef: postgres
       databaseName: camunda

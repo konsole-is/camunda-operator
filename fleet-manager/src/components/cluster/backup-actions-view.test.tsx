@@ -685,7 +685,7 @@ describe("restore to a point in time", () => {
     ...rdbms,
     database: {
       serverConfig: "orders-pg",
-      serverUse: "dedicated",
+      serverUse: { state: "dedicated" },
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -833,7 +833,7 @@ describe("restore to a point in time", () => {
       recovery: "external",
       retentionDays: 3,
     },
-    serverUse: ServerUse = "dedicated",
+    serverUse: ServerUse = { state: "dedicated" },
   ): BackupStorage => ({
     ...rdbms,
     database: {
@@ -847,7 +847,7 @@ describe("restore to a point in time", () => {
   const ROLL =
     "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
   const OTHERS =
-    "The fleet manager sees only the Database resources of this namespace. Roll back only a server that holds no other database.";
+    "A rollback also undoes a database on the server that no Database resource describes. Roll back only a server that holds no such database.";
   const HOST =
     "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
   const items = (dialog: HTMLElement) =>
@@ -975,12 +975,12 @@ describe("restore to a point in time", () => {
     },
   );
 
-  it("the action is off with the reason when another Database resource uses the server", () => {
+  it("the action is off with the reason when another Database resource uses the server, and names it", () => {
     header(
       context({
         storage: manual(
           { enabled: true, recovery: "external", retentionDays: 3 },
-          "shared",
+          { state: "shared", other: "team-b/payments-db" },
         ),
       }),
     );
@@ -990,7 +990,7 @@ describe("restore to a point in time", () => {
     expect(button).toHaveProperty("disabled", true);
     const described = button.getAttribute("aria-describedby") ?? "";
     expect(document.getElementById(described)?.textContent).toBe(
-      "Another Database resource uses the server of DatabaseServerConfig orders-pg. A rollback of the server would roll that database back too.",
+      "Database team-b/payments-db also uses the server of this cluster. A rollback of the server rolls that database back too.",
     );
   });
 

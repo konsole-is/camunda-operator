@@ -14,7 +14,7 @@ test("restore to a point in time is off while the server of the cluster has publ
   });
   await expect(button).toBeDisabled();
   await expect(button).toHaveAccessibleDescription(
-    "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.",
+    "DatabaseServerConfig postgres has not published the identity of its server for its current spec yet, so the fleet manager cannot tell which databases the server holds.",
   );
   await checkPage(page, "cluster-backups-point-in-time-off");
 });

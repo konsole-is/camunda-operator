@@ -100,7 +100,7 @@ export async function loadClusterPage(
     listRecorded("DatabaseServerConfig", inNamespace),
     listRecorded("DatabaseServer", inNamespace),
     listRecorded("DatabaseServerPreset", {}),
-    listRecorded("Database", inNamespace),
+    listRecorded("Database", {}),
     listRecorded("BackupSchedule", inNamespace),
     listRecorded("CamundaOptimize", inNamespace),
     listRecorded("PluginSection", {}),

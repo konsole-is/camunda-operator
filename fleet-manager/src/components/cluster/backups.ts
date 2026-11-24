@@ -208,17 +208,23 @@ export type ArchiveView = {
 };
 
 /**
- * ServerUse is what the Database resources of the namespace show about the
- * server of a cluster: dedicated when a Database resource created its
- * DatabaseConfig and no other Database resource uses the server,
- * unpublished when no Database resource created the DatabaseConfig, shared
- * when more than one Database resource uses the server, unknown while a
- * DatabaseServerConfig of a Database resource has published no identity of
- * its server, and unread when the page has no current read of the
- * resources that place the Database resources.
+ * ServerUse is what the Database resources of every namespace show about
+ * the server of a cluster. dedicated: one Database resource on the server,
+ * and it holds the database that the DatabaseConfig names. unheld: no
+ * Database resource on the server holds that database. shared: more than
+ * one Database resource is on the server, and other names one of the
+ * others as namespace/name. unprobed: the DatabaseServerConfig of the
+ * cluster has no identity from a probe of its current spec. unplaced: the
+ * Database resource database reports no Ready or no collision key. unread:
+ * the page has no current read of the resources that place them.
  */
 export type ServerUse =
-  "dedicated" | "unpublished" | "shared" | "unknown" | "unread";
+  | { state: "dedicated" }
+  | { state: "unheld"; database: string }
+  | { state: "shared"; other: string }
+  | { state: "unprobed" }
+  | { state: "unplaced"; database: string }
+  | { state: "unread" };
 
 /**
  * DatabaseView is the PostgreSQL server of a cluster. missing names the
@@ -257,9 +263,10 @@ export type BackupStorage =
 /**
  * BackupStorageInput holds what backupStorageOf reads. cluster is the live
  * object and spec its merged spec. The namespaced lists hold the objects of
- * the namespace of the cluster. databases is undefined when the page has no
- * current read of the Database, DatabaseConfig, or DatabaseServerConfig
- * resources. now is the current time.
+ * the namespace of the cluster, and databases holds those of every
+ * namespace. databases is undefined when the page has no current read of
+ * the Database, DatabaseConfig, or DatabaseServerConfig resources. now is
+ * the current time.
  */
 export type BackupStorageInput = {
   cluster: Resource<"CamundaCluster">;
@@ -393,32 +400,50 @@ function databaseOf(
   return view;
 }
 
-// A Database resource publishes the DatabaseConfig of the logical database
-// that it runs, as the controller of that DatabaseConfig. Two
-// DatabaseServerConfigs with one system identifier describe one server.
 function serverUseOf(
   input: BackupStorageInput,
   databaseConfig: Resource<"DatabaseConfig">,
   serverConfig: Resource<"DatabaseServerConfig">,
 ): ServerUse {
   const { databases } = input;
-  if (databases === undefined) return "unread";
-  const identityOf = (name: string) => {
-    const config = byName(input.databaseServerConfigs, name);
-    return config && identityOfServer(config);
-  };
+  if (databases === undefined) return { state: "unread" };
   const identity = identityOfServer(serverConfig);
-  const placed = databases.map((d) => identityOf(d.spec.serverRef));
-  if (identity && placed.filter((id) => id === identity).length > 1) {
-    return "shared";
-  }
-  if (!identity || placed.some((id) => !id)) return "unknown";
-  const creator = databaseConfig.metadata?.ownerReferences?.find(
-    (r) => r.controller && r.kind === "Database",
+  if (!identity) return { state: "unprobed" };
+  const sorted = [...databases].sort((a, b) =>
+    nameOf(a).localeCompare(nameOf(b)),
   );
-  return creator && databases.some((d) => d.metadata?.name === creator.name)
-    ? "dedicated"
-    : "unpublished";
+  const placed = sorted.filter((d) => ready(d) && d.status?.collisionKey);
+  // The operator places a Database resource on the server of its claims
+  // (dedicatedServer in internal/controller/pointintimerestore).
+  // status.collisionKey is <systemIdentifier>/<databaseName>.
+  const onServer = placed.filter(
+    (d) => d.status?.collisionKey?.split("/")[0] === identity,
+  );
+  const name = databaseConfig.spec.databaseName;
+  if (onServer.length > 1) {
+    const other =
+      onServer.find((d) => d.spec.databaseName !== name) ?? onServer[1];
+    return { state: "shared", other: nameOf(other) };
+  }
+  // The operator holds a restore while a Database resource has no claim.
+  const unplaced = sorted.find((d) => !placed.includes(d));
+  if (unplaced) return { state: "unplaced", database: nameOf(unplaced) };
+  const [only] = onServer;
+  return only !== undefined && only.spec.databaseName === name
+    ? { state: "dedicated" }
+    : { state: "unheld", database: name };
+}
+
+function nameOf(database: Resource<"Database">): string {
+  return `${database.metadata?.namespace ?? ""}/${database.metadata?.name ?? ""}`;
+}
+
+function ready(database: Resource<"Database">): boolean {
+  return (
+    database.status?.conditions?.some(
+      (c) => c.type === "Ready" && c.status === "True",
+    ) ?? false
+  );
 }
 
 // identityOfServer gives the system identifier of the server only when the

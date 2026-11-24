@@ -889,7 +889,7 @@ describe("Backups tab", () => {
     const page = render(ui());
     const use = () =>
       seen?.backupStorage.kind === "rdbms"
-        ? seen.backupStorage.database?.serverUse
+        ? seen.backupStorage.database?.serverUse?.state
         : undefined;
     return { rerender: () => page.rerender(ui()), use };
   };
@@ -903,12 +903,12 @@ describe("Backups tab", () => {
     expect(use()).toBe("unread");
     live.stale = [];
     rerender();
-    expect(use()).toBe("unpublished");
+    expect(use()).toBe("unheld");
   });
 
   it("the server use is unread while the watch of the Database resources lost its connection", () => {
     const { rerender, use } = serverUseSeen(pgPage());
-    expect(use()).toBe("unpublished");
+    expect(use()).toBe("unheld");
     live.stale = ["Database"];
     rerender();
     expect(use()).toBe("unread");
@@ -918,7 +918,7 @@ describe("Backups tab", () => {
     "the server use is unread while the watch of the %s resources lost its connection",
     (kind) => {
       const { rerender, use } = serverUseSeen(pgPage());
-      expect(use()).toBe("unpublished");
+      expect(use()).toBe("unheld");
       live.stale = [kind];
       rerender();
       expect(use()).toBe("unread");
@@ -1129,6 +1129,11 @@ describe("Backups tab", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("watches the Database resources of every namespace", () => {
+    render(view());
+    expect(live.calls).toContainEqual({ kind: "Database", opts: {} });
   });
 
   it("watches the DatabaseServerPresets of every namespace", () => {
