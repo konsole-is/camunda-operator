@@ -140,6 +140,29 @@ describe("PresetEditor of a cluster preset", () => {
     expect(within(scope).getByDisplayValue("JAVA_TOOL_OPTIONS")).toBeTruthy();
   });
 
+  it("says where to change a variable of a scope that the editor cannot change", () => {
+    const preset = fixtures.clusterPresets[0];
+    setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: {
+          ...preset.spec.cluster,
+          extraEnv: [
+            {
+              name: "POD_IP",
+              valueFrom: { fieldRef: { fieldPath: "status.podIP" } },
+            },
+          ],
+        },
+      },
+    );
+    expect(screen.getByRole("group", { name: "POD_IP" }).textContent).toContain(
+      "Edit this variable with kubectl or through your Git repository",
+    );
+  });
+
   it("keeps the last valid env list and shows the YAML error again when the scope reopens", async () => {
     const { last, errors } = setup(fixtures.clusterPresets[0]);
     const brokers = screen.getByRole("group", { name: "Brokers" });
@@ -377,6 +400,35 @@ describe("PresetEditor of an Elasticsearch or PostgreSQL preset", () => {
       ...kept,
       instances: 12,
     });
+  });
+
+  it("says where to change a variable from the pod that the editor cannot change", () => {
+    const preset = fixtures.elasticsearchPresets[0];
+    setup(
+      preset,
+      {},
+      {
+        description: "",
+        body: {
+          ...preset.spec.cluster,
+          extraEnv: [
+            {
+              name: "NODE_NAME",
+              valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } },
+            },
+          ],
+        },
+      },
+    );
+    const settings = screen.getByRole("region", {
+      name: "Elasticsearch settings",
+    });
+    expect(
+      within(settings).getByRole("group", { name: "NODE_NAME" }).textContent,
+    ).toContain(
+      "Edit this variable with kubectl or through your Git repository",
+    );
+    expect(within(settings).queryByText(/YAML of the claim/)).toBeNull();
   });
 
   it("removes a field from a PostgreSQL preset with its reset link", async () => {

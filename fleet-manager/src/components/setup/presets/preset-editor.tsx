@@ -29,6 +29,10 @@ const BODY_STEPS = 2;
 
 const ENV_LISTS = new Set(["extraEnv", "extraEnvFrom"]);
 
+// A preset page has no YAML editor, as the presets guide says.
+const OTHER_SOURCE_REASON =
+  "Edit this variable with kubectl or through your Git repository";
+
 const GROUPS: Readonly<Record<PresetKind, readonly SettingsGroup[]>> = {
   CamundaClusterPreset: [
     { label: "General", component: "cluster", embedded: false, fields: [] },
@@ -210,6 +214,7 @@ function BodySettings({
                 reset={(steps) =>
                   setBody((body) => without(body, steps.slice(BODY_STEPS)))
                 }
+                otherSourceReason={OTHER_SOURCE_REASON}
                 invalid={(steps, message) => {
                   const key = pathOf(steps) ?? "";
                   if (message === undefined) delete invalid.current[key];
@@ -250,6 +255,7 @@ function BodySettings({
             spec={draft.body as EnvSpec}
             secrets={secrets}
             missingIn={missingIn}
+            otherSourceReason={OTHER_SOURCE_REASON}
             onChange={(update, envErrors) => {
               setBody(
                 (body) => update(body as EnvSpec) as Record<string, unknown>,
