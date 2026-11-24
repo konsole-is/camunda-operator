@@ -160,7 +160,8 @@ export function diffView(
  * precondition to laidOver of the live object, the applied object, the
  * listed fields, and prunedFields. The preview is the dry run of that
  * patch. Both writes refuse the object with Conflict when the update takes
- * or removes a field of another manager that the lists do not name. After
+ * or removes a field of another manager that the lists do not name. A
+ * field of remove can come back with its default value. After
  * the update, apply dry-runs the apply of the object without force, and
  * writes the managedFields of that answer without the Update entry of the
  * fleet manager. When that dry run sets other values, or a request after
@@ -428,12 +429,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             true,
           );
           const refused = [
-            ...unlistedTakes(
-              ref,
-              before!,
-              after,
-              foreign!.changed.filter((f) => lists?.takeOver.includes(f.path)),
-            ),
+            ...unlistedTakes(ref, before!, after, [
+              ...foreign!.changed.filter((f) =>
+                lists?.takeOver.includes(f.path),
+              ),
+              ...cleared,
+            ]),
             ...unlistedRemovals(ref, before!, after, cleared),
           ];
           if (refused.length > 0) {

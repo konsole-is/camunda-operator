@@ -787,6 +787,24 @@ describe("directWriter with a take-over", () => {
     expect(writes().filter((r) => r.method !== "GET")).toEqual([]);
   });
 
+  it("a removed field that its default brings back is not a take", async () => {
+    const defaulted = environment({ displayName: "Default", color: "red" }, [
+      fleetOwns("Update", "displayName"),
+    ]);
+    answer = removalAnswers(named, defaulted, {
+      ...defaulted,
+      metadata: { ...defaulted.metadata, resourceVersion: "8" },
+    });
+
+    const preview = await directWriter(apiConfig).preview(clearName);
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects[0].after?.spec).toEqual({
+      displayName: "Default",
+      color: "red",
+    });
+  });
+
   it("refuses an update that would remove a field that the lists do not name", async () => {
     const operator =
       "CamundaClusterClaim/cluster/0b5c7a2e-1f0e-4f43-9d0a-6a0c2f1e9b11";
