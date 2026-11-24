@@ -601,6 +601,7 @@ export function ClusterView({
     stale: !live && clusterStale ? [...stale, "CamundaCluster"] : stale,
   });
   const requestsStale = unread.includes("PluginRequest");
+  const clusterUnread = unread.includes("CamundaCluster");
   const context: ClusterSlotContext = {
     cluster: subject,
     claim,
@@ -865,6 +866,8 @@ export function ClusterView({
               rowActions={rowActionsOf(slots, managed, context)}
               unread={unread}
             />
+          ) : clusterUnread ? (
+            <NotRead kinds={["CamundaCluster"]} />
           ) : (
             <p className="text-sm text-muted">
               The cluster does not exist yet, so it has no backups.
@@ -881,6 +884,8 @@ export function ClusterView({
                 accessOutputs: access?.status?.outputs,
               })}
             />
+          ) : clusterUnread ? (
+            <NotRead kinds={["CamundaCluster"]} />
           ) : (
             <EndpointsTab
               rows={[]}

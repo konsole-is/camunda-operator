@@ -2551,6 +2551,28 @@ describe("Before the cluster exists", () => {
     expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
   });
 
+  it("the Backups and Endpoints tabs name the cluster kind, never that the cluster does not exist yet, while the cluster read is not current", async () => {
+    live.stale = ["CamundaCluster"];
+    live.overdue = ["CamundaCluster"];
+    render(view({ initial: waiting }));
+    const notKnown =
+      "Not known: the fleet manager has no current list of CamundaCluster.";
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    expect(screen.getByText(notKnown)).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The cluster does not exist yet, so it has no backups.",
+      ),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Endpoints" }));
+    expect(screen.getByText(notKnown)).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "The cluster does not exist yet, so it has no endpoints.",
+      ),
+    ).toBeNull();
+  });
+
   it("a failed first read of the cluster is an error until its watch answers", () => {
     live.stale = ["CamundaCluster"];
     render(
