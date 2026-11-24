@@ -133,11 +133,36 @@ describe("ClusterProgressView", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "The sections wait for each other.",
     );
+    const links = screen.getAllByRole("link", { name: "Open the Claim tab" });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe(
+      "/fleet/clusters/team-a/orders?tab=claim",
+    );
+  });
+
+  it("links the Claim tab at once while the claim waits for its requests", () => {
+    view(
+      claimWith([
+        condition(
+          "Ready",
+          "False",
+          "PrerequisiteNotMet",
+          "waiting for condition RequestsReady",
+        ),
+      ]),
+    );
     expect(
       screen
         .getByRole("link", { name: "Open the Claim tab" })
         .getAttribute("href"),
     ).toBe("/fleet/clusters/team-a/orders?tab=claim");
+  });
+
+  it("links no Claim tab before the claim exists", () => {
+    view();
+    expect(
+      screen.queryByRole("link", { name: "Open the Claim tab" }),
+    ).toBeNull();
   });
 
   it("links the cluster page once the cluster is ready", () => {

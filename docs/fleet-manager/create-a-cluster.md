@@ -94,7 +94,7 @@ If the create fails, the form keeps your values and shows the message. Correct t
 
 ## Follow the creation
 
-After **Create**, the page shows the `Ready` condition of the claim and its message. Then it shows one row for each option, and the rows **Requests**, **Cluster**, and **Attachments**. A request, a `PluginRequest`, is what the operator writes for each option so that the option builds its resources. When the cluster is ready, the link **Open the cluster page** shows.
+After **Create**, the page shows the `Ready` condition of the claim and its message. Then it shows one row for each option, and the rows **Requests**, **Cluster**, and **Attachments**. A request, a `PluginRequest`, is what the operator writes for each option so that the option builds its resources. **Open the Claim tab** opens the claim on the cluster page at once. When the cluster is ready, the link **Open the cluster page** shows.
 
 While an option waits for another option, the message names the choice that it waits for.
 

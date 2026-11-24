@@ -16,6 +16,8 @@ import { CLAIM_LABEL } from "@/lib/labels";
 
 const READY: FleetCamundaClusterClaimConditionType = "Ready";
 const CLUSTER_READY: FleetCamundaClusterClaimConditionType = "ClusterReady";
+const LINK =
+  "relative self-start text-sm text-info underline-offset-4 hit-area hover:underline";
 
 /**
  * ClusterProgress follows the written claim and its PluginRequests live
@@ -69,9 +71,9 @@ export function ClusterProgress({
 /**
  * ClusterProgressView shows the progress of the cluster claim named name in
  * namespace: its Ready condition, clusterProgressRows, and the precheck
- * refusal of the claim controller. The refusal links the Claim tab of the
- * cluster page, which opens from the claim. Once ClusterReady is True, a
- * link opens the cluster page.
+ * refusal of the claim controller. Once the claim exists, a link opens the
+ * Claim tab of the cluster page, which opens from the claim. Once
+ * ClusterReady is True, a link opens the cluster page.
  */
 export function ClusterProgressView({
   name,
@@ -106,17 +108,21 @@ export function ClusterProgressView({
         ready={ready}
         rows={clusterProgressRows(claim, sections, registrations, requests)}
         done={
-          clusterReady && (
-            <Link
-              href={page}
-              className="relative self-start text-sm text-info underline-offset-4 hit-area hover:underline"
-            >
-              Open the cluster page
-            </Link>
+          claim && (
+            <div className="flex flex-wrap gap-4">
+              {clusterReady && (
+                <Link href={page} className={LINK}>
+                  Open the cluster page
+                </Link>
+              )}
+              <Link href={`${page}?tab=claim`} className={LINK}>
+                Open the Claim tab
+              </Link>
+            </div>
           )
         }
       />
-      {claim && <PrecheckLine claim={claim} href={`${page}?tab=claim`} />}
+      {claim && <PrecheckLine claim={claim} />}
     </section>
   );
 }
