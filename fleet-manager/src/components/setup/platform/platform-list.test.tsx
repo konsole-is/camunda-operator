@@ -42,11 +42,14 @@ describe("PlatformList", () => {
     ).toBe("/setup/platform/oidc-prod");
   });
 
-  it("offers no create", () => {
+  it("links New platform config to the create page", () => {
     render(<PlatformListLive initial={platformFixtures()} />);
 
-    expect(screen.queryByRole("link", { name: /New/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /New/ })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "New platform config" })
+        .getAttribute("href"),
+    ).toBe("/setup/new-platform-config");
   });
 
   it("shows a read error above the rows", () => {
@@ -88,9 +91,7 @@ describe("PlatformList", () => {
     render(<PlatformList rows={[]} errors={[]} />);
 
     expect(
-      screen.getByText(
-        "No platform config yet. A cluster needs one. The guide shows how to apply one.",
-      ),
+      screen.getByText("No platform config yet. A cluster needs one."),
     ).toBeDefined();
   });
 });
