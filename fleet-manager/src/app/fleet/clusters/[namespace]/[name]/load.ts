@@ -123,7 +123,7 @@ export async function loadClusterPage(
     namespaceObject?.metadata?.labels?.[ENVIRONMENT_LABEL];
   const subject =
     cluster ??
-    (claim && !unread("CamundaCluster")
+    (claim
       ? claimClusterOf(
           { name, namespace, spec: claim.spec },
           environments.find((e) => e.metadata?.name === environmentName) as

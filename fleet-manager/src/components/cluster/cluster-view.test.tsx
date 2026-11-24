@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { cloneElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Step } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { claimAfter, valueAt } from "@/lib/session";
 import {
   CLAIM_LABEL,
   BACKUP_SCHEDULE_LABEL,
@@ -15,6 +19,7 @@ import {
   ACCESS_SECTION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
+import { useClusterEdit } from "./edit/cluster-edit";
 import {
   coreSections,
   fixtureClaim,
@@ -66,6 +71,8 @@ vi.mock("@/lib/k8s/hooks", () => ({
     lists.map((l) => !live.stale.includes(l.kind)),
   useWatchesOverdue: (lists: readonly { kind: string }[]) =>
     lists.map((l) => live.overdue.includes(l.kind)),
+  useGitSync: () => "waiting",
+  useGitGone: () => "waiting",
   useResource: (kind: string, ref: { name: string }, initial?: unknown) => {
     live.calls.push({ kind, opts: ref });
     const items = live.objects[kind] as
@@ -2627,5 +2634,101 @@ describe("Before the cluster exists", () => {
         "Not known: the fleet manager has no current list of PluginRequest.",
       ),
     ).toBeTruthy();
+  });
+});
+
+describe("A pending claim edit while the cluster changes", () => {
+  const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
+  // PresetProbe is an editor of the Claim tab that changes the claim only
+  // through useClusterEdit.
+  function PresetProbe() {
+    const edit = useClusterEdit();
+    return (
+      <input
+        aria-label="Preset"
+        value={String(
+          (edit.session && valueAt(claimAfter(edit.session), presetRef)) ?? "",
+        )}
+        onChange={(e) => edit.set(presetRef, e.target.value)}
+      />
+    );
+  }
+  const actions = { preview: vi.fn(), apply: vi.fn() };
+  const client = new QueryClient();
+  const page = (initial: ClusterPageData) => (
+    <QueryClientProvider client={client}>
+      <GitPushesProvider>
+        <ClusterView
+          initial={initial}
+          now={now}
+          writeMode="direct"
+          claimActions={actions}
+          slots={{ "cluster.claim.editor": <PresetProbe /> }}
+        />
+      </GitPushesProvider>
+    </QueryClientProvider>
+  );
+  const editable = () =>
+    ({
+      ...claim(),
+      metadata: { ...claim().metadata, resourceVersion: "41" },
+    }) as Resource<"CamundaClusterClaim">;
+  const claimOnly = () =>
+    data({ cluster: undefined, pods: [], claims: [editable()] });
+  const preset = () =>
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Preset" });
+  const box = (name: string) => screen.queryByRole("region", { name });
+
+  it("keeps the edit and its session while the cluster watch is not current, and says that the cluster is not known", async () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { rerender } = render(page(claimOnly()));
+    await userEvent.type(preset(), "large");
+    expect(preset().value).toBe("large");
+
+    live.stale = ["CamundaCluster"];
+    live.overdue = ["CamundaCluster"];
+    rerender(page(claimOnly()));
+    expect(preset().value).toBe("large");
+    await userEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(
+      within(box("Cluster")!).getByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(box("The cluster does not exist yet")).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(preset().value).toBe("large");
+  });
+
+  it("says that the cluster does not exist yet again once its watch is current, with the edit kept", async () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    live.stale = ["CamundaCluster"];
+    live.overdue = ["CamundaCluster"];
+    const { rerender } = render(page(claimOnly()));
+    await userEvent.type(preset(), "large");
+
+    live.stale = [];
+    live.overdue = [];
+    rerender(page(claimOnly()));
+    expect(preset().value).toBe("large");
+    await userEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(box("The cluster does not exist yet")).toBeTruthy();
+    expect(box("Cluster")).toBeNull();
+  });
+
+  it("shows the claim again, with the edit kept, when its cluster is deleted while the page is open", async () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    live.objects.CamundaCluster = [cluster()];
+    const withCluster = data({ claims: [editable()] });
+    const { rerender } = render(page(withCluster));
+    await userEvent.type(preset(), "large");
+
+    live.objects.CamundaCluster = [];
+    rerender(page(withCluster));
+    expect(preset().value).toBe("large");
+    expect(screen.queryByText("This cluster no longer exists.")).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(box("The cluster does not exist yet")).toBeTruthy();
+    expect(box("Topology")).toBeNull();
   });
 });

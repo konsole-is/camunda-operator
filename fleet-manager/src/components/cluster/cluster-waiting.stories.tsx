@@ -37,3 +37,8 @@ export const ClaimBeingDeleted: Story = {
   name: "Claim being deleted",
   args: { waits: [], deleting: true },
 };
+
+export const ClusterNotKnown: Story = {
+  name: "Cluster not known",
+  args: { waits: [], unread: ["CamundaCluster"] },
+};

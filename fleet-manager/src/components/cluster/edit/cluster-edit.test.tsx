@@ -569,6 +569,27 @@ describe("ClusterEditProvider", () => {
     expect(written.preconditions).toEqual({ [PRECONDITION]: "41" });
   });
 
+  it("the review of a claim without its cluster blocks the save while the cluster is not read", () => {
+    page(
+      slotContext({
+        drafted: true,
+        unread: ["CamundaCluster"],
+        cluster: { ...cluster(), status: undefined },
+      }),
+    );
+    click("Suspend");
+    openReview();
+    expect(
+      within(dialog()!).getByText(
+        "A change is possible when the fleet manager can read CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog()!).getByRole<HTMLButtonElement>("button", { name: "Save" })
+        .disabled,
+    ).toBe(true);
+  });
+
   it("in Git mode the review pushes to Git and the toast waits for GitOps", async () => {
     fakeWriter.reset("git");
     page(slotContext({ writeMode: "git" }));

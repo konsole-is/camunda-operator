@@ -5,7 +5,8 @@ import type { WaitedRequest } from "@/lib/clusters/progress";
  * ClusterWaiting is the box of a cluster page whose claim has no cluster.
  * It says that the cluster does not exist yet and names each of waits, or,
  * while unread is not empty, the kinds that it could not read. With
- * deleting, it says only that the claim is being deleted.
+ * deleting, it says only that the claim is being deleted. While unread
+ * names CamundaCluster, it says neither.
  */
 export function ClusterWaiting({
   waits,
@@ -16,16 +17,19 @@ export function ClusterWaiting({
   deleting?: boolean;
   unread: readonly string[];
 }) {
-  const heading = deleting
-    ? "The cluster no longer exists"
-    : "The cluster does not exist yet";
+  const clusterUnread = unread.includes("CamundaCluster");
+  const heading = clusterUnread
+    ? "Cluster"
+    : deleting
+      ? "The cluster no longer exists"
+      : "The cluster does not exist yet";
   return (
     <section
       aria-label={heading}
       className="flex flex-col gap-3 rounded-lg border border-border bg-panel p-4"
     >
       <h2 className="font-heading text-base font-semibold">{heading}</h2>
-      {deleting ? (
+      {deleting && !clusterUnread ? (
         <p className="text-sm text-text-2">The claim is being deleted.</p>
       ) : unread.length > 0 ? (
         <NotRead kinds={unread} />

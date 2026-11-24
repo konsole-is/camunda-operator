@@ -85,4 +85,23 @@ describe("ClusterWaiting", () => {
     render(<ClusterWaiting unread={[]} />);
     expect(screen.queryByRole("list")).toBeNull();
   });
+
+  it("says that the cluster is not known, never that it does not exist, while the cluster is not read", () => {
+    render(
+      <ClusterWaiting
+        unread={["CamundaCluster"]}
+        waits={[{ section: "access", label: "Access" }]}
+        deleting
+      />,
+    );
+    const block = screen.getByRole("region", { name: "Cluster" });
+    expect(
+      within(block).getByText(
+        "Not known: the fleet manager has no current list of CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("The cluster does not exist yet")).toBeNull();
+    expect(screen.queryByText("The cluster no longer exists")).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+  });
 });

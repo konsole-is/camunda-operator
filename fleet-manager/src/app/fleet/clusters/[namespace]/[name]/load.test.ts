@@ -87,14 +87,16 @@ describe("loadClusterPage", () => {
     });
   });
 
-  it("gives no docs of the cluster that a claim would make while the cluster read failed", async () => {
+  it("gives the docs of the cluster that the claim would make also while the cluster read failed", async () => {
     k8s.cluster = undefined;
     k8s.failing = "CamundaCluster";
     k8s.claims = [
       claimNamed("orders", { cluster: { zeebe: { replicas: 3 } } }),
     ];
     const data = await loadClusterPage("team-a", "orders");
-    expect(data?.fieldDocs).toEqual({});
+    expect(
+      data?.fieldDocs["CamundaCluster:spec.zeebe.replicas"]?.description,
+    ).toBeTruthy();
   });
 
   it("shows a failed read of the claims as an error, never as a missing page", async () => {

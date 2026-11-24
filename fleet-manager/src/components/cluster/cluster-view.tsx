@@ -90,8 +90,8 @@ import { TopologyView } from "./topology-view";
  * whose claim label names claimNameOf of the cluster. podSelector selects
  * the pods of the cluster by its owner label, and pods holds them.
  * backupStorage holds the objects that the Backups tab follows from the
- * cluster to its backup
- * storage and its schedules. Its databaseServerPresets are cluster-scoped.
+ * cluster to its backup storage and its schedules. Its
+ * databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
  * registrations every PluginSection and PluginRegistration.
  * platformConfigs and managementAuthConfigs are cluster-scoped. grants and
@@ -454,10 +454,10 @@ export function ClusterView({
   // can exist while the page still has none.
   const clusterStale =
     !clusterFresh && (answered.has("CamundaCluster") || clusterOverdue);
-  const clusterUnread =
-    clusterStale || errors.some((e) => e.kind === "CamundaCluster");
+  // The stand-in also covers a cluster that the page cannot read, so that
+  // the edit host and its session stay while the watch reconnects.
   const drafted =
-    !live && claim && !clusterUnread
+    !live && claim
       ? claimClusterOf(
           { name, namespace: ns, spec: claim.spec },
           environmentObject as unknown as Environment | undefined,
@@ -596,7 +596,10 @@ export function ClusterView({
   };
   const openId = componentOf(component, cards);
   const openSection = sectionList.find((s) => s.id === openId);
-  const unread = unreadKinds({ errors, stale });
+  const unread = unreadKinds({
+    errors,
+    stale: !live && clusterStale ? [...stale, "CamundaCluster"] : stale,
+  });
   const requestsStale = unread.includes("PluginRequest");
   const context: ClusterSlotContext = {
     cluster: subject,
@@ -926,8 +929,9 @@ export function ClusterView({
   );
 }
 
-// WAIT_KINDS are the kinds of the lists that waitedRequests reads.
+// WAIT_KINDS are the kinds of the lists that ClusterWaiting reads.
 const WAIT_KINDS: readonly string[] = [
+  "CamundaCluster",
   "CamundaClusterClaim",
   "PluginSection",
   "PluginRequest",
