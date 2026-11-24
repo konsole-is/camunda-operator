@@ -41,3 +41,15 @@ test("the target check skips a control inside a closed details and counts its su
   expect(lines.filter((l) => l.includes('"replicas"'))).toEqual([]);
   expect(lines.filter((l) => l.includes('"Brokers"'))).toHaveLength(1);
 });
+
+test("the target check skips a control that a modal dialog hides behind it", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<div aria-hidden="true"><button style="width: 10px">Behind</button></div>' +
+      '<div role="dialog"><button style="font-size: 8px">Close</button></div>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"Behind"'))).toEqual([]);
+  expect(lines.filter((l) => l.includes('"Close"'))).toHaveLength(1);
+});

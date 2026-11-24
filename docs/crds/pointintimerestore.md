@@ -6,7 +6,7 @@ For an Elasticsearch cluster, use a [LogicalRestoreElasticsearch](logicalrestore
 
 One resource is one restore. The spec is immutable, and the restore runs once. To retry, create a new resource. `kubectl get pitr` lists the restores with their phase, cluster, and timestamp.
 
-You do not suspend the cluster first. The restore does it, as [Operations: Restore a cluster](../guides/operations.md#restore-a-cluster) describes. That section also holds what every restore kind shares: when the cluster starts again, one operation at a time, failed restores, and GitOps. This kind writes no version on the cluster.
+With `pitr.recovery: operator`, you do not suspend the cluster first. The restore does it, as [Operations: Restore a cluster](../guides/operations.md#restore-a-cluster) describes. That section also holds what every restore kind shares: when the cluster starts again, one operation at a time, failed restores, and GitOps. This kind writes no version on the cluster.
 
 The smallest restore names the cluster and the point:
 
@@ -39,7 +39,7 @@ graph LR
 
 | `pitr.recovery` | Who rolls the database back | What you do first |
 | --- | --- | --- |
-| `external` (default) | You, before you create the restore. | Roll the database back to the point. Then create the restore. |
+| `external` (default) | You, before you create the restore. | Suspend the cluster, so that it writes nothing more to the database. Roll the database back to the point. Then create the restore. |
 | `operator` | The producer of the contract, for example a [DatabaseServer](databaseserver.md), when the restore asks. | Nothing. Create the restore. |
 
 With `external`, the database must hold the state of `spec.timestamp` when you create the restore. On a self-hosted server, use the point-in-time recovery of PostgreSQL. On a managed service, use the point-in-time restore of the provider. If the provider creates a new instance, for example Amazon RDS, update `host` on the `DatabaseServerConfig` before you create the restore.

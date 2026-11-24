@@ -261,6 +261,8 @@ You do not suspend the cluster before a restore. The restore does it:
 - It puts a [suspension hold](../crds/camundacluster.md#suspension-holds) on the cluster and sets `spec.suspend: true`. The cluster stays suspended while the hold exists, whatever `spec.suspend` says.
 - A logical restore also sets `spec.version` to the Camunda version that the backup recorded. See [The version after a logical restore](#the-version-after-a-logical-restore).
 
+A [PointInTimeRestore](../crds/pointintimerestore.md#who-rolls-the-database-back) with `pitr.recovery: external` is the exception. Suspend the cluster before you roll the database back. A cluster that runs writes to the rolled-back database, and the restore then waits with `DatabaseNotRestored`.
+
 The restore waits in `Pending` until the brokers are stopped and the cluster carries that version. It erases nothing in `Pending`. Then it rebuilds the secondary storage (logical kinds only) and gives every broker a new data volume.
 
 A logical restore fails at once when the backup is more than one minor newer than the brokers. It leaves the cluster as it was. The [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) and [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md#a-backup-more-than-one-minor-newer-than-the-brokers) pages say what to do.

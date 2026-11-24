@@ -197,6 +197,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
       databaseServerConfigs: [],
       databaseServers: [],
       databaseServerPresets: [],
+      databases: [],
       schedules: [],
     },
     optimizes: [],
@@ -690,13 +691,24 @@ function pgPage(
           {
             host: "orders-pg-rw.team-a.svc",
             port: 5432,
+            adminCredentialsSecretRef: {
+              name: "pg-admin",
+              usernameKey: "username",
+              passwordKey: "password",
+            },
             pitr: {
               enabled: true,
               recovery: "operator",
               retentionPeriodDays: 30,
             },
           },
-          {},
+          {
+            systemIdentifier: "7300",
+            probedAt: "2026-10-11T00:00:00Z",
+            probedEndpoint: "orders-pg-rw.team-a.svc:5432",
+            probedSecretName: "pg-admin",
+            probedSecretKeys: "username/password",
+          },
           {
             ownerReferences: [
               {
@@ -738,6 +750,7 @@ function pgPage(
         ),
       ],
       databaseServerPresets: [],
+      databases: [],
       schedules: [],
     },
   });
@@ -856,6 +869,69 @@ describe("Backups tab", () => {
       "No restore point in this gap",
       "2026-10-11 00:00 UTC to now",
     ]);
+  });
+
+  // serverUseSeen renders the page of initial on the Backups tab and gives
+  // the server use that the backup actions slot gets.
+  const serverUseSeen = (initial: ClusterPageData) => {
+    let seen: ClusterSlotContext | undefined;
+    window.history.replaceState(null, "", "?tab=backups");
+    const ui = () =>
+      view({
+        initial,
+        slots: {
+          "cluster.backups.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      });
+    const page = render(ui());
+    const use = () =>
+      seen?.backupStorage.kind === "rdbms"
+        ? seen.backupStorage.database?.serverUse?.state
+        : undefined;
+    return { rerender: () => page.rerender(ui()), use };
+  };
+
+  it("the server use is unread while the first read of the Database resources failed, and follows the watch once it answers", () => {
+    live.stale = ["Database"];
+    const { rerender, use } = serverUseSeen({
+      ...pgPage(),
+      readErrors: [{ kind: "Database", message: "forbidden" }],
+    });
+    expect(use()).toBe("unread");
+    live.stale = [];
+    rerender();
+    expect(use()).toBe("unheld");
+  });
+
+  it("the server use is unread while the watch of the Database resources lost its connection", () => {
+    const { rerender, use } = serverUseSeen(pgPage());
+    expect(use()).toBe("unheld");
+    live.stale = ["Database"];
+    rerender();
+    expect(use()).toBe("unread");
+  });
+
+  it.each(["DatabaseConfig", "DatabaseServerConfig"])(
+    "the server use is unread while the watch of the %s resources lost its connection",
+    (kind) => {
+      const { rerender, use } = serverUseSeen(pgPage());
+      expect(use()).toBe("unheld");
+      live.stale = [kind];
+      rerender();
+      expect(use()).toBe("unread");
+    },
+  );
+
+  it("the server use is unread while the first read of the DatabaseServerConfig resources failed", () => {
+    live.stale = ["DatabaseServerConfig"];
+    const { use } = serverUseSeen({
+      ...pgPage(),
+      readErrors: [{ kind: "DatabaseServerConfig", message: "forbidden" }],
+    });
+    expect(use()).toBe("unread");
   });
 
   it("a cluster without backup storage says where a bucket comes from", () => {
@@ -1053,6 +1129,11 @@ describe("Backups tab", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("watches the Database resources of every namespace", () => {
+    render(view());
+    expect(live.calls).toContainEqual({ kind: "Database", opts: {} });
   });
 
   it("watches the DatabaseServerPresets of every namespace", () => {

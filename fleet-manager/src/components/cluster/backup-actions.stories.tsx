@@ -1,13 +1,26 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { ComponentProps } from "react";
-import { fn } from "storybook/test";
+import {
+  expect,
+  fireEvent,
+  fn,
+  userEvent,
+  waitFor,
+  within,
+} from "storybook/test";
 import type { WriteResult } from "@/lib/write/types";
 import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
 import type { BackupRow, BackupStorage } from "./backups";
 
 const STORAGE: Record<
-  "elasticsearch" | "rdbms" | "archived" | "none",
+  | "elasticsearch"
+  | "rdbms"
+  | "archived"
+  | "manual"
+  | "manualWithoutPitr"
+  | "manualShared"
+  | "none",
   BackupStorage
 > = {
   elasticsearch: {
@@ -27,6 +40,8 @@ const STORAGE: Record<
     kind: "rdbms",
     bucket: { name: "backups", location: "s3://acme-backups/orders" },
     database: {
+      serverConfig: "orders-db",
+      serverUse: { state: "dedicated" },
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -39,6 +54,39 @@ const STORAGE: Record<
           { from: "2026-11-08T02:00:00Z" },
         ],
       },
+    },
+    schedules: [],
+  },
+  manual: {
+    kind: "rdbms",
+    bucket: { name: "backups", location: "s3://acme-backups/orders" },
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
+      pitr: { enabled: true, recovery: "external", retentionDays: 3 },
+      serverUse: { state: "dedicated" },
+    },
+    schedules: [],
+  },
+  manualShared: {
+    kind: "rdbms",
+    bucket: { name: "backups", location: "s3://acme-backups/orders" },
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
+      pitr: { enabled: true, recovery: "external", retentionDays: 3 },
+      serverUse: { state: "shared", other: "team-b/payments-db" },
+    },
+    schedules: [],
+  },
+  manualWithoutPitr: {
+    kind: "rdbms",
+    bucket: { name: "backups", location: "s3://acme-backups/orders" },
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.abc123.eu-west-1.rds.amazonaws.com:5432",
+      pitr: { enabled: false, recovery: "external" },
+      serverUse: { state: "dedicated" },
     },
     schedules: [],
   },
@@ -146,4 +194,43 @@ export const RestoreOfABackupThatRecordedNoVersion: Story = {
 export const PointInTimeOnPostgreSQLWithRecoveryByTheOperator: Story = {
   name: "Point in time on PostgreSQL with recovery by the operator",
   args: { context: context("archived") },
+};
+
+export const PointInTimeAfterARollbackOutsideTheOperator: Story = {
+  name: "Point in time after a rollback outside the operator",
+  args: { context: context("manual") },
+  play: async ({ canvas, canvasElement }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Restore to a point in time" }),
+    );
+    // The dialog renders in a portal outside the canvas.
+    const dialog = within(canvasElement.ownerDocument.body).getByRole(
+      "dialog",
+      { name: "Restore orders to a point in time" },
+    );
+    fireEvent.change(within(dialog).getByLabelText("Time (UTC)"), {
+      target: { value: "2026-11-09T09:30:15" },
+    });
+    // The dialog fades in, so the checkbox is not visible at once.
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("checkbox", {
+          name: "I rolled the database server back to this time",
+        }),
+      ).toBeVisible(),
+    );
+    await expect(
+      within(dialog).queryByLabelText("Type orders to confirm"),
+    ).toBeNull();
+  },
+};
+
+export const PointInTimeOnAServerWithoutPointInTimeRecovery: Story = {
+  name: "Point in time on a server without point-in-time recovery",
+  args: { context: context("manualWithoutPitr") },
+};
+
+export const PointInTimeOnASharedServer: Story = {
+  name: "Point in time on a server that another database uses",
+  args: { context: context("manualShared") },
 };
