@@ -41,6 +41,8 @@ export {
   componentFieldPaths,
   fieldSchemaOf,
   fullSchemaOf,
+  SCHEMA_ROOT_NAMES,
   type SchemaGroup,
+  schemaRootOf,
 } from "./schema";
 export type { FieldSchema, SchemaRoot } from "@/generated/fieldschema";
