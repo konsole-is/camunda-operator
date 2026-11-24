@@ -892,6 +892,79 @@ describe("a take-over against the API server", () => {
     expect(management.identity.admin).toEqual({ username: "admin" });
     expect(shown).toEqual(after.spec);
     expect(owns(after, APP_FIELD_MANAGER, [], "Update")).toBe(false);
+
+    const moved = chosen.apply[0] as KubeObject & {
+      spec: typeof spec;
+    };
+    const next = updateOf("Move the Keycloak", after, {
+      ...moved,
+      spec: {
+        ...moved.spec,
+        management: {
+          ...moved.spec.management,
+          identityProvider: {
+            externalKeycloak: {
+              url: "https://keycloak.example.com/other",
+              adminCredentialsSecretRef: { name: "keycloak-admin" },
+            },
+          },
+          identity: {
+            externalUrl: "https://management.example.com/identity",
+            admin: { username: "root" },
+          },
+        },
+      },
+    });
+    const again = await previewPlaneClaimChange(next);
+    expect(again.ownership).toBeUndefined();
+    expect(again.errors).toEqual([]);
+  });
+
+  it("a change inside an atomic map that kubectl set conflicts without force and asks for the take-over", async () => {
+    const spec = (team: string) => ({
+      environments: [namespace],
+      clusterSelector: { matchLabels: { team } },
+      management: {
+        identityProvider: { oidc: {} },
+        identity: {
+          externalUrl: "https://management.example.com/identity",
+          admin: { claimName: "sub", claimValue: "42" },
+        },
+      },
+      versions: { identity: "8.9.14" },
+    });
+    const made: KubeObject = {
+      apiVersion: fleet,
+      kind: "CamundaManagementClusterClaim",
+      metadata: { name: unique("plane"), namespace },
+      spec: spec("a"),
+    };
+    await createClientSideApplied(api, made);
+    const live = await read(made);
+    expect(
+      owns(live, "kubectl-client-side-apply", ["f:spec", "f:clusterSelector"]),
+    ).toBe(true);
+    expect(
+      owns(live, "kubectl-client-side-apply", [
+        "f:spec",
+        "f:clusterSelector",
+        "f:matchLabels",
+      ]),
+    ).toBe(false);
+    const change = updateOf("Select team b", live, {
+      ...made,
+      spec: spec("b"),
+    });
+
+    const preview = await previewPlaneClaimChange(change);
+
+    expect(changedPaths(preview)).toEqual(["spec.clusterSelector"]);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Conflict",
+        manager: "kubectl-client-side-apply",
+      }),
+    ]);
   });
 
   it("the choice is not stored", async () => {
@@ -1196,7 +1269,7 @@ describe("a save of the platform config editor against the API server", () => {
     ).toBe(true);
   });
 
-  it("after the switch to basic, the API server takes the next change under spec.auth without force", async () => {
+  it("after the switch to basic, the next change under spec.auth needs no force and no take-over", async () => {
     const object = platformConfig(unique("platform"), {
       auth: { method: "oidc", oidc },
     });
@@ -1229,6 +1302,12 @@ describe("a save of the platform config editor against the API server", () => {
       contentType: "application/apply-patch+yaml",
     });
     expect(back.spec).toEqual({ auth: { method: "oidc", oidc } });
+
+    const next = await edit(object, (draft) => {
+      draft.auth = { method: "oidc", oidc };
+    });
+    expect(next.preview.ownership).toBeUndefined();
+    expect(next.preview.errors).toEqual([]);
   });
 });
 
