@@ -157,7 +157,7 @@ export function nameErrors(
   if (name === "") return error("Give the platform config a name.");
   if (!NAME_PATTERN.test(name) || name.length > NAME_MAX)
     return error(
-      "The name has only lowercase letters, digits, and hyphens, and at most 253 characters.",
+      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
     );
   if (taken.includes(name))
     return error("A platform config with this name exists.");

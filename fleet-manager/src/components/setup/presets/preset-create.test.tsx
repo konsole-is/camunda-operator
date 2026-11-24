@@ -380,7 +380,7 @@ describe("PresetCreate", () => {
     await u.type(nameField(), "team.a");
     expect(
       screen.getAllByText(
-        "The name has only lowercase letters, digits, and hyphens, and at most 253 characters.",
+        "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
       ).length,
     ).toBeGreaterThan(0);
     expect(reviewButton().disabled).toBe(true);
