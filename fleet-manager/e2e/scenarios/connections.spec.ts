@@ -91,3 +91,52 @@ test("saves a change of a contract created by hand after the take-over of its fi
     saved.metadata.managedFields?.some((f) => f.manager === "fleet-manager"),
   ).toBe(true);
 });
+
+test("New object storage contract creates a contract by hand", async ({
+  page,
+  scenario,
+}) => {
+  await page.goto("/setup/connections?tab=object-storage");
+  await page
+    .getByRole("link", { name: "New object storage contract" })
+    .click();
+  await expect(page).toHaveURL(
+    /\/setup\/new-connection-contract\?tab=object-storage$/,
+  );
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "New object storage contract",
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("archive");
+  await page.getByLabel("Namespace", { exact: true }).selectOption("team-a");
+  await page.getByLabel("Bucket name").fill("acme-archive");
+  await page.getByLabel("Region").fill("eu-west-1");
+  await page.getByRole("button", { name: "Review" }).click();
+  const create = page.getByRole("button", { name: "Create" });
+  await expect(create).toBeEnabled();
+  await checkPage(page, "connection-create-review");
+  await create.click();
+  await expect(page).toHaveURL(
+    /\/setup\/connections\/object-storage\/team-a\/archive$/,
+  );
+  await expect(
+    page.getByRole("region", { name: "Writer" }).getByText("Created by hand"),
+  ).toBeVisible();
+
+  const created = await kubeRequest<ObjectStorageConfig>(
+    scenario.admin,
+    "GET",
+    "/apis/core.camunda.io/v1/namespaces/team-a/objectstorageconfigs/archive",
+  );
+  expect(created.metadata.labels).toBeUndefined();
+  expect(created.spec).toEqual({
+    type: "S3",
+    s3: {
+      bucketName: "acme-archive",
+      region: "eu-west-1",
+      auth: { type: "workloadIdentity" },
+    },
+  });
+});
