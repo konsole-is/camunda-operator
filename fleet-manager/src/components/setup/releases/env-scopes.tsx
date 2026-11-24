@@ -28,17 +28,20 @@ const EXTRA_ENV_FROM = fullSchemaOf("extraEnvFrom");
  * applies the edit to a spec, and the errors of every editor. While the
  * YAML of a scope has an error, the function keeps its extraEnvFrom. An
  * error path starts with the scope and the list, such as
- * "zeebe.extraEnv.0.name".
+ * "zeebe.extraEnv.0.name". otherSourceReason is the lock reason of a
+ * variable that EnvEditor cannot change.
  */
 export function EnvScopes<S extends EnvSpec>({
   spec,
   secrets,
   missingIn,
+  otherSourceReason,
   onChange,
 }: {
   spec: S;
   secrets: SecretRefs;
   missingIn: (name: string, key: string) => readonly string[];
+  otherSourceReason?: string;
   onChange: (update: (spec: S) => S, errors: ValidationError[]) => void;
 }): ReactNode {
   const [open, setOpen] = useState<ReadonlySet<EnvScope>>(
@@ -97,6 +100,7 @@ export function EnvScopes<S extends EnvSpec>({
               label={`Variables of ${label}`}
               secrets={secrets}
               missingIn={missingIn}
+              otherSourceReason={otherSourceReason}
               defaultValue={env.extraEnv}
               onChange={(extraEnv, listErrors) =>
                 report(scope, "extraEnv", { extraEnv }, listErrors)

@@ -2,9 +2,9 @@
 // Run make fleet-generate to update it.
 
 /**
- * FieldSchema is the type of one field of a CamundaClusterClaim, from its
- * CRD schema. intOrString marks a field that takes an integer or a string,
- * such as a quantity. items is the type of the items of a list.
+ * FieldSchema is the type of one field, from its CRD schema. intOrString
+ * marks a field that takes an integer or a string, such as a quantity. items
+ * is the type of the items of a list.
  */
 export interface FieldSchema {
   type?: "string" | "integer" | "number" | "boolean" | "object" | "array";
@@ -16,8 +16,12 @@ export interface FieldSchema {
   items?: FieldSchema;
 }
 
-/** SchemaRoot is the part of a CamundaClusterClaim that holds a field: spec.cluster or spec.attachments.optimize. */
-export type SchemaRoot = "cluster" | "optimize";
+/**
+ * SchemaRoot is the part of an object that holds a field: spec.cluster or
+ * spec.attachments.optimize of a CamundaClusterClaim, spec.cluster of an
+ * ElasticsearchClusterPreset, or spec.server of a DatabaseServerPreset.
+ */
+export type SchemaRoot = "cluster" | "optimize" | "elasticsearch" | "databaseServer";
 
 /**
  * FieldSchemas holds the FieldSchema of each field path under each root. A
@@ -595,6 +599,222 @@ export const fieldSchemas: FieldSchemas = {
     },
     "zeebe.storageSize": {
       "intOrString": true
+    }
+  },
+  "databaseServer": {
+    "archive": {
+      "type": "object"
+    },
+    "archive.baseBackupSchedule": {
+      "type": "string"
+    },
+    "archive.objectStorageRef": {
+      "type": "string"
+    },
+    "archive.retentionPeriodDays": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 36500,
+      "format": "int32"
+    },
+    "databaseServerConfig": {
+      "type": "string"
+    },
+    "instances": {
+      "type": "integer",
+      "minimum": 1,
+      "format": "int32"
+    },
+    "monitoring": {
+      "type": "object"
+    },
+    "monitoring.podMonitor": {
+      "type": "object"
+    },
+    "monitoring.podMonitor.annotations": {
+      "type": "object"
+    },
+    "monitoring.podMonitor.enabled": {
+      "type": "boolean"
+    },
+    "monitoring.podMonitor.interval": {
+      "type": "string"
+    },
+    "monitoring.podMonitor.labels": {
+      "type": "object"
+    },
+    "platformConfigRef": {
+      "type": "string"
+    },
+    "podAnnotations": {
+      "type": "object"
+    },
+    "podLabels": {
+      "type": "object"
+    },
+    "presetRef": {
+      "type": "string"
+    },
+    "releaseRef": {
+      "type": "string"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "scheduling": {
+      "type": "object"
+    },
+    "scheduling.nodeAffinity": {
+      "type": "object"
+    },
+    "scheduling.podAffinity": {
+      "type": "object"
+    },
+    "scheduling.tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "serviceAccount": {
+      "type": "object"
+    },
+    "serviceAccount.annotations": {
+      "type": "object"
+    },
+    "storageClassName": {
+      "type": "string"
+    },
+    "storageSize": {
+      "intOrString": true
+    },
+    "suspend": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "string"
+    },
+    "walStorageSize": {
+      "intOrString": true
+    }
+  },
+  "elasticsearch": {
+    "extraEnv": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "extraEnvFrom": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "monitoring": {
+      "type": "object"
+    },
+    "monitoring.exporter": {
+      "type": "object"
+    },
+    "monitoring.exporter.image": {
+      "type": "string"
+    },
+    "monitoring.exporter.resources": {
+      "type": "object"
+    },
+    "monitoring.serviceMonitor": {
+      "type": "object"
+    },
+    "monitoring.serviceMonitor.annotations": {
+      "type": "object"
+    },
+    "monitoring.serviceMonitor.enabled": {
+      "type": "boolean"
+    },
+    "monitoring.serviceMonitor.labels": {
+      "type": "object"
+    },
+    "persistentVolumeClaimRetentionPolicy": {
+      "type": "object"
+    },
+    "persistentVolumeClaimRetentionPolicy.whenDeleted": {
+      "type": "string",
+      "enum": [
+        "Retain",
+        "Delete"
+      ]
+    },
+    "podAnnotations": {
+      "type": "object"
+    },
+    "podLabels": {
+      "type": "object"
+    },
+    "presetRef": {
+      "type": "string"
+    },
+    "releaseRef": {
+      "type": "string"
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 1,
+      "format": "int32"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "scheduling": {
+      "type": "object"
+    },
+    "scheduling.nodeAffinity": {
+      "type": "object"
+    },
+    "scheduling.podAffinity": {
+      "type": "object"
+    },
+    "scheduling.tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "secondaryStorageConfig": {
+      "type": "string"
+    },
+    "secureSettings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "serviceAccount": {
+      "type": "object"
+    },
+    "serviceAccount.annotations": {
+      "type": "object"
+    },
+    "serviceAccount.create": {
+      "type": "boolean"
+    },
+    "serviceAccount.name": {
+      "type": "string"
+    },
+    "snapshotStorageRef": {
+      "type": "string"
+    },
+    "storageClassName": {
+      "type": "string"
+    },
+    "storageSize": {
+      "intOrString": true
+    },
+    "suspend": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "string"
     }
   },
   "optimize": {
