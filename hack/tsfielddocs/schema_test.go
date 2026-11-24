@@ -241,7 +241,8 @@ func TestBuildSchemasDescribesTheFieldsOfEachRoot(t *testing.T) {
 	elasticsearch := set.Fields["elasticsearch"]
 	assert.Equal(t, fieldSchema{Type: "integer", Format: "int32", Minimum: new(1.0)}, elasticsearch["replicas"])
 	assert.Equal(t, fieldSchema{IntOrString: true}, elasticsearch["storageSize"])
-	assert.Equal(t, []string{"Retain", "Delete"}, elasticsearch["persistentVolumeClaimRetentionPolicy.whenDeleted"].Enum)
+	whenDeleted := elasticsearch["persistentVolumeClaimRetentionPolicy.whenDeleted"]
+	assert.Equal(t, []string{"Retain", "Delete"}, whenDeleted.Enum)
 	assert.Contains(t, elasticsearch, "monitoring.serviceMonitor.enabled")
 	assert.Contains(t, elasticsearch, "resources")
 	assert.NotContains(t, elasticsearch, "resources.requests")
