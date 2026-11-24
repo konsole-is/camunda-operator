@@ -1,35 +1,33 @@
 # Change a cluster
 
-The cluster page of the fleet manager changes a cluster through its `CamundaClusterClaim`. Each change edits the claim. The fleet manager does not write the `CamundaCluster` itself. A cluster that no claim made shows **Not managed** and has no editors.
+You change a cluster on its [cluster page](cluster-page.md). Each change goes into the [claim](install.md#what-the-fleet-manager-writes) of the cluster, and the operator then changes the cluster. A cluster that shows **Not managed** has no editors.
+
+Your changes collect as unsaved changes until you save them, as [Save or discard the changes](#save-or-discard-the-changes) shows.
 
 ## Change the settings of a component
 
-Open the cluster page, then select the card of a component on the **Overview** tab. The **Settings** tab of the component shows each field with its value and where the value comes from. Below the table, the button **Edit settings** opens one editor for each field.
+1. Open the cluster page, and select the card of a component on the **Overview** tab, for example **Brokers**.
+2. Open the **Settings** tab. It shows each setting with its value and where the value comes from.
+3. Select **Edit settings**.
+4. Change the values.
 
-A component also offers the fields that neither the preset nor the claim sets, for example `replicas` of Tasklist. The type of each field decides its editor:
+Each editor fits its setting. For example, `replicas` is a number, `resources` is a request and a limit, and `podLabels` has one row for each key. A list such as `scheduling.nodeAffinity` is YAML, checked against the schema of the field. **From a Secret** lists the Secrets of the namespace by name, never their values.
 
-| Field | Editor |
+### Where a value comes from
+
+Below each editor, the page says where the value comes from, for example **From preset** or **Changed in the claim**. **Reset to preset** removes your value, so the value of the preset applies again.
+
+Some settings show their value and a reason, with no editor:
+
+| Reason | What to change |
 | --- | --- |
-| A string, such as `storageClassName` of the brokers | A text input. |
-| A number, such as `replicas` | A number input. A value outside the range of the field shows an error. |
-| `true` or `false`, such as `enabled` | A checkbox. |
-| A field with a fixed list of values, such as `mode` | A list of the values, and **Not set**. |
-| `resources` | The CPU and the memory, each as a request and a limit with a unit. |
-| `storageSize` | An amount and a unit. |
-| `extraEnv` | One row for each variable: a name, then a value or **From a Secret**. |
-| `podLabels`, `podAnnotations`, and the other maps | One row for each key and value. A label needs a key and a value that Kubernetes accepts as a label. An annotation needs a key that Kubernetes accepts, such as `example.com/note`. Upper case letters are allowed in an annotation key. A row that you type or change must follow these rules. |
-| `scheduling.tolerations` | One row for each toleration. |
-| `scheduling.nodeAffinity`, `scheduling.podAffinity`, `extraEnvFrom`, and the other lists | YAML, checked against the schema of the field. |
+| Filled by *choice*, for example **Filled by Volume encryption** | The option of that choice sets the value. Change the parameters of the option on the **Claim** tab. |
+| Set by the release | Pick another release. |
+| Fixed by the claim controller | The operator sets the value. You cannot change it. |
 
-A value that the editor of its field cannot keep as it is opens in YAML. Examples are a toleration with a field that the rows do not show and a variable with both a value and a Secret key.
+### What a change writes
 
-**From a Secret** shows the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.
-
-The preset and the release can add their own `extraEnvFrom` sources. In the pods, these sources come before the sources of the claim. For this reason, the editor of `extraEnvFrom` shows only the sources of the claim. It also shows how many sources the preset and the release add.
-
-## What a change writes
-
-A change of a field writes the field at its path in `spec.cluster` of the claim. The block of the component comes first in the path, for example `spec.cluster.zeebe.replicas` for the replicas of the brokers. When you set `replicas` of Tasklist to 2, the claim gets this value:
+A change writes the setting in `spec.cluster` of the claim. The settings of Optimize go into `spec.attachments.optimize`. When you set `replicas` of Tasklist to 2, the claim gets:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -44,184 +42,74 @@ spec:
   # ... the rest of your claim
 ```
 
-The settings of Optimize go into `spec.attachments.optimize` of the claim.
+A setting that you leave as it is stays out of the claim, so the preset decides it. One exception is a block such as `scheduling`: a change of one part writes the whole block into the claim. The other parts keep their values, but they no longer follow the preset.
 
-The preset can set a block such as `scheduling` as one value. A claim value of the block then replaces the whole block of the preset. For this reason, a change of one part writes the whole block into the claim, with the other parts as the preset sets them. For example, the preset sets `scheduling.nodeAffinity`, and you add a toleration. The claim then gets `scheduling` with the node affinity of the preset and your toleration.
+A volume cannot become smaller. A smaller `storageSize` keeps the current size of the volumes.
 
-When you empty a field, for example when you remove the last label, the claim no longer sets the field. The value of the preset then applies again.
+### Embedded apps
+
+Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. Their settings, such as Tasklist `replicas`, apply only when they run standalone, except `extraEnv` and `extraEnvFrom`.
 
 ## Change the topology
 
-The topology of a cluster shows where each process runs. The **Topology** panel on the **Overview** tab of the cluster page draws it. On a cluster that a claim made, the panel has the button **Change topology**.
-
-**Change topology** opens a dialog with a choice for the gateway, Operate, Tasklist, and Admin:
+The **Topology** panel on the **Overview** tab shows where each process runs. **Change topology** opens a choice for the gateway, Operate, Tasklist, and Admin:
 
 - **Standalone**: the process gets its own Deployment and Service.
 - **Embedded**: the gateway runs in the brokers. Operate, Tasklist, and Admin run in the gateway, or in the brokers when the gateway is embedded too.
 
-The brokers and Connectors have no choice. The dialog changes only where the processes run. The number of brokers is `replicas`, and the number of partitions is `partitions`. Both are fields of the **Settings** tab of the brokers, as [Change the settings of a component](#change-the-settings-of-a-component) shows.
-
-A pick writes `mode` in the block of the process, for example `spec.cluster.operate.mode`:
-
-```yaml
-apiVersion: fleet.camunda.io/v1alpha1
-kind: CamundaClusterClaim
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  cluster:
-    operate:
-      mode: Standalone
-  # ... the rest of your claim
-```
-
-If the claim does not set the mode, a pick of the current mode writes nothing. To undo a pick before you save, pick the mode that the process had before. Then the pick leaves nothing to save. **Discard** on the bar removes every unsaved change. To undo a saved change, pick the other mode and save again. The claim then keeps `mode` with that value.
-
-Below the choices, the dialog shows the topology **Now** and **After the change**. The list **What happens** names what the change creates, removes, and restarts. When Operate of `my-cluster` becomes standalone, the list is:
+The dialog shows the topology **Now** and **After the change**. The list **What happens** names what the change creates, removes, and restarts. When Operate of `my-cluster` becomes standalone, the list is:
 
 - Creates Deployment my-cluster-operate and Service my-cluster-operate.
 - Operate starts from the workload settings of the preset: replicas, CPU, and memory.
 - Gateway pods restart.
 
-When the claim already holds settings for Operate, the second line is "Operate starts with the settings prepared in the claim (*n* fields)." [Embedded apps](#embedded-apps) shows how to prepare them. When Operate goes back into the gateway, the list says "Removes Deployment my-cluster-operate and Service my-cluster-operate. Operate runs in the gateway, which restarts." When the gateway goes into the brokers, the list says "Removes Deployment my-cluster-gateway and Service my-cluster-gateway. Gateway runs in the brokers, which restarts."
-
-The list covers every unsaved change of the cluster, not only the picks of the dialog. The dialog then says "These lines include the other pending changes of this cluster."
-
-A mode that you cannot change shows its value and the reason, with no choice. The table in [The state of a field](#the-state-of-a-field) gives each reason and where to change the value.
-
-Each pick is an unsaved change. When you close the dialog, the picks stay, and the bar at the bottom of the page counts them. **Review** in the dialog opens the review of every unsaved change, as [Save or discard the changes](#save-or-discard-the-changes) shows. When the page blocks the review, for example while an editor shows an error, the dialog stays open. It says "Review is blocked. The change bar says why."
+The number of brokers and partitions is on the **Settings** tab of the brokers, not in this dialog.
 
 ### A running backup
 
-A change that restarts the brokers, or that changes the Camunda version, can make a running backup of the cluster fail. A mode change of the gateway restarts the brokers, because the gateway moves into or out of them. A running backup does not stop the change. The review warns before you save, for example:
+A change that restarts the brokers can make a running backup fail. A change of the Camunda version or of the gateway mode restarts the brokers. The review then warns, and the save button reads **Change anyway**, or **Push anyway** in Git mode:
 
 > CAUTION: Wait until backup my-cluster-manual-1 finishes. This change can restart the brokers, which can fail a running backup.
 
-The confirm button is then **Change anyway**, or **Push anyway** in Git mode, in place of **Save** or **Push to Git**. The caution has a link to the **Backups** tab. In Git mode, the caution adds that a backup that runs when GitOps applies the change can fail. A backup that starts after the change waits until the rollout is done.
-
-A change that does not restart the brokers shows no caution. The review then adds the line "Backup my-cluster-manual-1 is running. This change does not roll the brokers, so it does not affect the backup." A change of Operate, Tasklist, or Admin between the gateway and standalone is such a change. [Back up and restore a cluster](backups.md) describes the backups.
-
 ## Change the claim in the Claim tab
 
-The **Claim** tab shows the choices for the whole cluster in panels. Each panel that you can change has an **Edit** button. One panel is open at a time. **Done** closes the panel and keeps its changes as unsaved changes.
+The **Claim** tab shows the choices for the whole cluster in panels. Select **Edit** on a panel, make the change, and select **Done**.
 
-**Basics** shows the name, the namespace, and the environment as **Set at creation**. You cannot change them. **Suspend the cluster** sets `spec.suspend` of the claim. Then every workload goes to zero, and the volumes stay.
+**Basics** shows the name, the namespace, and the environment. You cannot change them. **Suspend the cluster** stops every workload of the cluster and keeps the volumes.
 
 **Release and preset** has three lists:
 
-- **Release** lists the releases that the environment allows, newest first. The default release of the environment has the word **Default**. The current release stays in the list also when the environment no longer allows it.
-- **Preset** lists the presets that the environment allows. The review of a new preset shows each field of the cluster that changes.
-- **Platform config** lists the `CamundaPlatformConfig` objects. The first choice removes `platformConfigRef` from the claim, so that the platform config of the environment applies. Its name is **Default of the environment** when the environment names one.
+- **Release** lists the releases that the environment allows, newest first.
+- **Preset** lists the presets that the environment allows. The review shows each setting that the new preset changes.
+- **Platform config** lists the platform configs. **Default of the environment** uses the one of the environment.
 
-The fleet manager checks a new release against the version that the cluster runs:
+The **Release** list marks a release that you cannot move to yet:
 
 | The list shows | What it means |
 | --- | --- |
-| Skips 8.*n*. Move to an 8.*n* release first. | The release is one minor too far. Move to a release of the minor between them first. |
-| downgrade | The release has a lower version. The review asks you to confirm the downgrade with **Downgrade**, or **Push downgrade** in Git mode. |
-| The version checks run when the cluster resumes. | The cluster is suspended, so it reports no version. No release shows as a downgrade or a skip. |
-| The version checks run when the cluster reports its version. | The cluster reports no version yet, or a version that is not of the form `8.9.4`. |
+| Skips 8.*n*. Move to an 8.*n* release first. | The release is more than one minor ahead. Move to a release of the minor between them first. |
+| downgrade | The release has a lower version. The review asks you to confirm the downgrade. |
 
-A downgrade writes the release and `allowVersionDowngrade` with the target version:
+After a downgrade, the panel offers **Clear** to remove the downgrade approval from the claim. [Downgrade on purpose](../crds/camundacluster.md#downgrade-on-purpose) tells when a downgrade is safe.
 
-```yaml
-apiVersion: fleet.camunda.io/v1alpha1
-kind: CamundaClusterClaim
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  releaseRef: camunda-8-9-1
-  allowVersionDowngrade: "8.9.1"
-  # ... the rest of your claim
-```
-
-The operator removes the annotation `camunda.io/allow-version-downgrade` from the `CamundaCluster` when the downgrade is complete. After that, the next save also removes `allowVersionDowngrade` from the claim. The review shows this removal as a line of the change. With no other unsaved change, the panel shows **Clear**, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.
-
-Each storage and access option has its own panel. The option shows **Chosen at creation**, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. The schema of the parameter in the `PluginRegistration` decides its editor, also when the parameter has the name of a cluster field. For example, a `storageSize` string is a text input, and a `tolerations` list is YAML. Only the parts of `overrides` get the editor of a field of the same name, such as an amount and a unit for `overrides.storageSize`. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in `spec.plugins` of the claim. When you remove the last row of a map, the claim no longer sets the parameter, and the value of the environment applies again.
-
-To replace that value with no entries, use an empty map. A map that has a value when the editor opens shows **Set to an empty map** while it has no rows. Select it, and the editor shows **Empty map, overrides the inherited value**. The claim then sets the parameter to `{}`:
-
-```yaml
-apiVersion: fleet.camunda.io/v1alpha1
-kind: CamundaClusterClaim
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  plugins:
-    - section: backup-storage
-      registration: rustfs
-      parameters:
-        labels: {}
-  # ... the rest of your claim
-```
-
-Next to the empty map, **Use the inherited value** removes `{}` from the claim. The value of the environment then applies again.
+Each storage and access option has its own panel. You cannot change the option after creation. You can change each parameter that the environment lets a cluster change.
 
 **Attachments** has two parts:
 
-- **Attach Optimize** adds `spec.attachments.optimize` with the first `ManagementAuthConfig` by name. Then you can pick another **ManagementAuthConfig** and enter the **External URL**. The URL shows **Filled by Access** when an access option gives it. **Open Optimize** opens Optimize on the **Overview** tab. Its **Settings** tab holds the other settings of Optimize. Optimize needs Elasticsearch as secondary storage and a `ManagementAuthConfig`. Without them, the checkbox is disabled and says which one is missing.
-- **Back up on a schedule** adds `spec.attachments.backupSchedule` with the cron `0 2 * * *`. Then you can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**. **Completed backups to keep** is 1 or more, and **Failed backups to keep** is 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.
+- **Attach Optimize** adds Optimize. Pick the **ManagementAuthConfig**, and enter the **External URL** when no access option fills it. **Open Optimize** opens its page, where its **Settings** tab holds its other settings.
+- **Back up on a schedule** adds a schedule with the cron `0 2 * * *`. You can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**.
 
-**Change schedule** on the **Backups** tab opens the **Attachments** panel.
-
-**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**. When the registration of an option does not exist, **Keep the resources** is disabled too. The option then shows with **Registration does not exist**.
+**Deletion policy** says if the resources of the storage and access options stay when the cluster is deleted: **Keep the resources** or **Delete the resources**. When an option always deletes what it made, the panel shows it with **Always deleted**, and **Keep the resources** is off.
 
 ## Save or discard the changes
 
-The bar at the bottom of the page shows the number of unsaved changes, with **Discard** and **Review**:
+The bar at the bottom of the page counts your unsaved changes:
 
-1. Select **Review** to see the change of the claim.
-2. Select **Save** to write the claim. In Git mode, the button is **Push to Git**.
+1. Select **Review** to see the change of the claim and what it does.
+2. Select **Save**. In Git mode, the button is **Push to Git**.
 
-**Discard** removes every unsaved change. The editors then show the live values again.
+**Discard** removes every unsaved change.
 
-A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Closing the editor does not clear an error of the merged value, which the next paragraphs describe. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
+While an editor shows an error, **Review** is off, and the bar names the setting and the error. Correct the value, or reset it. The most common error is a CPU or memory limit below its request, as [Errors in the settings](create-a-cluster.md#errors-in-the-settings) shows.
 
-Requests and limits merge key by key, so a request or a limit that you leave empty keeps the value of the preset. When a limit is then below its request, the editor shows an error that names the preset. An example is `The CPU limit of 1 comes from the preset and is below the CPU request of 2`. When the preset alone gives a limit below its request, the error names the preset for both values as soon as the editor opens.
-
-While the error shows, also before you change anything, **Review** is disabled. The bar names the setting and the error, also when its editor is closed. Set a limit that is not below the request, or a lower request.
-
-For an embedded process, such as Tasklist, or for Connectors that are off, the error shows as a warning and does not disable **Review**. Correct it before the process runs on its own, because its resources apply only then.
-
-An edit of a CPU or memory amount changes only that amount in the claim. Each other amount keeps its value from the claim or from the preset. When you type the amount that the saved claim sets, the amount is no longer a change. When the saved claim does not set the amount, the same is true for the amount of the preset.
-
-The bar counts each changed amount as one unsaved change. After **Reset to preset** of the setting, the reset and the amounts that you change after it count together as one change. An amount that you then set to the value of the preset stays on the preset.
-
-A resource such as `ephemeral-storage` has no field in the editor. When the claim sets a value for such a resource, **Reset to preset** removes it from the claim. The reset also removes the other amounts that the claim sets in the same setting. When a value comes from the preset, pick another preset, or ask your admin to correct the preset.
-
-Labels, annotations, and environment variables merge key by key or name by name. The claim cannot remove an entry of the preset. When the preset holds an entry that the editor does not accept, the editor shows an error. The error names the entry and where it comes from, such as the preset. **Review** is then disabled. Examples are a label key that is not valid, such as `bad key`, and a variable without a name. The error stays when you remove the row. Pick another preset, or ask your admin to correct the preset or the release. When only the value of a label is not valid, you can also type a valid value in its row. The claim then sets the value for that key. Some entries reach no object now. Examples are the labels and annotations of an embedded process or of a ServiceMonitor that is off. The annotations of a ServiceAccount whose `create` is `false` are another example. For such an entry that the preset or the claim already holds, the error shows as a warning. The same is true for the labels, annotations, and variables of Connectors that are off. When the labels, annotations, or variables reach an object, the error of an entry that the claim already holds turns **Review** off. This is also true while its editor is closed. The settings of Optimize show no such warning. Their editor checks a row of a ServiceMonitor that is off only after you change the row. The variables of an embedded process apply to its host, so their error disables **Review**.
-
-**Review** checks the topology after your unsaved changes too. When **Change topology** makes an embedded process run on its own, an error of its resources, labels, or annotations disables **Review**. This is also true when its card is not open.
-
-## A claim made outside the fleet manager
-
-You can change a claim that you made with `kubectl apply` or a GitOps tool. In direct mode, the review names each field of the claim that the other tool set and that the save changes or removes. It asks you to take these fields over. Without the choice, a changed field stops the save, and a removed field stays on the claim. With the choice, a removed field that has a default gets its default value again, and the review names that value. The diff of the review shows the claim as the save leaves it, so a field that stays shows no change. The review also checks the values that the cluster gets from that claim. A field that stays keeps the value of the other tool. When that value makes a limit go below its request, the review shows the error, and **Save** stays off. For example, you clear a CPU request of 2 that the other tool set, and you set the CPU limit to 1. The save keeps the request of 2, so the review shows the error. Go back and change the edit, or take the fields over. In Git mode, the review offers no take-over. It checks the claim that the dry run of the push leaves. A field that another tool keeps stays in that claim, and the review names it, so the same error stops **Push to Git**. An earlier save of the fleet manager can set a field that the first sync of your GitOps tool keeps. Before that first sync, the dry run cannot show such a field. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what a take-over does, and what `kubectl apply` does after it.
-
-## The state of a field
-
-Below each editor, the page says where the value comes from, for example **From preset** or **Changed in the claim**. A field that the claim sets has the link **Reset to preset**. The link removes the value from the claim, so that the value of the preset applies again. The reset is an unsaved change, as each other change is.
-
-When the claim sets a block such as `scheduling` as one value, each field of the block has the link **Reset scheduling to preset**. This link removes the whole block from the claim. Every `scheduling` field of the claim then goes back to the preset, also `scheduling.nodeAffinity`.
-
-A field that you cannot change shows its value and the reason, with no editor:
-
-| Reason | What sets the field |
-| --- | --- |
-| Filled by *section* | A selection of that section, for example **Filled by Volume encryption** for `storageClassName` of the brokers. Change the selection of the section in the claim. |
-| Set by the release | The `CamundaRelease` of the claim, such as `version`. Change the release of the claim. |
-| Fixed by the claim controller | The operator, such as `serviceAccount.name`. |
-
-## Embedded apps
-
-Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. When the gateway `mode` is `Embedded`, the gateway and these apps run inside the brokers. The **Settings** tab of the host shows the fields of each app that runs inside it, below the fields of the host. A note above them says that these fields apply only when the app runs standalone. The note also names the two exceptions, `extraEnv` and `extraEnvFrom`.
-
-A change of an embedded app writes to the block of the app, for example `spec.cluster.tasklist` for Tasklist. While the app runs inside its host, these values have no effect, except `extraEnv` and `extraEnvFrom`. When the `mode` of the app changes to `Standalone`, the app starts with them. You can prepare the settings of an app before it runs standalone.
-
-The `extraEnv` and `extraEnvFrom` of an embedded app apply to its host. For example, an `extraEnv` variable of an embedded Tasklist goes to the pods of the gateway. When the gateway is embedded too, it goes to the brokers.
-
-## Storage size
-
-A volume cannot become smaller. When you enter a `storageSize` below the current size, the editor shows "Volumes cannot shrink. The operator keeps the current size." The claim gets the value, and the volumes keep their current size.
+If another tool, such as `kubectl apply`, set a field that your change touches, the review asks before it takes the field over. [Fields that another tool set](settings.md#fields-that-another-tool-set) says what that means.

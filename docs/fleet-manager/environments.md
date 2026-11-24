@@ -1,16 +1,12 @@
 # Environments
 
-An environment holds the policy for the claims in its namespaces. A claim asks for a Camunda cluster or a management plane. The policy names the platform config, the presets, and the releases that a claim can use. It sets the options that a claim can pick in each section, and the values of their parameters. It also sets the deletion default and the rules for a new namespace. The page **Setup > Environments** of the fleet manager lists the environments and edits each one. The [Environment](../crds/environment.md) reference lists the fields.
+An environment sets the rules for the clusters and management planes in its namespaces. It names the platform config, the presets, and the releases that they can use. It sets the storage and access options that they can pick, and the values of the parameters of these options. It also sets what happens to the resources on delete, and the rules for a new namespace. The [Environment](../crds/environment.md) reference lists the fields.
 
-The list shows each environment with its color, the number of its namespaces, its clusters, its management planes, and its status. Select an environment to open its editor. Select **New environment** to create one.
+The page **Setup > Environments** lists the environments with their color, their namespaces, their clusters, their management planes, and their status. Select an environment to open its editor, or select **New environment**.
 
-A count shows `Not known` while the fleet manager has no current list of the objects that it counts. A failed read shows `Could not read <kind>: <message>` at the top of the page. A list that is out of date shows `Not known: the fleet manager has no current list of <kind>.`
+## Namespaces
 
-If the fleet manager cannot read its settings, the editor shows `Changes are off: the fleet manager could not read its settings.` and accepts no change. Reload the page when the settings can be read again.
-
-## Membership
-
-A namespace belongs to the environment that its label `fleet.camunda.io/environment` names. A namespace belongs to one environment at most.
+A namespace belongs to the environment that its label `fleet.camunda.io/environment` names:
 
 ```yaml
 apiVersion: v1
@@ -21,20 +17,14 @@ metadata:
     fleet.camunda.io/environment: production
 ```
 
-In the editor, the section **Namespaces** lists the namespaces of the environment and their claims. To add a namespace, pick it in **Add a namespace** and select **Add**. The list offers only namespaces without an environment label. The review shows the label change, and **Add the namespace** writes it. The review also names each claim of the namespace that names no release or no platform config. Such a claim moves to the default of the environment.
+To add a namespace, pick it in **Add a namespace** and select **Add**. Then confirm with **Add the namespace**. The list offers only namespaces without an environment. A new environment has no namespaces yet, so save it first. The label goes straight to the Kubernetes API, also in Git mode.
 
-The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.
-
-When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist. The banner does not show while the fleet manager has no current list of the environments, the namespaces, the claims, or the clusters.
-
-| Reason in the banner | Meaning | What to do |
-| --- | --- | --- |
-| `NoEnvironment` | The namespace has no label `fleet.camunda.io/environment`. Its claims take no change. | Add the namespace to an environment. |
-| `UnknownEnvironment` | The label names an environment that does not exist. Its claims take no change. | Create that environment, or change the label. |
+!!! warning "A namespace without an environment"
+    Once one environment exists, the operator refuses each claim in a namespace without the label. A new cluster there is not created, and an existing cluster takes no change. The list of environments shows a banner with each such namespace. Add the namespace to an environment.
 
 ## Platform config, presets, and releases
 
-The sections **Platform config**, **Presets**, and **Releases** of the editor set these fields:
+The parts **Platform config**, **Presets**, and **Releases** of the editor set these fields:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -59,15 +49,13 @@ spec:
   # ... the rest of your environment
 ```
 
-A claim can use only the presets and the releases that the environment allows. The Elasticsearch presets and the PostgreSQL presets are the presets of the built-in Elasticsearch and PostgreSQL options of a claim. An empty list allows none, and the page says so under the list. The default release is one of the allowed releases. The page refuses a save with another default, and it shows `The default release must be one of the allowed releases.`
+A cluster can use only the presets and the releases that its environment allows. The Elasticsearch and PostgreSQL presets are for the built-in options **New Elasticsearch cluster** and **New PostgreSQL server**. An empty list allows none. The default release must be one of the allowed releases.
 
-A claim that names no release uses the default release. A claim that names no platform config uses the platform config of the environment. These two defaults are not part of the recorded policy of a claim (see [Changes apply to new claims only](#changes-apply-to-new-claims-only)). So a change of either default moves such a claim to the new value.
+A cluster that names no release uses the default release. A cluster that names no platform config uses the one of the environment. So a change of either default moves such clusters to the new value.
 
-A list can hold a name that no object has. The editor shows that name checked, with **Not found**. Clear the box to remove the name.
+## Storage and access options
 
-## Sections and options
-
-A section is one choice of a claim, for example **Backup storage** or **Access**. An option is a `PluginRegistration` that serves the section, for example the registration `rustfs` for backups. The YAML names an option by the name of its registration. The section **Sections** of the editor has a row for each section, in one group for clusters and one for management planes. The section **Access** is in both groups, and both rows edit one policy.
+Each storage and access choice of a cluster, such as **Backup storage** or **Access**, has a row in the part **Sections** of the editor. The API calls such a choice a section. An option is a registration that serves the choice, for example `rustfs` for backups:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -86,19 +74,17 @@ spec:
 
 Each row has three settings:
 
-- **Allowed options** are the options that a claim of the environment can pick. A section without an allowed option offers only its empty option, for example **No backups**.
-- **Default option** is the option that the create flow selects first. It must be one of the allowed options, and the page refuses a save with another default.
-- **Required** makes a claim pick an allowed option. The create flow then does not offer the empty option.
+- **Allowed options**: the options that a cluster of the environment can pick. Without an allowed option, the choice offers only its empty option, for example **No backups**.
+- **Default option**: the option that the create form picks first. It must be one of the allowed options.
+- **Required**: a cluster must pick an allowed option. The create form then does not offer the empty option.
 
-The row offers only the registrations that have the condition `Accepted=True`. An option that is not ready shows `Not ready:` and the message of its `Ready` condition. You can allow it, and the create flow offers it when it is ready.
+The row offers only the options that the operator accepted. An option that is not ready shows `Not ready:` and its message. You can allow it, and the create form offers it when it is ready.
 
-An option can need a value from another section, for example an encryption key for encrypted volumes. If that section has no default, the option shows `Needs an option of Encryption key. Set a default in Encryption key.` The note does not block a save. A claim that picks the option must also pick an encryption key, or it is refused with `MissingInput`. A default in the other section makes the create flow pick one first.
-
-An allowed name that no accepted registration of the section has shows checked, with **Not offered**. Clear the box to remove the name. A section or an option that the environment names and that does not exist keeps the environment from being ready. The editor lists each one with **Remove**. A claim that exists keeps an option that it picked, also when the edit removes that option. The options are part of its recorded policy.
+Some options need a value from another choice, for example encrypted volumes need an **Encryption key**. Set a default in that other choice, so that the create form picks one.
 
 ## Settings of the options
 
-The section **Settings of the options** has an entry for each option that a section allows. An option that no section allows keeps its entry while the environment has settings for it, so that you can clear them. Each entry lists the parameters of the option. A field follows the type of the parameter. A number field shows its range, and a parameter with a fixed set of values is a select.
+The part **Settings of the options** lists the parameters of each allowed option:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -120,43 +106,33 @@ spec:
   # ... the rest of your environment
 ```
 
-A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example `From the registration: 3`. When the option sets a map, the editor of the map shows **Set to an empty map** while it has no rows. Select it to make the environment value `{}`, a map with no entries. **Use the inherited value** goes back to the map of the option. **A claim can change it** lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.
+A value of the environment replaces the default of the option. While the field is empty, the page shows the default under it, for example `From the registration: 3`.
 
-When **A claim can change it** is on, the parameter can get a list of choices, `allowed` in the YAML. Select **Add a choice** and give each choice a name, a label, and a value. The value of a map can be **Set to an empty map**, `{}`. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
+**A claim can change it** lets each cluster of the environment set its own value. With it on, **Add a choice** builds a list of named values. A cluster can then pick only a name of the list, and only the option gets the value, for example the ARN of a policy.
 
-A choice that another tool set stays when you remove it, unless you take it over in the review. [Fields that another tool set](settings.md#fields-that-another-tool-set) says how. While such a choice is in the list, a save that turns **A claim can change it** off can fail with `allowed needs claimEditable: true`. Then remove the choice first, with the take-over, and save. Turn **A claim can change it** off in a second save.
+A parameter that the option requires needs a value from the environment or from the option, or **A claim can change it**. Without one, the page shows `This parameter needs a value.`, and the create form refuses the option.
 
-A host pattern of an access option shows the host that it gives the first claim of the environment, for example `orders in team-a gets orders.team-a.example.com`. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section **Presets** allows. With an empty list, a new claim of the option is refused with `NotAllowed`, and the page says so.
+### Template parameters
 
-A parameter that the option requires needs a value from the environment or from the option, or **A claim can change it**. Without one, the page shows `This parameter needs a value.` under the parameter of an option that a section allows. You can still save. The create flow refuses a new claim that picks the option. When another tool writes such a claim, the request of the claim is refused with the reason `InvalidParameters`. The claim then waits with `RequestsReady` at `False`.
-
-A cluster claim gives its release to a parameter `releaseRef` of type string. A management plane claim gives its databases to the parameter `databases` in a section with the slot `managementDatabases`. These parameters need no value there. When only some claims of the option get no value, the warning names each claim kind and section, for example `a management plane claim in Access`.
-
-## Template parameters
-
-Some parameters are templates, for example the inline policy of the Connectors role. Such a parameter gets an editor with a chip for each placeholder. Select a chip to put the placeholder at the cursor.
+Some parameters are templates, for example the inline policy of the Connectors role. The editor has a chip for each placeholder:
 
 | Placeholder | Value |
 | --- | --- |
-| `{{ .namespace }}` | The namespace of the claim. |
+| `{{ .namespace }}` | The namespace of the cluster. |
 | `{{ .claim }}` | The name of the claim. |
-| `{{ .request }}` | The name of the request of the claim for this option. |
-| `{{ .serviceAccount }}` | The ServiceAccount that the request gives the permissions to. |
+| `{{ .request }}` | The name of the `PluginRequest` that the operator writes for this option of the cluster. |
+| `{{ .serviceAccount }}` | The ServiceAccount that gets the permissions. |
 | `{{ .parameters.<name> }}` | The value of another parameter of the option. |
 
-A template parameter cannot read `.outputs`. The editor shows `the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs` at the field. An unknown placeholder shows an error such as `unknown placeholder .claimName`. The page refuses a save while a template has an error.
+The preview under the editor shows the template for a cluster of the environment that you pick.
 
-The preview under the editor renders the template for a claim of the environment, which you pick. It shows what a new claim gets. An existing claim keeps the policy it recorded. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace by name. If the environment has no namespace, the preview asks you to add one first. If no section of the option applies to a cluster claim or a management plane claim, the preview says so.
+### Limits set at install
 
-A template cannot read a parameter whose value is an object, a list, or null. The preview shows the error that the plugin gives for such a request, for example `parameter "extraPolicyArns" is a list: a template prints only a string, a number, or a boolean`. The page saves such a template, but the plugin refuses each request of the option with this error and the reason `InvalidParameters`.
-
-## Limits set at install
-
-An option can have limits that its install sets, for example a permissions boundary for the role of each cluster. The page shows each limit by its label, as **Permissions boundary (limit set at install)**, with its value. The page cannot change a limit. The Helm chart that installs the registration sets it.
+An option can have limits that its Helm chart sets, for example a permissions boundary for the role of each cluster. The page shows them, for example as **Permissions boundary (limit set at install)**, but cannot change them.
 
 ## Namespace creation
 
-In the section **Namespaces**, **The create flow can create a namespace** lets the create flow make a new namespace in the environment. **Fixed labels of a new namespace** are labels that each new namespace gets. **Required label keys** are keys, for example `team`. The create flow asks for a value of each key.
+In the part **Namespaces**, **The create flow can create a namespace** lets the create form make a new namespace in the environment. **Fixed labels of a new namespace** are labels that each new namespace gets. For each key of **Required label keys**, the create form asks for a value:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -173,11 +149,9 @@ spec:
   # ... the rest of your environment
 ```
 
-The create flow sets the label `fleet.camunda.io/environment` itself. Neither list can hold it, and the editor shows `The fleet manager sets fleet.camunda.io/environment itself.` when you type it. An environment can have 16 required label keys at most.
-
 ## When a claim is deleted
 
-The section **When a claim is deleted** sets the default for new claims. **Delete the resources of the claim** is `Delete`, and **Keep the resources of the claim** is `Orphan`. A claim that sets its own policy keeps it.
+The part **When a claim is deleted** sets the default for new clusters and planes. The choices are **Delete the resources of the claim** (`Delete`) and **Keep the resources of the claim** (`Orphan`). The resources are those of the storage and access options, for example a bucket.
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -189,39 +163,33 @@ spec:
   # ... the rest of your environment
 ```
 
-## Changes apply to new claims only
+## Save a change
 
-A claim records the policy of its environment when it is created. A later change of the environment does not change that recorded policy. While the editor has changes, a note above **Review** counts the claims that keep the policy they recorded:
+**Review** shows the change before the save. In Git mode, the save pushes a commit, and the form stays locked until GitOps applies it.
+
+A cluster keeps the rules that applied when it was created, so most changes reach only new clusters. A note above **Review** counts the clusters and planes that keep their rules:
 
 > Changes apply to new claims only. 2 clusters and 1 management plane keep the policy they recorded at creation.
 
-The note also names each claim that the change touches:
+The note also names each cluster that the change moves, for example a cluster that follows the default release:
 
-| Note | Meaning |
-| --- | --- |
-| `orders in team-a uses release 8.9.22, which this change no longer allows.` | The cluster keeps running. A later change of its release must pick an allowed release. The same note exists for a cluster preset, an Elasticsearch preset, and a PostgreSQL preset. |
-| `orders in team-a names no release and moves to 8.9.23.` | The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time. |
-| `orders in team-a names no release, and its cluster refuses the move to 8.9.0 (VersionDowngradeRefused).` | The new default release is older than the version that the cluster reports, or skips a minor after that version (`VersionSkipRefused`). A downgrade that the claim or the cluster approves gets no such note, see [Downgrade](../crds/camundaclusterclaim.md#downgrade). If the cluster reports no version, the note compares the new default with the old default. The cluster keeps running and takes no further change. |
-| `orders in team-a names no platform config and moves to shared.` | The claim follows the default platform config. |
-| `The fleet manager has no current list of CamundaClusterClaim, so the claims that this change touches can be more than this note names.` | A read of a list that the note counts failed, or the list is out of date. The count and the other notes can be incomplete. This note takes the place of `Changes apply to new claims only.` An alert at the top of the page shows the error of a failed read. |
-| `This is the first environment. The claims in legacy have no environment label, …` | Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. This note does not show while the note `The fleet manager has no current list of …` shows. |
-| `orders in team-a names no release, and this change removes the default release.` | The cluster keeps running, but the claim is not ready and its cluster takes no further change. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` and takes no further change. |
+> orders in team-a names no release and moves to 8.9.23.
 
-**Review** shows the change to the environment before the save. Another tool, such as `kubectl apply` or a GitOps tool, can set a field that the change changes or removes. The review names such a field and the tool. It asks before the save takes the field over, as [Fields that another tool set](settings.md#fields-that-another-tool-set) says. In Git mode, a field of another tool that the change removes stays, and the review names it: `spec.sections.backup-storage stays, because another tool set it.`
-
-If the environment changed after you opened the page, the save writes nothing. It shows `The Environment production changed since you opened it.` Select **Discard** to load the current environment, then make your change again.
-
-In Git mode, the save pushes a commit, and the page waits until GitOps applied it. The form stays locked while it waits.
+Such a cluster restarts its brokers one at a time.
 
 ## Delete an environment
 
-The section **Delete the environment** offers the delete only when no namespace carries the label of the environment. The fleet manager must also be able to read the namespaces. The delete is also off while the review of a new namespace is open. Remove the label from each namespace first, for example with `kubectl label namespace my-cluster-ns fleet.camunda.io/environment-`. The page does not remove a label. Then type the name of the environment and select **Review the delete**. The review shows the dry run of the delete, and **Delete the environment** deletes it.
+The delete is possible only when no namespace carries the label of the environment. Remove the label from each namespace first:
 
-In Git mode the delete is a commit that removes the file of the environment, and the button reads **Push the delete to Git**. GitOps must prune the Environment to delete it from the cluster.
+```bash
+kubectl label namespace my-cluster-ns fleet.camunda.io/environment-
+```
+
+Then type the name of the environment, select **Review the delete**, and select **Delete the environment**. In Git mode, the button is **Push the delete to Git**.
 
 ## Status
 
-The editor shows the `Ready` condition of the environment. When a name in the spec has no object, the editor shows the message of the condition:
+The editor shows the `Ready` condition of the environment. When the environment names an object that does not exist, the message names it:
 
 ```yaml
 status:
@@ -233,9 +201,4 @@ status:
   namespaces: 2
 ```
 
-| Type | Reason | Meaning | What to do |
-| --- | --- | --- | --- |
-| `Ready` | `Healthy` | Each object that the spec names exists. | Nothing. |
-| `Ready` | `InvalidReference` | The spec names an object that does not exist. The message names each one. | Create the object, or clear its name in the editor. |
-
-A new environment has no status until the operator counts its namespaces. Until then, the list of environments shows the number of namespaces with the label.
+Create the object, or clear its name in the editor. A name without an object shows **Not found** in the editor.

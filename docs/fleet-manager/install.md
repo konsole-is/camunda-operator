@@ -1,6 +1,6 @@
 # Install the fleet manager
 
-The fleet manager is a web app for the Camunda clusters of one Kubernetes cluster. Each version of the operator chart ships it as its own image. The chart does not install it by default.
+The fleet manager is a web app for the Camunda clusters of one Kubernetes cluster. You create, change, back up, and delete clusters in it. Each version of the operator chart ships it as its own image. The chart does not install it by default.
 
 ## Turn it on
 
@@ -15,15 +15,15 @@ helm upgrade --install camunda-operator \
   --set fleetManager.enabled=true
 ```
 
-Each `helm upgrade` on this page sets each value that it does not name back to the default of the chart. If your release has other values, add your values files and `--set` options to each command. Do not use `--reuse-values`. It keeps the defaults of the old chart, which do not have the values of the fleet manager.
+Each `helm upgrade` on this page sets the values that it does not name back to the chart defaults. If your release has other values, add your values files and `--set` options to each command. Do not use `--reuse-values`, because the old values do not hold the values of the fleet manager.
 
-The chart adds the Deployment and the Service `camunda-operator-fleet-manager` to the release namespace. Wait until the Deployment is ready:
+Wait until the Deployment is ready:
 
 ```bash
 kubectl -n camunda-operator-system rollout status deployment/camunda-operator-fleet-manager
 ```
 
-These names are for the release `camunda-operator`. For a release whose name does not contain `camunda-operator`, the names start with `<release>-camunda-operator`. With the release `ops`, the Deployment is `ops-camunda-operator-fleet-manager`.
+These names are for the release `camunda-operator`. For a release whose name does not contain `camunda-operator`, the names start with `<release>-camunda-operator`.
 
 ## Open it
 
@@ -35,27 +35,32 @@ kubectl -n camunda-operator-system port-forward service/camunda-operator-fleet-m
 
 Then open <http://localhost:3000> in a browser.
 
-The Fleet page lists the Camunda clusters of this Kubernetes cluster, as [The fleet view](fleet-view.md) shows. The Setup page has a list of its pages at the side. In this version, two of them work: **Environments**, as [Environments](environments.md) shows, and **Settings**, as [Settings page](settings.md#settings-page) shows. The other items of the list show "This page could not be found." This is expected, and the install works.
+The **Fleet** page lists the clusters, as [The fleet view](fleet-view.md) shows. The **Setup** page has these pages at the side:
 
-To set the cluster name, the Git repository, and the Prometheus address, see [Fleet manager settings](settings.md).
-
-## Theme
-
-The fleet manager has a light theme and a dark theme. On the first visit, it uses the light or dark setting of your operating system.
-
-The three buttons at the right of the top bar select the theme:
-
-| Button | Theme |
+| Page | Guide |
 | --- | --- |
-| **System** | The setting of the operating system. The page changes when that setting changes. |
-| **Light** | The light theme. |
-| **Dark** | The dark theme. |
+| **Environments** | [Environments](environments.md) |
+| **Presets** and **Releases** | [Presets and releases](presets-and-releases.md) |
+| **Platform** and **Connections** | [Platform config and connections](platform-and-connections.md) |
+| **Plugins** | [Plugins](registrations.md) |
+| **Settings** | [Fleet manager settings](settings.md) |
 
-The page changes at once, without a reload, so a form that you are filling in keeps its values. The browser keeps the choice for one year in the cookie `fleet-theme`. Another browser does not have the cookie, so it uses the setting of the operating system. **System** removes the cookie.
+The three buttons at the right of the top bar select the theme: **System**, **Light**, or **Dark**. The browser keeps the choice.
+
+## What the fleet manager writes
+
+When you create a cluster, the fleet manager writes a **claim**, a [CamundaClusterClaim](../crds/camundaclusterclaim.md) with the name of the cluster. A claim is a request for a cluster. It names a preset, a release, the storage and access options that you picked, and your changes to the settings of the preset. The operator builds the cluster from the claim.
+
+Each change that you make to the cluster in the fleet manager is a change of its claim. A cluster without a claim shows **Not managed**, and you can only read it here.
+
+- A **preset** holds the shared size and settings of a cluster, and a **release** holds the Camunda version. See [Presets and releases](presets-and-releases.md).
+- An **option** gives the cluster its storage or its access, for example **New Elasticsearch cluster**. See [Plugins](registrations.md).
+- An **environment** sets the presets, the releases, and the options that its namespaces can use. See [Environments](environments.md).
+- A **management plane** runs Management Identity, Console, and Web Modeler for many clusters. See [Management planes](management-planes.md).
 
 ## Trust a private CA
 
-If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:
+If a private CA signs your Git or Prometheus server certificate, give the CA bundle to the fleet manager. Put the PEM bundle in a ConfigMap in the release namespace:
 
 ```bash
 kubectl -n camunda-operator-system create configmap fleet-manager-ca --from-file=ca.crt=<path to the PEM CA bundle>
@@ -72,46 +77,23 @@ helm upgrade camunda-operator \
   --set fleetManager.extraCACerts.configMapName=fleet-manager-ca
 ```
 
-The fleet manager then trusts the CAs of the bundle in addition to the public CAs. It reads the bundle from the key `ca.crt`. If your ConfigMap uses another key, add `--set fleetManager.extraCACerts.key=<key>` to the command.
-
-The fleet manager reads the bundle when its pod starts. After you change the ConfigMap, restart the Deployment:
+The fleet manager reads the key `ca.crt`. For another key, add `--set fleetManager.extraCACerts.key=<key>`. If the ConfigMap or its key does not exist, the pod does not start. The fleet manager reads the bundle when its pod starts, so restart it after you change the ConfigMap:
 
 ```bash
 kubectl -n camunda-operator-system rollout restart deployment/camunda-operator-fleet-manager
 ```
 
-If the ConfigMap or its key does not exist, the pod does not start. `kubectl -n camunda-operator-system describe pod` shows the missing ConfigMap or key in the events of the pod.
-
 ## Who can reach it
 
 !!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"
-    A person who has one of these rights in the release namespace can reach the fleet manager and use every right of it. Do not count on the NetworkPolicy of the chart to stop this traffic. The fleet manager can create and change the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets of the Kubernetes cluster.
+    A person who has one of these rights in the release namespace can reach the fleet manager and use every right of it. The fleet manager can create and change the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets of the Kubernetes cluster.
 
-The chart adds a NetworkPolicy that allows no traffic from other pods to the pod of the fleet manager. This includes the operator and your monitoring. Kubernetes adds up the traffic that each NetworkPolicy allows. So another policy that selects this pod, such as a policy that allows all traffic in the namespace, still lets other pods in. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager. A NetworkPolicy takes effect only with a network plugin that enforces it. `kubectl port-forward` still works, because it does not go through the pod network.
+The chart adds a NetworkPolicy that allows no traffic from other pods to the fleet manager. Another NetworkPolicy that selects this pod, such as one that allows all traffic in the namespace, lets other pods in again. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager. A NetworkPolicy has an effect only when the network plugin of the Kubernetes cluster enforces it.
 
 ## Size
 
-The fleet manager requests `50m` CPU and `256Mi` memory, with a memory limit of `512Mi`. It needs more memory when the Kubernetes cluster holds more resources. If the pod restarts with `OOMKilled`, raise the limit:
-
-```bash
-helm upgrade camunda-operator \
-  oci://ghcr.io/konsole-is/charts/camunda-operator \
-  --version <version> \
-  --namespace camunda-operator-system \
-  --set fleetManager.enabled=true \
-  --set fleetManager.resources.limits.memory=1Gi
-```
+The fleet manager requests `50m` CPU and `256Mi` memory, with a memory limit of `512Mi`. It needs more memory when the Kubernetes cluster holds more resources. If the pod restarts with `OOMKilled`, raise the limit with `--set fleetManager.resources.limits.memory=1Gi`.
 
 ## Turn it off
 
-Upgrade the release with `fleetManager.enabled=false`:
-
-```bash
-helm upgrade camunda-operator \
-  oci://ghcr.io/konsole-is/charts/camunda-operator \
-  --version <version> \
-  --namespace camunda-operator-system \
-  --set fleetManager.enabled=false
-```
-
-The chart then removes the objects of the fleet manager. The operator and your Camunda clusters do not change.
+Upgrade the release with `--set fleetManager.enabled=false`. The chart then removes the fleet manager. The operator and your Camunda clusters do not change.

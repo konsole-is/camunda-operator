@@ -1,8 +1,11 @@
 # Fleet manager settings
 
-The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap `fleet-manager-settings` in the release namespace. The release namespace is the namespace of the Helm release, `camunda-operator-system` in the examples on this page.
+The settings of the fleet manager name this Kubernetes cluster, the Git repository for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap `fleet-manager-settings` in the release namespace, `camunda-operator-system` in the examples on this page.
 
-In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when `git.repository` is set. The page **Setup > Settings** of the fleet manager shows the settings and saves a change, as [Settings page](#settings-page) shows.
+The fleet manager works in one of two modes:
+
+- Direct mode, the default: each save writes to the Kubernetes API.
+- Git mode: each save is a commit in a Git repository, and your GitOps tool applies it. Git mode is on when `git.repository` is set.
 
 ## Set the settings at install
 
@@ -19,136 +22,70 @@ helm upgrade --install camunda-operator \
   --set fleetManager.settings.prometheus.url=http://prometheus.monitoring:9090
 ```
 
-The fleet manager creates the ConfigMap `fleet-manager-settings` from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later `helm upgrade` with other `fleetManager.settings.*` values does not change the ConfigMap. To change a setting, use the Settings page or edit the ConfigMap, as [Change a setting](#change-a-setting) shows.
+The fleet manager creates the ConfigMap from these values the first time that it reads its settings. After that, a `helm upgrade` with other `fleetManager.settings.*` values does not change the ConfigMap. Use the Settings page or edit the ConfigMap instead.
 
 ## Settings
 
-| Key in the ConfigMap | Chart value | What it does |
-| --- | --- | --- |
-| `kubernetesClusterName` | `fleetManager.settings.kubernetesClusterName` | The name of this Kubernetes cluster. |
-| `git.repository` | `fleetManager.settings.git.repository` | The HTTPS address of the Git repository for Git mode. |
-| `git.branch` | `fleetManager.settings.git.branch` | The branch of the repository. |
-| `git.path` | `fleetManager.settings.git.path` | The folder in the repository for the files of the fleet manager. |
-| `git.credentialsSecretRef` | `fleetManager.settings.git.credentialsSecretRef` | The name of the Secret with the Git credentials. See [Git credentials](#git-credentials). |
-| `secretStore.kind` | `fleetManager.settings.secretStore.kind` | `SecretStore` or `ClusterSecretStore`, the kind of the External Secrets store for Git mode. |
-| `secretStore.name` | `fleetManager.settings.secretStore.name` | The name of that store. |
-| `prometheus.url` | `fleetManager.settings.prometheus.url` | The address of Prometheus. |
-| `prometheus.credentialsSecretRef` | `fleetManager.settings.prometheus.credentialsSecretRef` | The name of the Secret with the Prometheus credentials. See [Prometheus credentials](#prometheus-credentials). |
+| Key in the ConfigMap | What it does |
+| --- | --- |
+| `kubernetesClusterName` | The name of this Kubernetes cluster. |
+| `git.repository` | The HTTPS address of the Git repository. Turns on Git mode. |
+| `git.branch` | The branch. Empty means the default branch of the repository. |
+| `git.path` | The folder in the repository for the files of the fleet manager. Empty means the root. |
+| `git.credentialsSecretRef` | The Secret with the Git credentials. See [Git credentials](#git-credentials). |
+| `secretStore.kind`, `secretStore.name` | The External Secrets store for Secrets in Git mode. See [Secrets in Git mode](#secrets-in-git-mode). |
+| `prometheus.url` | The address of Prometheus, for the charts and the backpressure warning. |
+| `prometheus.credentialsSecretRef` | The Secret with the Prometheus credentials. See [Prometheus credentials](#prometheus-credentials). |
 
-An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` starts with `http://` or `https://`, and it must not hold a user name or a password, as in `https://user:token@git.example.com`. The fleet manager treats another address as not set. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.
+Each chart value has the same name under `fleetManager.settings`, for example `fleetManager.settings.git.repository`. Do not put a user name or a password in an address. The pages show the settings, so put the credentials in a Secret.
 
 ## Settings page
 
-Open **Setup > Settings** in the fleet manager. The page has a field for each setting. The text under each field names its key in the ConfigMap, so you can match the field to the [Settings](#settings) table. The page shows only the names of Secrets, never a value.
+Open **Setup > Settings**. The page has a field for each setting, with its key in the ConfigMap under it. The page shows only the names of Secrets, never a value.
 
-Select **Git mode** to show the Git settings. Git mode is on when the repository is set, so the page refuses to save Git mode without a repository. Clear **Git mode** to turn Git mode off. The save then clears `git.repository` and keeps the other Git settings for the next time.
+Select **Git mode** to show the Git settings. Clear it to turn Git mode off. The other Git settings stay for the next time.
 
-In Git mode, the page shows the files that a save writes, for a claim and for an environment under the current **Path**. If the path names no folder in the repository, as `a/../b` does, the page shows `git.path must name a folder in the repository.` and refuses to save.
+**Test the connection** tests the Git repository, and **Test the query** tests Prometheus. Both use the saved settings, so save a change before you test it.
 
-The settings stay in the cluster also in Git mode. A save on the page writes the ConfigMap `fleet-manager-settings` and the fleet manager never pushes it to Git.
+If someone changed the ConfigMap after you opened the page, **Save** writes nothing. Select **Reload**, then make your change again.
 
-The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it `(not found)`. It also shows `The Secret <name> does not exist in namespace <namespace>.` A save keeps that name until you pick another Secret or **None**. To correct it, create the Secret, as [Git credentials](#git-credentials) and [Prometheus credentials](#prometheus-credentials) show. If the page cannot list the Secrets, it shows `Could not list the Secrets of namespace <namespace>: <message>`. The fields then keep each name and do not mark it `(not found)`.
-
-**Test the connection** connects to the Git repository with the saved settings. **Test the query** sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.
-
-**Save** writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows `The ConfigMap fleet-manager-settings changed since you opened it.` Select **Reload** to get the current settings, then make your change again.
-
-When `prometheus.url` is not set, the page shows `Charts do not show. Everything else works.` The **Metrics** tab of a component then shows no charts. Set **Prometheus URL** to show the charts. [Metrics of the charts](#metrics-of-the-charts) lists the metrics that Prometheus must hold.
-
-Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With `metrics-server found`, the pages show the live CPU and memory. With `metrics-server not found`, the pages hide them.
-
-The page shows the `kubectl port-forward` command that opens the fleet manager, as [Open it](install.md#open-it) shows.
-
-The permissions table lists what the fleet manager can do in the release namespace. The page cannot change these permissions. The chart sets them.
+The page also shows if metrics-server is found, and the `kubectl port-forward` command that opens the fleet manager. It lists the permissions that the chart gives the fleet manager.
 
 ## Change a setting
 
-Use the [Settings page](#settings-page) to change a setting. You can also edit the ConfigMap. The fleet manager creates the ConfigMap the first time that it reads its settings. The ConfigMap exists at the latest after you open the Settings page once. A ConfigMap that the fleet manager created holds one key for each setting:
-
-```bash
-kubectl -n camunda-operator-system get configmap fleet-manager-settings -o yaml
-```
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: fleet-manager-settings
-  namespace: camunda-operator-system
-data:
-  git.branch: ""
-  git.credentialsSecretRef: ""
-  git.path: ""
-  git.repository: ""
-  kubernetesClusterName: prod-eu
-  prometheus.credentialsSecretRef: ""
-  prometheus.url: http://prometheus.monitoring:9090
-  secretStore.kind: ""
-  secretStore.name: ""
-```
-
-To change a setting with `kubectl`, edit the ConfigMap:
+Use the [Settings page](#settings-page), or edit the ConfigMap:
 
 ```bash
 kubectl -n camunda-operator-system edit configmap fleet-manager-settings
 ```
 
-The fleet manager reads the ConfigMap each time that it needs a setting, so a change takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.
+A change takes effect without a restart. The fleet manager never commits the settings to Git.
 
 ## Fields that another tool set
 
-A field manager is a tool that writes an object, such as `kubectl`, a GitOps tool, or the fleet manager. In direct mode, the review of a save names each field that another tool set and that the save changes or removes. It shows the tool next to the field. One choice, **Take over these fields**, covers the changed fields and the removed fields together. Each row says what the save does to its field:
+Another tool, such as `kubectl apply` or a GitOps tool, can own a field of an object that you change in the fleet manager. In direct mode, the review before a save names each such field and the tool:
 
 ```text
 Fields that another tool set
 spec.displayName: kubectl-client-side-apply set it. The save changes it.
-spec.color: kubectl-client-side-apply set it. It stays unless you take it over.
 [ ] Take over these fields
 ```
 
-Without the choice, a changed field stops the save, and **Save** stays off. Go back and leave the field as it is, or take the fields over. When the save only removes fields of other tools, these fields stay on the object, and the save writes the rest of the change. A field that the page does not edit always stays, and the review does not name it. Outside a list item, an empty string, list, or map that another tool set stays unless you give it a value. The review does not name it. Inside a list item, the review names it with the tool, as other fields.
+Without **Take over these fields**, a changed field stops the save, and **Save** stays off. A field that the save removes stays on the object. Go back and leave the fields as they are, or take them over. With the take-over, the save writes your values, and the fields belong to the fleet manager from then on. The review asks again on each save.
 
-With the choice, the review checks the save again. Its diff shows the new values and the removed fields before you save. The save gives each changed field its new value, and the fleet manager becomes its only field manager. Then the save removes each field that the change leaves out. A removed field that has a default gets its default value again. A default that is an object or a list shows no value in its row. Otherwise the row names that value, for example `It gets its default value 7 again.` If the object changed after the review, the save writes nothing and shows `The <kind> <name> changed since you opened it.`
+After a take-over, the other tool can set its value again:
 
-Another write can change the object after the save gave the new values and before it removed the fields. Then the new values stay, and the fields that the save did not remove stay too. The save shows `The fleet manager saved the <kind> <name>, but did not remove <fields>.` To remove them, open the page again and take them over in a new save. When a save writes more than one object, the objects that it wrote before a failure stay.
+- `kubectl apply --server-side` of an older file fails with a conflict on each field. Remove the field from the file, or add `--force-conflicts`.
+- A plain `kubectl apply` of the file sets the old values again, without a warning.
+- Argo CD and Flux set their value again on the next sync. Change the source in Git too.
 
-The review asks on every save. The fleet manager does not keep the choice for a later save, and no setting turns it on for good.
-
-One review does not ask. When the Environments page adds a namespace to an environment, the labels and annotations that other tools set on the namespace stay.
-
-The review never offers a field that a controller of the operator sets, for example a field manager whose name starts with `camunda-operator/`. The operator sets such a field again, so a take-over has no effect. When the save changes such a field, the review names the controller, and **Save** stays off. To save, leave the field as it is. A field of the operator that the save leaves out stays. The review names such fields in muted lines, with no choice. Each line names the controllers that set its fields:
-
-```text
-camunda-operator/databaseserver-recovery of the operator sets this field. It stays: spec.pitr.lastRecovery.
-camunda-operator/pointintimerestore-recovery of the operator sets this field. It stays: spec.recovery.
-```
-
-When a GitOps tool such as Argo CD or Flux set the field or manages the object, the review gives a warning. The tool sets its own value again on its next sync. Change the source in Git too. When the fleet manager does not know the tool, the review says `The fleet manager does not know this tool.` next to its name. You can still take the field over.
-
-After a take-over, the other tool can change the field again:
-
-- `kubectl apply --server-side` of an older file fails on each field that the fleet manager took over:
-
-    ```text
-    error: Apply failed with 1 conflict: conflict with "fleet-manager" using fleet.camunda.io/v1alpha1: .spec.displayName
-    ```
-
-    Remove the field from the file, or add `--force-conflicts` to take the field back.
-
-- A plain `kubectl apply` of that file sets the old values again, with no conflict.
-- A field that the save removed has no field manager. The next apply of a file that holds the field adds it again.
-
-In Git mode the review offers no take-over. The file in the repository holds the whole object, and your GitOps tool applies it.
+The review offers no take-over in Git mode, or for a field that the operator sets itself.
 
 ## Git credentials
 
-The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with `http://`. The Secret of `git.credentialsSecretRef` holds a token or the keys of a GitHub App. When the Secret holds keys of both sets, each save fails. Create the Secret `fleet-git` in the release namespace, as one of the two sections below shows. Then set `git.credentialsSecretRef` to `fleet-git`. Without the setting, the fleet manager connects to the repository without credentials.
-
-The fleet manager reads the Secret at each save and at each connection test, so a change to the Secret takes effect without a restart.
+The fleet manager connects to the repository over HTTPS. The Secret of `git.credentialsSecretRef` holds a token or the keys of a GitHub App, never both. Create it in the release namespace, then set `git.credentialsSecretRef` to its name. A change to the Secret takes effect without a restart.
 
 ### A token
-
-The Secret holds the keys `username` and `token`:
 
 ```bash
 kubectl -n camunda-operator-system create secret generic fleet-git \
@@ -158,14 +95,14 @@ kubectl -n camunda-operator-system create secret generic fleet-git \
 
 ### A GitHub App
 
-A GitHub App works for repositories on `github.com` and on GitHub Enterprise Server. For a repository on another Git server, use a token.
+A GitHub App works for `github.com` and for GitHub Enterprise Server. For another Git server, use a token.
 
 1. Create a GitHub App with the repository permission "Contents: Read and write", as [Registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app) shows.
-2. Install the App on the repository of `git.repository`, as [Installing your own GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app) shows.
+2. Install the App on the repository, as [Installing your own GitHub App](https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app) shows.
 3. Write down the App ID from the settings page of the App.
 4. Write down the installation ID. It is the number at the end of the address of the installation settings page.
 5. Generate a private key for the App, and download the `.pem` file.
-6. Create the Secret. If the App is on GitHub Enterprise Server, set `enterpriseHost` to the host of the server, for example `ghe.example.com`. Otherwise, remove the line of `enterpriseHost`:
+6. Create the Secret. For GitHub Enterprise Server, set `enterpriseHost` to the host of the server. For `github.com`, remove that line:
 
     ```bash
     kubectl -n camunda-operator-system create secret generic fleet-git \
@@ -175,15 +112,11 @@ A GitHub App works for repositories on `github.com` and on GitHub Enterprise Ser
       --from-file=privateKey=<app>.private-key.pem
     ```
 
-Without `enterpriseHost`, the fleet manager uses the App keys only for a repository on `github.com`. With `enterpriseHost`, it uses them only for a repository on that host.
-
-The fleet manager must reach the GitHub API: `https://api.github.com` for `github.com`, or `https://<enterpriseHost>/api/v3` for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.
-
-Commits show the bot of the App, `<app slug>[bot]`, as the author. The slug is the name of the App in its GitHub address, `https://github.com/apps/<app slug>`. If the fleet manager cannot find the bot, commits show `fleet-manager`, and the save still works.
+The fleet manager must reach the GitHub API. Commits show the bot of the App as the author.
 
 ## Git mode
 
-Set `git.repository` to turn on Git mode. Set the branch, the folder, and the Secret with the credentials in the same ConfigMap:
+Set `git.repository` to turn on Git mode:
 
 ```yaml
 apiVersion: v1
@@ -199,9 +132,7 @@ data:
   # ... the rest of your settings
 ```
 
-An empty `git.branch` uses the default branch of the repository. The branch must exist before the first save. An empty `git.path` puts the files at the root of the repository. `git.path` must be a folder inside the repository, so a save fails when the path holds `..`.
-
-Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change. The author is `fleet-manager`, or the bot of the GitHub App when the Secret holds the keys of an App. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under `git.path`:
+The branch must exist before the first save. Each save becomes one commit on the branch. The fleet manager writes each object to its own file under `git.path`:
 
 ```text
 clusters/prod/
@@ -213,87 +144,63 @@ clusters/prod/
         └── orders.yaml
 ```
 
-A namespaced object goes to `<git.path>/<namespace>/<plural>/<name>.yaml`. A cluster-scoped object goes to `<git.path>/_cluster/<plural>/<name>.yaml`. `<plural>` is the plural resource name of the kind, as `kubectl api-resources` shows it. A file holds the object without `status` and without the fields that the API server sets. Each object carries the annotation `fleet.camunda.io/revision` with the SHA-256 of its content. A delete in the fleet manager removes the file of the object. Point your GitOps tool at the folder of `git.path`.
+A namespaced object goes to `<git.path>/<namespace>/<plural>/<name>.yaml`, and a cluster-scoped object to `<git.path>/_cluster/<plural>/<name>.yaml`. A delete in the fleet manager removes the file. Point your GitOps tool at the folder of `git.path`.
+
+Your GitOps tool must prune, so that it deletes the object of a removed file. Flux prunes when the Kustomization sets `prune: true`. Argo CD prunes when `syncPolicy.automated` sets `prune: true`.
+
+Some changes go straight to the Kubernetes API, also in Git mode. These are backups, restores, the delete of a backup, and the environment label of a namespace. The settings stay in the ConfigMap.
 
 ### Waiting for GitOps
 
-After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. The line of a changed file goes away when the object in the cluster carries the `fleet.camunda.io/revision` of the push. The line of a deleted file goes away when the object is gone from the cluster, or when the cluster starts to delete it. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of `git.path`.
-
-Your GitOps tool must prune. When the fleet manager removes a file, the GitOps tool must delete the object from the cluster. Flux prunes when the Kustomization sets `prune: true`. Argo CD prunes when `syncPolicy.automated` of the Application sets `prune: true`. If your GitOps tool does not prune, the line of a delete stays, because the fleet manager waits without a time limit.
-
-### Changes that go to the API in Git mode
-
-One-off backups, restores, and backup deletions go to the Kubernetes API also in Git mode. The settings go to the API too, and the fleet manager never commits them. For Secrets, see [Secrets in Git mode](#secrets-in-git-mode).
+After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. A line goes away when your GitOps tool has applied the file. The list belongs to the browser tab, so a reload clears it. If a line stays, make sure that your GitOps tool syncs the folder of `git.path` and prunes.
 
 ### When a save fails
 
-Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too. So when a validation rule needs such a field, the save fails before the commit. This is true for Flux, which uses server-side apply. Argo CD uses client-side apply by default. With it, this is true for a custom resource such as an `Environment`, but not for a `Namespace` or a `ConfigMap`. The cluster cannot check an `ExternalSecret`, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.
+When the Kubernetes API or the Git server refuses a save, the save makes no commit and shows the message. The most common messages are:
 
-When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.
+| Message | What to do |
+| --- | --- |
+| `<file> in <repository> holds a save that GitOps has not applied yet. …` | Wait until GitOps applies the earlier save, then open the page again. If GitOps cannot apply it, correct or revert the file. |
+| `<repository> refused the credentials.` | Correct the Secret of `git.credentialsSecretRef`. A GitHub App needs the permission "Contents: Read and write". |
+| `<repository> refused the push to the branch <branch>.` | The branch is protected. Let the user of the token push, or use another branch. |
+| `<repository> has no branch <branch>.` | Create the branch, or correct `git.branch`. |
+| `<file> is not in the repository. GitOps does not manage <kind> <name>.` | Delete the object with `kubectl delete`. |
 
-| Message | Cause | What to do |
-| --- | --- | --- |
-| The message of the API server, for example `releases.default must be one of releases.allowed` | The cluster refuses the object. | Correct the value and save again. |
-| `The <kind> <name> changed since you opened it.` | Someone changed or deleted the object in the cluster after the page read it. | Open the page again. |
-| `<file> in <repository> holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert <file> in the repository.` | An earlier save of the same object is in the repository, and GitOps has not applied it. Each save of the object fails until GitOps applies the file. | Wait until GitOps applies the earlier save, then open the page again. If GitOps cannot apply it, correct or revert the file in the repository. |
-| `Someone changed <file> in <repository> since the fleet manager read it. Open the page again.` | Someone pushed a change to the same file. | Open the page again. |
-| `<repository> changed again while the fleet manager pushed. Save again.` | The branch changed again during the save. | Save again. |
-| `<repository> refused the credentials.` | The username or the token of the Secret is wrong, or the token cannot push. With a GitHub App, the App does not have the permission "Contents: Read and write" on the repository. | Correct the Secret of `git.credentialsSecretRef`, or give the App the permission. |
-| `<repository> refused the push to the branch <branch>.` | The Git server accepts the credentials, but the branch is protected, or a rule of the server refuses the push. | Let the user of the token push to the branch, or set `git.branch` to a branch that accepts a push. |
-| `<repository> must start with https:// to use the credentials of the Secret <secret>.` | `git.credentialsSecretRef` is set, and `git.repository` is not an `https://` address. | Set `git.repository` to the `https://` address of the repository. |
-| `The Secret <secret> does not exist in namespace <namespace>.` | The Secret of `git.credentialsSecretRef` is not in the release namespace. | Create the Secret, as [Git credentials](#git-credentials) shows. |
-| `The Secret <secret> has no key <key>.` | The Secret has no key `username` or no key `token`, or the value is empty. | Add the key to the Secret. |
-| `The Secret <secret> has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.` | The Secret holds keys of both sets. | Remove the keys of the set that you do not use. |
-| `The Secret <secret> needs the keys appId, installationId, and privateKey for a GitHub App. It has no key <keys>.` | The Secret holds some keys of a GitHub App, or a key has an empty value. | Add the keys to the Secret, as [A GitHub App](#a-github-app) shows. |
-| `The Secret <secret> has a key <key> that is not a number.` | The value of `appId` or `installationId` is not the ID that GitHub shows. | Correct the value in the Secret. |
-| `The Secret <secret> has a key privateKey that is not a PEM private key.` | The value of `privateKey` is not the content of the `.pem` file of the App. | Create the Secret again with `--from-file=privateKey=<app>.private-key.pem`. |
-| `<repository> is not on github.com. To use the GitHub App keys of the Secret <secret> with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.` | The Secret holds the keys of a GitHub App without `enterpriseHost`, and the repository is not on `github.com`. | If the repository is on GitHub Enterprise Server, add `enterpriseHost`, as [A GitHub App](#a-github-app) shows. For another Git server, use a token, as [A token](#a-token) shows. |
-| `<repository> is not on the host of the key enterpriseHost of the Secret <secret>. The GitHub App keys of the Secret work only there.` | The repository is on another host than `enterpriseHost`. | Correct `git.repository` or `enterpriseHost`. |
-| `The Secret <secret> has a key enterpriseHost that is not a host name.` | The value of `enterpriseHost` holds more than a host, for example `https://` or a path. | Set `enterpriseHost` to the host only, for example `ghe.example.com`. |
-| `GitHub refused the token request of the App <app id> for the installation <installation id> (HTTP <status>).` | The App ID, the installation ID, or the private key is wrong, or the App is not installed on the repository. | Correct the keys of the Secret, or install the App on the repository. |
-| `<repository> has no branch <branch>.` | The branch of `git.branch` does not exist. | Create the branch, or correct `git.branch`. |
-| `<file> is not in the repository. GitOps does not manage <kind> <name>.` | A delete of an object that has no file in the repository. | Delete the object in the cluster with `kubectl delete`. |
-| `<file> is behind a symbolic link in the repository. The fleet manager does not write through a link.` | A folder or the file on the path of the object is a symbolic link in the repository. | Replace the link with a real folder or file in the repository. |
+A message about the Secret names the key that is missing or wrong. Correct the Secret as [Git credentials](#git-credentials) shows.
 
 ## Prometheus credentials
 
-The Secret of `prometheus.credentialsSecretRef` holds the keys `username` and `password` for basic authentication, or the key `token` for a bearer token. Create it in the release namespace:
+The Secret of `prometheus.credentialsSecretRef` holds `username` and `password` for basic authentication, or `token` for a bearer token:
 
 ```bash
 kubectl -n camunda-operator-system create secret generic fleet-prometheus \
   --from-literal=token=<token>
 ```
 
-Then set `prometheus.credentialsSecretRef` to `fleet-prometheus`. Without the setting, the fleet manager sends no credentials to Prometheus.
+Then set `prometheus.credentialsSecretRef` to `fleet-prometheus`.
 
 ## Metrics of the charts
 
-The **Metrics** tab of a component on [the cluster page](cluster-page.md) shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
+The **Metrics** tab of a component on [the cluster page](cluster-page.md) shows the live CPU and memory of each pod from metrics-server. Below them, it shows charts from Prometheus over the last hour, 6 hours, or 24 hours:
 
-| Chart | Metric | Where Prometheus gets it |
-| --- | --- | --- |
-| CPU | `container_cpu_usage_seconds_total` | The [cAdvisor metrics](https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md) of the kubelet |
-| Memory | `container_memory_working_set_bytes` | The [cAdvisor metrics](https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md) of the kubelet |
-| Disk used | `kubelet_volume_stats_used_bytes` | The [kubelet metrics](https://kubernetes.io/docs/reference/instrumentation/metrics/), for each PersistentVolumeClaim of the pods |
-| Process instances activated | `zeebe_element_instance_events_total` | The brokers |
-| Records processed | `zeebe_stream_processor_records_total` | The brokers |
-| Records exported | `zeebe_exporter_events_total` | The brokers |
-| Requests dropped by backpressure | `zeebe_dropped_request_count_total` | The brokers |
-| Partition health | `zeebe_health` | The brokers |
+| Chart | Metric |
+| --- | --- |
+| CPU | `container_cpu_usage_seconds_total` |
+| Memory | `container_memory_working_set_bytes` |
+| Disk used | `kubelet_volume_stats_used_bytes` |
+| Process instances activated | `zeebe_element_instance_events_total` |
+| Records processed | `zeebe_stream_processor_records_total` |
+| Records exported | `zeebe_exporter_events_total` |
+| Requests dropped by backpressure | `zeebe_dropped_request_count_total` |
+| Partition health | `zeebe_health` |
 
-Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim. A component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels `namespace` and `pod` on each series, and `namespace` and `persistentvolumeclaim` on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A `ServiceMonitor` or a `PodMonitor` of the Prometheus Operator adds `namespace` and `pod` to the metrics of the brokers.
+The first three come from the kubelet and cAdvisor, the others from the brokers. Prometheus must keep the labels `namespace` and `pod`, and `persistentvolumeclaim` on the disk metric. A `ServiceMonitor` or a `PodMonitor` of the Prometheus Operator adds these labels to the broker metrics. Camunda documents the broker metrics in [Camunda components metrics](https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics).
 
-Camunda documents the metrics of the brokers in [Camunda components metrics](https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics). The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release. The 8.9 metrics page names these metrics. The version is the one that the cluster reports in `status.management.version`. For another version or a pre-release, the Metrics tab of the brokers shows only CPU, Memory, and Disk used. A line names the version: `The app has no Camunda charts for version <version> yet.` For a cluster without a reported version, the tab shows the same three charts. Its line is `The cluster reports no Camunda version yet, so the Camunda charts do not show.`
-
-A chart without data for the range does not show. When no chart has data, the tab shows `No metric has data for this range.` Without `prometheus.url`, the tab shows `Prometheus is not configured, so the charts do not show.` When Prometheus does not answer, the tab shows `Prometheus did not answer. The charts show again when it answers.`
-
-## Secret values
-
-The fleet manager shows the names of Secrets and the names of their keys. It never shows the value of a key, and no page and no response of the fleet manager holds one.
+The broker charts show for Camunda 8.9. For another version, the tab shows only CPU, Memory, and Disk used.
 
 ## Secrets in Git mode
 
-In Git mode, the fleet manager does not write a Secret value. It commits an `ExternalSecret` to the Git repository, and External Secrets makes the Secret from the store of `secretStore.kind` and `secretStore.name`. For the Secret `db` in the namespace `orders`, the commit holds this object:
+In Git mode, the fleet manager never writes a Secret value to Git. It commits an `ExternalSecret`, and External Secrets makes the Secret from the store of `secretStore.kind` and `secretStore.name`. For the Secret `db` in the namespace `orders`:
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -314,4 +221,4 @@ spec:
         key: orders/db
 ```
 
-Put each key of the Secret as a property of the store entry `<namespace>/<name>`, here `orders/db`. External Secrets copies each property of the entry into the Secret. If `secretStore.kind` or `secretStore.name` is not set, the fleet manager refuses to write a Secret in Git mode.
+Put each key of the Secret as a property of the store entry `<namespace>/<name>`, here `orders/db`. Without `secretStore.kind` and `secretStore.name`, the fleet manager refuses to write a Secret in Git mode.
