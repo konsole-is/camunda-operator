@@ -11,6 +11,7 @@ import {
   deleteLines,
   freeName,
   manualBackupName,
+  manualWindow,
   pointInTime,
   pointInTimeChange,
   pointInTimeConfirm,
@@ -615,7 +616,7 @@ describe("restore rules", () => {
     },
   });
 
-  it("point in time is offered only on PostgreSQL with recovery by the operator", () => {
+  it("with recovery by the operator, point in time is offered with the archive window", () => {
     expect(pointInTime(context())).toBeUndefined();
     expect(pointInTime(context({ storage: rdbms }))).toBeUndefined();
     expect(pointInTime(context({ storage: archived() }))).toBeUndefined();
@@ -636,6 +637,143 @@ describe("restore rules", () => {
     expect(
       pointInTime(context({ storage: archived([]), retentionWindow: "P7D" })),
     ).toEqual({ disabled: "The archive has no restore point yet." });
+  });
+  const manual = (pitr: {
+    enabled: boolean;
+    recovery?: string;
+    retentionDays?: number;
+  }): BackupStorage => ({
+    ...rdbms,
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.example.com:5432",
+      pitr,
+    },
+  });
+  const ROLLED = { serverConfig: "orders-pg" };
+  const NO_PITR =
+    "DatabaseServerConfig orders-pg does not declare point-in-time recovery, so the operator cannot restore the cluster to a point. When the database server archives its write-ahead log, set spec.pitr.enabled to true.";
+
+  it("after a manual rollback the window reaches back to the later of the retention period and the Zeebe window", () => {
+    expect(manualWindow(3, "P7D", NOW)).toEqual({
+      intervals: [{ from: ago(3) }],
+    });
+    expect(manualWindow(30, undefined, NOW)).toEqual({
+      intervals: [{ from: ago(7) }],
+    });
+    expect(manualWindow(30, "PT12H", NOW)).toEqual({
+      intervals: [{ from: ago(0.5) }],
+    });
+  });
+
+  it("the window after a manual rollback is unavailable with a window the fleet manager cannot read and with no retention days", () => {
+    expect(manualWindow(3, "P1W", NOW)).toEqual({
+      unavailable:
+        "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point.",
+    });
+    expect(manualWindow(0, "P7D", NOW)).toEqual({
+      unavailable:
+        "spec.pitr.retentionPeriodDays of the DatabaseServerConfig is 0, so no point can be offered.",
+    });
+  });
+
+  it("after a manual rollback a point must be in the past and inside both bounds", () => {
+    const window = manualWindow(3, "P7D", NOW);
+    const intervals = "intervals" in window ? window.intervals : [];
+    expect(pointInTimeError(ago(1), intervals, NOW)).toBeUndefined();
+    expect(pointInTimeError(ago(4), intervals, NOW)).toBe(
+      "Choose a point inside the restore window.",
+    );
+    expect(pointInTimeError(ago(8), intervals, NOW)).toBe(
+      "Choose a point inside the restore window.",
+    );
+    expect(pointInTimeError("2026-11-10T14:30:06Z", intervals, NOW)).toBe(
+      "Choose a point in the past.",
+    );
+  });
+
+  it("point in time is offered when the admin rolls the server back, and names the DatabaseServerConfig", () => {
+    expect(
+      pointInTime(
+        context({
+          storage: manual({
+            enabled: true,
+            recovery: "external",
+            retentionDays: 3,
+          }),
+        }),
+      ),
+    ).toEqual({ intervals: [{ from: ago(3) }], manual: ROLLED });
+  });
+
+  it("a recovery that is not set is a manual rollback", () => {
+    expect(
+      pointInTime(
+        context({ storage: manual({ enabled: true, retentionDays: 3 }) }),
+      ),
+    ).toEqual({ intervals: [{ from: ago(3) }], manual: ROLLED });
+  });
+
+  it("point in time is off when the DatabaseServerConfig does not enable point-in-time recovery, with or without a pitr block", () => {
+    expect(
+      pointInTime(
+        context({ storage: manual({ enabled: false, recovery: "external" }) }),
+      ),
+    ).toEqual({ disabled: NO_PITR });
+    expect(
+      pointInTime(context({ storage: manual({ enabled: false }) })),
+    ).toEqual({ disabled: NO_PITR });
+  });
+
+  it("point in time is not offered with recovery by the operator but no archive window, nor without a DatabaseServerConfig", () => {
+    expect(
+      pointInTime(
+        context({
+          storage: manual({
+            enabled: true,
+            recovery: "operator",
+            retentionDays: 3,
+          }),
+        }),
+      ),
+    ).toBeUndefined();
+    expect(
+      pointInTime(
+        context({
+          storage: {
+            ...rdbms,
+            database: { missing: "DatabaseServerConfig orders-pg" },
+          },
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("point in time after a manual rollback is off when the page cannot write, while a restore has not ended, and without a point", () => {
+    const storage = manual({
+      enabled: true,
+      recovery: "external",
+      retentionDays: 3,
+    });
+    expect(pointInTime(context({ storage, changesOff: OFF }))).toEqual({
+      disabled: OFF,
+    });
+    expect(pointInTime(context({ storage, restoring: "r1" }))).toEqual({
+      disabled:
+        "Restore r1 of this cluster has not ended. Start a new restore after it ends.",
+    });
+    expect(pointInTime(context({ storage, retentionWindow: "P1W" }))).toEqual({
+      disabled:
+        "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point.",
+    });
+    expect(
+      pointInTime(
+        context({ storage: manual({ enabled: true, recovery: "external" }) }),
+      ),
+    ).toEqual({
+      disabled:
+        "spec.pitr.retentionPeriodDays of the DatabaseServerConfig is 0, so no point can be offered.",
+    });
   });
 });
 
@@ -723,6 +861,40 @@ describe("restore confirm", () => {
   const OTHER =
     "Something else keeps the cluster suspended now. It stays suspended after the restore until that suspension ends.";
 
+  const AT = "2026-11-09 09:30:15 UTC";
+  const ROLL =
+    "The operator does not roll the database server back. Roll it back to this time before you confirm.";
+  const HOST =
+    "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
+  const READS =
+    "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.";
+  const NO_ZEEBE =
+    "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.";
+  const BROKEN =
+    'If the restore fails, the broker volumes can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.';
+
+  it("after a manual rollback the confirm says to roll the server back first and names the host of a new instance", () => {
+    const confirm = pointInTimeConfirm(context(), AT, {
+      serverConfig: "orders-pg",
+    });
+    expect(confirm.lead).toBe(
+      "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
+    );
+    expect(confirm.lines).toEqual([
+      ROLL,
+      HOST,
+      READS,
+      STARTS,
+      NO_ZEEBE,
+      BROKEN,
+    ]);
+  });
+
+  it("with recovery by the operator the confirm names no manual rollback", () => {
+    const { lines } = pointInTimeConfirm(context(), AT);
+    for (const line of [ROLL, HOST, READS]) expect(lines).not.toContain(line);
+  });
+
   it.each<[string, Suspension | undefined, string]>([
     ["a running cluster", undefined, STARTS],
     ["a cluster that its owner suspended", "requested", OWNER],
@@ -739,6 +911,9 @@ describe("restore confirm", () => {
       restoreConfirm(c, snapshot),
       restoreConfirm(c, dump),
       pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC"),
+      pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC", {
+        serverConfig: "orders-pg",
+      }),
     ]) {
       expect(confirm.lines).toContain(line);
       for (const other of [STARTS, OWNER, OTHER].filter((l) => l !== line)) {
