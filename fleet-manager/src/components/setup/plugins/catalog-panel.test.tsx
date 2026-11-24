@@ -12,6 +12,7 @@ const chart = (name: string, sections = ["encryption-key"]): CatalogChart => ({
   name,
   description: `The ${name} chart.`,
   sections,
+  controllers: [name],
   chart: `oci://example/${name}`,
   version: "0.1.0",
   repository: "https://example.com/charts",

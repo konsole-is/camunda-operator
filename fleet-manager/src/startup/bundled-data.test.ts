@@ -37,6 +37,7 @@ describe("loadBundledData", () => {
             name: "aws",
             description: "AWS options",
             sections: ["cloud-identity"],
+            controllers: ["aws-identity"],
             chart: "oci://example/aws",
             version: "0.1.0",
             repository: "https://example/aws",
@@ -113,6 +114,7 @@ const validChart = {
   name: "aws",
   description: "d",
   sections: ["cloud-identity"],
+  controllers: ["aws-identity"],
   chart: "oci://x",
   version: "0.1.0",
   repository: "https://x",
@@ -153,6 +155,22 @@ describe("parseCatalog", () => {
     expect(() =>
       parseCatalog({ schemaVersion: 1, charts: [{ ...validChart, sections }] }),
     ).toThrow("charts[0].sections is not a non-empty list of section names");
+  });
+
+  it.each([
+    ["without controllers", undefined],
+    ["with an empty list of controllers", []],
+    ["with a controller that is not a string", [1]],
+    ["with an empty controller name", [""]],
+  ])("refuses a chart %s", (_, controllers) => {
+    expect(() =>
+      parseCatalog({
+        schemaVersion: 1,
+        charts: [{ ...validChart, controllers }],
+      }),
+    ).toThrow(
+      "charts[0].controllers is not a non-empty list of controller names",
+    );
   });
 
   it("reads a chart of the full shape", () => {

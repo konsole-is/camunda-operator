@@ -30,7 +30,7 @@ test("the Plugins page groups the built-in registrations by section", async ({
   await expect(row.getByText("Production 1")).toBeVisible();
   await expect(page.getByText("6 healthy, 0 not healthy")).toBeVisible();
   const catalog = page.getByRole("region", { name: "Charts you can install" });
-  await expect(catalog.getByText("aws-kms", { exact: true })).toBeVisible();
+  await expect(catalog.getByText("aws", { exact: true })).toBeVisible();
   await expect(
     page
       .getByRole("navigation", { name: "Setup" })

@@ -29,7 +29,7 @@ const item = (slug: string, label: string, kind?: string): SetupItem => ({
 /** The Setup pages, in the order of the Setup side navigation. */
 export const SETUP_ITEMS: readonly SetupItem[] = [
   item("environments", "Environments", "environment"),
-  item("presets", "Presets"),
+  item("presets", "Presets", "preset"),
   item("releases", "Releases", "release"),
   item("platform", "Platform", "platform-config"),
   item("connections", "Connections"),

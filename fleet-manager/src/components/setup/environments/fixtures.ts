@@ -96,8 +96,8 @@ function registration(
 
 const POLICY_ARN = "^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$";
 
-// The parameter schema of the chart charts/aws-connectors-role of the
-// plugins repository.
+// The parameter schema of the registration aws-connectors-role, in the
+// block connectorsRole of the chart charts/aws of the plugins repository.
 const CONNECTORS_ROLE_PARAMETERS = {
   type: "object",
   properties: {

@@ -74,7 +74,8 @@ const GROUPS: Readonly<Record<PresetKind, readonly SettingsGroup[]>> = {
  * editors show, and an empty list once they show none. While an editor
  * shows an error, the draft keeps the last valid value of its field. The
  * editors read draft once, so a caller gives the component a new key when
- * it replaces the draft.
+ * it replaces the draft. noSecretsText replaces the text of a Secret
+ * reference setting that has no Secret to pick.
  */
 export function PresetEditor({
   kind,
@@ -82,6 +83,7 @@ export function PresetEditor({
   live,
   secrets,
   secretsUnread,
+  noSecretsText,
   onDraft,
   onErrors,
 }: {
@@ -91,6 +93,7 @@ export function PresetEditor({
   live?: Record<string, unknown>;
   secrets: Readonly<Record<string, SecretRefs>>;
   secretsUnread: readonly string[];
+  noSecretsText?: string;
   onDraft: (update: (draft: PresetDraft) => PresetDraft) => void;
   onErrors: (errors: string[]) => void;
 }): ReactNode {
@@ -124,6 +127,7 @@ export function PresetEditor({
           namedSecretRefs(draft.body as EnvSpec),
         )}
         missingIn={union.missingIn}
+        noSecretsText={noSecretsText}
         onDraft={onDraft}
         report={report}
       />
@@ -156,6 +160,7 @@ function BodySettings({
   live,
   secrets,
   missingIn,
+  noSecretsText,
   onDraft,
   report,
 }: {
@@ -164,6 +169,7 @@ function BodySettings({
   live?: Record<string, unknown>;
   secrets: SecretRefs;
   missingIn: (name: string, key: string) => readonly string[];
+  noSecretsText?: string;
   onDraft: (update: (draft: PresetDraft) => PresetDraft) => void;
   report: (source: string, messages: string[]) => void;
 }): ReactNode {
@@ -215,6 +221,7 @@ function BodySettings({
                   setBody((body) => without(body, steps.slice(BODY_STEPS)))
                 }
                 otherSourceReason={OTHER_SOURCE_REASON}
+                noSecretsText={noSecretsText}
                 invalid={(steps, message) => {
                   const key = pathOf(steps) ?? "";
                   if (message === undefined) delete invalid.current[key];

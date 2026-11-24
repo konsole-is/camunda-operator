@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { presetDeleteChange } from "@/components/setup/presets/delete";
+import { createChange, presetDraftOf } from "@/components/setup/presets/draft";
 import { presetFixtures } from "@/components/setup/presets/fixtures";
 import { PRESET_SOURCE_KINDS } from "@/components/setup/presets/source-kinds";
 import type { PresetSources } from "@/components/setup/presets/sources";
@@ -207,9 +208,35 @@ describe("the delete guard of applyPresetChange", () => {
     };
     expect((await applyPresetChange(change)).ok).toBe(true);
   });
+
+  it("applyPresetChange writes the create of a new preset", async () => {
+    const change = createChange(
+      "ElasticsearchClusterPreset",
+      "search-two",
+      presetDraftOf(undefined),
+    );
+    expect(await applyPresetChange(change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([change]);
+  });
 });
 
 describe("previewPresetChange", () => {
+  it("previewPresetChange previews the create of a new preset", async () => {
+    const change = createChange(
+      "ElasticsearchClusterPreset",
+      "search-two",
+      presetDraftOf(undefined),
+    );
+    expect(await previewPresetChange(change)).toEqual({
+      objects: [],
+      errors: [],
+    });
+    expect(fakeWriter.previewed).toEqual([change]);
+  });
+
   it("previewPresetChange previews through the writer", async () => {
     const change = presetDeleteChange([spare]);
     await previewPresetChange(change);

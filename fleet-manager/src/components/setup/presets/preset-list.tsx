@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { ChangeReview } from "@/components/fleet/change-review";
@@ -65,9 +66,14 @@ export function PresetList({
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
-        Presets
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">
+          Presets
+        </h1>
+        <Button asChild>
+          <Link href="/setup/new-preset">New preset</Link>
+        </Button>
+      </div>
       {!mode && (
         <p role="alert" className="text-sm text-bad">
           {CHANGES_OFF}
