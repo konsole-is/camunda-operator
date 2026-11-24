@@ -4,7 +4,7 @@
 
 A platform config holds the authentication, the license, and the image repositories of the clusters, management planes, and database servers that use it. The page **Setup > Platform** lists each `CamundaPlatformConfig` with its authentication method, its users, and its status. The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) reference lists the fields.
 
-The fleet manager does not create a platform config. Apply one with `kubectl apply` or your GitOps tool:
+You can also apply a platform config with `kubectl apply` or your GitOps tool:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -32,6 +32,14 @@ spec:
 ```
 
 **Used by** on the page of a platform config lists each cluster, management plane, database server, and environment that uses it.
+
+### Create a platform config
+
+Select **New platform config** on the page **Setup > Platform**. Type the **Name**. Clusters and environments use this name to refer to the config, and you cannot change it later. To start from a config that exists, select it in **Copy from**. The new config then gets the authentication, the license Secret, and the image repositories of that config.
+
+Select the authentication method. Then complete the fields, the license Secret, and the image repositories, as on the page of a config. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new config opens.
+
+A Secret that does not exist shows as `(not found)`. You can create the config anyway, but it is not ready until the Secret exists.
 
 ### Change a platform config
 
