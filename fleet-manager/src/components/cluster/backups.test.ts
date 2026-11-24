@@ -452,6 +452,8 @@ function rdbmsChain(
     pitr?: object;
     published?: boolean;
     databases?: BackupStorageInput["databases"];
+    identity?: string | null;
+    otherServerConfigs?: Resource<"DatabaseServerConfig">[];
   } = {},
 ): BackupStorageInput {
   return input({
@@ -507,9 +509,12 @@ function rdbmsChain(
                   retentionPeriodDays: 30,
                 },
               },
-              undefined,
+              over.identity === null
+                ? undefined
+                : { systemIdentifier: over.identity ?? "7300" },
               over.owned === false ? {} : { ownerReferences: [publisher] },
             ),
+            ...(over.otherServerConfigs ?? []),
           ],
     databaseServers:
       over.server === false
@@ -1140,6 +1145,57 @@ describe("backupStorageOf", () => {
         }),
       ),
     ).toBe("shared");
+  });
+
+  it("two DatabaseServerConfigs of one server instance count as one server", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          databases: [
+            database("orders", "orders-pg"),
+            database("payments", "orders-pg-direct"),
+          ],
+          otherServerConfigs: [
+            obj(
+              "DatabaseServerConfig",
+              "orders-pg-direct",
+              { host: "10.0.0.5", port: 5432 },
+              { systemIdentifier: "7300" },
+            ),
+          ],
+        }),
+      ),
+    ).toBe("shared");
+  });
+
+  it("the server use is unknown while a DatabaseServerConfig of a Database resource has published no identity of its server", () => {
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          identity: null,
+          databases: [database("orders", "orders-pg")],
+        }),
+      ),
+    ).toBe("unknown");
+    expect(
+      serverUseOf(
+        rdbmsChain({
+          published: true,
+          databases: [
+            database("orders", "orders-pg"),
+            database("payments", "payments-pg"),
+          ],
+          otherServerConfigs: [
+            obj("DatabaseServerConfig", "payments-pg", {
+              host: "payments",
+              port: 5432,
+            }),
+          ],
+        }),
+      ),
+    ).toBe("unknown");
   });
 
   it("the server use is unread when the page could not read the Database resources", () => {

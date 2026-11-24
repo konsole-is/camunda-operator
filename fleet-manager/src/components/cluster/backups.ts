@@ -212,10 +212,13 @@ export type ArchiveView = {
  * server of a cluster: dedicated when a Database resource created its
  * DatabaseConfig and no other Database resource uses the server,
  * unpublished when no Database resource created the DatabaseConfig, shared
- * when more than one Database resource uses the server, and unread when
- * the page could not read the Database resources.
+ * when more than one Database resource uses the server, unknown while a
+ * DatabaseServerConfig of a Database resource has published no identity of
+ * its server, and unread when the page could not read the Database
+ * resources.
  */
-export type ServerUse = "dedicated" | "unpublished" | "shared" | "unread";
+export type ServerUse =
+  "dedicated" | "unpublished" | "shared" | "unknown" | "unread";
 
 /**
  * DatabaseView is the PostgreSQL server of a cluster. missing names the
@@ -371,7 +374,7 @@ function databaseOf(
       recovery: pitr?.recovery,
       retentionDays: pitr?.retentionPeriodDays,
     },
-    serverUse: serverUseOf(input.databases, databaseConfig, serverName),
+    serverUse: serverUseOf(input, databaseConfig, serverConfig),
   };
   // The operator rejects a second server that asks for the same config
   // (contractTaken in internal/controller/databaseserver), so only the
@@ -390,15 +393,23 @@ function databaseOf(
 }
 
 // A Database resource publishes the DatabaseConfig of the logical database
-// that it runs, as the controller of that DatabaseConfig.
+// that it runs, as the controller of that DatabaseConfig. Two
+// DatabaseServerConfigs with one system identifier describe one server.
 function serverUseOf(
-  databases: BackupStorageInput["databases"],
+  input: BackupStorageInput,
   databaseConfig: Resource<"DatabaseConfig">,
-  serverName: string,
+  serverConfig: Resource<"DatabaseServerConfig">,
 ): ServerUse {
+  const { databases } = input;
   if (databases === undefined) return "unread";
-  const onServer = databases.filter((d) => d.spec.serverRef === serverName);
-  if (onServer.length > 1) return "shared";
+  const identityOf = (name: string) =>
+    byName(input.databaseServerConfigs, name)?.status?.systemIdentifier;
+  const identity = serverConfig.status?.systemIdentifier;
+  const placed = databases.map((d) => identityOf(d.spec.serverRef));
+  if (identity && placed.filter((id) => id === identity).length > 1) {
+    return "shared";
+  }
+  if (!identity || placed.some((id) => !id)) return "unknown";
   const creator = databaseConfig.metadata?.ownerReferences?.find(
     (r) => r.controller && r.kind === "Database",
   );

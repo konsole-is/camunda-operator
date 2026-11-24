@@ -697,7 +697,7 @@ function pgPage(
               retentionPeriodDays: 30,
             },
           },
-          {},
+          { systemIdentifier: "7300" },
           {
             ownerReferences: [
               {
@@ -858,6 +858,49 @@ describe("Backups tab", () => {
       "No restore point in this gap",
       "2026-10-11 00:00 UTC to now",
     ]);
+  });
+
+  // serverUseSeen renders the page of initial on the Backups tab and gives
+  // the server use that the backup actions slot gets.
+  const serverUseSeen = (initial: ClusterPageData) => {
+    let seen: ClusterSlotContext | undefined;
+    window.history.replaceState(null, "", "?tab=backups");
+    const ui = () =>
+      view({
+        initial,
+        slots: {
+          "cluster.backups.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      });
+    const page = render(ui());
+    const use = () =>
+      seen?.backupStorage.kind === "rdbms"
+        ? seen.backupStorage.database?.serverUse
+        : undefined;
+    return { rerender: () => page.rerender(ui()), use };
+  };
+
+  it("the server use is unread while the first read of the Database resources failed, and follows the watch once it answers", () => {
+    live.stale = ["Database"];
+    const { rerender, use } = serverUseSeen({
+      ...pgPage(),
+      readErrors: [{ kind: "Database", message: "forbidden" }],
+    });
+    expect(use()).toBe("unread");
+    live.stale = [];
+    rerender();
+    expect(use()).toBe("unpublished");
+  });
+
+  it("the server use is unread while the watch of the Database resources lost its connection", () => {
+    const { rerender, use } = serverUseSeen(pgPage());
+    expect(use()).toBe("unpublished");
+    live.stale = ["Database"];
+    rerender();
+    expect(use()).toBe("unread");
   });
 
   it("a cluster without backup storage says where a bucket comes from", () => {

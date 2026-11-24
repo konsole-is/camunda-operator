@@ -7,7 +7,7 @@ description: >-
   a point-in-time restore. The Database camundacluster-sample-db created the
   DatabaseConfig and is the only Database on the server. No DatabaseServer
   publishes the server, and envtest reaches no database and no bucket, so
-  the cluster takes no backup.
+  the server publishes no identity and the cluster takes no backup.
 seed:
   - apiVersion: v1
     kind: Namespace

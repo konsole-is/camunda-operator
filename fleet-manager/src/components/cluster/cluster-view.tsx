@@ -349,6 +349,7 @@ export function ClusterView({
     { kind: "LogicalRestoreElasticsearch", opts: { namespace: ns } },
     { kind: "LogicalRestoreRDBMS", opts: { namespace: ns } },
     { kind: "PointInTimeRestore", opts: { namespace: ns } },
+    { kind: "Database", opts: { namespace: ns } },
   ] as const;
   const listFresh = useWatchesFresh(followedLists);
   const listOverdue = useWatchesOverdue(followedLists);
@@ -576,8 +577,8 @@ export function ClusterView({
     databaseServerConfigs: databaseServerConfigs.items,
     databaseServers: databaseServers.items,
     databaseServerPresets: databaseServerPresets.items,
-    // A failed read is not a namespace without Database resources.
-    databases: errors.some((e) => e.kind === "Database")
+    // A failed or stale read is not a namespace without Database resources.
+    databases: [...stale, ...errors.map((e) => e.kind)].includes("Database")
       ? undefined
       : databases.items,
     schedules: schedules.items,

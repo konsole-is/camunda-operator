@@ -794,6 +794,8 @@ describe("restore rules", () => {
     "No Database resource created the database of this cluster. The operator restores to a point in time only a database that a Database resource of the operator created.";
   const SHARED_SERVER =
     "Another Database resource uses the server of DatabaseServerConfig orders-pg. A rollback of the server would roll that database back too.";
+  const UNKNOWN =
+    "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.";
   const UNREAD =
     "The fleet manager could not read the Database resources, so it cannot tell which databases the server holds.";
 
@@ -818,6 +820,9 @@ describe("restore rules", () => {
       });
       expect(pointInTime(context({ storage: storage("unread") }))).toEqual({
         disabled: UNREAD,
+      });
+      expect(pointInTime(context({ storage: storage("unknown") }))).toEqual({
+        disabled: UNKNOWN,
       });
     },
   );

@@ -104,6 +104,7 @@ The confirm shows the restore window in UTC. With `operator`, the operator rolls
 - With `external`, `pitr.enabled` is false.
 - No [Database](../crds/database.md) resource created the database of the cluster. The operator restores to a point in time only a database that a `Database` resource created.
 - Another `Database` resource uses the same server. A rollback of the server rolls that database back too.
+- A `DatabaseServerConfig` of the namespace has not published the identity of its server yet. The fleet manager then cannot tell which databases the server holds.
 
 CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
 

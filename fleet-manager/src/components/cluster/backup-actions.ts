@@ -705,6 +705,11 @@ function serverUseBlock(
       return {
         disabled: `Another Database resource uses the server of DatabaseServerConfig ${database.serverConfig}. A rollback of the server would roll that database back too.`,
       };
+    case "unknown":
+      return {
+        disabled:
+          "A DatabaseServerConfig of this namespace has not published the identity of its server yet, so the fleet manager cannot tell which databases the server of this cluster holds.",
+      };
     default:
       return {
         disabled:
