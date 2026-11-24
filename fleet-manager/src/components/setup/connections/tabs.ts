@@ -50,12 +50,25 @@ export function connectionTabOf(
   return tabOf(CONNECTION_TABS, value, "object-storage");
 }
 
+/** CONNECTIONS_HREF is the path of the Connections page. */
+export const CONNECTIONS_HREF = "/setup/connections";
+
+/** connectionsHref returns the path of the Connections page with tab open. */
+export function connectionsHref(tab: ConnectionTab): string {
+  return `${CONNECTIONS_HREF}?tab=${tab}`;
+}
+
+/** newContractHref returns the path of the create page of a contract of tab. */
+export function newContractHref(tab: ConnectionTab): string {
+  return `/setup/new-connection-contract?tab=${tab}`;
+}
+
 /** contractHref returns the path of the page of a contract, which contractRefOf reads back. */
 export function contractHref(ref: ContractRef): string {
   const tab = CONNECTION_TABS.find((t) => t.kind === ref.kind)!.value;
   const segments =
     ref.namespace === undefined ? [ref.name] : [ref.namespace, ref.name];
-  return `/setup/connections/${tab}/${segments.map(encodeURIComponent).join("/")}`;
+  return `${CONNECTIONS_HREF}/${tab}/${segments.map(encodeURIComponent).join("/")}`;
 }
 
 /**
