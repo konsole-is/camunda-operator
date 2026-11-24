@@ -10,6 +10,7 @@ test-results/
 test-reports/
 playwright-report/
 ui-pages/
+docs-images/
 storybook-static/
 ui-stories/
 story-snapshot/

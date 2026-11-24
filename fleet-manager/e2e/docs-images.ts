@@ -13,6 +13,14 @@ export const DOCS_IMAGES_DIR = "docs-images";
 /** GUIDE_IMAGES_DIR is the folder of the guide images, relative to the repository root. */
 export const GUIDE_IMAGES_DIR = "docs/fleet-manager/images";
 
+/**
+ * DOCS_NOW is the time of the page and of the app server in the docs
+ * project, a little after the time of the scenario objects
+ * (2026-01-01T00:00:00Z). An object that the API server stamps during the
+ * run is newer than DOCS_NOW, so its age reads 0s.
+ */
+export const DOCS_NOW = "2026-01-03T10:00:00Z";
+
 export const MAX_IMAGE_BYTES = 250 * 1024;
 export const MAX_FOLDER_BYTES = 6 * 1024 * 1024;
 export const IMAGE_WIDTH = 1440;

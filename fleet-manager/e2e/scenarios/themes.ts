@@ -39,7 +39,11 @@ export async function checkPage(page: Page, name: string): Promise<void> {
   });
 }
 
-async function switchTheme(page: Page, theme: Theme): Promise<void> {
+/**
+ * switchTheme sets the theme of the system and resolves when the controls
+ * show the colors of that theme.
+ */
+export async function switchTheme(page: Page, theme: Theme): Promise<void> {
   await page.emulateMedia({ colorScheme: theme });
   // The controls fade to their new colors. axe and a screenshot during the
   // fade read colors of neither theme.
