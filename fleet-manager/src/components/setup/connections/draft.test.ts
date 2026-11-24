@@ -745,9 +745,11 @@ describe("createChange", () => {
       namespace: "team-a",
     });
     expect(object.spec).toEqual(source.spec);
-    expect(contractWriter(object as ContractObject, [], [])).toEqual({
-      by: "hand",
-    });
+    expect(contractWriter(object as unknown as ContractObject, [], [])).toEqual(
+      {
+        by: "hand",
+      },
+    );
   });
 
   it("leaves out the recovery request of a copied database server contract", () => {
