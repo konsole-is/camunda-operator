@@ -294,23 +294,14 @@ describe("foreignFields", () => {
     });
   });
 
-  it("an Update entry of the fleet manager is another manager", () => {
+  it("an Update entry of the fleet manager is not another manager", () => {
     const live = environment({ displayName: "Stage" }, [
       entry("fleet-manager", "Update", displayName),
     ]);
-    expect(foreignFields(live, environment({})).cleared).toEqual([
-      expect.objectContaining({
-        path: "spec.displayName",
-        managers: [
-          {
-            name: "fleet-manager",
-            operation: "Update",
-            kind: "other",
-            known: true,
-          },
-        ],
-      }),
-    ]);
+    expect(foreignFields(live, environment({}))).toEqual({
+      changed: [],
+      cleared: [],
+    });
   });
 
   it("skips the last applied annotation and status", () => {
@@ -818,6 +809,18 @@ describe("takenFields", () => {
       "spec.displayName",
     ]);
     expect(takenFields(before, before)).toEqual([]);
+  });
+});
+
+describe("takenFields of the fleet manager", () => {
+  it("a field that the Update entry of the fleet manager loses is not taken", () => {
+    const before = environment({ a: 1 }, [
+      entry("fleet-manager", "Update", { "f:spec": { "f:a": {} } }),
+    ]);
+    const after = environment({ a: 1 }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:a": {} } }),
+    ]);
+    expect(takenFields(before, after)).toEqual([]);
   });
 });
 

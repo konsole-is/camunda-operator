@@ -8,6 +8,7 @@ import {
   fieldManagers,
   isClaimManager,
   isKnownManager,
+  isOwnEntry,
   keptRemovals,
   lastChanged,
   managerKind,
@@ -27,6 +28,25 @@ describe("isClaimManager", () => {
     ["camundaclusterclaim/cluster/0b5c", false],
   ])("%s is a claim manager: %s", (manager, want) => {
     expect(isClaimManager(manager)).toBe(want);
+  });
+});
+
+describe("isOwnEntry", () => {
+  it("accepts the Apply and the Update entry of the fleet manager, and no subresource entry", () => {
+    expect(isOwnEntry({ manager: APP_FIELD_MANAGER, operation: "Apply" })).toBe(
+      true,
+    );
+    expect(
+      isOwnEntry({ manager: APP_FIELD_MANAGER, operation: "Update" }),
+    ).toBe(true);
+    expect(
+      isOwnEntry({
+        manager: APP_FIELD_MANAGER,
+        operation: "Update",
+        subresource: "status",
+      }),
+    ).toBe(false);
+    expect(isOwnEntry({ manager: "kubectl", operation: "Apply" })).toBe(false);
   });
 });
 

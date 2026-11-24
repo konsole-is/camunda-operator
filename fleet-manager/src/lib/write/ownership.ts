@@ -1,13 +1,12 @@
 import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
 import {
-  APP_FIELD_MANAGER,
   type FieldOwner,
   type FieldPath,
   type ManagedObject,
   type OwnedStep,
   type OwnerTree,
-  isApplyOf,
   isKnownManager,
+  isOwnEntry,
   itemOwners,
   managerKind,
   ownerTree,
@@ -53,9 +52,10 @@ export function isPartialSave(error: ApiError): boolean {
  * foreignFields returns the fields of spec, metadata.labels, and
  * metadata.annotations of live that a server-side apply of applied by the
  * fleet manager changes or clears while another field manager owns them.
- * Every managedFields entry other than the Apply entry of the fleet
- * manager is another manager, also an Update entry of the fleet manager.
- * An entry of a subresource is not another manager.
+ * Every managedFields entry other than an entry of the fleet manager is
+ * another manager. The fleet manager writes an Update entry only in a save
+ * that removes a field of another tool, and that save drops it again. An
+ * entry of a subresource is not another manager.
  *
  * changed holds each field that applied sets to another value than live.
  * The apply fails on such a field unless it forces. cleared holds the
@@ -75,7 +75,7 @@ export function foreignFields(
 ): { changed: ForeignField[]; cleared: ForeignField[] } {
   const tree = ownerTree(
     live as ManagedObject,
-    (entry) => !entry.subresource && !isApplyOf(entry, APP_FIELD_MANAGER),
+    (entry) => !entry.subresource && !isOwnEntry(entry),
   );
   const changed: ForeignField[] = [];
   const cleared: ForeignField[] = [];
@@ -332,7 +332,7 @@ export function withTakeOver(
 
 /**
  * takenFields returns each field that a managedFields entry of before
- * other than the Apply entry of the fleet manager owns, that no entry of
+ * other than an entry of the fleet manager owns, that no entry of
  * the same manager and operation owns in after, and whose value after
  * still holds: the fields that a write from before to after took from
  * their managers. Each field names the managers that lost it. The fields
@@ -344,7 +344,7 @@ export function takenFields(
 ): ForeignField[] {
   const lost = ownerTree(
     before as ManagedObject,
-    (entry) => !isApplyOf(entry, APP_FIELD_MANAGER),
+    (entry) => !isOwnEntry(entry),
   );
   const kept = ownerTree(after as ManagedObject, () => true);
   const taken: ForeignField[] = [];

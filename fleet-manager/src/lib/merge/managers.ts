@@ -260,6 +260,19 @@ export function isApplyOf(entry: ManagedFieldsEntry, manager: string): boolean {
 }
 
 /**
+ * isOwnEntry reports whether entry is a write of the fleet manager to the
+ * object itself: an entry of APP_FIELD_MANAGER, Apply or Update, without a
+ * subresource.
+ */
+export function isOwnEntry(entry: ManagedFieldsEntry): boolean {
+  return (
+    entry.manager === APP_FIELD_MANAGER &&
+    !entry.subresource &&
+    (entry.operation === "Apply" || entry.operation === "Update")
+  );
+}
+
+/**
  * OwnedStep is one step of a field path from the root of an object: a
  * field or map key, the item of a list with these key values, the item of
  * a set list with this value, or the item at an index.
