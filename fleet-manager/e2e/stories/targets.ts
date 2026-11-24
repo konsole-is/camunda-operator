@@ -8,8 +8,9 @@ export const MIN_TARGET = 24;
  * hits in a box under MIN_TARGET wide or high, "<tag> "<name>" <w>x<h>". The
  * box is what a hit test through the center of the control gives to it or to
  * its labels, so a part that another element covers does not count. A link
- * in a sentence, a disabled control, and a control that is not shown are not
- * counted. An empty list means that the page passes.
+ * in a sentence, a disabled control, a control that is not shown, and a
+ * control under aria-hidden are not counted. An empty list means that the
+ * page passes.
  */
 export async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate((min) => {
@@ -26,7 +27,8 @@ export async function smallTargets(page: Page): Promise<string[]> {
         r.width > 1 &&
         r.height > 1 &&
         style.visibility !== "hidden" &&
-        el.checkVisibility()
+        el.checkVisibility() &&
+        !el.closest("[aria-hidden=true]")
       );
     };
     // WCAG 2.5.8 exempts a target in a sentence or a block of text.

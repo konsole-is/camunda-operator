@@ -627,7 +627,7 @@ export type PointInTime =
  * recovery operator but no archive window. It is off when the page cannot
  * write, while a restore of the cluster has not ended, when the
  * DatabaseServerConfig does not enable point-in-time recovery, and when
- * no point is left.
+ * no point can be offered.
  */
 export function pointInTime(context: BackupContext): PointInTime | undefined {
   const { storage } = context;
