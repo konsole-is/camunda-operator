@@ -262,11 +262,9 @@ describe("PlatformDetail", () => {
     expect(actions.applyChange.mock.calls[0][0].force).toBeUndefined();
   });
 
-  it("a switch to Basic names the OIDC block of another tool and keeps Save off with the error of the CRD rule", async () => {
+  it("a switch to Basic with the take-over of the OIDC block of another tool saves the method and the removal", async () => {
     const { actions } = setup();
     const path = "spec.auth.oidc";
-    const rule =
-      "oidc is required when method is oidc and must not be set when method is basic";
     const ownership = [
       {
         ref: CONFIG_REF,
@@ -274,25 +272,18 @@ describe("PlatformDetail", () => {
         cleared: [foreignField(path)],
       },
     ];
-    // The save applies the method before it removes the block, so the API
-    // server refuses the take-over too.
     actions.previewChange.mockImplementation(async (change) => ({
       objects: [],
-      errors: [
-        change.takeOver
-          ? {
-              code: "Invalid",
-              message: `Invalid value: ${rule}`,
-              path: "spec.auth",
-              ref: CONFIG_REF,
-            }
-          : {
+      errors: change.takeOver
+        ? []
+        : [
+            {
               code: "Conflict",
               message: 'conflict with "kubectl-client-side-apply"',
               path: "spec.auth.method",
               ref: CONFIG_REF,
             },
-      ],
+          ],
       ownership,
     }));
 
@@ -312,16 +303,20 @@ describe("PlatformDetail", () => {
     ).toContain(
       `${path}: kubectl-client-side-apply set it. It stays unless you take it over.`,
     );
+    const save = within(review).getByRole("button", { name: "Save" });
+    expect(save).toHaveProperty("disabled", true);
 
     fireEvent.click(choice);
-    await waitFor(() =>
-      expect(within(review).getByRole("alert").textContent).toContain(rule),
-    );
-    expect(within(review).getByRole("button", { name: "Save" })).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect(actions.applyChange).not.toHaveBeenCalled();
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
+    const applied = actions.applyChange.mock.calls[0][0];
+    expect(applied).toMatchObject({
+      takeOver: { "CamundaPlatformConfig//oidc-prod": ["spec.auth.method"] },
+      remove: { "CamundaPlatformConfig//oidc-prod": [path] },
+    });
+    expect(applied.force).toBeUndefined();
+    expect(applied.apply[0].spec.auth).toEqual({ method: "basic" });
   });
 
   it("blocks the review while a field is invalid", () => {
