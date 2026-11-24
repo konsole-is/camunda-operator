@@ -3,7 +3,7 @@ import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { clusterProgressRows } from "./progress";
+import { clusterProgressRows, waitedRequests } from "./progress";
 
 const sections = [
   { metadata: { name: "access" }, spec: { label: "Access", selection: "One" } },
@@ -161,5 +161,82 @@ describe("clusterProgressRows", () => {
         (r) => r.id,
       ),
     ).toEqual(["requests", "cluster", "attachments"]);
+  });
+});
+
+describe("waitedRequests", () => {
+  const waitSections = [
+    {
+      metadata: { name: "secondary-storage" },
+      spec: { label: "Secondary storage", selection: "One", slot: "secondaryStorage" },
+    },
+    {
+      metadata: { name: "encryption-key" },
+      spec: { label: "Encryption key", selection: "One" },
+    },
+  ] as PluginSection[];
+  const claim = claimOf(
+    [
+      { section: "secondary-storage", registration: "existing-secondary-storage" },
+      { section: "encryption-key", registration: "kms" },
+    ],
+    {
+      requests: [
+        {
+          section: "secondary-storage",
+          registration: "existing-secondary-storage",
+          name: "orders-secondary-storage",
+        },
+        { section: "encryption-key", registration: "kms", name: "orders-encryption-key" },
+      ],
+    },
+  );
+  const request = (section: string, outputs?: Record<string, string>) =>
+    ({
+      metadata: { namespace: "team-a", name: `orders-${section}`, generation: 1 },
+      spec: { section, registration: "existing-secondary-storage" },
+      status: {
+        conditions: [condition("OutputsReady", outputs ? "True" : "False")],
+        ...(outputs && { outputs }),
+      },
+    }) as unknown as PluginRequest;
+
+  it("names each selection whose output of a cluster field is not ready, with its request", () => {
+    expect(
+      waitedRequests(claim, waitSections, [request("secondary-storage")]),
+    ).toEqual([
+      {
+        section: "secondary-storage",
+        label: "Secondary storage",
+        request: "orders-secondary-storage",
+      },
+    ]);
+  });
+
+  it("waits for no selection whose request reports its outputs", () => {
+    const ready = request("secondary-storage", {
+      secondaryStorageConfig: "orders-storage",
+    });
+    expect(waitedRequests(claim, waitSections, [ready])).toEqual([]);
+  });
+
+  it("names no request for a selection that has none yet", () => {
+    expect(waitedRequests({ ...claim, status: {} }, waitSections, [])).toEqual([
+      { section: "secondary-storage", label: "Secondary storage" },
+    ]);
+  });
+
+  it("names the section when its PluginSection has no label", () => {
+    const unlabelled = [
+      { ...waitSections[0], spec: { ...waitSections[0].spec, label: "" } },
+      waitSections[1],
+    ] as PluginSection[];
+    expect(waitedRequests(claim, unlabelled, [])?.[0]?.label).toBe(
+      "secondary-storage",
+    );
+  });
+
+  it("knows no wait when a selection names a section that does not exist", () => {
+    expect(waitedRequests(claim, [], [])).toBeUndefined();
   });
 });

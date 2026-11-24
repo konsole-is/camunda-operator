@@ -3,7 +3,7 @@ import { parse } from "yaml";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
-import { claimConditions, claimView, storedYaml } from "./claim";
+import { claimConditions, claimNameOf, claimView, storedYaml } from "./claim";
 
 const now = "2026-10-30T12:00:00Z";
 
@@ -365,5 +365,24 @@ describe("storedYaml", () => {
     expect(yaml).toContain("kind: CamundaManagementClusterClaim");
     expect(yaml).toContain("- production");
     expect(yaml).not.toContain("managedFields");
+  });
+});
+
+describe("claimNameOf", () => {
+  const clusterLabelled = (labels: Record<string, string>) =>
+    ({ metadata: { namespace: "team-a", name: "orders", labels } }) as unknown as Resource<"CamundaCluster">;
+
+  it("names the claim that the label of the cluster names", () => {
+    expect(
+      claimNameOf(clusterLabelled({ [CLAIM_LABEL]: "orders-claim" }), "orders"),
+    ).toBe("orders-claim");
+  });
+
+  it("names no claim for a cluster without the claim label", () => {
+    expect(claimNameOf(clusterLabelled({}), "orders")).toBeUndefined();
+  });
+
+  it("names the claim of the page name while no cluster exists", () => {
+    expect(claimNameOf(undefined, "orders")).toBe("orders");
   });
 });

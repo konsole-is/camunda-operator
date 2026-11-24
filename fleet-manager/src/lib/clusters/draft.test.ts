@@ -18,6 +18,7 @@ import {
   type SettingsData,
   attachmentsErrors,
   basicsErrors,
+  claimClusterOf,
   clusterClaimOf,
   clusterCreateChange,
   draftCluster,
@@ -713,6 +714,63 @@ describe("draftCluster", () => {
     );
     expect(merged.spec.version).toBeUndefined();
     expect(cluster.spec.releaseRef).toBe("camunda-8-9");
+  });
+});
+
+describe("claimClusterOf", () => {
+  it("is the cluster that the claim would make, with the claim label", () => {
+    const cluster = claimClusterOf(
+      {
+        name: "orders",
+        namespace: "team-a",
+        spec: { presetRef: "small", cluster: { zeebe: { replicas: 3 } } },
+      },
+      withReleases(),
+    );
+    expect(cluster.metadata).toEqual({
+      name: "orders",
+      namespace: "team-a",
+      labels: { [CLAIM_LABEL]: "orders" },
+    });
+    expect(cluster.spec).toEqual({
+      zeebe: { replicas: 3 },
+      presetRef: "small",
+      releaseRef: "camunda-8-9",
+      platformConfigRef: "basic",
+    });
+    expect(cluster.status).toBeUndefined();
+  });
+
+  it("keeps the release and the platform config that the claim names", () => {
+    const cluster = claimClusterOf(
+      {
+        name: "orders",
+        namespace: "team-a",
+        spec: { releaseRef: "camunda-8-8", platformConfigRef: "oidc" },
+      },
+      withReleases(),
+    );
+    expect(cluster.spec).toMatchObject({
+      releaseRef: "camunda-8-8",
+      platformConfigRef: "oidc",
+    });
+  });
+
+  it("sets no reference that neither the claim nor the Environment names", () => {
+    expect(
+      claimClusterOf({ name: "orders", namespace: "team-a", spec: {} }, undefined)
+        .spec,
+    ).toEqual({});
+  });
+
+  it("does not share the cluster spec of the claim", () => {
+    const spec = { cluster: { zeebe: { replicas: 3 } } };
+    const cluster = claimClusterOf(
+      { name: "orders", namespace: "team-a", spec },
+      undefined,
+    );
+    (cluster.spec as { zeebe: { replicas: number } }).zeebe.replicas = 5;
+    expect(spec.cluster.zeebe.replicas).toBe(3);
   });
 });
 

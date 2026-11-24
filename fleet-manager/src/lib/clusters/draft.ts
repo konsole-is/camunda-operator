@@ -320,10 +320,9 @@ const DEFAULT_DELETION: DeletionChoice = {
 
 /**
  * draftCluster returns the CamundaCluster that the claim of draft would
- * make, for the field states of step 3. cluster carries CLAIM_LABEL with
- * the claim name, so that a selected section locks the fields that it
- * fills. Its spec is spec.cluster of the draft with presetRef, releaseOf,
- * and the platform config (the pick, else the Environment default). merged
+ * make (claimClusterOf), for the field states of step 3. cluster carries
+ * CLAIM_LABEL with the claim name, so that a selected section locks the
+ * fields that it fills. merged
  * is mergeCluster of the preset and the release under that spec, without a
  * preset or a release that the lists do not hold. below is the merged spec
  * of that preset and release alone. claim is clusterClaimOf with no
@@ -336,33 +335,64 @@ export function draftCluster(
   environment: Environment | undefined,
 ): DraftedCluster {
   const { spec } = draft.claim;
-  const releaseRef = releaseOf(draft, environment);
-  const platformConfigRef =
-    spec.platformConfigRef ?? environment?.spec.platformConfigRef;
-  const clusterSpec: CamundaClusterSpec = {
-    ...structuredClone(spec.cluster ?? {}),
-    ...(spec.presetRef && { presetRef: spec.presetRef }),
-    ...(releaseRef && { releaseRef }),
-    ...(platformConfigRef && { platformConfigRef }),
-  };
-  const cluster = {
-    apiVersion: "core.camunda.io/v1",
-    kind: "CamundaCluster",
-    metadata: {
+  const cluster = claimClusterOf(
+    {
       name: draft.claim.metadata.name,
       namespace: draft.namespace?.name ?? "",
-      labels: { [CLAIM_LABEL]: draft.claim.metadata.name },
+      spec,
     },
-    spec: clusterSpec,
-  } as Resource<"CamundaCluster">;
+    environment,
+  );
+  const clusterSpec = cluster.spec;
   const preset = presets.find((p) => p.metadata?.name === spec.presetRef);
-  const release = releases.find((r) => r.metadata?.name === releaseRef);
+  const release = releases.find(
+    (r) => r.metadata?.name === clusterSpec.releaseRef,
+  );
   return {
     cluster,
     claim: clusterClaimOf(draft, environment, DEFAULT_DELETION),
     merged: mergeCluster(preset?.spec, release?.spec, clusterSpec),
     below: mergeCluster(preset?.spec, release?.spec, {}).spec,
   };
+}
+
+/**
+ * claimClusterOf returns the CamundaCluster that the claim would make: the
+ * name and namespace of the claim, CLAIM_LABEL with the claim name, and a
+ * copy of spec.cluster with presetRef, releaseRef, and platformConfigRef.
+ * releaseRef and platformConfigRef fall back to the defaults of environment,
+ * and each ref is set only when it is known. It has no status.
+ */
+export function claimClusterOf(
+  claim: {
+    name: string;
+    namespace: string;
+    spec: Partial<Omit<ClusterClaimSpec, "plugins">>;
+  },
+  environment: Environment | undefined,
+): Resource<"CamundaCluster"> {
+  const { spec } = claim;
+  const releaseRef = releaseOf(
+    { claim: { metadata: { name: claim.name }, spec } },
+    environment,
+  );
+  const platformConfigRef =
+    spec.platformConfigRef ?? environment?.spec.platformConfigRef;
+  return {
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaCluster",
+    metadata: {
+      name: claim.name,
+      namespace: claim.namespace,
+      labels: { [CLAIM_LABEL]: claim.name },
+    },
+    spec: {
+      ...structuredClone(spec.cluster ?? {}),
+      ...(spec.presetRef && { presetRef: spec.presetRef }),
+      ...(releaseRef && { releaseRef }),
+      ...(platformConfigRef && { platformConfigRef }),
+    },
+  } as Resource<"CamundaCluster">;
 }
 
 /**
