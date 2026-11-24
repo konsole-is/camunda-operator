@@ -97,9 +97,7 @@ test("New object storage contract creates a contract by hand", async ({
   scenario,
 }) => {
   await page.goto("/setup/connections?tab=object-storage");
-  await page
-    .getByRole("link", { name: "New object storage contract" })
-    .click();
+  await page.getByRole("link", { name: "New object storage contract" }).click();
   await expect(page).toHaveURL(
     /\/setup\/new-connection-contract\?tab=object-storage$/,
   );

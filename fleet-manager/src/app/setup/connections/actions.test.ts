@@ -196,8 +196,11 @@ describe("applyContractChange", () => {
 
   it("writes a create of a name that another namespace holds", async () => {
     expect(
-      (await applyContractChange(create("ObjectStorageConfig", "team-a", "archive")))
-        .ok,
+      (
+        await applyContractChange(
+          create("ObjectStorageConfig", "team-a", "archive"),
+        )
+      ).ok,
     ).toBe(true);
   });
 
@@ -208,9 +211,9 @@ describe("applyContractChange", () => {
   ] as const)(
     "refuses with Stale a create of %s %s/%s that the server lists",
     async (kind, namespace, name) => {
-      expect(
-        await refusedWith(create(kind, namespace, name), "Stale"),
-      ).toEqual([`The ${kind} ${name} exists already. Pick another name.`]);
+      expect(await refusedWith(create(kind, namespace, name), "Stale")).toEqual(
+        [`The ${kind} ${name} exists already. Pick another name.`],
+      );
     },
   );
 
@@ -246,7 +249,10 @@ describe("applyContractChange", () => {
   it("refuses a create while the contracts of the kind cannot be read", async () => {
     cache.failing = ["DatabaseConfig"];
     expect(
-      await refusedWith(create("DatabaseConfig", "team-a", "orders-two"), "Forbidden"),
+      await refusedWith(
+        create("DatabaseConfig", "team-a", "orders-two"),
+        "Forbidden",
+      ),
     ).toEqual([
       "The fleet manager cannot read DatabaseConfig, so DatabaseConfig team-a/orders-two is not created.",
     ]);
@@ -260,7 +266,10 @@ describe("applyContractChange", () => {
       },
     ];
     expect(
-      await refusedWith(create("ManagementAuthConfig", "", "ops-auth"), "Forbidden"),
+      await refusedWith(
+        create("ManagementAuthConfig", "", "ops-auth"),
+        "Forbidden",
+      ),
     ).toEqual([
       "The management plane platform/ops writes ManagementAuthConfig ops-auth. Pick another name.",
     ]);

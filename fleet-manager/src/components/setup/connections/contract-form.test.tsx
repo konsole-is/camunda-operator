@@ -208,8 +208,11 @@ describe("ContractForm", () => {
     expect(storage.getByRole("radio", { name: "Azure Blob" })).toBeTruthy();
     const auth = within(screen.getByRole("group", { name: "Auth" }));
     expect(
-      (auth.getByRole("radio", { name: "Workload identity" }) as HTMLInputElement)
-        .checked,
+      (
+        auth.getByRole("radio", {
+          name: "Workload identity",
+        }) as HTMLInputElement
+      ).checked,
     ).toBe(true);
     expect(auth.getByRole("radio", { name: "Credentials" })).toBeTruthy();
   });
@@ -259,10 +262,14 @@ describe("ContractForm", () => {
   });
 
   it("offers Elasticsearch and RDBMS on a new secondary storage contract", () => {
-    const { last } = setup(find(sources.secondaryStorageConfigs, "shared-es"), [], {
-      choose: true,
-      draft: { spec: newSpec("SecondaryStorageConfig") },
-    });
+    const { last } = setup(
+      find(sources.secondaryStorageConfigs, "shared-es"),
+      [],
+      {
+        choose: true,
+        draft: { spec: newSpec("SecondaryStorageConfig") },
+      },
+    );
     fireEvent.click(screen.getByRole("radio", { name: "RDBMS" }));
     expect(last()).toEqual({ type: "rdbms", rdbms: {} });
   });

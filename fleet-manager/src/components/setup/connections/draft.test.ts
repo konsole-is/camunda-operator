@@ -619,9 +619,9 @@ describe("nameErrors", () => {
   });
 
   it("accepts a free name of 253 characters", () => {
-    expect(nameErrors("DatabaseConfig", "a".repeat(253), ["orders-db"])).toEqual(
-      [],
-    );
+    expect(
+      nameErrors("DatabaseConfig", "a".repeat(253), ["orders-db"]),
+    ).toEqual([]);
   });
 
   it("refuses a Management Identity name that exists or that a management plane writes", () => {
@@ -868,7 +868,10 @@ describe("withStorageType and withAuthType", () => {
       },
     } as ContractDraft;
     expect(withAuthType(draft, "credentials")).toEqual({
-      spec: { type: "S3", s3: { bucketName: "acme", auth: { type: "credentials" } } },
+      spec: {
+        type: "S3",
+        s3: { bucketName: "acme", auth: { type: "credentials" } },
+      },
     });
   });
 });
@@ -876,9 +879,7 @@ describe("withStorageType and withAuthType", () => {
 describe("changeCount of a new contract", () => {
   it("counts nothing on the new spec and each field set after", () => {
     const base = { spec: newSpec("ObjectStorageConfig") };
-    expect(changeCount(base, { spec: newSpec("ObjectStorageConfig") })).toBe(
-      0,
-    );
+    expect(changeCount(base, { spec: newSpec("ObjectStorageConfig") })).toBe(0);
     expect(
       changeCount(base, {
         spec: {

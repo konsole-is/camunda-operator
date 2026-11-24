@@ -394,9 +394,7 @@ function TypeField<T extends string>({
 }) {
   const name = useId();
   if (!form.choose)
-    return (
-      <Fixed label={label} value={options[value as T] ?? String(value)} />
-    );
+    return <Fixed label={label} value={options[value as T] ?? String(value)} />;
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-sm font-medium text-text">{label}</legend>

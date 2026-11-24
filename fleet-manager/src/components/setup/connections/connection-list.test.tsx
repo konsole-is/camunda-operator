@@ -16,11 +16,7 @@ import { ownerName } from "@/lib/labels/owner-name";
 import { connectionFixtures } from "./fixtures";
 import { CONNECTION_SOURCE_KINDS } from "./source-kinds";
 import { kindWords } from "./draft";
-import {
-  CONNECTION_TABS,
-  type ConnectionTab,
-  newContractHref,
-} from "./tabs";
+import { CONNECTION_TABS, type ConnectionTab, newContractHref } from "./tabs";
 
 const failing = vi.hoisted(() => ({ kind: "", fresh: [] as string[] }));
 vi.mock("@/lib/k8s/hooks", () => ({

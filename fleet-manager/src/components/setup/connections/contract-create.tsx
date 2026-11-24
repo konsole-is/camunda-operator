@@ -82,20 +82,21 @@ export function ContractCreate({
   // The namespace is state of its own: listed must know it before the
   // editor gives the draft.
   const [namespace, setNamespace] = useState("");
-  const editor = useSetupEditor<ContractObject, ContractDraft & { name: string }>(
-    {
-      live: undefined,
-      isNew: true,
-      listed: namesIn(namespace),
-      draftOf: () => ({ name: "", spec: newSpec(kind) }),
-      listHref: connectionsHref(tab.value),
-      hrefOf: (name, ns) => contractHref({ kind, namespace: ns, name }),
-      onReset: () => {
-        setCopy("");
-        setNamespace("");
-      },
+  const editor = useSetupEditor<
+    ContractObject,
+    ContractDraft & { name: string }
+  >({
+    live: undefined,
+    isNew: true,
+    listed: namesIn(namespace),
+    draftOf: () => ({ name: "", spec: newSpec(kind) }),
+    listHref: connectionsHref(tab.value),
+    hrefOf: (name, ns) => contractHref({ kind, namespace: ns, name }),
+    onReset: () => {
+      setCopy("");
+      setNamespace("");
     },
-  );
+  });
   const { reviewing, locked } = editor;
   const draft: ContractCreateDraft = { ...editor.draft, namespace };
   const { toast, show, dismiss } = useWriteToast();
