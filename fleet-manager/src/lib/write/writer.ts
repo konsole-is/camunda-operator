@@ -166,6 +166,8 @@ export function diffView(
  * path that names more than one field of the object in ownership, and with
  * Invalid when the lists are not the offered fields of ownership at the
  * precondition.
+ * The preview also names in blocked each object of ownership that only a
+ * Conflict stops, without a forced request.
  *
  * When remove lists a field, or an object with a precondition holds an
  * Update entry of the fleet manager, apply writes the object as one
@@ -377,6 +379,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     const objects: PreviewObject[] = [];
     const errors: ApiError[] = [];
     const ownership: ObjectOwnership[] = [];
+    const blocked: PreviewObject[] = [];
     // A Namespace that cannot be read gets that error from its own dry run
     // below.
     const fresh = await inNewNamespaces(change.apply, read).catch(
@@ -386,8 +389,10 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const key = refKey(ref);
       const resourceVersion = change.preconditions?.[key];
+      let before: KubeObject | undefined;
+      let foreign: ReturnType<typeof foreignFields> | undefined;
       try {
-        const before = await read(ref);
+        before = await read(ref);
         // The API server creates a missing object even when the applied
         // object carries a resourceVersion.
         if (before === undefined && resourceVersion !== undefined) {
@@ -411,7 +416,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         if (typeof before?.metadata.uid === "string") {
           uids.set(key, before.metadata.uid);
         }
-        const foreign =
+        foreign =
           before !== undefined && resourceVersion !== undefined
             ? foreignFields(before, object, change.keep?.[key])
             : undefined;
@@ -513,13 +518,28 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
               );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
-        errors.push(
-          ...(await staleFirst(
-            apiErrorsOf(error, ref, resourceVersion !== undefined),
-            ref,
-            resourceVersion,
-          )),
+        const refused = await staleFirst(
+          apiErrorsOf(error, ref, resourceVersion !== undefined),
+          ref,
+          resourceVersion,
         );
+        errors.push(...refused);
+        if (
+          before !== undefined &&
+          (foreign?.changed.length ?? 0) > 0 &&
+          refused.every((e) => e.code === "Conflict")
+        )
+          blocked.push(
+            previewObject(
+              ref,
+              before,
+              laidOver(
+                before,
+                object,
+                prunedFields(before, object, change.keep?.[key]),
+              ),
+            ),
+          );
       }
     }
     for (const ref of change.delete ?? []) {
@@ -540,6 +560,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       objects,
       errors,
       ...(ownership.length > 0 ? { ownership } : {}),
+      ...(blocked.length > 0 ? { blocked } : {}),
       uids,
       fresh,
       plans,
@@ -547,11 +568,16 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const preview = async (change: Change): Promise<Preview> => {
-    const { objects, errors, ownership } = await dryRun(change, {
+    const { objects, errors, ownership, blocked } = await dryRun(change, {
       managers: change.previewManagers,
       mergePatches: change.previewMergePatches,
     });
-    return { objects, errors, ...(ownership ? { ownership } : {}) };
+    return {
+      objects,
+      errors,
+      ...(ownership ? { ownership } : {}),
+      ...(blocked ? { blocked } : {}),
+    };
   };
 
   const apply = async (change: Change): Promise<WriteResult> => {

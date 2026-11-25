@@ -151,11 +151,18 @@ export type ObjectOwnership = {
  * objects. ownership holds each updated object with a precondition that
  * has a changed or cleared field of another field manager, also when the
  * object has an error. The Git writer never sets it.
+ *
+ * blocked holds each object of ownership whose dry run failed only with
+ * Conflict: the change laid over the live object, as a save that takes
+ * over the changed fields leaves it. The API server did not check it, so
+ * it holds no default that the save adds. The Git writer sets it only for
+ * a change with directOnly.
  */
 export type Preview = {
   objects: PreviewObject[];
   errors: ApiError[];
   ownership?: ObjectOwnership[];
+  blocked?: PreviewObject[];
 };
 
 /**

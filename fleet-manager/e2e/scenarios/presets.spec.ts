@@ -62,6 +62,13 @@ test("an edit of the preset of a claim previews a roll of its cluster", async ({
       "The brokers restart one at a time. The other processes restart.",
     ),
   ).toBeVisible();
+  // kubectl applied the preset, so the replicas are a field of kubectl.
+  await expect(
+    review.getByRole("figure", { name: "Changes to the preset" }),
+  ).toContainText("replicas: 5");
+  await expect(
+    review.getByRole("group", { name: "Fields that another tool set" }),
+  ).toContainText("spec.cluster.zeebe.replicas: kubectl set it.");
   await checkPage(page, "presets-edit-review");
 });
 

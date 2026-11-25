@@ -132,9 +132,16 @@ const kubectlField = {
 };
 const ownership = [{ ref, changed: [kubectlField], cleared: [] }];
 const takenOver = { ...before, spec: { ...before.spec, displayName: "Stage" } };
+const takenOverObject = {
+  ref,
+  before,
+  after: takenOver,
+  diff: objectDiff(before, takenOver),
+};
 
-// Without the choice the dry run conflicts on the field. With it, the dry
-// run of the change with the take-over is clean.
+// Without the choice the dry run conflicts on the field, and the review
+// shows the change that the field stops. With it, the dry run of the change
+// with the take-over is clean.
 export const KubectlField: Story = {
   name: "A field that kubectl set",
   args: {
@@ -145,18 +152,7 @@ export const KubectlField: Story = {
     },
     preview: fn(async (change: Change): Promise<Preview> =>
       change.takeOver
-        ? {
-            objects: [
-              {
-                ref,
-                before,
-                after: takenOver,
-                diff: objectDiff(before, takenOver),
-              },
-            ],
-            errors: [],
-            ownership,
-          }
+        ? { objects: [takenOverObject], errors: [], ownership }
         : {
             objects: [],
             errors: [
@@ -169,6 +165,7 @@ export const KubectlField: Story = {
               },
             ],
             ownership,
+            blocked: [takenOverObject],
           },
     ),
   },

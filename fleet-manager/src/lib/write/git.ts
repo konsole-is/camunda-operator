@@ -141,8 +141,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
   const preview = async (change: Change): Promise<Preview> => {
     if (change.directOnly) {
-      const { objects, errors } = await direct.preview(change);
-      return { objects, errors };
+      const { objects, errors, blocked } = await direct.preview(change);
+      return { objects, errors, ...(blocked ? { blocked } : {}) };
     }
     const refusals = [
       ...takeOverRefusalsOf(change),

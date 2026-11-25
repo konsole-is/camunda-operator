@@ -377,6 +377,30 @@ describe("the Git writer", slow, () => {
     expect(directOnly).not.toHaveProperty("ownership");
   });
 
+  it("keeps the blocked objects of the direct preview for a directOnly change", async () => {
+    repo = await serveBareRepository();
+    const blocked = [
+      {
+        ref: refOf(environment("prod")),
+        diff: [{ op: "added" as const, text: "spec: {}" }],
+      },
+    ];
+    directPreview.mockResolvedValue({
+      objects: [],
+      errors: [{ code: "Conflict", message: 'conflict with "kubectl"' }],
+      blocked,
+    });
+
+    const preview = await writerFor().preview({
+      intent: "Rename prod",
+      apply: [environment("prod")],
+      preconditions: { "Environment//prod": "1" },
+      directOnly: true,
+    });
+
+    expect(preview.blocked).toEqual(blocked);
+  });
+
   it("refuses a take-over in the preview and in the apply, and commits nothing", async () => {
     repo = await serveBareRepository();
     const change: Change = {
