@@ -1051,14 +1051,18 @@ describe("ClusterCreateFlow", () => {
     await user.click(
       within(row()).getByRole("button", { name: "Add an entry" }),
     );
-    await user.type(
-      within(row()).getByRole("textbox", { name: "Key" }),
-      "role",
-    );
-    await user.type(
-      within(row()).getByRole("textbox", { name: "Value" }),
-      "orders",
-    );
+    const key = within(row()).getByRole("textbox", {
+      name: "Key",
+    }) as HTMLInputElement;
+    await user.click(key);
+    await user.paste("role");
+    expect(key.value).toBe("role");
+    const value = within(row()).getByRole("textbox", {
+      name: "Value",
+    }) as HTMLInputElement;
+    await user.click(value);
+    await user.paste("orders");
+    expect(value.value).toBe("orders");
 
     await user.click(stepButton("Storage and access"));
     await user.click(radio(/^IRSA/));

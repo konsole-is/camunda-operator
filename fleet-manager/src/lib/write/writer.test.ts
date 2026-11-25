@@ -726,6 +726,334 @@ describe("directWriter with a take-over", () => {
     ]);
   });
 
+  describe("a preview that a field of another tool stops", () => {
+    const fieldConflict = {
+      ...conflict,
+      message: "Apply failed with 1 conflict",
+      details: {
+        causes: [
+          {
+            reason: "FieldManagerConflict",
+            message: 'conflict with "kubectl-client-side-apply"',
+            field: ".spec.displayName",
+          },
+        ],
+      },
+    };
+    const live = environment({ displayName: "Stage", color: "red" }, [
+      kubectlOwns("displayName"),
+    ]);
+
+    it("shows the change in blocked, and not in objects", async () => {
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: live }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.objects).toEqual([]);
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Conflict", path: "spec.displayName" }),
+      ]);
+      expect(preview.blocked).toHaveLength(1);
+      const [blocked] = preview.blocked!;
+      expect(blocked.ref).toEqual({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        name: "staging",
+      });
+      expect(blocked.before?.spec).toEqual({
+        displayName: "Stage",
+        color: "red",
+      });
+      expect(blocked.after?.spec).toEqual({
+        displayName: "Prod",
+        color: "red",
+      });
+      expect(blocked.diff).toEqual(
+        expect.arrayContaining([
+          { op: "removed", text: "  displayName: Stage" },
+          { op: "added", text: "  displayName: Prod" },
+        ]),
+      );
+      expect(blocked.after?.metadata.managedFields).toBeUndefined();
+    });
+
+    it("keeps in blocked a field that another tool set and the change leaves out, and drops one that only the fleet manager set", async () => {
+      const owned = environment(
+        { displayName: "Stage", color: "red", owner: "team-a" },
+        [kubectlOwns("displayName", "owner"), fleetOwns("Apply", "color")],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: owned }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        owner: "team-a",
+      });
+    });
+
+    it("keeps in blocked a list item that another tool set and the change leaves out", async () => {
+      const listed = environment(
+        { displayName: "Stage", allowed: [{ name: "x" }, { name: "y" }] },
+        [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:displayName": {},
+                "f:allowed": { 'k:{"name":"y"}': { ".": {}, "f:name": {} } },
+              },
+            },
+          },
+          {
+            manager: "fleet-manager",
+            operation: "Apply",
+            fieldsV1: {
+              "f:spec": {
+                "f:allowed": { 'k:{"name":"x"}': { ".": {}, "f:name": {} } },
+              },
+            },
+          },
+        ],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: listed }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [
+          environment({
+            displayName: "Prod",
+            allowed: [{ name: "x", label: "X" }],
+          }),
+        ],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        allowed: [{ name: "x", label: "X" }, { name: "y" }],
+      });
+    });
+
+    it("drops from a kept map of another tool the keys that only the fleet manager set", async () => {
+      const mixed = environment(
+        { displayName: "Stage", extra: { a: "1", b: "2" } },
+        [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": { "f:displayName": {}, "f:extra": { "f:a": {} } },
+            },
+          },
+          {
+            manager: "fleet-manager",
+            operation: "Apply",
+            fieldsV1: { "f:spec": { "f:extra": { "f:b": {} } } },
+          },
+        ],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: mixed }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        extra: { a: "1" },
+      });
+    });
+
+    it("keeps a list item of another tool whose key only the fleet manager set", async () => {
+      const item = 'k:{"name":"x"}';
+      const keyed = environment(
+        { displayName: "Stage", allowed: [{ name: "x", label: "X" }] },
+        [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:displayName": {},
+                "f:allowed": { [item]: { "f:label": {} } },
+              },
+            },
+          },
+          {
+            manager: "fleet-manager",
+            operation: "Apply",
+            fieldsV1: {
+              "f:spec": { "f:allowed": { [item]: { ".": {}, "f:name": {} } } },
+            },
+          },
+        ],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: keyed }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", allowed: [] })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        allowed: [{ name: "x", label: "X" }],
+      });
+    });
+
+    it("shows the update of a save that stopped after its update", async () => {
+      const unfinished = environment({ displayName: "Stage", color: "red" }, [
+        kubectlOwns("displayName"),
+        fleetOwns("Update", "color"),
+      ]);
+      answer = removalAnswers(
+        unfinished,
+        environment({ displayName: "Prod", color: "red" }, [
+          fleetOwns("Update", "displayName", "color"),
+        ]),
+        probed,
+      );
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Conflict", path: "spec.displayName" }),
+      ]);
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        color: "red",
+      });
+    });
+
+    it("sends no forced request", async () => {
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: live }
+          : { status: 409, body: fieldConflict };
+
+      await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(seen.some((r) => r.url.includes("force=true"))).toBe(false);
+      const patches = seen.filter((r) => r.method === "PATCH");
+      expect(patches).toHaveLength(1);
+      expect(patches.every((r) => r.url.includes("dryRun=All"))).toBe(true);
+    });
+
+    it("shows the answer of the forced dry run of a take-over that would take a field the list does not name", async () => {
+      const owned = environment({ displayName: "Stage", color: "red" }, [
+        kubectlOwns("displayName", "color"),
+      ]);
+      const taken = environment({ displayName: "Prod", color: "blue" }, [
+        {
+          manager: "fleet-manager",
+          operation: "Apply",
+          fieldsV1: { "f:spec": { "f:displayName": {}, "f:color": {} } },
+        },
+      ]);
+      answer = (r) => ({
+        status: 200,
+        body: r.method === "GET" ? owned : taken,
+      });
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+        takeOver: { [key]: ["spec.displayName"] },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Conflict", path: "spec.color" }),
+      ]);
+      expect(preview.objects).toEqual([]);
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        color: "blue",
+      });
+    });
+
+    it("leaves blocked unset when the object changed since the read", async () => {
+      let reads = 0;
+      answer = (r) => {
+        if (r.method !== "GET") return { status: 409, body: fieldConflict };
+        reads += 1;
+        return {
+          status: 200,
+          body:
+            reads === 1
+              ? live
+              : environment(
+                  { displayName: "Stage", color: "red" },
+                  [kubectlOwns("displayName")],
+                  "8",
+                ),
+        };
+      };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Stale" }),
+      ]);
+      expect(preview.blocked).toBeUndefined();
+    });
+
+    it("leaves blocked unset without a precondition, which gives no ownership", async () => {
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: live }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+      });
+
+      expect(preview.ownership).toBeUndefined();
+      expect(preview.blocked).toBeUndefined();
+    });
+  });
+
   it("refuses a forced apply that would take a field the list does not name", async () => {
     // The walk sees no change of spec.color, but the API server takes it.
     const live = environment({ displayName: "Stage", color: "red" }, [

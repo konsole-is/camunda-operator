@@ -73,6 +73,9 @@ test("saves a change of a contract created by hand after the take-over of its fi
   await expect(
     fields.getByRole("listitem").filter({ hasText: "spec.s3.region" }),
   ).toHaveText("spec.s3.region: kubectl set it. The save changes it.");
+  await expect(
+    review.getByRole("figure", { name: "Changes to the contract" }),
+  ).toContainText("region: eu-central-1");
   const save = review.getByRole("button", { name: "Save" });
   await expect(save).toBeDisabled();
   await checkPage(page, "connection-edit");

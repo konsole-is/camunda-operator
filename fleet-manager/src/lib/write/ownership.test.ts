@@ -14,6 +14,7 @@ import {
   removedFields,
   takenFields,
   withTakeOver,
+  withKeptFields,
   withValuesOf,
   withoutFields,
 } from "./ownership";
@@ -1570,5 +1571,119 @@ describe("withValuesOf", () => {
         from,
       ),
     ).toEqual({ spec: { labels: { "app.kubernetes.io/name": "c" } } });
+  });
+});
+
+describe("withKeptFields", () => {
+  const from = {
+    spec: {
+      replicas: 3,
+      allowed: [{ name: "x" }, { name: "y", label: "Y" }, { name: "z" }],
+      zones: ["a", "b"],
+    },
+  };
+
+  it("adds a keyed item and a set item that object lacks at their index in from, and changes neither input", () => {
+    const object = {
+      spec: { allowed: [{ name: "x" }, { name: "z" }], zones: ["a"] },
+    };
+    const fromCopy = structuredClone(from);
+    const result = withKeptFields(
+      object,
+      [
+        fieldAt(
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "y" } },
+        ),
+        fieldAt({ field: "spec" }, { field: "zones" }, { value: "b" }),
+      ],
+      from,
+    );
+    expect(result).toEqual({
+      spec: {
+        allowed: [{ name: "x" }, { name: "y", label: "Y" }, { name: "z" }],
+        zones: ["a", "b"],
+      },
+    });
+    expect(object).toEqual({
+      spec: { allowed: [{ name: "x" }, { name: "z" }], zones: ["a"] },
+    });
+    expect(from).toEqual(fromCopy);
+  });
+
+  it("keeps the order of from for several items that object lacks, whatever the order of fields", () => {
+    const listed = {
+      spec: { allowed: [{ name: "c" }, { name: "b" }, { name: "a" }] },
+    };
+    const item = (name: string) =>
+      fieldAt({ field: "spec" }, { field: "allowed" }, { item: { name } });
+    expect(
+      withKeptFields(
+        { spec: { allowed: [] as unknown[] } },
+        [item("a"), item("b"), item("c")],
+        listed,
+      ),
+    ).toEqual(listed);
+  });
+
+  it("adds an item at the end when object holds fewer items than its index in from", () => {
+    expect(
+      withKeptFields(
+        { spec: { allowed: [] as unknown[] } },
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "z" } },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { allowed: [{ name: "z" }] } });
+  });
+
+  it("sets a map key and a field under an item as withValuesOf does", () => {
+    expect(
+      withKeptFields(
+        { spec: { allowed: [{ name: "y" }] } },
+        [
+          fieldAt({ field: "spec" }, { field: "replicas" }),
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "y" } },
+            { field: "label" },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { replicas: 3, allowed: [{ name: "y", label: "Y" }] } });
+  });
+
+  it("keeps an item that object holds, and skips an index, an item that from does not hold, and a list that object does not hold", () => {
+    const object = {
+      spec: { allowed: [{ name: "y", label: "Other" }], zones: ["a"] },
+    };
+    expect(
+      withKeptFields(
+        object,
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "y" } },
+          ),
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "q" } },
+          ),
+          fieldAt({ field: "spec" }, { field: "zones" }, { index: 1 }),
+          fieldAt({ field: "spec" }, { field: "gone" }, { value: "a" }),
+        ],
+        from,
+      ),
+    ).toEqual(object);
   });
 });

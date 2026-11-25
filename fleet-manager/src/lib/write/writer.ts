@@ -35,6 +35,8 @@ import {
   prunedFields,
   removedFields,
   takenFields,
+  withKeptFields,
+  withoutFields,
 } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
@@ -166,6 +168,8 @@ export function diffView(
  * path that names more than one field of the object in ownership, and with
  * Invalid when the lists are not the offered fields of ownership at the
  * precondition.
+ * The preview also names in blocked each object of ownership that only
+ * Conflict errors stop.
  *
  * When remove lists a field, or an object with a precondition holds an
  * Update entry of the fleet manager, apply writes the object as one
@@ -377,6 +381,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     const objects: PreviewObject[] = [];
     const errors: ApiError[] = [];
     const ownership: ObjectOwnership[] = [];
+    const blocked: PreviewObject[] = [];
     // A Namespace that cannot be read gets that error from its own dry run
     // below.
     const fresh = await inNewNamespaces(change.apply, read).catch(
@@ -386,8 +391,42 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const key = refKey(ref);
       const resourceVersion = change.preconditions?.[key];
+      let before: KubeObject | undefined;
+      let foreign: ReturnType<typeof foreignFields> | undefined;
+      let lists: TakeOverLists | undefined;
+      const refuse = (refused: ApiError[], after?: KubeObject) => {
+        errors.push(...refused);
+        if (
+          before === undefined ||
+          foreign === undefined ||
+          foreign.changed.length + foreign.cleared.length === 0 ||
+          !refused.every((e) => e.code === "Conflict")
+        )
+          return;
+        const removed = lists ? foreign.cleared.filter(offered) : [];
+        const pruned = prunedFields(before, object, change.keep?.[key]);
+        const shown =
+          after ?? laidOver(before, object, [...removed, ...pruned]);
+        // Server-side apply keeps each field of another manager that the
+        // save leaves out and does not remove.
+        const stays = foreign.cleared.filter((f) => !removed.includes(f));
+        blocked.push(
+          previewObject(
+            ref,
+            before,
+            withKeptFields(
+              shown,
+              stays,
+              withoutFields(
+                before,
+                pruned.filter((f) => !isItemKey(f)),
+              ),
+            ),
+          ),
+        );
+      };
       try {
-        const before = await read(ref);
+        before = await read(ref);
         // The API server creates a missing object even when the applied
         // object carries a resourceVersion.
         if (before === undefined && resourceVersion !== undefined) {
@@ -411,13 +450,13 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         if (typeof before?.metadata.uid === "string") {
           uids.set(key, before.metadata.uid);
         }
-        const foreign =
+        foreign =
           before !== undefined && resourceVersion !== undefined
             ? foreignFields(before, object, change.keep?.[key])
             : undefined;
         if (foreign && foreign.changed.length + foreign.cleared.length > 0)
           ownership.push({ ref, ...foreign });
-        const lists = listsOf(change, key);
+        lists = listsOf(change, key);
         if (lists !== undefined) {
           const refused = takeOverRefusals(
             ref,
@@ -427,7 +466,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             lists,
           );
           if (refused.length > 0) {
-            errors.push(...refused);
+            refuse(refused);
             continue;
           }
         }
@@ -461,7 +500,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             ...unlistedRemovals(ref, before!, after, cleared),
           ];
           if (refused.length > 0) {
-            errors.push(...refused);
+            refuse(refused, after);
             continue;
           }
           plans.set(key, { write: "update", before: before!, target });
@@ -469,17 +508,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           continue;
         }
         if (lists !== undefined) {
-          const force = lists.takeOver.length > 0;
+          const { takeOver } = lists;
+          const force = takeOver.length > 0;
           const after = await applyObject(object, resourceVersion, force, true);
           if (force) {
             const unlisted = unlistedTakes(
               ref,
               before!,
               after,
-              foreign!.changed.filter((f) => lists.takeOver.includes(f.path)),
+              foreign!.changed.filter((f) => takeOver.includes(f.path)),
             );
             if (unlisted.length > 0) {
-              errors.push(...unlisted);
+              refuse(unlisted, after);
               continue;
             }
           }
@@ -513,12 +553,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
               );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
-        errors.push(
-          ...(await staleFirst(
+        refuse(
+          await staleFirst(
             apiErrorsOf(error, ref, resourceVersion !== undefined),
             ref,
             resourceVersion,
-          )),
+          ),
         );
       }
     }
@@ -540,6 +580,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       objects,
       errors,
       ...(ownership.length > 0 ? { ownership } : {}),
+      ...(blocked.length > 0 ? { blocked } : {}),
       uids,
       fresh,
       plans,
@@ -547,11 +588,16 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const preview = async (change: Change): Promise<Preview> => {
-    const { objects, errors, ownership } = await dryRun(change, {
+    const { objects, errors, ownership, blocked } = await dryRun(change, {
       managers: change.previewManagers,
       mergePatches: change.previewMergePatches,
     });
-    return { objects, errors, ...(ownership ? { ownership } : {}) };
+    return {
+      objects,
+      errors,
+      ...(ownership ? { ownership } : {}),
+      ...(blocked ? { blocked } : {}),
+    };
   };
 
   const apply = async (change: Change): Promise<WriteResult> => {
@@ -642,6 +688,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 }
 
 type DeletePreconditions = { resourceVersion?: string; uid?: string };
+
+// The API server keeps the key fields of a list item that stays.
+function isItemKey(field: ForeignField): boolean {
+  const [item, key] = field.steps.slice(-2);
+  return (
+    item !== undefined &&
+    "item" in item &&
+    key !== undefined &&
+    "field" in key &&
+    Object.hasOwn(item.item, key.field)
+  );
+}
 
 function isConflict(error: unknown): boolean {
   return error instanceof KubernetesRequestError && error.statusCode === 409;
