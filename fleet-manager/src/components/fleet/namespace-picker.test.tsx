@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
@@ -227,5 +227,56 @@ describe("NamespacePicker", () => {
     expect(
       screen.queryByRole("radio", { name: "Create a namespace" }),
     ).toBeNull();
+  });
+
+  it("shows the namespace select without a choice when only an existing namespace is possible", async () => {
+    const onChange = vi.fn();
+    render(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={{ name: "prod" }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.queryAllByRole("radio")).toEqual([]);
+    const group = screen.getByRole("group", { name: "Namespace" });
+    await userEvent.selectOptions(
+      within(group).getByRole("combobox", { name: "Namespace" }),
+      "team-payments",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      { kind: "existing", name: "team-payments" },
+      [],
+    );
+  });
+
+  it("says that the environment has no namespace yet when it cannot create one", () => {
+    render(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={{ name: "staging", displayName: "Staging" }}
+      />,
+    );
+    expect(screen.queryAllByRole("radio")).toEqual([]);
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(
+      within(screen.getByRole("group", { name: "Namespace" })).getByText(
+        "No namespace is in Staging yet.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers both choices when the environment allows a new namespace", () => {
+    render(
+      <NamespacePicker namespaces={namespaces} environment={environment} />,
+    );
+    const existing = screen.getByRole<HTMLInputElement>("radio", {
+      name: "Use an existing namespace",
+    });
+    expect(existing.checked).toBe(true);
+    expect(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Namespace" })).toBeTruthy();
   });
 });

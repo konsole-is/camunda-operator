@@ -138,98 +138,120 @@ export function NamespacePicker({
       : undefined;
   const touch = (path: string) => setTouched(new Set(touched).add(path));
 
+  const existingControl =
+    own.length === 0 ? (
+      <p className="text-sm text-muted">{`No namespace is in ${environment?.displayName ?? environment?.name ?? "the cluster"} yet.`}</p>
+    ) : (
+      <NativeSelect
+        aria-labelledby={`${id}-legend`}
+        value={activeExisting}
+        onChange={(e) => {
+          setExisting(e.target.value);
+        }}
+      >
+        <NativeSelectOption value="">Pick a namespace</NativeSelectOption>
+        {own.map((ns) => (
+          <NativeSelectOption key={ns.name} value={ns.name}>
+            {ns.name}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
+    );
+
   return (
     <fieldset className="flex min-w-0 flex-col gap-4">
-      <legend className="mb-1 font-heading text-base font-semibold">
+      <legend
+        id={`${id}-legend`}
+        className="mb-1 font-heading text-base font-semibold"
+      >
         Namespace
       </legend>
-      <label className="flex min-h-6 items-center gap-2 text-sm">
-        <Radio
-          name={`${id}-mode`}
-          checked={activeMode === "existing"}
-          onChange={() => {
-            setMode("existing");
-          }}
-        />
-        Use an existing namespace
-      </label>
-      {activeMode === "existing" && (
-        <div className="flex max-w-md flex-col gap-1 pl-6">
-          <label htmlFor={`${id}-existing`} className="sr-only">
-            Namespace
-          </label>
-          {own.length === 0 ? (
-            <p className="text-sm text-muted">{`No namespace is in ${environment?.displayName ?? environment?.name ?? "the cluster"} yet.`}</p>
-          ) : (
-            <NativeSelect
-              id={`${id}-existing`}
-              value={activeExisting}
-              onChange={(e) => {
-                setExisting(e.target.value);
-              }}
-            >
-              <NativeSelectOption value="">Pick a namespace</NativeSelectOption>
-              {own.map((ns) => (
-                <NativeSelectOption key={ns.name} value={ns.name}>
-                  {ns.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          )}
-        </div>
-      )}
-      {canCreate && (
-        <label className="flex min-h-6 items-center gap-2 text-sm">
-          <Radio
-            name={`${id}-mode`}
-            checked={activeMode === "new"}
-            onChange={() => {
-              setMode("new");
-            }}
-          />
-          Create a namespace
-        </label>
-      )}
-      {activeMode === "new" && (
-        <div className="flex flex-col gap-3 pl-6">
-          <Field
-            id={`${id}-name`}
-            label="Name"
-            value={name}
-            error={errorAt("name")}
-            onValue={(v) => {
-              setName(v);
-              touch("name");
-            }}
-          />
-          {askedKeys.map((key) => (
-            <Field
-              key={key}
-              id={`${id}-label-${key}`}
-              label={key}
-              value={values[key] ?? ""}
-              error={errorAt(`labels.${key}`)}
-              onValue={(v) => {
-                const next = { ...values, [key]: v };
-                setValues(next);
-                touch(`labels.${key}`);
-              }}
+      {!canCreate ? (
+        <div className="max-w-md">{existingControl}</div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            <ModeRadio
+              name={`${id}-mode`}
+              label="Use an existing namespace"
+              checked={activeMode === "existing"}
+              onPick={() => setMode("existing")}
             />
-          ))}
-          <div className="text-xs text-muted">
-            <p className="mb-1">The new namespace also gets these labels:</p>
-            <ul className="font-mono">
-              {Object.entries({
-                ...creation?.labels,
-                [ENVIRONMENT_LABEL]: environment!.name,
-              }).map(([k, v]) => (
-                <li key={k}>{`${k}=${v}`}</li>
-              ))}
-            </ul>
+            {activeMode === "existing" && (
+              <div className="max-w-md pl-6">{existingControl}</div>
+            )}
           </div>
-        </div>
+          <div className="flex flex-col gap-2">
+            <ModeRadio
+              name={`${id}-mode`}
+              label="Create a namespace"
+              checked={activeMode === "new"}
+              onPick={() => setMode("new")}
+            />
+            {activeMode === "new" && (
+              <div className="flex flex-col gap-3 pl-6">
+                <Field
+                  id={`${id}-name`}
+                  label="Name"
+                  value={name}
+                  error={errorAt("name")}
+                  onValue={(v) => {
+                    setName(v);
+                    touch("name");
+                  }}
+                />
+                {askedKeys.map((key) => (
+                  <Field
+                    key={key}
+                    id={`${id}-label-${key}`}
+                    label={key}
+                    value={values[key] ?? ""}
+                    error={errorAt(`labels.${key}`)}
+                    onValue={(v) => {
+                      const next = { ...values, [key]: v };
+                      setValues(next);
+                      touch(`labels.${key}`);
+                    }}
+                  />
+                ))}
+                <div className="text-xs text-muted">
+                  <p className="mb-1">
+                    The new namespace also gets these labels:
+                  </p>
+                  <ul className="font-mono">
+                    {Object.entries({
+                      ...creation?.labels,
+                      [ENVIRONMENT_LABEL]: environment!.name,
+                    }).map(([k, v]) => (
+                      <li key={k}>{`${k}=${v}`}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </fieldset>
+  );
+}
+
+function ModeRadio({
+  name,
+  label,
+  checked,
+  onPick,
+}: {
+  name: string;
+  label: string;
+  checked: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <label className="flex min-h-6 items-center gap-2 text-sm">
+      <Radio name={name} checked={checked} onChange={onPick} />
+      {label}
+    </label>
   );
 }
 
