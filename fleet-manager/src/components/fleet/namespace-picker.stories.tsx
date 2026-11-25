@@ -45,3 +45,11 @@ export const CreationNotAllowed: Story = {
   name: "Creation not allowed",
   args: { environment: { name: "prod", displayName: "Production" } },
 };
+
+export const NoNamespaceToPick: Story = {
+  name: "No namespace to pick",
+  args: {
+    namespaces: [],
+    environment: { name: "prod", displayName: "Production" },
+  },
+};
