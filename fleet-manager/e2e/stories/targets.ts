@@ -10,8 +10,8 @@ export const MIN_TARGET = 24;
  * its labels, so a part that another element covers does not count. A link
  * in a sentence, a disabled control, and a control that is not shown are not
  * counted. Nor is a control in inert content, or a control that has no
- * pointer events on it and on each of its labels. An empty list means that
- * the page passes.
+ * pointer events on any shown part of it or of its labels. An empty list
+ * means that the page passes.
  */
 export async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate((min) => {
@@ -31,11 +31,16 @@ export async function smallTargets(page: Page): Promise<string[]> {
         el.checkVisibility()
       );
     };
+    const takesPointer = (box: Element) =>
+      [box, ...box.querySelectorAll("*")].some(
+        (n) =>
+          !n.closest("[inert]") &&
+          n.checkVisibility() &&
+          getComputedStyle(n).pointerEvents !== "none",
+      );
     const reachable = (el: Element) =>
       !el.closest("[inert]") &&
-      [el, ...((el as HTMLInputElement).labels ?? [])].some(
-        (box) => getComputedStyle(box).pointerEvents !== "none",
-      );
+      [el, ...((el as HTMLInputElement).labels ?? [])].some(takesPointer);
     // WCAG 2.5.8 exempts a target in a sentence or a block of text.
     const inRunningText = (el: Element) => {
       if (el.tagName !== "A" || getComputedStyle(el).display !== "inline")

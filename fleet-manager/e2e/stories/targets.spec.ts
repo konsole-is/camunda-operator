@@ -87,3 +87,14 @@ test("the target check counts a control without pointer events whose label takes
   const lines = await smallTargets(page);
   expect(lines.filter((l) => l.includes('"pick"'))).toHaveLength(1);
 });
+
+test("the target check counts a control without pointer events whose child takes the pointer", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<button style="pointer-events: none; font-size: 8px">' +
+      '<span style="pointer-events: auto">Go</span></button>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"Go"'))).toHaveLength(1);
+});
