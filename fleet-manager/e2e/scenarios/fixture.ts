@@ -129,7 +129,7 @@ async function startScenarioApp(
 }
 
 function fixedClock(): Record<string, string> {
-  const preload = `--import=${path.resolve("e2e/scenarios/fixed-clock.mts")}`;
+  const preload = `--import=${JSON.stringify(path.resolve("e2e/scenarios/fixed-clock.mts"))}`;
   return {
     FLEET_FIXED_NOW: DOCS_NOW,
     NODE_OPTIONS: [process.env.NODE_OPTIONS, preload].filter(Boolean).join(" "),

@@ -113,13 +113,13 @@ export function pngWidth(head: Uint8Array): number {
  * guide pages, the docShot calls of the spec files, and the image files. An
  * empty list means that they agree. It reports:
  *
- * - a page image that no docShot takes, and a docShot that no page shows;
+ * - a page image that no docShot takes, and a docShot that no page shows.
  * - a name that two docShot calls take, a name that is not lowercase words
- *   joined by -, and a name that is not a string literal;
- * - a file that no docShot takes, and a docShot without a file;
- * - an empty alt text, an alt text equal to the name, and one over 20 words;
+ *   joined by -, and a name that is not a string literal.
+ * - a file that no docShot takes, and a docShot without a file.
+ * - an empty alt text, an alt text equal to the name, and one over 20 words.
  * - a page whose scenario comment is missing or differs from the scenarios
- *   of its images, and a comment on a page without images;
+ *   of its images, and a comment on a page without images.
  * - a file over MAX_IMAGE_BYTES or wider than IMAGE_WIDTH, and a folder over
  *   MAX_FOLDER_BYTES.
  */

@@ -14,17 +14,41 @@ test("an edit of a broker setting shows its source and counts in the bar", async
   await page.goto(`${ORDERS}?tab=overview&component=zeebe`);
   await page.getByRole("tab", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Edit settings" }).click();
-  const field = page.getByRole("group", { name: "replicas" });
-  const replicas = field.getByRole("spinbutton");
-  await replicas.fill("15");
+  const field = page.getByRole("group", { name: "partitions" });
+  const partitions = field.getByRole("spinbutton");
+  await partitions.fill("12");
   await expect(field.getByText("Changed in the claim")).toBeVisible();
   const bar = page.getByRole("region", { name: "Unsaved changes" });
   await expect(bar.getByText("1 unsaved change")).toBeVisible();
   await expect(bar.getByRole("button", { name: "Review" })).toBeEnabled();
   await checkPage(page, "cluster-settings-edit");
-  await field.evaluate((el) => el.scrollIntoView({ block: "center" }));
   await docShot(page, "cluster-component-settings-editor", {
-    ready: replicas,
+    ready: partitions,
+    target: page
+      .getByRole("button", { name: "Close the editors" })
+      .locator(".."),
+    until: field,
+  });
+});
+
+test("the Logs tab of the brokers shows the time, the level, the logger, and the message of a JSON line", async ({
+  page,
+}) => {
+  await page.goto(`${ORDERS}?tab=overview&component=zeebe`);
+  await page.getByRole("tab", { name: "Logs" }).click();
+  await page.getByLabel("Pod").selectOption("orders-zeebe-0");
+  const log = page.getByRole("log");
+  const line = log
+    .locator("div")
+    .filter({ hasText: "Partition 1 is healthy" })
+    .last();
+  await expect(line).toContainText("00:00:04");
+  await expect(line).toContainText("INFO");
+  await expect(line).toContainText("io.camunda.zeebe.broker.system");
+  await checkPage(page, "cluster-component-logs");
+  await docShot(page, "cluster-component-logs", {
+    ready: line,
+    target: page.getByRole("region", { name: "Brokers", exact: true }),
   });
 });
 

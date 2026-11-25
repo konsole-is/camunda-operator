@@ -20,7 +20,7 @@ test("lists a contract created by hand with its user", async ({ page }) => {
   await expect(row.getByRole("cell", { name: "1", exact: true })).toBeVisible();
   await expect(row.getByText("Ready", { exact: true })).toBeVisible();
   await checkPage(page, "connections");
-  await docShot(page, "connections-list", { ready: row });
+  await docShot(page, "connections-list", { ready: row, until: row });
 
   await row.getByRole("link", { name: "backups", exact: true }).click();
   await expect(page).toHaveURL(

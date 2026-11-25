@@ -43,7 +43,7 @@ test("back up now creates a backup with the cluster reference", async ({
   await docShot(page, "cluster-backups-tab", {
     ready: page.getByRole("button", { name: `Details of ${name}` }),
     // The API server stamps the start of the backup with its own clock.
-    mask: [
+    hide: [
       page
         .getByRole("row")
         .filter({ hasText: name })

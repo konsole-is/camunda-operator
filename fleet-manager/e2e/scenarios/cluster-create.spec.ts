@@ -32,8 +32,13 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
       .getByRole("group", { name: /Secondary storage/ })
       .getByRole("radio", { name: /New Elasticsearch cluster/ }),
   ).toBeChecked();
+  const storageStep = page.getByRole("heading", {
+    level: 2,
+    name: "Storage and access",
+  });
   await docShot(page, "create-cluster-storage-and-access", {
-    ready: page.getByRole("heading", { level: 2, name: "Storage and access" }),
+    ready: storageStep,
+    target: storageStep.locator("xpath=../.."),
   });
   await next.click();
 
@@ -70,8 +75,12 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
     await expect(page.getByText(row, { exact: true })).toBeVisible();
   }
   await checkPage(page, "cluster-create-progress");
+  const progress = page.getByRole("region", {
+    name: "Creating the cluster orders",
+  });
   await docShot(page, "create-cluster-progress", {
-    ready: page.getByRole("heading", { name: "Creating the cluster orders" }),
+    ready: progress,
+    target: progress,
   });
 
   const namespace = await kubeRequest<{

@@ -1,0 +1,21 @@
+# Written by hand. The page scenarios read it in place of the kubelet and
+# metrics.k8s.io, which envtest does not have. The lines are JSON, so the
+# Logs tab shows the time, the level, and the logger in their own columns.
+schemaVersion: 1
+logs:
+  - namespace: team-orders
+    pod: orders-zeebe-0
+    lines:
+      - '{"timestamp":"2026-01-01T00:00:01.120Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.system","message":"Broker 0 started"}'
+      - '{"timestamp":"2026-01-01T00:00:02.430Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.clustering","message":"Joined the cluster with 3 brokers"}'
+      - '{"timestamp":"2026-01-01T00:00:04.050Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.system","message":"Partition 1 is healthy"}'
+      - '{"timestamp":"2026-01-01T00:00:07.810Z","severity":"WARN","logger_name":"io.camunda.zeebe.broker.exporter","message":"Exporter elasticsearch retries the bulk request"}'
+      - '{"timestamp":"2026-01-01T00:00:09.300Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.exporter","message":"Exporter elasticsearch exported 120 records"}'
+  - namespace: team-orders
+    pod: orders-zeebe-1
+    lines:
+      - '{"timestamp":"2026-01-01T00:00:01.340Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.system","message":"Broker 1 started"}'
+  - namespace: team-orders
+    pod: orders-zeebe-2
+    lines:
+      - '{"timestamp":"2026-01-01T00:00:01.560Z","severity":"INFO","logger_name":"io.camunda.zeebe.broker.system","message":"Broker 2 started"}'
