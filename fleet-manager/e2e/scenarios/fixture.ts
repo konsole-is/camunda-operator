@@ -5,6 +5,7 @@ import { OBSERVE_FILE_VARIABLE } from "../../src/lib/observe/observe-variable";
 import { KubeError, kubeRequest } from "../../test/scenarios/kube";
 import { type Scenario, openScenario } from "../../test/scenarios/loader";
 import { bindChartRBAC } from "../../test/scenarios/rbac";
+import { DOCS_NOW, DOCS_PROJECT } from "../docs-images";
 import { type EnvtestApp, startEnvtestApp } from "../envtest-app";
 import { type PrometheusStub, startPrometheusStub } from "./prometheus-stub";
 
@@ -42,7 +43,8 @@ type ScenarioApps = { open(file: string): Promise<ScenarioApp> };
  * which the file sets with test.use({ scenarioName: "<name>" }). Each file
  * gets its own envtest, the scenario, and a server of the envtest build
  * that reads the scenario as APP_USER. The tests of a file share them and
- * run in order. baseURL is the app.
+ * run in order. baseURL is the app. In the docs project, the page and the
+ * app server read DOCS_NOW as the time.
  */
 export const test = base.extend<
   { scenario: ScenarioHandle; scenarioApp: ScenarioApp },
@@ -53,14 +55,15 @@ export const test = base.extend<
     { scope: "worker", option: true },
   ],
   scenarioApps: [
-    async ({ scenarioName }, provide) => {
+    async ({ scenarioName }, provide, workerInfo) => {
+      const docs = workerInfo.project.name === DOCS_PROJECT;
       let current: ScenarioApp | undefined;
       await provide({
         async open(file) {
           if (current?.file === file) return current;
           if (current) await stopScenarioApp(current);
           current = undefined;
-          current = await startScenarioApp(scenarioName, file);
+          current = await startScenarioApp(scenarioName, file, docs);
           return current;
         },
       });
@@ -80,11 +83,18 @@ export const test = base.extend<
   baseURL: async ({ scenarioApp }, provide) => {
     await provide(scenarioApp.app.baseURL);
   },
+  page: async ({ page }, provide, testInfo) => {
+    if (testInfo.project.name === DOCS_PROJECT) {
+      await page.clock.setFixedTime(DOCS_NOW);
+    }
+    await provide(page);
+  },
 });
 
 async function startScenarioApp(
   scenarioName: string | undefined,
   file: string,
+  docs: boolean,
 ): Promise<ScenarioApp> {
   if (!scenarioName) {
     throw new Error("Set test.use({ scenarioName }) in the test file");
@@ -107,6 +117,7 @@ async function startScenarioApp(
           FLEET_NAMESPACE: APP_NAMESPACE,
           FLEET_SETTINGS_PROMETHEUS_URL: prometheus.url,
           [OBSERVE_FILE_VARIABLE]: path.join(dir, "observe.yaml"),
+          ...(docs ? fixedClock() : {}),
         },
       };
     },
@@ -115,6 +126,14 @@ async function startScenarioApp(
     throw error;
   });
   return { file, app, scenario: handle! };
+}
+
+function fixedClock(): Record<string, string> {
+  const preload = `--import=${JSON.stringify(path.resolve("e2e/scenarios/fixed-clock.mts"))}`;
+  return {
+    FLEET_FIXED_NOW: DOCS_NOW,
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, preload].filter(Boolean).join(" "),
+  };
 }
 
 async function stopScenarioApp({ app, scenario }: ScenarioApp): Promise<void> {

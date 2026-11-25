@@ -1,4 +1,5 @@
 # Create a cluster
+<!-- Screenshots: make fleet-docs-screenshots, scenarios cluster-create -->
 
 The create form asks for the environment, the preset, the release, and the storage and access options of a new cluster. It then writes the claim of the cluster, and the operator builds the cluster from it. [What the fleet manager writes](install.md#what-the-fleet-manager-writes) explains these words.
 
@@ -17,6 +18,8 @@ Open **Fleet** and select **New cluster**. The form has five steps: **Environmen
 
 Under the name, the step shows the hosts that the cluster gets from its access option.
 
+![The Environment and name step with the Apps environment, the name orders, a new namespace, and the small preset.](images/create-cluster-environment-and-name.png)
+
 ## Storage and access
 
 The step has one group for each storage and access choice that the environment allows, for example **Secondary storage**, **Backup storage**, and **Access**. Each option is a card. The form picks the card with the **Default** label for you. Under the picked card, the step shows the parameters that you can set.
@@ -25,6 +28,8 @@ If another cluster already uses a host of the access option, the step says so. G
 
 **When the cluster is deleted** says what happens to the resources of these options, for example a bucket. Pick **Keep the resources** or **Delete the resources**. The default comes from the environment.
 
+![The Storage and access step with a group for each choice, and New Elasticsearch cluster picked as the default.](images/create-cluster-storage-and-access.png)
+
 ## Cluster settings
 
 Pick the **Release** and the **Platform config**. Both start at the default of the environment.
@@ -32,6 +37,8 @@ Pick the **Release** and the **Platform config**. Both start at the default of t
 Below them, the settings of the cluster come in groups: one for the whole cluster and one for each process, such as **Brokers**. Select the name of a group to open it. Each setting shows where its value comes from, for example **From preset**. A change applies to this cluster only, and does not change the preset. The number next to a group counts the settings that you changed.
 
 A setting that an option fills, for example the storage class of an encrypted volume, shows locked with the name of its choice.
+
+![The Cluster settings step with the release, the platform config, and a closed group of settings for each process.](images/create-cluster-settings.png)
 
 ### Errors in the settings
 
@@ -84,6 +91,8 @@ The Kubernetes API checks the claim before you create it. If it refuses the clai
 
 **Permissions the options ask for** lists the cloud permissions of the options, for example an IAM policy for a bucket. A value that does not exist yet shows as a placeholder, such as `<bucket ARN from Backup storage>`.
 
+![The Review step with the claim as YAML and the values of each step.](images/create-cluster-review.png)
+
 ## Create the cluster
 
 Select **Create**. The page then shows the progress of the cluster, and `Created the cluster <name>.`
@@ -99,6 +108,8 @@ After **Create**, the page shows the `Ready` condition of the claim and its mess
 While an option waits for another option, the message names the choice that it waits for.
 
 If the operator refuses the claim, the page shows the reason, for example `NotAllowed`, and the message. Correct the cause, for example in the environment. The operator then checks the claim again. The [Status](../crds/camundaclusterclaim.md#status) section of `CamundaClusterClaim` lists each reason and what to do.
+
+![The progress of the cluster orders with a row for the secondary storage, the requests, the cluster, and the attachments.](images/create-cluster-progress.png)
 
 ## Related
 

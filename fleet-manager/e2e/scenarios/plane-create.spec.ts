@@ -3,6 +3,7 @@ import type { CamundaManagementClusterClaim } from "../../src/generated/crds/cam
 import { parseImagesTable } from "../../src/startup/bundled-data";
 import { kubeRequest } from "../../test/scenarios/kube";
 import { PAGES_DIR, shot } from "../shot";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage, inBothThemes } from "./themes";
 
@@ -26,6 +27,9 @@ test("creates a plane with no access from outside and existing database configs"
   await page
     .getByRole("radio", { name: /Keycloak, run by this plane/ })
     .check();
+  await docShot(page, "plane-create-basics", {
+    ready: page.getByRole("radio", { name: /Keycloak, run by this plane/ }),
+  });
   await next.click();
 
   // Environments served
@@ -61,6 +65,7 @@ test("creates a plane with no access from outside and existing database configs"
   ).toBeFocused();
   await expect(create).toBeEnabled();
   await checkPage(page, "plane-create-review");
+  await docShot(page, "plane-create-review", { ready: create });
 
   // Back sits beside Create, right after it in the tab order.
   const back = page

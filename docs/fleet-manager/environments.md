@@ -1,4 +1,5 @@
 # Environments
+<!-- Screenshots: make fleet-docs-screenshots, scenarios release-rollout -->
 
 An environment sets the rules for the clusters and management planes in its namespaces. It names the platform config, the presets, and the releases that they can use. It sets the storage and access options that they can pick, and the values of the parameters of these options. It also sets what happens to the resources on delete, and the rules for a new namespace. The [Environment](../crds/environment.md) reference lists the fields.
 
@@ -77,6 +78,8 @@ Each row has three settings:
 - **Allowed options**: the options that a cluster of the environment can pick. Without an allowed option, the choice offers only its empty option, for example **No backups**.
 - **Default option**: the option that the create form picks first. It must be one of the allowed options.
 - **Required**: a cluster must pick an allowed option. The create form then does not offer the empty option.
+
+![The Secondary storage row of the environment editor with its allowed options, its default option, and Required.](images/environment-storage-and-access-options.png)
 
 The row offers only the options that the operator accepted. An option that is not ready shows `Not ready:` and its message. You can allow it, and the create form offers it when it is ready.
 

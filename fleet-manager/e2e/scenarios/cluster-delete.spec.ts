@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -25,4 +26,7 @@ test("the cluster header opens the delete page, which defaults to Delete the res
     page.getByRole("button", { name: "Delete the cluster" }),
   ).toBeDisabled();
   await checkPage(page, "cluster-delete");
+  await docShot(page, "cluster-delete-page", {
+    ready: page.getByRole("heading", { name: "Delete the cluster orders" }),
+  });
 });

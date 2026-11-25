@@ -1,4 +1,5 @@
 # Platform config and connections
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, cluster-es-backups -->
 
 ## Platform config
 
@@ -38,6 +39,8 @@ spec:
 Select **New platform config** on the page **Setup > Platform**. Type the **Name**. Clusters, management planes, database servers, claims, and environments use this name to refer to the config. You cannot change it later. To start from a config that exists, select it in **Copy from**. The new config then gets the authentication, the license Secret, and the image repositories of that config.
 
 Select the authentication method. Then complete the fields, the license Secret, and the image repositories, as on the page of a config. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new config opens.
+
+![The New platform config page with the name, the Basic authentication, and the license Secret.](images/platform-config-create.png)
 
 A Secret that does not exist shows as `(not found)`. You can create the config anyway, but it is not ready until the Secret exists.
 
@@ -86,6 +89,8 @@ A connection contract tells a cluster where its storage or its identity provider
 
 Select the name of a contract to open its page, with the panels **Status**, **Writer**, **Settings**, and **Used by**.
 
+![The Connections page on the Object storage tab, with the writer, the users, and the status of each contract.](images/connections-list.png)
+
 ### Who wrote a contract
 
 The column **Writer** says who wrote the contract:
@@ -111,6 +116,8 @@ Open the tab of the kind, and select its **New** button, for example **New objec
 Select the **Namespace**. Only resources in that namespace can use the contract. A Management Identity contract has no namespace. To start from a contract of the same kind, select it in **Copy from**. The new contract gets its settings.
 
 For a storage contract, select the storage type. For an object storage contract, also select the auth type. Then complete the fields and the Secrets, as in [Change a contract](#change-a-contract). Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new contract opens, with the writer `Created by hand`.
+
+![The New object storage contract page with the name, the namespace, the storage type, and the bucket.](images/connection-create-object-storage.png)
 
 The page refuses a name that a contract of the same kind has in the namespace. It also refuses a Management Identity name that a management plane uses.
 

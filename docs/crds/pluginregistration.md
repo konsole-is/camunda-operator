@@ -298,4 +298,5 @@ spec:
 - [PluginSection](pluginsection.md): the sections that a registration serves.
 - [PluginRequest](pluginrequest.md): the request that a claim writes when it selects the option.
 - [Grant](grant.md): the permissions that the plugin writes from the grant templates.
+- [Storage and access](../fleet-manager/create-a-cluster.md#storage-and-access): a section and its options in the create form of the fleet manager.
 - [API reference](api-reference.md#pluginregistration): every field of the kind.

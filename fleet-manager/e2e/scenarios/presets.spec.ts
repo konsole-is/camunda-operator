@@ -1,5 +1,6 @@
 import type { ElasticsearchClusterPreset } from "../../src/generated/crds/elasticsearchclusterpreset";
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -84,6 +85,9 @@ test("New preset creates an Elasticsearch preset with one field", async ({
   ).toBeVisible();
   await page.getByRole("radio", { name: "Elasticsearch" }).check();
   await page.getByLabel("Name", { exact: true }).fill("search-lab");
+  await docShot(page, "preset-create-elasticsearch", {
+    ready: page.getByLabel("Name", { exact: true }),
+  });
   await page
     .getByRole("region", { name: "Elasticsearch settings" })
     .getByRole("group", { name: "replicas" })
