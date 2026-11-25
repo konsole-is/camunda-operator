@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-Bjp52BOI.js";function t(e){return e.length<=2?e.join(` and `):`${e.slice(0,-1).join(`, `)}, and ${e.at(-1)}`}function n(e){return e.split(/(?<=[/.])(?=.)|(?<=[a-z])(?=[A-Z])/)}function r(){return(r=e((()=>{})))()}export{r as n,t as r,n as t};
