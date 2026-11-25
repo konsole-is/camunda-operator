@@ -853,6 +853,41 @@ describe("directWriter with a take-over", () => {
       });
     });
 
+    it("drops from a kept map of another tool the keys that only the fleet manager set", async () => {
+      const mixed = environment(
+        { displayName: "Stage", extra: { a: "1", b: "2" } },
+        [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": { "f:displayName": {}, "f:extra": { "f:a": {} } },
+            },
+          },
+          {
+            manager: "fleet-manager",
+            operation: "Apply",
+            fieldsV1: { "f:spec": { "f:extra": { "f:b": {} } } },
+          },
+        ],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: mixed }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        extra: { a: "1" },
+      });
+    });
+
     it("shows the update of a save that stopped after its update", async () => {
       const unfinished = environment({ displayName: "Stage", color: "red" }, [
         kubectlOwns("displayName"),

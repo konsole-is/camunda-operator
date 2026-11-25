@@ -36,6 +36,7 @@ import {
   removedFields,
   takenFields,
   withKeptFields,
+  withoutFields,
 } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
@@ -403,17 +404,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         )
           return;
         const removed = lists ? foreign.cleared.filter(offered) : [];
+        const pruned = prunedFields(before, object, change.keep?.[key]);
         const shown =
-          after ??
-          laidOver(before, object, [
-            ...removed,
-            ...prunedFields(before, object, change.keep?.[key]),
-          ]);
+          after ?? laidOver(before, object, [...removed, ...pruned]);
         // Server-side apply keeps each field of another manager that the
         // save leaves out and does not remove.
         const stays = foreign.cleared.filter((f) => !removed.includes(f));
         blocked.push(
-          previewObject(ref, before, withKeptFields(shown, stays, before)),
+          previewObject(
+            ref,
+            before,
+            withKeptFields(shown, stays, withoutFields(before, pruned)),
+          ),
         );
       };
       try {
