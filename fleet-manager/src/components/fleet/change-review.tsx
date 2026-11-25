@@ -161,7 +161,7 @@ export function ChangeReview({
   const alerts = [...previewErrors, ...writeErrors].map(textOf);
   const kept = choosing
     ? []
-    : (checked?.objects ?? []).flatMap((object) => {
+    : shown.flatMap((object) => {
         const sent = change.apply.find(
           (o) =>
             o.kind === object.ref.kind &&

@@ -461,6 +461,31 @@ describe("ChangeReview with fields of another tool", () => {
       expect(confirm()).toHaveProperty("disabled", true);
     });
 
+    it("names a field that another tool keeps in a stopped object when the page offers no take-over", async () => {
+      setup({
+        change: updated,
+        preview: {
+          ...conflicted,
+          blocked: [
+            {
+              ref,
+              after: {
+                ...applied,
+                spec: { displayName: "Stage", color: "red" },
+              },
+              diff: blockedDiff,
+            },
+          ],
+        },
+        offerTakeOver: false,
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole("note", { name: "Kept fields" }).textContent,
+        ).toContain("spec.color stays, because another tool set it."),
+      );
+    });
+
     it("shows the first object of the change under diffLabel, also when another tool stops it", async () => {
       const other = {
         apiVersion: "v1",

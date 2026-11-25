@@ -970,7 +970,42 @@ describe("directWriter with a take-over", () => {
       });
 
       expect(seen.some((r) => r.url.includes("force=true"))).toBe(false);
-      expect(seen.filter((r) => r.method === "PATCH")).toHaveLength(1);
+      const patches = seen.filter((r) => r.method === "PATCH");
+      expect(patches).toHaveLength(1);
+      expect(patches.every((r) => r.url.includes("dryRun=All"))).toBe(true);
+    });
+
+    it("shows the answer of the forced dry run of a take-over that would take a field the list does not name", async () => {
+      const owned = environment({ displayName: "Stage", color: "red" }, [
+        kubectlOwns("displayName", "color"),
+      ]);
+      const taken = environment({ displayName: "Prod", color: "blue" }, [
+        {
+          manager: "fleet-manager",
+          operation: "Apply",
+          fieldsV1: { "f:spec": { "f:displayName": {}, "f:color": {} } },
+        },
+      ]);
+      answer = (r) => ({
+        status: 200,
+        body: r.method === "GET" ? owned : taken,
+      });
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+        takeOver: { [key]: ["spec.displayName"] },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Conflict", path: "spec.color" }),
+      ]);
+      expect(preview.objects).toEqual([]);
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        color: "blue",
+      });
     });
 
     it("leaves blocked unset when the object changed since the read", async () => {
