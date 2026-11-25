@@ -1,5 +1,5 @@
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
-import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, referenceNameError } from "@/lib/labels";
 import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
 import { equalJSON } from "@/lib/policy";
@@ -23,11 +23,6 @@ export type PlatformDraft = CamundaPlatformConfig["spec"];
 
 /** PlatformCreateDraft is the form of a new platform config: its name and its spec. */
 export type PlatformCreateDraft = { name: string; spec: PlatformDraft };
-
-// The pattern and the length of spec.platformConfigRef of a CamundaCluster
-// and of a CamundaClusterClaim.
-const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const NAME_MAX = 253;
 
 type Oidc = NonNullable<NonNullable<PlatformDraft["auth"]>["oidc"]>;
 
@@ -157,10 +152,8 @@ export function nameErrors(
 ): ValidationError[] {
   const error = (message: string) => [{ path: "name", message }];
   if (name === "") return error("Give the platform config a name.");
-  if (!NAME.test(name) || name.length > NAME_MAX)
-    return error(
-      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
-    );
+  const invalid = referenceNameError(name);
+  if (invalid) return error(invalid);
   if (taken.includes(name))
     return error("A platform config with this name exists.");
   return [];

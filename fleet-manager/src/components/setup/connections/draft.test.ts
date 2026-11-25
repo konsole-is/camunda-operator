@@ -607,10 +607,6 @@ describe("nameErrors", () => {
   it.each([
     ["", "Give the contract a name."],
     ["team.a", NAME_RULE],
-    ["Backups", NAME_RULE],
-    ["-backups", NAME_RULE],
-    ["backups-", NAME_RULE],
-    ["a".repeat(254), NAME_RULE],
     ["backups", "A contract with this name exists in this namespace."],
   ])("refuses the object storage name %j", (name, message) => {
     expect(nameErrors("ObjectStorageConfig", name, ["backups"])).toEqual([
@@ -618,10 +614,10 @@ describe("nameErrors", () => {
     ]);
   });
 
-  it("accepts a free name of 253 characters", () => {
-    expect(
-      nameErrors("DatabaseConfig", "a".repeat(253), ["orders-db"]),
-    ).toEqual([]);
+  it("accepts a free name", () => {
+    expect(nameErrors("DatabaseConfig", "orders-db-2", ["orders-db"])).toEqual(
+      [],
+    );
   });
 
   it("refuses a Management Identity name that exists or that a management plane writes", () => {

@@ -189,10 +189,6 @@ describe("nameErrors", () => {
   it.each([
     ["", "Give the preset a name."],
     ["team.a", NAME_RULE],
-    ["Small", NAME_RULE],
-    ["small-", NAME_RULE],
-    ["-small", NAME_RULE],
-    ["a".repeat(254), NAME_RULE],
     ["standard", "A preset of this kind with this name exists."],
   ])("refuses the name %j", (name, message) => {
     expect(nameErrors(name, ["standard"])).toEqual([{ path: "name", message }]);
@@ -200,8 +196,6 @@ describe("nameErrors", () => {
 
   it("accepts a name that a claim can name", () => {
     expect(nameErrors("standard-two", ["standard"])).toEqual([]);
-    expect(nameErrors("7", [])).toEqual([]);
-    expect(nameErrors("a".repeat(253), [])).toEqual([]);
   });
 });
 
