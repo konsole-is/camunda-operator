@@ -9,7 +9,9 @@ export const MIN_TARGET = 24;
  * box is what a hit test through the center of the control gives to it or to
  * its labels, so a part that another element covers does not count. A link
  * in a sentence, a disabled control, and a control that is not shown are not
- * counted. An empty list means that the page passes.
+ * counted. Nor is a control under an element with the inert attribute, or a
+ * control that has no pointer events on any shown part of it or of its
+ * labels. An empty list means that the page passes.
  */
 export async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate((min) => {
@@ -29,6 +31,16 @@ export async function smallTargets(page: Page): Promise<string[]> {
         el.checkVisibility()
       );
     };
+    const takesPointer = (box: Element) =>
+      [box, ...box.querySelectorAll("*")].some(
+        (n) =>
+          !n.closest("[inert]") &&
+          shown(n) &&
+          getComputedStyle(n).pointerEvents !== "none",
+      );
+    const reachable = (el: Element) =>
+      !el.closest("[inert]") &&
+      [el, ...((el as HTMLInputElement).labels ?? [])].some(takesPointer);
     // WCAG 2.5.8 exempts a target in a sentence or a block of text.
     const inRunningText = (el: Element) => {
       if (el.tagName !== "A" || getComputedStyle(el).display !== "inline")
@@ -77,7 +89,7 @@ export async function smallTargets(page: Page): Promise<string[]> {
     };
     const lines: string[] = [];
     for (const el of document.querySelectorAll(CONTROLS)) {
-      if (!shown(el) || inRunningText(el)) continue;
+      if (!shown(el) || !reachable(el) || inRunningText(el)) continue;
       if (el.matches(":disabled, [aria-disabled=true]")) continue;
       const { w, h } = size(el);
       if (w >= min && h >= min) continue;

@@ -41,7 +41,7 @@ export type RefKey = `${string}/${string}/${string}`;
  * for an object of delete: the Git writer and runClaimDelete refuse its
  * delete with Stale when the live object has another one. create lists
  * objects of apply that must not exist yet. A write fails with Stale, and
- * writes nothing, when one exists as the write begins. force sends each apply of the change with the force option of
+ * changes no object of create, when one exists. force sends each apply of the change with the force option of
  * server-side apply. A change with directOnly goes to the API in Git mode
  * too.
  *
@@ -151,11 +151,19 @@ export type ObjectOwnership = {
  * objects. ownership holds each updated object with a precondition that
  * has a changed or cleared field of another field manager, also when the
  * object has an error. The Git writer never sets it.
+ *
+ * blocked holds each updated object with a precondition that has a changed
+ * or cleared field of another field manager and that only Conflict errors
+ * stop, as a save that takes over its changed fields leaves it. The Git
+ * writer sets it only for a change with directOnly. When no dry run
+ * returned an object of blocked, the app computes that object without the
+ * API server.
  */
 export type Preview = {
   objects: PreviewObject[];
   errors: ApiError[];
   ownership?: ObjectOwnership[];
+  blocked?: PreviewObject[];
 };
 
 /**

@@ -4,7 +4,8 @@ import type { Step } from "./walk";
 /**
  * FieldGroup is where a field shows: one of the six components of a cluster,
  * "cluster" for every other field of the CamundaCluster spec, an attachment,
- * or the section parameters.
+ * the body of an Elasticsearch or a database server preset, or the section
+ * parameters.
  */
 export type FieldGroup =
   | "zeebe"
@@ -15,6 +16,8 @@ export type FieldGroup =
   | "connectors"
   | "cluster"
   | "optimize"
+  | "elasticsearch"
+  | "databaseServer"
   | "backupSchedule"
   | "parameters";
 

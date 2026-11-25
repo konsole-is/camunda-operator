@@ -1,4 +1,5 @@
 # Plugins
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready -->
 
 The page **Setup > Plugins** lists the storage and access options of clusters and management planes, for example **Existing bucket** for **Backup storage**. An option is a [PluginRegistration](../crds/pluginregistration.md), also called a registration. The operator brings the built-in options, and each plugin, a Helm chart, adds more. The page also lists the official plugin charts that are not installed.
 
@@ -15,7 +16,10 @@ The page has one group for each storage and access choice, such as **Backup stor
 | Mode | `Default`: a new cluster picks the option when no environment applies. `Optional`: a person picks it. |
 | Accepted, Ready | The conditions of the option, as [Status of an option](#status-of-an-option) shows. |
 | Requests | How many clusters and planes use the option. |
+| Operator versions | The operator versions that the option supports, such as `>=0.3.0 <1.0.0`. `Any` means every version. |
 | Orphan | `Supported` when the option can keep its resources after a delete. |
+
+![The Secondary storage group of the Plugins page with its options, their controller, and their state.](images/plugins-options-by-section.png)
 
 ## Status of an option
 
@@ -46,6 +50,8 @@ A limit that the chart sets, for example a permissions boundary, cannot change i
 
 ## Install an official chart
 
-The panel **Charts you can install** lists the official plugin charts that are not installed. Each chart shows what it does and the Helm command that installs it. Select **Copy the command**, then run the command with access to the cluster.
+The panel **Charts you can install** lists the official plugin charts that are not installed. A chart counts as installed when one of its options exists. Each chart shows what it does and the Helm command that installs it. Select **Copy the command**, then run the command with access to the cluster.
 
 Keep the default controller name when you install a chart, or the panel still lists the chart as not installed.
+
+![The panel Charts you can install with the description and the Helm command of each chart.](images/plugins-charts-to-install.png)

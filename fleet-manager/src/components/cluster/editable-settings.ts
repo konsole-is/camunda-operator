@@ -24,8 +24,10 @@ import {
   overrideEditorOf,
   parameterEditorOf,
   pathFrom,
+  SCHEMA_ROOT_NAMES,
   type SchemaRoot,
   type SettingEditor,
+  schemaRootOf,
   type Step,
 } from "@/lib/fields";
 import { equalJSON } from "@/lib/policy";
@@ -36,23 +38,23 @@ import { type Process, runsOwnWorkload } from "./topology";
 
 /**
  * Setting is one editor of a settings group. steps is where a change goes,
- * from the root of the claim, and is undefined when the setting cannot
- * change. When a layer sets a whole field above the setting, steps is that
- * field and holder holds its value and the rest of the path to the
- * setting, so that a change keeps the rest of the field. claimSet shows the
- * reset link. current is the value before the pending changes. inherited
- * counts the entries that the preset and the release put before value.
- * replaces says that a claim value replaces the value below it as a
- * whole. Only then does a map of {} hide that value: the preset merges a
- * map key by key. mergedErrors are the faults of the merged value that the
- * editor does not own, and undefined when no check of the merged value
- * runs. openedUnchecked says that the editor of a map or of variables does
- * not check a row that it opens with until the user changes it. layers is
- * set for a resources setting whose value merges the claim over the layers
- * below it: saved is the block of the claim before the pending changes,
- * below the merged block of the layers under the claim, with the pending
- * changes, and pending the steps of the pending changes at, above, or
- * inside the block.
+ * from the root of the object that the settings edit: the claim, or the
+ * preset. It is undefined when the setting cannot change. When a layer sets
+ * a whole field above the setting, steps is that field and holder holds its
+ * value and the rest of the path to the setting, so that a change keeps the
+ * rest of the field. claimSet shows the reset link. current is the value
+ * before the pending changes. inherited counts the entries that the preset
+ * and the release put before value. replaces says that a claim value
+ * replaces the value below it as a whole. Only then does a map of {} hide
+ * that value: the preset merges a map key by key. mergedErrors are the
+ * faults of the merged value that the editor does not own, and undefined
+ * when no check of the merged value runs. openedUnchecked says that the
+ * editor of a map or of variables does not check a row that it opens with
+ * until the user changes it. layers is set for a resources setting whose
+ * value merges the claim over the layers below it: saved is the block of the
+ * claim before the pending changes, below the merged block of the layers
+ * under the claim, with the pending changes, and pending the steps of the
+ * pending changes at, above, or inside the block.
  */
 export type Setting = {
   key: string;
@@ -93,7 +95,8 @@ export type MapEntry = { key: string; value: string };
 /**
  * settingsOf returns the settings of group. spec holds the values by their
  * claim names: the merged CamundaCluster spec for a process or the
- * cluster, and spec.attachments.optimize of the claim for Optimize. live,
+ * cluster, and spec.attachments.optimize of the claim for Optimize. For an
+ * Elasticsearch or a database server preset, spec is the preset body. live,
  * that spec before the pending changes, sets current. claim is the claim
  * spec at the same root: an extraEnvFrom setting holds the list of the
  * claim only. liveClaim is claim before the pending changes, and pending
@@ -128,10 +131,8 @@ export function settingsOf(input: {
 }): Setting[] {
   const { group, spec, live, claim } = input;
   const optimize = group.component === "optimize";
-  const root: SchemaRoot = optimize ? "optimize" : "cluster";
-  const base: Step[] = optimize
-    ? steps(["spec", "attachments", "optimize"])
-    : steps(["spec", "cluster"]);
+  const root = schemaRootOf(group.component);
+  const base = steps(SCHEMA_ROOT_NAMES[root]);
   const prefix = COMPONENTS.includes(group.component) ? 1 : 0;
   const fields = group.fields.map((field) => ({
     field,
@@ -141,10 +142,8 @@ export function settingsOf(input: {
   }));
   const used = new Set<string>();
 
-  const settings = secretRefPaths(
-    root,
-    componentFieldPaths(group.component),
-  ).map(({ path, secretRef }): Setting => {
+  const paths = settingPathsOf(group.component);
+  const settings = paths.map(({ path, secretRef }): Setting => {
     const names = path.split(".");
     const mine = fields.filter(
       ({ names: f }) => startsWith(f, names) || startsWith(names, f),
@@ -800,6 +799,27 @@ function propertiesOf(schema: unknown): Record<string, unknown> {
   return isObject(schema) && isObject(schema.properties)
     ? schema.properties
     : {};
+}
+
+// settingPaths keeps the paths of each group: they come from the generated
+// field schema only, and finding them scans the schema once for each path.
+const settingPaths = new Map<
+  SettingsGroup["component"],
+  readonly { path: string; secretRef: boolean }[]
+>();
+
+function settingPathsOf(
+  component: SettingsGroup["component"],
+): readonly { path: string; secretRef: boolean }[] {
+  let paths = settingPaths.get(component);
+  if (!paths) {
+    paths = secretRefPaths(
+      schemaRootOf(component),
+      componentFieldPaths(component),
+    );
+    settingPaths.set(component, paths);
+  }
+  return paths;
 }
 
 // secretRefPaths folds the name and key leaves of each Secret reference of

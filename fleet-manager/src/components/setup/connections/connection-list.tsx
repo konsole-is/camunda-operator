@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { DataTable } from "@/components/fleet/data-table";
 import { type ConditionLike, describeReady } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type ReadError,
@@ -25,6 +27,7 @@ import {
   waitingUsersText,
   writerLabel,
 } from "@/lib/usage";
+import { kindWords } from "./draft";
 import { KEY_FACT_LABELS, type KeyFacts, keyFacts } from "./facts";
 import {
   type ConnectionPageData,
@@ -37,6 +40,7 @@ import {
   connectionTabOf,
   contractHref,
   contractsOf,
+  newContractHref,
 } from "./tabs";
 
 /**
@@ -167,7 +171,18 @@ export function ConnectionList({
           ))}
         </TabsList>
         {CONNECTION_TABS.map((t) => (
-          <TabsContent key={t.value} value={t.value}>
+          <TabsContent
+            key={t.value}
+            value={t.value}
+            className="flex flex-col gap-4"
+          >
+            <div className="flex justify-end">
+              <Button asChild>
+                <Link href={newContractHref(t.value)}>
+                  New {kindWords(t.kind)} contract
+                </Link>
+              </Button>
+            </div>
             <ContractTable
               label={t.label}
               kind={t.kind}

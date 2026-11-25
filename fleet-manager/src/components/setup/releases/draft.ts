@@ -2,7 +2,7 @@ import type {
   CamundaRelease,
   CamundaReleaseSpec,
 } from "@/generated/crds/camundarelease";
-import { isDNSSubdomain, LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, referenceNameError } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ReleaseUsage } from "@/lib/usage";
@@ -81,9 +81,9 @@ export function draftErrors(
   const errors: ValidationError[] = [];
   const add = (path: string, message: string) => errors.push({ path, message });
   if (opts.isNew) {
+    const invalid = referenceNameError(draft.name);
     if (draft.name === "") add("name", "Give the release a name.");
-    else if (draft.name.length > 253 || !isDNSSubdomain(draft.name))
-      add("name", "The name must be a DNS name of at most 253 characters.");
+    else if (invalid) add("name", invalid);
     else if (opts.taken.includes(draft.name))
       add("name", "A release with this name exists.");
   }

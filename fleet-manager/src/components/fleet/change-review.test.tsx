@@ -422,6 +422,136 @@ describe("ChangeReview with fields of another tool", () => {
     await waitFor(() => expect(apply).toHaveBeenCalledWith(withList));
   });
 
+  describe("a save that a field of another tool stops", () => {
+    const blockedDiff = [
+      { op: "same" as const, text: "spec:" },
+      { op: "removed" as const, text: "  displayName: Staging" },
+      { op: "added" as const, text: "  displayName: Stage" },
+    ];
+    const stopped: Preview = {
+      ...conflicted,
+      blocked: [{ ref, diff: blockedDiff }],
+    };
+    const diff = (name = "Changes to the environment") =>
+      screen.getByRole("figure", { name });
+
+    it("shows the change with the field and the tool that set it, and Save stays off", async () => {
+      setup({ change: updated, preview: stopped });
+      await waitFor(() =>
+        expect(diff().textContent).toContain("displayName: Stage"),
+      );
+      expect(screen.queryByText("No changes")).toBeNull();
+      expect(
+        screen.getByRole("group", { name: "Fields that another tool set" })
+          .textContent,
+      ).toContain(
+        "spec.displayName: kubectl-client-side-apply set it. The save changes it.",
+      );
+      expect(confirm()).toHaveProperty("disabled", true);
+    });
+
+    it("shows the change and the Conflict when the page offers no take-over", async () => {
+      setup({ change: updated, preview: stopped, offerTakeOver: false });
+      await waitFor(() =>
+        expect(diff().textContent).toContain("displayName: Stage"),
+      );
+      expect(screen.getByRole("alert").textContent).toContain(
+        'conflict with "kubectl-client-side-apply"',
+      );
+      expect(confirm()).toHaveProperty("disabled", true);
+    });
+
+    it("names a field that another tool keeps in a stopped object when the page offers no take-over", async () => {
+      setup({
+        change: updated,
+        preview: {
+          ...conflicted,
+          blocked: [
+            {
+              ref,
+              after: {
+                ...applied,
+                spec: { displayName: "Stage", color: "red" },
+              },
+              diff: blockedDiff,
+            },
+          ],
+        },
+        offerTakeOver: false,
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole("note", { name: "Kept fields" }).textContent,
+        ).toContain("spec.color stays, because another tool set it."),
+      );
+    });
+
+    it("shows the first object of the change under diffLabel, also when another tool stops it", async () => {
+      const other = {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        namespace: "fleet",
+        name: "notes",
+      };
+      const notes: KubeObject = {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "notes", namespace: "fleet" },
+        data: { note: "new" },
+      };
+      setup({
+        change: { ...updated, apply: [applied, notes] },
+        preview: {
+          ...stopped,
+          objects: [
+            {
+              ref: other,
+              diff: [
+                { op: "same", text: "data:" },
+                { op: "added", text: "  note: new" },
+              ],
+            },
+          ],
+        },
+      });
+      await waitFor(() =>
+        expect(diff().textContent).toContain("displayName: Stage"),
+      );
+      expect(diff("Changes to ConfigMap notes").textContent).toContain(
+        "note: new",
+      );
+    });
+
+    it("does not say that the change writes nothing when only the stopped object changes", async () => {
+      const notes: KubeObject = {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "notes", namespace: "fleet" },
+      };
+      setup({
+        change: { ...updated, apply: [applied, notes] },
+        preview: {
+          ...stopped,
+          objects: [
+            {
+              ref: {
+                apiVersion: "v1",
+                kind: "ConfigMap",
+                namespace: "fleet",
+                name: "notes",
+              },
+              diff: [{ op: "same", text: "data: {}" }],
+            },
+          ],
+        },
+      });
+      await waitFor(() =>
+        expect(diff().textContent).toContain("displayName: Stage"),
+      );
+      expect(screen.queryByText("The change writes nothing.")).toBeNull();
+    });
+  });
+
   it("with otherWrite, gives apply the ownership that the choice takes over, for a write of another object", async () => {
     // The delete of a claim previews the delete and gets the ownership of
     // the policy write before it, so withTakeOver leaves the change as it is.
@@ -608,7 +738,7 @@ describe("ChangeReview with fields of another tool", () => {
 
   it("keeps the errors of a refused save when the choice changes", async () => {
     const message =
-      "The fleet manager saved the Environment staging, but did not remove spec.color. The Environment staging changed since you opened it.";
+      "The fleet manager saved the Environment staging, but did not record its fields. The next save of the Environment records them. The Environment staging changed since you opened it.";
     setup({
       change: updated,
       preview: byChange,

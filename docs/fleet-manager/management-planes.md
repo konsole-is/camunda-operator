@@ -1,4 +1,5 @@
 # Management planes
+<!-- Screenshots: make fleet-docs-screenshots, scenarios plane-create, plane-ready -->
 
 A management plane runs Management Identity, Console, and Web Modeler for the clusters of one or more environments. The fleet manager writes a claim for the plane, a [CamundaManagementClusterClaim](../crds/camundamanagementclusterclaim.md), and the operator builds the plane from it. [What the fleet manager writes](install.md#what-the-fleet-manager-writes) explains claims.
 
@@ -15,6 +16,8 @@ Pick the environment, the name, and the namespace of the plane. The **Platform c
 - **Keycloak, run by this plane**: the plane runs Keycloak through the Keycloak Operator.
 - **External Keycloak**: the plane uses a Keycloak that you run. Enter its URL, the realm, and the Secret with the administrator credentials.
 - **OIDC from the platform config**: users sign in at the OIDC provider of the platform config. This option is off while the platform config uses basic authentication.
+
+![The Basics step of the plane form with the environment, the name, the namespace, and Where users sign in.](images/plane-create-basics.png)
 
 ### Environments served
 
@@ -95,6 +98,8 @@ spec:
 
 Select **Create**, or **Push to Git** in Git mode.
 
+![The Review step of the plane form with the claim as YAML.](images/plane-create-review.png)
+
 ### Progress
 
 After **Create**, the page shows one row for each part of the plane: **Environment and policy**, **Databases**, **Access**, and **Management cluster**. If the operator refuses the claim, the page shows the reason and the message:
@@ -128,6 +133,8 @@ Select the name of a plane at `/fleet/planes`. The header shows the `Ready` cond
 In OIDC mode, the plane registers no Optimize callback. The **Optimize** tab then says `Add the callbacks to your identity provider.` Add each callback URL of the tab to the Optimize application of your identity provider.
 
 In OIDC mode, `KeycloakReady`, `SecretsReady`, and `OptimizeCallbacksReady` show `True` with the reason `Disabled`. This is expected, and it does not hold `Ready` back. The [Status](../crds/camundamanagementcluster.md#status) section of `CamundaManagementCluster` lists each reason and what to do.
+
+![The Overview tab of plane-a with a card for each component and the conditions of the plane.](images/plane-overview.png)
 
 ### Planes without a claim
 

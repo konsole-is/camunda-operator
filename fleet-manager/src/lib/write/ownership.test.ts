@@ -4,11 +4,17 @@ import type { ManagedFieldsEntry } from "@/lib/merge";
 import {
   fieldValue,
   foreignFields,
+  isPartialSave,
   keepEmpty,
+  laidOver,
   MAX_KEEP_PATHS,
   offered,
+  partialSaveMessage,
+  prunedFields,
+  removedFields,
   takenFields,
   withTakeOver,
+  withKeptFields,
   withValuesOf,
   withoutFields,
 } from "./ownership";
@@ -47,6 +53,19 @@ const entry = (
 ): ManagedFieldsEntry => ({ manager, operation, fieldsV1 });
 
 const displayName = { "f:spec": { "f:displayName": {} } };
+
+describe("partialSaveMessage", () => {
+  it("says that the next save records the fields, and isPartialSave accepts it", () => {
+    const message = partialSaveMessage(ref, "The Environment changed.");
+    expect(message).toBe(
+      "The fleet manager saved the Environment staging, but did not record its fields. The next save of the Environment records them. The Environment changed.",
+    );
+    expect(isPartialSave({ code: "Stale", message, ref })).toBe(true);
+    expect(isPartialSave({ code: "Stale", message: "Changed.", ref })).toBe(
+      false,
+    );
+  });
+});
 
 describe("foreignFields", () => {
   it("names a field that kubectl set and the apply changes", () => {
@@ -294,23 +313,92 @@ describe("foreignFields", () => {
     });
   });
 
-  it("an Update entry of the fleet manager is another manager", () => {
+  it("an Update entry of the fleet manager is not another manager", () => {
     const live = environment({ displayName: "Stage" }, [
       entry("fleet-manager", "Update", displayName),
     ]);
-    expect(foreignFields(live, environment({})).cleared).toEqual([
-      expect.objectContaining({
-        path: "spec.displayName",
-        managers: [
-          {
-            name: "fleet-manager",
-            operation: "Update",
-            kind: "other",
-            known: true,
-          },
-        ],
+    expect(foreignFields(live, environment({}))).toEqual({
+      changed: [],
+      cleared: [],
+    });
+  });
+
+  it("a leaf of another manager owns nothing below it when an entry holds a child of it", () => {
+    const live = environment({ auth: { method: "basic" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { ".": {}, "f:auth": {} },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:auth": { "f:method": {} } },
       }),
     ]);
+    expect(
+      foreignFields(
+        live,
+        environment({ auth: { method: "oidc", oidc: { issuerUrl: "x" } } }),
+      ),
+    ).toEqual({ changed: [], cleared: [] });
+  });
+
+  it("a leaf of another manager owns the whole value when no entry holds a child of it", () => {
+    const live = environment({ auth: { method: "basic" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { ".": {}, "f:auth": {} },
+      }),
+    ]);
+    expect(
+      foreignFields(live, environment({ auth: { method: "oidc" } })),
+    ).toEqual({
+      changed: [
+        {
+          path: "spec.auth",
+          steps: [{ field: "spec" }, { field: "auth" }],
+          managers: [kubectl],
+        },
+      ],
+      cleared: [],
+    });
+  });
+
+  it("an item of a keyed list keeps its owners when another entry holds fields of it", () => {
+    const item = 'k:{"name":"x"}';
+    const live = environment({ allowed: [{ name: "x", label: "X" }] }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:allowed": { [item]: { ".": {}, "f:label": {} } } },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:allowed": { [item]: { ".": {}, "f:name": {} } } },
+      }),
+    ]);
+    expect(
+      foreignFields(live, environment({ allowed: [{ name: "x", label: "Y" }] }))
+        .changed,
+    ).toEqual([
+      {
+        path: "spec.allowed[name=x].label",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+          { field: "label" },
+        ],
+        managers: [kubectl],
+      },
+    ]);
+  });
+
+  it("a leaf of an operator controller with no child in any entry is changed as a whole and not offered", () => {
+    const live = environment({ selector: { team: "a" } }, [
+      entry(`CamundaClusterClaim/cluster/${uid}`, "Apply", {
+        "f:spec": { "f:selector": {} },
+      }),
+    ]);
+    const { changed } = foreignFields(
+      live,
+      environment({ selector: { team: "b" } }),
+    );
+    expect(changed.map((f) => f.path)).toEqual(["spec.selector"]);
+    expect(changed.map(offered)).toEqual([false]);
   });
 
   it("skips the last applied annotation and status", () => {
@@ -821,6 +909,18 @@ describe("takenFields", () => {
   });
 });
 
+describe("takenFields of the fleet manager", () => {
+  it("a field that the Update entry of the fleet manager loses is not taken", () => {
+    const before = environment({ a: 1 }, [
+      entry("fleet-manager", "Update", { "f:spec": { "f:a": {} } }),
+    ]);
+    const after = environment({ a: 1 }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:a": {} } }),
+    ]);
+    expect(takenFields(before, after)).toEqual([]);
+  });
+});
+
 describe("takenFields of a subresource entry", () => {
   it("names a field that a subresource entry lost", () => {
     const replicas = { "f:spec": { "f:replicas": {} } };
@@ -835,6 +935,328 @@ describe("takenFields of a subresource entry", () => {
         path: "spec.replicas",
         managers: [expect.objectContaining({ name: "kubectl" })],
       }),
+    ]);
+  });
+});
+
+const fleetManager = {
+  name: "fleet-manager",
+  operation: "Apply",
+  kind: "other",
+  known: true,
+} as const;
+const kubectl = {
+  name: "kubectl-client-side-apply",
+  operation: "Update",
+  kind: "other",
+  known: true,
+} as const;
+
+describe("prunedFields", () => {
+  it("names a field that only the fleet manager applied and the change drops", () => {
+    const live = environment({ color: "red", displayName: "Stage" }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("kubectl-client-side-apply", "Update", displayName),
+    ]);
+    expect(prunedFields(live, environment({ displayName: "Stage" }))).toEqual([
+      {
+        path: "spec.color",
+        steps: [{ field: "spec" }, { field: "color" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("does not name a field that kubectl also owns", () => {
+    const live = environment({ color: "red" }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:color": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([]);
+    expect(foreignFields(live, environment({})).cleared).toEqual([
+      expect.objectContaining({ path: "spec.color" }),
+    ]);
+  });
+
+  it("names a field that only the Update entry of the fleet manager owns", () => {
+    const live = environment({ color: "red" }, [
+      entry("fleet-manager", "Update", { "f:spec": { "f:color": {} } }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([
+      {
+        path: "spec.color",
+        steps: [{ field: "spec" }, { field: "color" }],
+        managers: [{ ...fleetManager, operation: "Update" }],
+      },
+    ]);
+  });
+
+  it("names a set member that only the fleet manager owns, by its step", () => {
+    const live = environment({ presets: { camundaCluster: ["a", "b"] } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:presets": { "f:camundaCluster": { 'v:"a"': {} } } },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:presets": { "f:camundaCluster": { 'v:"b"': {} } } },
+      }),
+    ]);
+    expect(
+      prunedFields(live, environment({ presets: { camundaCluster: ["a"] } })),
+    ).toEqual([
+      {
+        path: 'spec.presets.camundaCluster[="b"]',
+        steps: [
+          { field: "spec" },
+          { field: "presets" },
+          { field: "camundaCluster" },
+          { value: "b" },
+        ],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("names a field that only the fleet manager owns under a left-out map that kubectl also owns", () => {
+    const live = environment(
+      { images: { identity: "mirror/identity", keycloak: "mirror/keycloak" } },
+      [
+        entry("kubectl-client-side-apply", "Update", {
+          "f:spec": { "f:images": { ".": {}, "f:identity": {} } },
+        }),
+        entry("fleet-manager", "Apply", {
+          "f:spec": { "f:images": { "f:keycloak": {} } },
+        }),
+      ],
+    );
+    expect(prunedFields(live, environment({}))).toEqual([
+      {
+        path: "spec.images.keycloak",
+        steps: [{ field: "spec" }, { field: "images" }, { field: "keycloak" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+
+  it("does not go into a left-out value that another manager owns whole", () => {
+    const live = environment({ selector: { team: "a" } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:selector": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}))).toEqual([]);
+  });
+
+  it("does not name a field at a kept path", () => {
+    const live = environment({ color: "", displayName: "Stage" }, [
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:color": {}, "f:displayName": {} },
+      }),
+    ]);
+    expect(prunedFields(live, environment({}), ["spec.color"])).toEqual([
+      {
+        path: "spec.displayName",
+        steps: [{ field: "spec" }, { field: "displayName" }],
+        managers: [fleetManager],
+      },
+    ]);
+  });
+});
+
+describe("laidOver", () => {
+  it("lays a map over the map of live key by key and keeps a key that applied leaves out", () => {
+    const live = environment({ a: { x: 1, y: 2 }, b: 1 });
+    expect(laidOver(live, environment({ a: { x: 3 } }), []).spec).toEqual({
+      a: { x: 3, y: 2 },
+      b: 1,
+    });
+  });
+
+  it("replaces a list and a scalar", () => {
+    const live = environment({ l: [1, 2], s: "a" });
+    expect(laidOver(live, environment({ l: [2], s: "b" }), []).spec).toEqual({
+      l: [2],
+      s: "b",
+    });
+  });
+
+  it("replaces a value that a managedFields entry owns whole", () => {
+    const live = environment({ auth: { method: "basic", extra: 1 } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:auth": {} },
+      }),
+    ]);
+    expect(
+      laidOver(live, environment({ auth: { method: "oidc", oidc: {} } }), [])
+        .spec,
+    ).toEqual({ auth: { method: "oidc", oidc: {} } });
+  });
+
+  it("lays a map over key by key when an entry holds a child of the leaf of another manager", () => {
+    const live = environment({ auth: { method: "basic", extra: 1 } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": { "f:auth": {} },
+      }),
+      entry("fleet-manager", "Apply", {
+        "f:spec": { "f:auth": { "f:method": {} } },
+      }),
+    ]);
+    expect(
+      laidOver(live, environment({ auth: { method: "oidc" } }), []).spec,
+    ).toEqual({ auth: { method: "oidc", extra: 1 } });
+  });
+
+  it("lays spec over key by key also when an entry holds spec with no field below it", () => {
+    const live = environment({ a: 1, b: 2 }, [
+      entry("kubectl-client-side-apply", "Update", { "f:spec": {} }),
+    ]);
+    expect(laidOver(live, environment({ a: 3 }), []).spec).toEqual({
+      a: 3,
+      b: 2,
+    });
+  });
+
+  it("leaves out each removed field, also under a list item", () => {
+    const live = environment({
+      displayName: "Stage",
+      allowed: [
+        { name: "x", label: "X" },
+        { name: "y", label: "Y" },
+      ],
+    });
+    const removed: ForeignField[] = [
+      {
+        path: "spec.displayName",
+        steps: [{ field: "spec" }, { field: "displayName" }],
+        managers: [kubectl],
+      },
+      {
+        path: "spec.allowed[name=x].label",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+          { field: "label" },
+        ],
+        managers: [kubectl],
+      },
+    ];
+    expect(laidOver(live, environment({ color: "red" }), removed).spec).toEqual(
+      {
+        color: "red",
+        allowed: [{ name: "x" }, { name: "y", label: "Y" }],
+      },
+    );
+  });
+
+  it("lays labels and annotations over and keeps the last applied annotation", () => {
+    const live = environment({}, [], {
+      labels: { team: "a" },
+      annotations: { [LAST_APPLIED_ANNOTATION]: "{}", note: "old" },
+    });
+    const applied = environment({}, [], {
+      labels: { tier: "gold" },
+      annotations: { note: "new" },
+    });
+    const result = laidOver(live, applied, []);
+    expect(result.metadata.labels).toEqual({ team: "a", tier: "gold" });
+    expect(result.metadata.annotations).toEqual({
+      [LAST_APPLIED_ANNOTATION]: "{}",
+      note: "new",
+    });
+  });
+
+  it("keeps a null inside a value of applied", () => {
+    const live = environment({ a: { b: 1, c: 2 } });
+    expect(laidOver(live, environment({ a: { b: null } }), []).spec).toEqual({
+      a: { b: null, c: 2 },
+    });
+  });
+
+  it("changes neither input and keeps __proto__ as a key", () => {
+    const live = environment(
+      JSON.parse('{"__proto__":{"a":1},"keep":true}') as object,
+    );
+    const applied = environment(JSON.parse('{"__proto__":{"b":2}}') as object);
+    const liveCopy = structuredClone(live);
+    const appliedCopy = structuredClone(applied);
+    const result = laidOver(live, applied, []);
+    const spec = result.spec as Record<string, unknown>;
+    expect(Object.keys(spec)).toEqual(["__proto__", "keep"]);
+    expect(Object.getPrototypeOf(spec)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(spec, "__proto__")?.value).toEqual({
+      a: 1,
+      b: 2,
+    });
+    expect(live).toEqual(liveCopy);
+    expect(applied).toEqual(appliedCopy);
+  });
+});
+
+describe("removedFields", () => {
+  it("names the topmost field that kubectl owns and after leaves out, with kubectl", () => {
+    const before = environment({ auth: { method: "oidc", oidc: { a: 1 } } }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": {
+          "f:auth": { ".": {}, "f:method": {}, "f:oidc": { "f:a": {} } },
+        },
+      }),
+    ]);
+    const after = environment({ auth: { method: "basic" } });
+    expect(removedFields(before, after)).toEqual([
+      {
+        path: "spec.auth.oidc",
+        steps: [{ field: "spec" }, { field: "auth" }, { field: "oidc" }],
+        managers: [kubectl],
+      },
+    ]);
+  });
+
+  it("does not name a field of the fleet manager or of a subresource entry", () => {
+    const before = environment({ color: "red", replicas: 3 }, [
+      entry("fleet-manager", "Apply", { "f:spec": { "f:color": {} } }),
+      entry("fleet-manager", "Update", { "f:spec": { "f:color": {} } }),
+      {
+        ...entry("kubectl", "Update", { "f:spec": { "f:replicas": {} } }),
+        subresource: "scale",
+      },
+    ]);
+    expect(removedFields(before, environment({}))).toEqual([]);
+  });
+
+  it("does not name a field that after still holds", () => {
+    const before = environment({ displayName: "Stage" }, [
+      entry("kubectl-client-side-apply", "Update", displayName),
+    ]);
+    expect(removedFields(before, environment({ displayName: "Prod" }))).toEqual(
+      [],
+    );
+  });
+
+  it("names a list item that kubectl owns and after leaves out", () => {
+    const before = environment({ allowed: [{ name: "x" }, { name: "y" }] }, [
+      entry("kubectl-client-side-apply", "Update", {
+        "f:spec": {
+          "f:allowed": {
+            'k:{"name":"x"}': { ".": {}, "f:name": {} },
+            'k:{"name":"y"}': { ".": {}, "f:name": {} },
+          },
+        },
+      }),
+    ]);
+    expect(
+      removedFields(before, environment({ allowed: [{ name: "y" }] })),
+    ).toEqual([
+      {
+        path: "spec.allowed[name=x]",
+        steps: [
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "x" } },
+        ],
+        managers: [kubectl],
+      },
     ]);
   });
 });
@@ -1149,5 +1571,119 @@ describe("withValuesOf", () => {
         from,
       ),
     ).toEqual({ spec: { labels: { "app.kubernetes.io/name": "c" } } });
+  });
+});
+
+describe("withKeptFields", () => {
+  const from = {
+    spec: {
+      replicas: 3,
+      allowed: [{ name: "x" }, { name: "y", label: "Y" }, { name: "z" }],
+      zones: ["a", "b"],
+    },
+  };
+
+  it("adds a keyed item and a set item that object lacks at their index in from, and changes neither input", () => {
+    const object = {
+      spec: { allowed: [{ name: "x" }, { name: "z" }], zones: ["a"] },
+    };
+    const fromCopy = structuredClone(from);
+    const result = withKeptFields(
+      object,
+      [
+        fieldAt(
+          { field: "spec" },
+          { field: "allowed" },
+          { item: { name: "y" } },
+        ),
+        fieldAt({ field: "spec" }, { field: "zones" }, { value: "b" }),
+      ],
+      from,
+    );
+    expect(result).toEqual({
+      spec: {
+        allowed: [{ name: "x" }, { name: "y", label: "Y" }, { name: "z" }],
+        zones: ["a", "b"],
+      },
+    });
+    expect(object).toEqual({
+      spec: { allowed: [{ name: "x" }, { name: "z" }], zones: ["a"] },
+    });
+    expect(from).toEqual(fromCopy);
+  });
+
+  it("keeps the order of from for several items that object lacks, whatever the order of fields", () => {
+    const listed = {
+      spec: { allowed: [{ name: "c" }, { name: "b" }, { name: "a" }] },
+    };
+    const item = (name: string) =>
+      fieldAt({ field: "spec" }, { field: "allowed" }, { item: { name } });
+    expect(
+      withKeptFields(
+        { spec: { allowed: [] as unknown[] } },
+        [item("a"), item("b"), item("c")],
+        listed,
+      ),
+    ).toEqual(listed);
+  });
+
+  it("adds an item at the end when object holds fewer items than its index in from", () => {
+    expect(
+      withKeptFields(
+        { spec: { allowed: [] as unknown[] } },
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "z" } },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { allowed: [{ name: "z" }] } });
+  });
+
+  it("sets a map key and a field under an item as withValuesOf does", () => {
+    expect(
+      withKeptFields(
+        { spec: { allowed: [{ name: "y" }] } },
+        [
+          fieldAt({ field: "spec" }, { field: "replicas" }),
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "y" } },
+            { field: "label" },
+          ),
+        ],
+        from,
+      ),
+    ).toEqual({ spec: { replicas: 3, allowed: [{ name: "y", label: "Y" }] } });
+  });
+
+  it("keeps an item that object holds, and skips an index, an item that from does not hold, and a list that object does not hold", () => {
+    const object = {
+      spec: { allowed: [{ name: "y", label: "Other" }], zones: ["a"] },
+    };
+    expect(
+      withKeptFields(
+        object,
+        [
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "y" } },
+          ),
+          fieldAt(
+            { field: "spec" },
+            { field: "allowed" },
+            { item: { name: "q" } },
+          ),
+          fieldAt({ field: "spec" }, { field: "zones" }, { index: 1 }),
+          fieldAt({ field: "spec" }, { field: "gone" }, { value: "a" }),
+        ],
+        from,
+      ),
+    ).toEqual(object);
   });
 });

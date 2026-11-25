@@ -541,6 +541,75 @@ describe("ClusterEditProvider", () => {
     expect(text("Pending 0")).toBeTruthy();
   });
 
+  it("the review of a claim without its cluster names no impact of a running cluster and saves the claim", async () => {
+    page(
+      slotContext({
+        drafted: true,
+        cluster: { ...cluster(), status: undefined },
+      }),
+    );
+    click("Suspend");
+    openReview();
+    expect(
+      within(dialog()!).queryByRole("list", { name: "What this change does" }),
+    ).toBeNull();
+    expect(
+      within(dialog()!).queryByText(
+        "Every workload goes to zero. The volumes stay.",
+      ),
+    ).toBeNull();
+    await confirm("Save");
+
+    await waitFor(() => expect(dialog()).toBeNull());
+    const written = fakeWriter.applied[0];
+    expect(
+      (written.apply[0] as KubeObject & { spec: { suspend?: boolean } }).spec
+        .suspend,
+    ).toBe(true);
+    expect(written.preconditions).toEqual({ [PRECONDITION]: "41" });
+  });
+
+  it("the review of a claim without its cluster blocks the save while the cluster is not read", () => {
+    page(
+      slotContext({
+        drafted: true,
+        unread: ["CamundaCluster"],
+        cluster: { ...cluster(), status: undefined },
+      }),
+    );
+    click("Suspend");
+    openReview();
+    expect(
+      within(dialog()!).getByText(
+        "A change is possible when the fleet manager can read CamundaCluster.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog()!).getByRole<HTMLButtonElement>("button", { name: "Save" })
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("the review of a claim without its cluster offers the save again once the cluster is read", async () => {
+    const unread = (kinds: string[]) =>
+      slotContext({
+        drafted: true,
+        unread: kinds,
+        cluster: { ...cluster(), status: undefined },
+      });
+    const { update } = page(unread(["CamundaCluster"]));
+    click("Suspend");
+    update(unread([]));
+    openReview();
+    expect(
+      within(dialog()!).queryByText(
+        "A change is possible when the fleet manager can read CamundaCluster.",
+      ),
+    ).toBeNull();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+  });
+
   it("in Git mode the review pushes to Git and the toast waits for GitOps", async () => {
     fakeWriter.reset("git");
     page(slotContext({ writeMode: "git" }));

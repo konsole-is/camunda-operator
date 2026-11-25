@@ -6,8 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   MANAGEMENT_AUTH_CONFIGS_UNREAD,
@@ -25,6 +25,18 @@ import {
   type ClusterCreateData,
   ClusterCreateFlow,
 } from "./cluster-create-flow";
+
+// it gives each spec a user of its own that rejects its next step once
+// the spec times out. Vitest does not stop the body of a spec that times
+// out, and that body would go on typing and clicking in the next spec.
+// user-event calls advanceTimers before each step.
+const it = test.extend<{ user: UserEvent }>({
+  user: async ({ signal }, provide) => {
+    await provide(
+      userEvent.setup({ advanceTimers: async () => signal.throwIfAborted() }),
+    );
+  },
+});
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -276,22 +288,22 @@ const radio = (name: RegExp) =>
 const next = () =>
   screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
 
-async function fillBasics(name: string) {
-  await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-  await userEvent.type(screen.getByRole("textbox", { name: "Name" }), name);
-  await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
-  await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
+async function fillBasics(user: UserEvent, name: string) {
+  await user.click(screen.getByRole("radio", { name: /Production/ }));
+  await user.type(screen.getByRole("textbox", { name: "Name" }), name);
+  await user.selectOptions(screen.getByRole("combobox"), "team-a");
+  await user.click(screen.getByRole("radio", { name: /^small/ }));
 }
 
 const heading = (name: string) =>
   screen.queryByRole("heading", { level: 2, name });
 
 // toStep fills step 1 and clicks Next until the step of label shows.
-async function toStep(label: string, name = "search") {
-  await fillBasics(name);
+async function toStep(user: UserEvent, label: string, name = "search") {
+  await fillBasics(user, name);
   for (let i = 0; i < 4 && !heading(label); i++) {
     if (next().disabled) break;
-    await userEvent.click(next());
+    await user.click(next());
   }
   expect(heading(label)).toBeTruthy();
 }
@@ -311,9 +323,9 @@ const settingsRow = (label: string) =>
 
 // openSettings opens the settings group of label on step 3, which starts
 // closed.
-async function openSettings(label: string) {
+async function openSettings(user: UserEvent, label: string) {
   expect(settingsRow(label).getAttribute("aria-expanded")).toBe("false");
-  await userEvent.click(settingsRow(label));
+  await user.click(settingsRow(label));
 }
 
 const footer = () =>
@@ -349,16 +361,18 @@ describe("ClusterCreateFlow", () => {
     );
   });
 
-  it("shows the hosts of the default access option under the name", async () => {
+  it("shows the hosts of the default access option under the name", async ({
+    user,
+  }) => {
     show(data({ accessRequests: [] }));
-    await fillBasics("search");
+    await fillBasics(user, "search");
     expect(screen.getByText("search.team-a.example.com")).toBeTruthy();
     expect(next().disabled).toBe(false);
   });
 
-  it("blocks step 1 on a taken host", async () => {
+  it("blocks step 1 on a taken host", async ({ user }) => {
     show(data());
-    await fillBasics("orders");
+    await fillBasics(user, "orders");
     expect(
       screen.getAllByText(
         "The host orders.team-a.example.com is taken by team-b/billing. Choose another name.",
@@ -367,14 +381,14 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("shows no host line without an access section", async () => {
+  it("shows no host line without an access section", async ({ user }) => {
     show(data({ sections: [] }));
-    await fillBasics("orders");
+    await fillBasics(user, "orders");
     expect(screen.queryByText(/example\.com/)).toBeNull();
     expect(next().disabled).toBe(false);
   });
 
-  it("refuses a name that a claim has in the namespace", async () => {
+  it("refuses a name that a claim has in the namespace", async ({ user }) => {
     show(
       data({
         sections: [],
@@ -388,16 +402,18 @@ describe("ClusterCreateFlow", () => {
         ],
       }),
     );
-    await fillBasics("orders");
+    await fillBasics(user, "orders");
     expect(
       screen.getAllByText("The name orders is taken in this namespace.").length,
     ).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
   });
 
-  it("refuses an environment that turns not ready after the pick", async () => {
+  it("refuses an environment that turns not ready after the pick", async ({
+    user,
+  }) => {
     const { rerender } = show(data());
-    await fillBasics("search");
+    await fillBasics(user, "search");
     live.objects.Environment = [{ ...prod(), status: READY("False", "gone") }];
     rerender(flowOf(data()));
     expect(
@@ -406,10 +422,10 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("blocks step 1 while a list cannot be read", async () => {
+  it("blocks step 1 while a list cannot be read", async ({ user }) => {
     live.errors.CamundaClusterClaim = "forbidden";
     show(data({ sections: [] }));
-    await fillBasics("orders");
+    await fillBasics(user, "orders");
     expect(
       screen.getByText(
         "The fleet manager could not read the CamundaClusterClaim objects: forbidden",
@@ -418,23 +434,27 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("refuses a namespace that went away while step 1 was not shown", async () => {
+  it("refuses a namespace that went away while step 1 was not shown", async ({
+    user,
+  }) => {
     const { rerender } = show(data({ sections: [] }));
-    await fillBasics("orders");
-    await userEvent.click(next());
+    await fillBasics(user, "orders");
+    await user.click(next());
     live.objects.Namespace = [];
     rerender(flowOf(data({ sections: [] })));
-    await userEvent.click(
+    await user.click(
       screen.getByRole("button", { name: /Environment and name/ }),
     );
     expect(screen.getAllByText("Choose a namespace").length).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
   });
 
-  it("blocks Next on step 2 while step 1 has errors, and names step 1", async () => {
+  it("blocks Next on step 2 while step 1 has errors, and names step 1", async ({
+    user,
+  }) => {
     const { rerender } = show(data({ sections: [] }));
-    await fillBasics("orders");
-    await userEvent.click(next());
+    await fillBasics(user, "orders");
+    await user.click(next());
     live.objects.Namespace = [];
     rerender(flowOf(data({ sections: [] })));
     expect(next().disabled).toBe(true);
@@ -444,45 +464,37 @@ describe("ClusterCreateFlow", () => {
     ).toContain("Environment and name: Choose a namespace");
   });
 
-  it("offers Back on the review step", async () => {
+  it("offers Back on the review step", async ({ user }) => {
     show(data({ sections: [] }));
-    await fillBasics("orders");
-    for (let i = 0; i < 4; i++) await userEvent.click(next());
+    await fillBasics(user, "orders");
+    for (let i = 0; i < 4; i++) await user.click(next());
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
     expect(document.activeElement).toBe(
       screen.getByRole("heading", { level: 2, name: "Attachments" }),
     );
   });
 
-  it("keeps the step 1 choices after Next and Back", async () => {
+  it("keeps the step 1 choices after Next and Back", async ({ user }) => {
     show(
       data({
         sections: [],
         environments: [prod({ allowed: true, requiredLabelKeys: ["team"] })],
       }),
     );
-    await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "Name" }),
-      "search",
-    );
-    await userEvent.click(
-      screen.getByRole("radio", { name: "Create a namespace" }),
-    );
+    await user.click(screen.getByRole("radio", { name: /Production/ }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
+    await user.click(screen.getByRole("radio", { name: "Create a namespace" }));
     // The claim name comes first; the name of the new namespace second.
-    await userEvent.type(
+    await user.type(
       screen.getAllByRole("textbox", { name: "Name" })[1],
       "team-search",
     );
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "team" }),
-      "search",
-    );
-    await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
-    await userEvent.click(next());
+    await user.type(screen.getByRole("textbox", { name: "team" }), "search");
+    await user.click(screen.getByRole("radio", { name: /^small/ }));
+    await user.click(next());
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-    await userEvent.click(
+    await user.click(
       screen.getByRole("button", { name: /Environment and name/ }),
     );
     const names = screen
@@ -503,10 +515,10 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(false);
   });
 
-  it("shows the sections of step 2 after step 1", async () => {
+  it("shows the sections of step 2 after step 1", async ({ user }) => {
     show(data({ sections: [accessSection, backupSection] }));
-    await fillBasics("search");
-    await userEvent.click(next());
+    await fillBasics(user, "search");
+    await user.click(next());
 
     const legends = screen
       .getAllByRole("group")
@@ -517,12 +529,14 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/^Gateway/).checked).toBe(true);
   });
 
-  it("shows the deletion default again once the pick that cannot keep goes", async () => {
+  it("shows the deletion default again once the pick that cannot keep goes", async ({
+    user,
+  }) => {
     const keeps = prod();
     keeps.spec.deletionPolicy = "Orphan";
     show(data({ environments: [keeps] }));
-    await fillBasics("search");
-    await userEvent.click(next());
+    await fillBasics(user, "search");
+    await user.click(next());
 
     expect(
       screen.getByRole("group", { name: "When the cluster is deleted" }),
@@ -531,26 +545,26 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/Delete the resources/).checked).toBe(true);
     expect(screen.getByText("Gateway (Access)")).toBeTruthy();
 
-    await userEvent.click(radio(/No access from outside/));
+    await user.click(radio(/No access from outside/));
 
     expect(radio(/Keep the resources/).checked).toBe(true);
   });
 
-  it("checks the hosts of the picked access option", async () => {
+  it("checks the hosts of the picked access option", async ({ user }) => {
     const taken =
       "The host c1.team-a.internal.example.com is taken by team-b/x. Choose another name.";
     const requests = [
       accessRequest("team-b", "x", "https://c1.team-a.internal.example.com"),
     ];
     const { rerender } = show(data({ accessRequests: requests }));
-    await fillBasics("c1");
-    await userEvent.click(next());
+    await fillBasics(user, "c1");
+    await user.click(next());
 
-    await userEvent.click(radio(/^Internal/));
+    await user.click(radio(/^Internal/));
     expect(screen.getAllByText(taken).length).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
 
-    await userEvent.click(radio(/No access from outside/));
+    await user.click(radio(/No access from outside/));
     expect(screen.queryByText(taken)).toBeNull();
     expect(next().disabled).toBe(false);
 
@@ -559,12 +573,14 @@ describe("ClusterCreateFlow", () => {
       accessRequest("team-c", "y", "https://c1.team-a.example.com"),
     ];
     rerender(flowOf(data({ accessRequests: requests })));
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByText(/is taken by/)).toBeNull();
     expect(next().disabled).toBe(false);
   });
 
-  it("blocks step 1 on the taken host of the default option before step 2", async () => {
+  it("blocks step 1 on the taken host of the default option before step 2", async ({
+    user,
+  }) => {
     show(
       data({
         accessRequests: [
@@ -572,51 +588,55 @@ describe("ClusterCreateFlow", () => {
         ],
       }),
     );
-    await fillBasics("c1");
+    await fillBasics(user, "c1");
 
     expect(next().disabled).toBe(true);
   });
 
-  it("keeps the step 2 picks after Back and Next", async () => {
+  it("keeps the step 2 picks after Back and Next", async ({ user }) => {
     show(data({ accessRequests: [] }));
-    await fillBasics("search");
-    await userEvent.click(next());
-    await userEvent.click(radio(/No access from outside/));
+    await fillBasics(user, "search");
+    await user.click(next());
+    await user.click(radio(/No access from outside/));
 
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    await userEvent.click(next());
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(next());
 
     expect(radio(/No access from outside/).checked).toBe(true);
     expect(radio(/^Gateway/).checked).toBe(false);
   });
 
-  it("clears the step 2 picks when the environment changes", async () => {
+  it("clears the step 2 picks when the environment changes", async ({
+    user,
+  }) => {
     const staging = {
       ...prod(),
       metadata: { name: "staging" },
       spec: { ...prod().spec, displayName: "Staging" },
     };
     show(data({ environments: [prod(), staging], accessRequests: [] }));
-    await fillBasics("search");
-    await userEvent.click(next());
-    await userEvent.click(radio(/No access from outside/));
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await fillBasics(user, "search");
+    await user.click(next());
+    await user.click(radio(/No access from outside/));
+    await user.click(screen.getByRole("button", { name: "Back" }));
 
-    await userEvent.click(screen.getByRole("radio", { name: /Staging/ }));
-    await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-    await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
-    await userEvent.click(next());
+    await user.click(screen.getByRole("radio", { name: /Staging/ }));
+    await user.click(screen.getByRole("radio", { name: /Production/ }));
+    await user.selectOptions(screen.getByRole("combobox"), "team-a");
+    await user.click(next());
 
     expect(radio(/^Gateway/).checked).toBe(true);
   });
 
-  it("blocks step 2 when a storage config list cannot be read", async () => {
+  it("blocks step 2 when a storage config list cannot be read", async ({
+    user,
+  }) => {
     live.errors.SecondaryStorageConfig = "forbidden";
     show(data({ accessRequests: [] }));
-    await fillBasics("search");
+    await fillBasics(user, "search");
     expect(next().disabled).toBe(false);
 
-    await userEvent.click(next());
+    await user.click(next());
 
     expect(
       screen.getAllByText(
@@ -626,7 +646,9 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("preselects the Default registration without an Environment", async () => {
+  it("preselects the Default registration without an Environment", async ({
+    user,
+  }) => {
     const fallback = {
       ...gateway,
       spec: { ...gateway.spec, mode: "Default" as const },
@@ -638,23 +660,25 @@ describe("ClusterCreateFlow", () => {
         accessRequests: [],
       }),
     );
-    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "c1");
-    await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
-    await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
-    await userEvent.click(next());
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "c1");
+    await user.selectOptions(screen.getByRole("combobox"), "team-a");
+    await user.click(screen.getByRole("radio", { name: /^small/ }));
+    await user.click(next());
 
     expect(radio(/^Gateway/).checked).toBe(true);
     expect(radio(/^Internal/).checked).toBe(false);
   });
 
-  it("blocks step 2 when a list that both steps read cannot be read", async () => {
+  it("blocks step 2 when a list that both steps read cannot be read", async ({
+    user,
+  }) => {
     show(data({ accessRequests: [] }));
-    await fillBasics("search");
-    await userEvent.click(next());
+    await fillBasics(user, "search");
+    await user.click(next());
     expect(next().disabled).toBe(false);
 
     live.errors.PluginRegistration = "forbidden";
-    await userEvent.click(radio(/No access from outside/));
+    await user.click(radio(/No access from outside/));
 
     expect(
       screen.getAllByText(
@@ -664,7 +688,9 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("drops the pick of a section that goes away, and blocks the step while the policy still requires that section", async () => {
+  it("drops the pick of a section that goes away, and blocks the step while the policy still requires that section", async ({
+    user,
+  }) => {
     const initial = data({
       sections: [accessSection, backupSection],
       environments: [
@@ -692,9 +718,9 @@ describe("ClusterCreateFlow", () => {
       accessRequests: [],
     });
     const { rerender } = show(initial);
-    await fillBasics("search");
-    await userEvent.click(next());
-    await userEvent.click(
+    await fillBasics(user, "search");
+    await user.click(next());
+    await user.click(
       within(screen.getByRole("group", { name: /Backup storage/ })).getByRole(
         "radio",
         { name: /^Internal/ },
@@ -716,9 +742,11 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("opens step 3 with the release and platform config of the environment", async () => {
+  it("opens step 3 with the release and platform config of the environment", async ({
+    user,
+  }) => {
     show(data({ accessRequests: [] }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(
       (screen.getByRole("combobox", { name: "Release" }) as HTMLSelectElement)
         .value,
@@ -733,20 +761,22 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(false);
   });
 
-  it("blocks step 3 without a platform config", async () => {
+  it("blocks step 3 without a platform config", async ({ user }) => {
     const without = prod();
     delete without.spec.platformConfigRef;
     show(data({ environments: [without], accessRequests: [] }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain("Cluster settings: Pick a platform config.");
   });
 
-  it("blocks step 3, not step 1, while the releases cannot be read", async () => {
+  it("blocks step 3, not step 1, while the releases cannot be read", async ({
+    user,
+  }) => {
     live.objects.CamundaRelease = [];
     live.errors.CamundaRelease = "forbidden";
     show(data({ accessRequests: [] }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
@@ -758,11 +788,13 @@ describe("ClusterCreateFlow", () => {
     ).toBeTruthy();
   });
 
-  it("blocks step 3 while the platform configs cannot be read, and names no platform config as missing", async () => {
+  it("blocks step 3 while the platform configs cannot be read, and names no platform config as missing", async ({
+    user,
+  }) => {
     live.objects.CamundaPlatformConfig = [];
     live.errors.CamundaPlatformConfig = "forbidden";
     show(data({ accessRequests: [] }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
@@ -775,11 +807,13 @@ describe("ClusterCreateFlow", () => {
     ).toBeTruthy();
   });
 
-  it("blocks step 4, not step 3, while the ManagementAuthConfigs cannot be read", async () => {
+  it("blocks step 4, not step 3, while the ManagementAuthConfigs cannot be read", async ({
+    user,
+  }) => {
     live.objects.ManagementAuthConfig = [];
     live.errors.ManagementAuthConfig = "forbidden";
     show(attachmentData());
-    await toStep("Attachments");
+    await toStep(user, "Attachments");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
@@ -789,7 +823,9 @@ describe("ClusterCreateFlow", () => {
     expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
   });
 
-  it("blocks step 3 on a failed server read of the releases while the watch has not answered", async () => {
+  it("blocks step 3 on a failed server read of the releases while the watch has not answered", async ({
+    user,
+  }) => {
     show(
       data({
         accessRequests: [],
@@ -797,7 +833,7 @@ describe("ClusterCreateFlow", () => {
         readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
       }),
     );
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Cluster settings: The fleet manager could not read the CamundaRelease objects: forbidden",
@@ -808,7 +844,9 @@ describe("ClusterCreateFlow", () => {
     ).toBeTruthy();
   });
 
-  it("blocks step 3 on a failed server read of the platform configs while the watch has not answered", async () => {
+  it("blocks step 3 on a failed server read of the platform configs while the watch has not answered", async ({
+    user,
+  }) => {
     show(
       data({
         accessRequests: [],
@@ -816,7 +854,7 @@ describe("ClusterCreateFlow", () => {
         readErrors: [{ kind: "CamundaPlatformConfig", message: "forbidden" }],
       }),
     );
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Cluster settings: The fleet manager could not read the CamundaPlatformConfig objects: forbidden",
@@ -824,13 +862,15 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).not.toContain("does not exist");
   });
 
-  it("blocks step 4 on a failed server read of the ManagementAuthConfigs while the watch has not answered", async () => {
+  it("blocks step 4 on a failed server read of the ManagementAuthConfigs while the watch has not answered", async ({
+    user,
+  }) => {
     show({
       ...attachmentData(),
       managementAuthConfigs: [],
       readErrors: [{ kind: "ManagementAuthConfig", message: "forbidden" }],
     });
-    await toStep("Attachments");
+    await toStep(user, "Attachments");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "Attachments: The fleet manager could not read the ManagementAuthConfig objects: forbidden",
@@ -839,14 +879,16 @@ describe("ClusterCreateFlow", () => {
     expect(screen.getByText(MANAGEMENT_AUTH_CONFIGS_UNREAD)).toBeTruthy();
   });
 
-  it("forgets a failed server read once the watch sends the releases", async () => {
+  it("forgets a failed server read once the watch sends the releases", async ({
+    user,
+  }) => {
     const initial = data({
       accessRequests: [],
       releases: [],
       readErrors: [{ kind: "CamundaRelease", message: "forbidden" }],
     });
     const { rerender } = show(initial);
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(true);
 
     live.objects.CamundaRelease = [release("camunda-8-9", "8.9.9")];
@@ -857,14 +899,16 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(false);
   });
 
-  it("blocks the flow on a failed server read of the registrations until the watch answers", async () => {
+  it("blocks the flow on a failed server read of the registrations until the watch answers", async ({
+    user,
+  }) => {
     const initial = data({
       accessRequests: [],
       registrations: [],
       readErrors: [{ kind: "PluginRegistration", message: "forbidden" }],
     });
     const { rerender } = show(initial);
-    await fillBasics("search");
+    await fillBasics(user, "search");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "The fleet manager could not read the PluginRegistration objects: forbidden",
@@ -876,13 +920,15 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).not.toContain("could not read");
   });
 
-  it("blocks the flow on a failed server read of the access requests until the watch answers", async () => {
+  it("blocks the flow on a failed server read of the access requests until the watch answers", async ({
+    user,
+  }) => {
     const initial = data({
       accessRequests: [],
       readErrors: [{ kind: "PluginRequest", message: "forbidden" }],
     });
     const { rerender } = show(initial);
-    await fillBasics("search");
+    await fillBasics(user, "search");
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
       "The fleet manager could not read the PluginRequest objects: forbidden",
@@ -893,25 +939,25 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).not.toContain("could not read");
   });
 
-  it("keeps the step 3 and 4 picks after Back and Next", async () => {
+  it("keeps the step 3 and 4 picks after Back and Next", async ({ user }) => {
     show(attachmentData());
-    await toStep("Cluster settings");
-    await userEvent.selectOptions(
+    await toStep(user, "Cluster settings");
+    await user.selectOptions(
       screen.getByRole("combobox", { name: "Release" }),
       "camunda-8-8",
     );
-    await userEvent.click(next());
-    await userEvent.click(
+    await user.click(next());
+    await user.click(
       screen.getByRole("checkbox", { name: "Back up on a schedule" }),
     );
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(next());
+    await user.click(stepButton("Storage and access"));
+    await user.click(next());
     expect(
       (screen.getByRole("combobox", { name: "Release" }) as HTMLSelectElement)
         .value,
     ).toBe("camunda-8-8");
-    await userEvent.click(next());
+    await user.click(next());
     expect(
       screen
         .getByRole("checkbox", { name: "Back up on a schedule" })
@@ -926,24 +972,26 @@ describe("ClusterCreateFlow", () => {
     ).toBe("0 2 * * *");
   });
 
-  it("drops the typed Optimize URL once an access option fills it", async () => {
+  it("drops the typed Optimize URL once an access option fills it", async ({
+    user,
+  }) => {
     show(attachmentData());
-    await toStep("Storage and access");
-    await userEvent.click(radio(/No access from outside/));
-    await userEvent.click(next());
-    await userEvent.click(next());
-    await userEvent.click(
-      screen.getByRole("checkbox", { name: "Attach Optimize" }),
-    );
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "External URL" }),
-      "https://optimize.example.com",
-    );
+    await toStep(user, "Storage and access");
+    await user.click(radio(/No access from outside/));
+    await user.click(next());
+    await user.click(next());
+    await user.click(screen.getByRole("checkbox", { name: "Attach Optimize" }));
+    const typed = screen.getByRole("textbox", {
+      name: "External URL",
+    }) as HTMLInputElement;
+    await user.click(typed);
+    await user.paste("https://optimize.example.com");
+    expect(typed.value).toBe("https://optimize.example.com");
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(radio(/^Gateway/));
-    await userEvent.click(next());
-    await userEvent.click(next());
+    await user.click(stepButton("Storage and access"));
+    await user.click(radio(/^Gateway/));
+    await user.click(next());
+    await user.click(next());
 
     // The locked row shows the URL of the draft first, so the typed URL
     // would show here while the draft still held it.
@@ -957,70 +1005,80 @@ describe("ClusterCreateFlow", () => {
     ).toBeNull();
   });
 
-  it("drops a whole cluster value once an access option fills it", async () => {
+  it("drops a whole cluster value once an access option fills it", async ({
+    user,
+  }) => {
     show(attachmentData());
-    await toStep("Storage and access");
-    await userEvent.click(radio(/No access from outside/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
-    await userEvent.type(
-      screen.getByRole("textbox", { name: "externalUrl" }),
-      "https://orders.example.com",
-    );
+    await toStep(user, "Storage and access");
+    await user.click(radio(/No access from outside/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
+    const typed = screen.getByRole("textbox", {
+      name: "externalUrl",
+    }) as HTMLInputElement;
+    await user.click(typed);
+    await user.paste("https://orders.example.com");
+    expect(typed.value).toBe("https://orders.example.com");
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(radio(/^Gateway/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
+    await user.click(stepButton("Storage and access"));
+    await user.click(radio(/^Gateway/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
     const url = screen.getAllByRole("group", { name: "externalUrl" })[0];
     expect(within(url).getByText("Filled by Access")).toBeTruthy();
     expect(next().disabled).toBe(false);
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(radio(/No access from outside/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
+    await user.click(stepButton("Storage and access"));
+    await user.click(radio(/No access from outside/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
     expect(
       (screen.getByRole("textbox", { name: "externalUrl" }) as HTMLInputElement)
         .value,
     ).toBe("");
   });
 
-  it("drops service account annotations once an identity option fills them", async () => {
+  it("drops service account annotations once an identity option fills them", async ({
+    user,
+  }) => {
     show(identityData());
-    await toStep("Storage and access");
-    await userEvent.click(radio(/No identity/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
+    await toStep(user, "Storage and access");
+    await user.click(radio(/No identity/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
     const row = () =>
       screen.getAllByRole("group", { name: "serviceAccount.annotations" })[0];
-    await userEvent.click(
+    await user.click(
       within(row()).getByRole("button", { name: "Add an entry" }),
     );
-    await userEvent.type(
-      within(row()).getByRole("textbox", { name: "Key" }),
-      "role",
-    );
-    await userEvent.type(
-      within(row()).getByRole("textbox", { name: "Value" }),
-      "orders",
-    );
+    const key = within(row()).getByRole("textbox", {
+      name: "Key",
+    }) as HTMLInputElement;
+    await user.click(key);
+    await user.paste("role");
+    expect(key.value).toBe("role");
+    const value = within(row()).getByRole("textbox", {
+      name: "Value",
+    }) as HTMLInputElement;
+    await user.click(value);
+    await user.paste("orders");
+    expect(value.value).toBe("orders");
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(radio(/^IRSA/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
+    await user.click(stepButton("Storage and access"));
+    await user.click(radio(/^IRSA/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
     expect(within(row()).getByText("Filled by Identity")).toBeTruthy();
     expect(next().disabled).toBe(false);
 
-    await userEvent.click(stepButton("Storage and access"));
-    await userEvent.click(radio(/No identity/));
-    await userEvent.click(next());
-    await openSettings("Whole cluster");
+    await user.click(stepButton("Storage and access"));
+    await user.click(radio(/No identity/));
+    await user.click(next());
+    await openSettings(user, "Whole cluster");
     expect(within(row()).queryByRole("textbox", { name: "Key" })).toBeNull();
   });
 
-  it("stops on a step 2 error that a release pick causes", async () => {
+  it("stops on a step 2 error that a release pick causes", async ({ user }) => {
     const pinned: Resource<"PluginRegistration"> = {
       ...gateway,
       metadata: { name: "pinned" },
@@ -1046,9 +1104,9 @@ describe("ClusterCreateFlow", () => {
         accessRequests: [],
       }),
     );
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(false);
-    await userEvent.selectOptions(
+    await user.selectOptions(
       screen.getByRole("combobox", { name: "Release" }),
       "camunda-8-8",
     );
@@ -1056,14 +1114,16 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).toContain("Storage and access:");
   });
 
-  it("blocks step 4 on a count with an error until the schedule is turned off", async () => {
+  it("blocks step 4 on a count with an error until the schedule is turned off", async ({
+    user,
+  }) => {
     show(attachmentData());
-    await toStep("Attachments");
-    await userEvent.click(
+    await toStep(user, "Attachments");
+    await user.click(
       screen.getByRole("checkbox", { name: "Back up on a schedule" }),
     );
     expect(next().disabled).toBe(false);
-    await userEvent.type(
+    await user.type(
       screen.getByRole("spinbutton", { name: "Completed backups to keep" }),
       "1.5",
     );
@@ -1071,39 +1131,41 @@ describe("ClusterCreateFlow", () => {
     expect(footer()).toContain(
       "Attachments: Completed backups to keep: Enter a whole number",
     );
-    await userEvent.click(
+    await user.click(
       screen.getByRole("checkbox", { name: "Back up on a schedule" }),
     );
     expect(next().disabled).toBe(false);
   });
 
-  it("asks for nothing on a new namespace with no Secrets to read", async () => {
+  it("asks for nothing on a new namespace with no Secrets to read", async ({
+    user,
+  }) => {
     show(
       data({
         sections: [],
         environments: [prod({ allowed: true })],
       }),
     );
-    await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "c1");
-    await userEvent.click(
-      screen.getByRole("radio", { name: "Create a namespace" }),
-    );
-    await userEvent.type(
+    await user.click(screen.getByRole("radio", { name: /Production/ }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "c1");
+    await user.click(screen.getByRole("radio", { name: "Create a namespace" }));
+    await user.type(
       screen.getAllByRole("textbox", { name: "Name" })[1],
       "team-new",
     );
-    await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
-    await userEvent.click(next());
-    await userEvent.click(next());
+    await user.click(screen.getByRole("radio", { name: /^small/ }));
+    await user.click(next());
+    await user.click(next());
     expect(heading("Cluster settings")).toBeTruthy();
     expect(live.asked.has("Secret")).toBe(false);
   });
 
-  it("names a Secret read error and does not block step 3", async () => {
+  it("names a Secret read error and does not block step 3", async ({
+    user,
+  }) => {
     live.errors.Secret = "forbidden";
     show(data({ accessRequests: [] }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(screen.getByRole("alert").textContent).toBe(
       "Could not read Secret: forbidden",
     );
@@ -1116,25 +1178,27 @@ const create = () =>
 
 // toReview fills step 1 with the claim orders in the namespace of choice,
 // a new one when labels are given, and keeps the defaults of steps 2 to 4.
-async function toReview(namespace: string, labels?: Record<string, string>) {
-  await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-  await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "orders");
+async function toReview(
+  user: UserEvent,
+  namespace: string,
+  labels?: Record<string, string>,
+) {
+  await user.click(screen.getByRole("radio", { name: /Production/ }));
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "orders");
   if (labels) {
-    await userEvent.click(
-      screen.getByRole("radio", { name: "Create a namespace" }),
-    );
-    await userEvent.type(
+    await user.click(screen.getByRole("radio", { name: "Create a namespace" }));
+    await user.type(
       screen.getAllByRole("textbox", { name: "Name" })[1],
       namespace,
     );
     for (const [key, value] of Object.entries(labels)) {
-      await userEvent.type(screen.getByRole("textbox", { name: key }), value);
+      await user.type(screen.getByRole("textbox", { name: key }), value);
     }
   } else {
-    await userEvent.selectOptions(screen.getByRole("combobox"), namespace);
+    await user.selectOptions(screen.getByRole("combobox"), namespace);
   }
-  await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
-  for (let i = 0; i < 4; i++) await userEvent.click(next());
+  await user.click(screen.getByRole("radio", { name: /^small/ }));
+  for (let i = 0; i < 4; i++) await user.click(next());
   expect(heading("Review")).toBeTruthy();
 }
 
@@ -1168,12 +1232,14 @@ const newNamespace = {
 };
 
 describe("ClusterCreateFlow write", () => {
-  it("Create in direct mode writes the new namespace and the claim, then shows the progress", async () => {
+  it("Create in direct mode writes the new namespace and the claim, then shows the progress", async ({
+    user,
+  }) => {
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     await waitFor(() => expect(create().disabled).toBe(false));
     expect(fakeWriter.previewed).toHaveLength(1);
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       await screen.findByRole("heading", {
         name: "Creating the cluster orders",
@@ -1191,9 +1257,11 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("shows the summary of each step, the namespace, and what the create makes on the review", async () => {
+  it("shows the summary of each step, the namespace, and what the create makes on the review", async ({
+    user,
+  }) => {
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     const step1 = screen.getByRole("region", { name: "Environment and name" });
     expect(step1.textContent).toContain("Production");
     expect(step1.textContent).toContain("team-new");
@@ -1220,11 +1288,11 @@ describe("ClusterCreateFlow write", () => {
     ]);
   });
 
-  it("follows the live claim after the create", async () => {
+  it("follows the live claim after the create", async ({ user }) => {
     const { rerender } = show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     await screen.findByRole("heading", { name: "Creating the cluster orders" });
     expect(screen.queryByText("waiting for the outputs of access")).toBeNull();
     live.objects.CamundaClusterClaim = [
@@ -1247,14 +1315,16 @@ describe("ClusterCreateFlow write", () => {
     expect(screen.getByText("waiting for the outputs of access")).toBeTruthy();
   });
 
-  it("Push to Git sends the namespace and the claim in one change and waits for GitOps", async () => {
+  it("Push to Git sends the namespace and the claim in one change and waits for GitOps", async ({
+    user,
+  }) => {
     fakeWriter.reset("git");
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     const push = () =>
       screen.getByRole("button", { name: "Push to Git" }) as HTMLButtonElement;
     await waitFor(() => expect(push().disabled).toBe(false));
-    await userEvent.click(push());
+    await user.click(push());
     expect(fakeWriter.applied).toEqual([
       {
         intent: "Create the cluster orders in team-new",
@@ -1270,7 +1340,9 @@ describe("ClusterCreateFlow write", () => {
     ).toBeTruthy();
   });
 
-  it("a refused dry run shows each error and writes nothing", async () => {
+  it("a refused dry run shows each error and writes nothing", async ({
+    user,
+  }) => {
     fakeWriter.previews = [
       {
         objects: [],
@@ -1281,7 +1353,7 @@ describe("ClusterCreateFlow write", () => {
       },
     ];
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     const alert = await screen.findByRole("alert");
     expect(
       within(alert)
@@ -1292,11 +1364,13 @@ describe("ClusterCreateFlow write", () => {
       "spec.presetRef: Required",
     ]);
     expect(create().disabled).toBe(true);
-    await userEvent.click(create());
+    await user.click(create());
     expect(fakeWriter.applied).toEqual([]);
   });
 
-  it("a Stale answer shows the toast, keeps the review and the draft, and shows no progress", async () => {
+  it("a Stale answer shows the toast, keeps the review and the draft, and shows no progress", async ({
+    user,
+  }) => {
     fakeWriter.results = [
       {
         ok: false,
@@ -1310,9 +1384,9 @@ describe("ClusterCreateFlow write", () => {
       },
     ];
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect((await screen.findByRole("alert")).textContent).toContain(
       "The CamundaClusterClaim orders exists already. Pick another name.",
     );
@@ -1320,13 +1394,15 @@ describe("ClusterCreateFlow write", () => {
     expect(
       screen.queryByRole("heading", { name: /Creating the cluster/ }),
     ).toBeNull();
-    await userEvent.click(stepButton("Environment and name"));
+    await user.click(stepButton("Environment and name"));
     expect(
       (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
     ).toBe("orders");
   });
 
-  it("a failed create that made its namespace moves the draft to that namespace, and a second Create writes only the claim", async () => {
+  it("a failed create that made its namespace moves the draft to that namespace, and a second Create writes only the claim", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       // The watch now sees the namespace that the write created.
@@ -1338,9 +1414,9 @@ describe("ClusterCreateFlow write", () => {
       };
     });
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
 
     expect(
       (await screen.findByText(/The write created the namespace/)).textContent,
@@ -1351,7 +1427,7 @@ describe("ClusterCreateFlow write", () => {
       "The claim is invalid.",
     );
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(fakeWriter.applied).toHaveLength(2);
     expect(fakeWriter.applied[1]).toEqual({
       intent: "Create the cluster orders in team-new",
@@ -1365,7 +1441,9 @@ describe("ClusterCreateFlow write", () => {
     ).toBeTruthy();
   });
 
-  it("a lost answer after the new namespace says that the claim is not known", async () => {
+  it("a lost answer after the new namespace says that the claim is not known", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.Namespace = [...newNamespaceData().namespaces, newNamespace];
@@ -1376,9 +1454,9 @@ describe("ClusterCreateFlow write", () => {
       };
     });
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       (await screen.findByText(/The write created the namespace/)).textContent,
     ).toBe(
@@ -1386,7 +1464,9 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("a lost answer after the new namespace offers only to follow the claim once it exists", async () => {
+  it("a lost answer after the new namespace offers only to follow the claim once it exists", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.Namespace = [...newNamespaceData().namespaces, newNamespace];
@@ -1398,59 +1478,63 @@ describe("ClusterCreateFlow write", () => {
       };
     });
     show(newNamespaceData());
-    await toReview("team-new", {});
+    await toReview(user, "team-new", {});
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       await screen.findByRole("button", { name: "Follow the claim" }),
     ).toBeTruthy();
     expect(screen.queryByText(/The write created the namespace/)).toBeNull();
   });
 
-  it("a failed write after which the claim exists says so and can follow the claim", async () => {
+  it("a failed write after which the claim exists says so and can follow the claim", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.CamundaClusterClaim = [liveClaim("team-a")];
       throw new Error("the connection to the API server was lost");
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect((await screen.findByRole("alert")).textContent).toContain(
       "the connection to the API server was lost",
     );
     expect(screen.getByText(/The write reported an error/).textContent).toBe(
       "The write reported an error, but the claim orders exists in team-a now.",
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Follow the claim" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Follow the claim" }));
     expect(
       screen.getByRole("heading", { name: "Creating the cluster orders" }),
     ).toBeTruthy();
     expect(fakeWriter.applied).toHaveLength(1);
   });
 
-  it("keeps Create off after a lost answer until Try again runs the dry run again", async () => {
+  it("keeps Create off after a lost answer until Try again runs the dry run again", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       throw new Error("the connection to the API server was lost");
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
     expect(fakeWriter.previewed).toHaveLength(1);
-    await userEvent.click(create());
+    await user.click(create());
     const again = await screen.findByRole("button", { name: "Try again" });
     expect(create().disabled).toBe(true);
-    await userEvent.click(again);
+    await user.click(again);
     await waitFor(() => expect(create().disabled).toBe(false));
     expect(fakeWriter.previewed).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
-  it("keeps a lost answer for the claim when a later write of it gets a Conflict", async () => {
+  it("keeps a lost answer for the claim when a later write of it gets a Conflict", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply")
       .mockImplementationOnce(async (change) => {
         fakeWriter.applied.push(structuredClone(change));
@@ -1470,21 +1554,21 @@ describe("ClusterCreateFlow write", () => {
         };
       });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Try again" }),
-    );
+    await user.click(create());
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       await screen.findByRole("button", { name: "Follow the claim" }),
     ).toBeTruthy();
     expect(screen.queryByText(/This create did not make it/)).toBeNull();
   });
 
-  it("follows a claim that the first lost write made, after a later write of it is refused", async () => {
+  it("follows a claim that the first lost write made, after a later write of it is refused", async ({
+    user,
+  }) => {
     let clock = Date.parse("2026-11-16T12:00:00Z");
     vi.spyOn(Date, "now").mockImplementation(() => clock);
     vi.spyOn(fakeWriter, "apply")
@@ -1508,21 +1592,21 @@ describe("ClusterCreateFlow write", () => {
         };
       });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Try again" }),
-    );
+    await user.click(create());
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(create().disabled).toBe(false));
     clock += 10 * 60_000;
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       await screen.findByRole("button", { name: "Follow the claim" }),
     ).toBeTruthy();
   });
 
-  it("does not offer to follow a claim of the same spec that was made before the click", async () => {
+  it("does not offer to follow a claim of the same spec that was made before the click", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.CamundaClusterClaim = [
@@ -1531,9 +1615,9 @@ describe("ClusterCreateFlow write", () => {
       throw new Error("the connection to the API server was lost");
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       (await screen.findByText(/This create did not make it/)).textContent,
     ).toBe(
@@ -1544,7 +1628,9 @@ describe("ClusterCreateFlow write", () => {
     ).toBeNull();
   });
 
-  it("a lost answer with another claim of that name does not offer to follow it", async () => {
+  it("a lost answer with another claim of that name does not offer to follow it", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       const other = writtenClaim("team-a");
@@ -1554,9 +1640,9 @@ describe("ClusterCreateFlow write", () => {
       throw new Error("the connection to the API server was lost");
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       (await screen.findByText(/This create did not make it/)).textContent,
     ).toBe(
@@ -1567,7 +1653,9 @@ describe("ClusterCreateFlow write", () => {
     ).toBeNull();
   });
 
-  it("a Stale refusal says that a claim of that name exists and was not made by this create", async () => {
+  it("a Stale refusal says that a claim of that name exists and was not made by this create", async ({
+    user,
+  }) => {
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
       fakeWriter.applied.push(structuredClone(change));
       live.objects.CamundaClusterClaim = [writtenClaim("team-a")];
@@ -1582,9 +1670,9 @@ describe("ClusterCreateFlow write", () => {
       };
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     expect(
       (await screen.findByText(/This create did not make it/)).textContent,
     ).toBe(
@@ -1595,7 +1683,9 @@ describe("ClusterCreateFlow write", () => {
     ).toBeNull();
   });
 
-  it("keeps Create disabled while a create runs, also after Back and Next", async () => {
+  it("keeps Create disabled while a create runs, also after Back and Next", async ({
+    user,
+  }) => {
     let finish: (result: WriteResult) => void = () => {};
     vi.spyOn(fakeWriter, "apply").mockImplementationOnce((change) => {
       fakeWriter.applied.push(structuredClone(change));
@@ -1604,19 +1694,19 @@ describe("ClusterCreateFlow write", () => {
       });
     });
     show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
-    await userEvent.click(create());
+    await user.click(create());
+    await user.click(create());
 
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("button", { name: "Back" }));
     const previews = fakeWriter.previewed.length;
-    await userEvent.click(next());
+    await user.click(next());
     await waitFor(() =>
       expect(fakeWriter.previewed.length).toBeGreaterThan(previews),
     );
     expect(create().disabled).toBe(true);
-    await userEvent.click(create());
+    await user.click(create());
     expect(fakeWriter.applied).toHaveLength(1);
 
     finish({ ok: true, mode: "direct" });
@@ -1627,9 +1717,11 @@ describe("ClusterCreateFlow write", () => {
     ).toBeTruthy();
   });
 
-  it("keeps Create off while an earlier step has errors, and names the step", async () => {
+  it("keeps Create off while an earlier step has errors, and names the step", async ({
+    user,
+  }) => {
     const { rerender } = show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
     live.objects.Environment = [{ ...prod(), status: READY("False", "gone") }];
     rerender(flowOf(data({ accessRequests: [] })));
@@ -1642,9 +1734,11 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("keeps Create off and names the kind while a list cannot be read", async () => {
+  it("keeps Create off and names the kind while a list cannot be read", async ({
+    user,
+  }) => {
     const { rerender } = show(data({ accessRequests: [] }));
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
     live.errors.PluginRegistration = "forbidden";
     rerender(flowOf(data({ accessRequests: [] })));
@@ -1657,7 +1751,7 @@ describe("ClusterCreateFlow write", () => {
 
   // pickInTeamA picks the Secret orders-oidc of team-a in step 3, then
   // moves the draft to team-b, which holds no Secret, and returns to step 3.
-  async function pickInTeamA() {
+  async function pickInTeamA(user: UserEvent) {
     live.fresh.add("Secret");
     live.objects.Secret = [
       {
@@ -1677,29 +1771,29 @@ describe("ClusterCreateFlow write", () => {
       ],
     });
     const view = show(initial);
-    await toStep("Cluster settings", "orders");
-    await openSettings("Whole cluster");
+    await toStep(user, "Cluster settings", "orders");
+    await openSettings(user, "Whole cluster");
     // The setting and its picker are both groups of that name.
     const picker = screen.getAllByRole("group", {
       name: "auth.clientSecretRef",
     })[1];
-    await userEvent.selectOptions(
+    await user.selectOptions(
       within(picker).getByRole("combobox", { name: "Secret" }),
       "orders-oidc",
     );
-    await userEvent.selectOptions(
+    await user.selectOptions(
       within(picker).getByRole("combobox", { name: "Key" }),
       "secret",
     );
-    await userEvent.click(stepButton("Environment and name"));
+    await user.click(stepButton("Environment and name"));
     // The fake watch serves one list for every namespace.
     live.objects.Secret = [];
-    await userEvent.selectOptions(
+    await user.selectOptions(
       screen.getByRole("combobox", { name: "Namespace" }),
       "team-b",
     );
-    await userEvent.click(next());
-    await userEvent.click(next());
+    await user.click(next());
+    await user.click(next());
     expect(heading("Cluster settings")).toBeTruthy();
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(
@@ -1708,20 +1802,24 @@ describe("ClusterCreateFlow write", () => {
     return { view, initial };
   }
 
-  it("refuses a Secret that the namespace does not hold until it is reset", async () => {
-    await pickInTeamA();
+  it("refuses a Secret that the namespace does not hold until it is reset", async ({
+    user,
+  }) => {
+    await pickInTeamA(user);
     const setting = screen.getAllByRole("group", {
       name: "auth.clientSecretRef",
     })[0];
-    await userEvent.click(
+    await user.click(
       within(setting).getByRole("button", { name: /reset|default/i }),
     );
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(footer()).not.toContain("auth.clientSecretRef");
   });
 
-  it("opens the group of a Secret reference that the namespace does not hold and shows the error at its row", async () => {
-    const { view, initial } = await pickInTeamA();
+  it("opens the group of a Secret reference that the namespace does not hold and shows the error at its row", async ({
+    user,
+  }) => {
+    const { view, initial } = await pickInTeamA(user);
     const whole = screen.getByRole("region", {
       name: "Whole cluster settings",
     });
@@ -1748,8 +1846,10 @@ describe("ClusterCreateFlow write", () => {
     expect(settingsRow("Whole cluster").textContent).not.toMatch(/error/);
   });
 
-  it("accepts the reference once the namespace holds the Secret and its key", async () => {
-    const { view, initial } = await pickInTeamA();
+  it("accepts the reference once the namespace holds the Secret and its key", async ({
+    user,
+  }) => {
+    const { view, initial } = await pickInTeamA(user);
     live.objects.Secret = [
       {
         metadata: { namespace: "team-b", name: "orders-oidc" },
@@ -1783,9 +1883,11 @@ describe("ClusterCreateFlow write", () => {
       within(brokerResources()).getByRole("group", { name: "CPU limit" }),
     ).getByRole("textbox", { name: "Amount" });
 
-  it("blocks Next on a preset whose limit is below its request, also when nothing changed", async () => {
+  it("blocks Next on a preset whose limit is below its request, also when nothing changed", async ({
+    user,
+  }) => {
     show(withBrokerResources({ requests: { cpu: "2" }, limits: { cpu: "1" } }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     await waitFor(() => expect(next().disabled).toBe(true));
     expect(settingsRow("Brokers").getAttribute("aria-expanded")).toBe("true");
     expect(settingsRow("Brokers").textContent).toContain("1 error");
@@ -1794,10 +1896,12 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("still names the preset after the limit field is cleared, and blocks Next", async () => {
+  it("still names the preset after the limit field is cleared, and blocks Next", async ({
+    user,
+  }) => {
     show(withBrokerResources({ requests: { cpu: "2" }, limits: { cpu: "1" } }));
-    await toStep("Cluster settings");
-    await userEvent.clear(cpuLimit());
+    await toStep(user, "Cluster settings");
+    await user.clear(cpuLimit());
     const message =
       "The CPU limit of 1 and the CPU request of 2 come from the preset. The limit is below the request.";
     await waitFor(() =>
@@ -1809,34 +1913,35 @@ describe("ClusterCreateFlow write", () => {
     expect(next().disabled).toBe(true);
     expect(footer()).toContain(`Cluster settings: zeebe.resources: ${message}`);
 
-    await userEvent.type(cpuLimit(), "2");
+    await user.type(cpuLimit(), "2");
     await waitFor(() => expect(next().disabled).toBe(false));
     expect(within(brokerResources()).queryByRole("alert")).toBeNull();
   });
 
-  it("writes only the memory request that the user changed over the preset", async () => {
+  it("writes only the memory request that the user changed over the preset", async ({
+    user,
+  }) => {
     show(
       withBrokerResources({
         requests: { cpu: "1", memory: "1Gi" },
         limits: { cpu: "2", memory: "2Gi" },
       }),
     );
-    await toStep("Cluster settings");
-    await openSettings("Brokers");
+    await toStep(user, "Cluster settings");
+    await openSettings(user, "Brokers");
     const memory = within(
       within(brokerResources()).getByRole("group", { name: "Memory request" }),
     ).getByRole("textbox", { name: "Amount" });
-    await userEvent.clear(memory);
-    await userEvent.type(memory, "2");
-    for (let i = 0; i < 4 && !heading("Review"); i++)
-      await userEvent.click(next());
+    await user.clear(memory);
+    await user.type(memory, "2");
+    for (let i = 0; i < 4 && !heading("Review"); i++) await user.click(next());
     expect(heading("Review")).toBeTruthy();
     const diff = screen.getByRole("figure", { name: "The claim" }).textContent;
     expect(diff).toContain("memory: 2Gi");
     expect(diff).not.toContain("limits");
     expect(diff).not.toContain("cpu");
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     await screen.findByRole("heading", { name: "Creating the cluster search" });
     const written = fakeWriter.applied[0].apply.at(-1) as unknown as {
       spec: { cluster?: object };
@@ -1848,11 +1953,10 @@ describe("ClusterCreateFlow write", () => {
 
   // createdCluster clicks Next up to the review, creates the cluster, and
   // returns spec.cluster of the claim that the create wrote.
-  async function createdCluster(name = "search") {
-    for (let i = 0; i < 4 && !heading("Review"); i++)
-      await userEvent.click(next());
+  async function createdCluster(user: UserEvent, name = "search") {
+    for (let i = 0; i < 4 && !heading("Review"); i++) await user.click(next());
     await waitFor(() => expect(create().disabled).toBe(false));
-    await userEvent.click(create());
+    await user.click(create());
     await screen.findByRole("heading", {
       name: `Creating the cluster ${name}`,
     });
@@ -1865,24 +1969,28 @@ describe("ClusterCreateFlow write", () => {
     within(
       within(brokerResources()).getByRole("group", { name: "Memory request" }),
     ).getByRole("textbox", { name: "Amount" });
-  const retypeMemory = async (text: string) => {
-    await userEvent.clear(memoryRequest());
-    await userEvent.type(memoryRequest(), text);
+  const retypeMemory = async (user: UserEvent, text: string) => {
+    await user.clear(memoryRequest());
+    await user.type(memoryRequest(), text);
   };
 
-  it("writes nothing for the preset amount typed again after the step opens again", async () => {
+  it("writes nothing for the preset amount typed again after the step opens again", async ({
+    user,
+  }) => {
     show(withBrokerResources({ requests: { memory: "1Gi" } }));
-    await toStep("Cluster settings");
-    await openSettings("Brokers");
-    await retypeMemory("2");
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    await userEvent.click(next());
-    await openSettings("Brokers");
-    await retypeMemory("1");
-    expect(await createdCluster()).toBeUndefined();
+    await toStep(user, "Cluster settings");
+    await openSettings(user, "Brokers");
+    await retypeMemory(user, "2");
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(next());
+    await openSettings(user, "Brokers");
+    await retypeMemory(user, "1");
+    expect(await createdCluster(user)).toBeUndefined();
   });
 
-  it("writes nothing for the amount of a preset picked after an edit", async () => {
+  it("writes nothing for the amount of a preset picked after an edit", async ({
+    user,
+  }) => {
     const preset = (name: string, memory: string) => ({
       apiVersion: "core.camunda.io/v1" as const,
       kind: "CamundaClusterPreset" as const,
@@ -1898,29 +2006,31 @@ describe("ClusterCreateFlow write", () => {
         presets: [preset("small", "1Gi"), preset("large", "4Gi")],
       }),
     );
-    await toStep("Cluster settings");
-    await openSettings("Brokers");
-    await retypeMemory("2");
+    await toStep(user, "Cluster settings");
+    await openSettings(user, "Brokers");
+    await retypeMemory(user, "2");
     for (let i = 0; i < 4 && !heading("Environment and name"); i++)
-      await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    await userEvent.click(screen.getByRole("radio", { name: /^large/ }));
+      await user.click(screen.getByRole("button", { name: "Back" }));
+    await user.click(screen.getByRole("radio", { name: /^large/ }));
     for (let i = 0; i < 4 && !heading("Cluster settings"); i++)
-      await userEvent.click(next());
-    await openSettings("Brokers");
+      await user.click(next());
+    await openSettings(user, "Brokers");
     expect(memoryRequest()).toHaveProperty("value", "2");
-    await retypeMemory("4");
-    expect(await createdCluster()).toBeUndefined();
+    await retypeMemory(user, "4");
+    expect(await createdCluster(user)).toBeUndefined();
   });
 
-  it("compares a merged limit with a request in another unit", async () => {
+  it("compares a merged limit with a request in another unit", async ({
+    user,
+  }) => {
     show(withBrokerResources({ limits: { cpu: "500m" } }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     expect(next().disabled).toBe(false);
-    await openSettings("Brokers");
+    await openSettings(user, "Brokers");
     const request = within(brokerResources()).getByRole("group", {
       name: "CPU request",
     });
-    await userEvent.type(
+    await user.type(
       within(request).getByRole("textbox", { name: "Amount" }),
       "1",
     );
@@ -1930,10 +2040,12 @@ describe("ClusterCreateFlow write", () => {
     );
   });
 
-  it("turns Create off when the preset changes to a limit below the request after step 3", async () => {
+  it("turns Create off when the preset changes to a limit below the request after step 3", async ({
+    user,
+  }) => {
     const initial = data({ accessRequests: [] });
     const { rerender } = show(initial);
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
     live.objects.CamundaClusterPreset = withBrokerResources({
       requests: { cpu: "2" },
@@ -1966,16 +2078,18 @@ describe("ClusterCreateFlow write", () => {
   const BAD_KEY =
     'The label key "bad key" comes from the preset. The claim cannot remove it. Pick another preset, or ask your admin to correct the preset.';
 
-  it("keeps the error of a label key of the preset after its row is deleted, and blocks Next", async () => {
+  it("keeps the error of a label key of the preset after its row is deleted, and blocks Next", async ({
+    user,
+  }) => {
     show(withBrokers({ podLabels: { "bad key": "x", team: "a" } }));
-    await toStep("Cluster settings");
+    await toStep(user, "Cluster settings");
     await waitFor(() => expect(next().disabled).toBe(true));
     const labels = () =>
       within(
         screen.getByRole("region", { name: "Brokers settings" }),
       ).getAllByRole("group", { name: "podLabels" })[0];
     expect(within(labels()).getByRole("alert").textContent).toBe(BAD_KEY);
-    await userEvent.click(
+    await user.click(
       within(labels()).getByRole("button", { name: "Remove entry 1" }),
     );
     expect(within(labels()).getByRole("alert").textContent).toBe(BAD_KEY);
@@ -1984,10 +2098,12 @@ describe("ClusterCreateFlow write", () => {
     expect(footer()).toContain(`Cluster settings: zeebe.podLabels: ${BAD_KEY}`);
   });
 
-  it("turns Create off when the preset changes to a label key that is not valid after step 3", async () => {
+  it("turns Create off when the preset changes to a label key that is not valid after step 3", async ({
+    user,
+  }) => {
     const initial = data({ accessRequests: [] });
     const { rerender } = show(initial);
-    await toReview("team-a");
+    await toReview(user, "team-a");
     await waitFor(() => expect(create().disabled).toBe(false));
     live.objects.CamundaClusterPreset = withBrokers({
       podLabels: { "bad key": "x" },
@@ -2000,8 +2116,10 @@ describe("ClusterCreateFlow write", () => {
     ).toBe(`Cluster settings: zeebe.podLabels: ${BAD_KEY}`);
   });
 
-  it("refuses the reference while the Secret watch is overdue", async () => {
-    const { view, initial } = await pickInTeamA();
+  it("refuses the reference while the Secret watch is overdue", async ({
+    user,
+  }) => {
+    const { view, initial } = await pickInTeamA(user);
     live.objects.Secret = [
       {
         metadata: { namespace: "team-b", name: "orders-oidc" },

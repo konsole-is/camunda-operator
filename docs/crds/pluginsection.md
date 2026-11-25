@@ -139,4 +139,5 @@ The output `zoneId` fills no field of the generated `CamundaCluster`. Only the o
 
 - [PluginRegistration](pluginregistration.md): the options of a section.
 - [PluginRequest](pluginrequest.md): the request that a claim writes for the option that it selects.
+- [Storage and access](../fleet-manager/create-a-cluster.md#storage-and-access): a section and its options in the create form of the fleet manager.
 - [API reference](api-reference.md#pluginsection): every field of the kind.

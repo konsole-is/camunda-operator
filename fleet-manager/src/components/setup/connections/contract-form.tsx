@@ -19,6 +19,7 @@ import {
   TextField,
 } from "@/components/setup/form-parts";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Radio } from "@/components/ui/radio";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
@@ -26,7 +27,7 @@ import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageco
 import { isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ContractKind } from "@/lib/usage";
-import type { ContractDraft } from "./draft";
+import { type ContractDraft, withAuthType, withStorageType } from "./draft";
 import { NODE_COUNT_HINT } from "./facts";
 
 const STORAGE_TYPE = { S3: "S3", GCS: "GCS", AzureBlob: "Azure Blob" };
@@ -38,13 +39,17 @@ const AUTH_TYPE = {
 
 /**
  * ContractForm edits the values of draft, a contract of kind in namespace,
- * in the shape that the contract has. The storage type and the auth type
- * show as text: an edit keeps them. Each field shows its error of errors by
- * spec path. The Secret pickers read the Secrets of namespace; the client
- * secret of a Management Identity contract can be in any of namespaces.
- * databaseConfigs and databaseServerConfigs are the names that the pickers
- * of a reference offer, undefined while the list is not known; a name that
- * a known list lacks shows as not found.
+ * in the shape that the contract has. Without choose, the storage type and
+ * the auth type show as text, because an edit keeps them. Each field shows
+ * its error of errors by spec path. The Secret pickers read the Secrets of
+ * namespace; the client secret of a Management Identity contract can be in
+ * any of namespaces. databaseConfigs and databaseServerConfigs are the
+ * names that the pickers of a reference offer, undefined while the list is
+ * not known; a name that a known list lacks shows as not found.
+ *
+ * With choose, for a new contract, the storage type and the auth type are
+ * radio choices: a pick of a storage type replaces the whole spec, and a
+ * pick of an auth type keeps the other fields of the block.
  */
 export function ContractForm({
   kind,
@@ -54,6 +59,7 @@ export function ContractForm({
   namespaces,
   databaseConfigs,
   databaseServerConfigs,
+  choose = false,
   onChange,
 }: {
   kind: ContractKind;
@@ -63,11 +69,15 @@ export function ContractForm({
   namespaces: readonly string[];
   databaseConfigs?: readonly string[];
   databaseServerConfigs?: readonly string[];
+  choose?: boolean;
   onChange: (draft: ContractDraft) => void;
 }): ReactNode {
   const spec = draft.spec as unknown as Record<string, unknown>;
   const form: Form = {
     namespace,
+    choose,
+    pick: onChange,
+    draft,
     errorOf: (path) => errors.find((e) => e.path === `spec.${path}`)?.message,
     get: (path) => valueAt(spec, path),
     set: (path, value) =>
@@ -151,6 +161,9 @@ export function ContractForm({
 
 type Form = {
   namespace: string;
+  choose: boolean;
+  pick: (draft: ContractDraft) => void;
+  draft: ContractDraft;
   errorOf: (path: string) => string | undefined;
   get: (path: string) => unknown;
   set: (path: string, value: unknown) => void;
@@ -175,9 +188,14 @@ function ObjectStorageForm({
   const p = (field: string) => `${block}.${field}`;
   return (
     <Fields>
-      <Fixed
+      <TypeField
+        form={form}
         label="Storage type"
-        value={STORAGE_TYPE[spec.type] ?? spec.type}
+        value={spec.type}
+        options={STORAGE_TYPE}
+        onPick={(type) =>
+          form.pick(withStorageType("ObjectStorageConfig", type))
+        }
       />
       {block === "azureBlob" ? (
         <>
@@ -202,7 +220,13 @@ function ObjectStorageForm({
           label="Path-style access"
         />
       )}
-      <Fixed label="Auth" value={AUTH_TYPE[auth] ?? auth} />
+      <TypeField
+        form={form}
+        label="Auth"
+        value={auth}
+        options={AUTH_TYPE}
+        onPick={(type) => form.pick(withAuthType(form.draft, type))}
+      />
       {auth === "credentials" ? (
         <Keys
           form={form}
@@ -246,9 +270,14 @@ function SecondaryStorageForm({
 }) {
   return (
     <Fields>
-      <Fixed
+      <TypeField
+        form={form}
         label="Storage type"
-        value={SECONDARY_TYPE[spec.type] ?? spec.type}
+        value={spec.type}
+        options={SECONDARY_TYPE}
+        onPick={(type) =>
+          form.pick(withStorageType("SecondaryStorageConfig", type))
+        }
       />
       {spec.type === "rdbms" ? (
         <NameSelect
@@ -347,6 +376,39 @@ function Fixed({ label, value }: { label: string; value: string }) {
       <span className="text-sm font-medium text-text">{label}</span>
       <span className="text-sm text-muted">{value}</span>
     </div>
+  );
+}
+
+function TypeField<T extends string>({
+  form,
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  form: Form;
+  label: string;
+  value: string;
+  options: Record<T, string>;
+  onPick: (type: T) => void;
+}) {
+  const name = useId();
+  if (!form.choose)
+    return <Fixed label={label} value={options[value as T] ?? String(value)} />;
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium text-text">{label}</legend>
+      {(Object.entries(options) as [T, string][]).map(([type, text]) => (
+        <label key={type} className="flex min-h-6 items-center gap-2 text-sm">
+          <Radio
+            name={name}
+            checked={value === type}
+            onChange={() => onPick(type)}
+          />
+          {text}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 

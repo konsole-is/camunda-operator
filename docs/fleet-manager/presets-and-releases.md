@@ -1,4 +1,5 @@
 # Presets and releases
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, release-rollout -->
 
 A preset holds the shared settings of the clusters that use it, such as the number of brokers, the CPU, and the memory. A release says what a cluster runs: the versions, the pinned images, and the environment variables. The pages **Setup > Presets** and **Setup > Releases** show and edit them.
 
@@ -12,7 +13,7 @@ The page **Setup > Presets** lists the presets of three kinds:
 | Elasticsearch | [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md) | The option **New Elasticsearch cluster** |
 | PostgreSQL | [DatabaseServerPreset](../crds/databaseserverpreset.md) | The option **New PostgreSQL server** |
 
-Each row shows the key facts of the preset, the environments that allow it in **Allowed in**, and its users in **Used by**. The fleet manager does not create a preset. Apply a new preset with `kubectl` or through your Git repository.
+Each row shows the key facts of the preset, the environments that allow it in **Allowed in**, and its users in **Used by**. You can also apply a preset with `kubectl` or through your Git repository.
 
 The description of a preset comes from its annotation `kubernetes.io/description`. The create form shows it on the card of the preset:
 
@@ -27,6 +28,16 @@ spec:
   # ... the rest of your preset
 ```
 
+### Create a preset
+
+Select **New preset** on the page **Setup > Presets**. Pick the **Kind**: **Cluster**, **Elasticsearch**, or **PostgreSQL**. **Copy from** lists the presets of that kind. Pick one to start from its fields, or keep **Nothing, start empty**. Type the **Name**. Resources name the preset by it, and it cannot change later.
+
+Set the fields as on the page of a preset. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new preset opens.
+
+![The New preset page for an Elasticsearch preset, with the kind, Copy from, and the name.](images/preset-create-elasticsearch.png)
+
+An environment allows a new preset only when it lists the name of the preset already. To offer the preset to new clusters, allow it on the [Environments](environments.md) page.
+
 ### Change a preset
 
 1. Select the preset in the list to open its page.
@@ -35,7 +46,7 @@ spec:
 4. Read the diff and the clusters that the change reaches.
 5. Select **Save**, or **Push to Git** in Git mode.
 
-A field that the preset sets shows **From preset**. **Remove from the preset** takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one YAML editor in place of the groups.
+A field that the preset sets shows **From preset**. **Remove from the preset** takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one group, **Elasticsearch** or **PostgreSQL**, with each field that the preset can set.
 
 The review lists each cluster that uses the preset, with one mark:
 
@@ -49,7 +60,7 @@ The review lists each cluster that uses the preset, with one mark:
 
 A change with the mark `Pods roll` rolls every cluster that uses the preset, also a cluster that sets the changed field itself. A smaller storage size does not shrink a volume.
 
-A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example **Merged by key** for labels. The [Merge rules](../crds/camundaclusterpreset.md#merge-rules) of `CamundaClusterPreset` list the rules.
+A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example **Merged by key** for labels. The merge rules of [CamundaClusterPreset](../crds/camundaclusterpreset.md#merge-rules), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md#merge-rules), and [DatabaseServerPreset](../crds/databaseserverpreset.md#merge-rules) list the rules.
 
 ### Rotate the admin password
 
@@ -112,6 +123,8 @@ spec:
 
 A change reaches every cluster, Elasticsearch cluster, and database server that uses the release, and their pods roll. A resource that sets its own version keeps it. The review names the users and each version that changes.
 
+![The Settings tab of a release with the versions, the images, and the Environments that use it.](images/release-settings.png)
+
 ### Move clusters to a release
 
 The **Rollout** tab of a release page lists every cluster with its current release, its running version, and if it can move:
@@ -126,6 +139,8 @@ The **Rollout** tab of a release page lists every cluster with its current relea
 | Not managed by the fleet manager | Change the `CamundaCluster` itself. |
 | Runs this release | Nothing. |
 | Refused by the operator | Read the message on the row. |
+
+![The Rollout tab of a release, with the cluster orders marked Can move.](images/release-rollout.png)
 
 To move many clusters, select their checkboxes, or **Select all that can move**, and then **Move selected**. The review shows each cluster and what the move does to it. A move restarts the cluster, and a built-in Elasticsearch cluster or database server of the cluster moves too. The move sets `spec.releaseRef` of each claim:
 

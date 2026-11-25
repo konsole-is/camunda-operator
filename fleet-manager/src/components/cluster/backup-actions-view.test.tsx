@@ -19,7 +19,12 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
-import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
+import type {
+  BackupRow,
+  BackupStorage,
+  RestoreInterval,
+  ServerUse,
+} from "./backups";
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -679,6 +684,8 @@ describe("restore to a point in time", () => {
   const archived = (window: RestoreInterval[]): BackupStorage => ({
     ...rdbms,
     database: {
+      serverConfig: "orders-pg",
+      serverUse: { state: "dedicated" },
       archive: {
         server: "orders-db",
         state: { tone: "ok", label: "Archiving" },
@@ -706,7 +713,7 @@ describe("restore to a point in time", () => {
     });
   }
 
-  it("point in time is offered only on PostgreSQL with recovery by the operator", () => {
+  it("point in time is not offered on Elasticsearch nor without a DatabaseServerConfig, and is offered with the archive window", () => {
     header(context());
     header(context({ storage: rdbms }));
     expect(
@@ -818,5 +825,183 @@ describe("restore to a point in time", () => {
     expect(document.getElementById(described)?.textContent).toBe(
       "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point.",
     );
+  });
+
+  const manual = (
+    pitr: { enabled: boolean; recovery?: string; retentionDays?: number } = {
+      enabled: true,
+      recovery: "external",
+      retentionDays: 3,
+    },
+    serverUse: ServerUse = { state: "dedicated" },
+  ): BackupStorage => ({
+    ...rdbms,
+    database: {
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg.example.com:5432",
+      pitr,
+      serverUse,
+    },
+  });
+  const ROLLED = "I rolled the database server back to this time";
+  const ROLL =
+    "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm.";
+  const OTHERS =
+    "A rollback also undoes a database on the server that no Database resource describes. Roll back only a server that holds no such database.";
+  const HOST =
+    "If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig orders-pg to the new instance first.";
+  const items = (dialog: HTMLElement) =>
+    within(dialog)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+  const rolled = (dialog: HTMLElement) =>
+    within(dialog).getByRole("checkbox", { name: ROLLED });
+
+  it("after a manual rollback the action shows, and the confirm states the rollback and the host note", async () => {
+    header(context({ storage: manual() }));
+    const dialog = await openPoint();
+    expect(items(dialog)).toEqual(["2026-11-07 14:30:05 UTC to now"]);
+    pick(dialog, "2026-11-09T09:30:15");
+    expect(items(dialog).slice(1, 4)).toEqual([ROLL, OTHERS, HOST]);
+  });
+
+  it("the typed confirm shows only after the rollback is ticked", async () => {
+    header(context({ storage: manual() }));
+    const dialog = await openPoint();
+    pick(dialog, "2026-11-09T09:30:15");
+    expect(
+      within(dialog).queryByLabelText("Type orders to confirm"),
+    ).toBeNull();
+    await userEvent.click(rolled(dialog));
+    expect(
+      within(dialog).getByLabelText("Type orders to confirm"),
+    ).toBeTruthy();
+  });
+
+  it("a new time clears the tick, because the rollback was for the old time", async () => {
+    header(context({ storage: manual() }));
+    const dialog = await openPoint();
+    pick(dialog, "2026-11-09T09:30:15");
+    await userEvent.click(rolled(dialog));
+    pick(dialog, "2026-11-09T10:00:00");
+    expect(rolled(dialog).getAttribute("aria-checked")).toBe("false");
+    expect(
+      within(dialog).queryByLabelText("Type orders to confirm"),
+    ).toBeNull();
+  });
+
+  it("a dialog opened again starts without the tick", async () => {
+    header(context({ storage: manual() }));
+    let dialog = await openPoint();
+    pick(dialog, "2026-11-09T09:30:15");
+    await userEvent.click(rolled(dialog));
+    await userEvent.keyboard("{Escape}");
+    dialog = await openPoint();
+    pick(dialog, "2026-11-09T09:30:15");
+    expect(rolled(dialog).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("after a manual rollback the field refuses a point older than the retention period and a point in the future", async () => {
+    header(context({ storage: manual() }));
+    const dialog = await openPoint();
+    pick(dialog, "2026-11-06T12:00:00");
+    expect(
+      within(dialog).getByText("Choose a point inside the restore window."),
+    ).toBeTruthy();
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    pick(dialog, "2026-11-11T12:00:00");
+    expect(
+      within(dialog).getByText("Choose a point in the past."),
+    ).toBeTruthy();
+  });
+
+  it("the action is off with the reason when the DatabaseServerConfig does not enable point-in-time recovery", () => {
+    header(
+      context({ storage: manual({ enabled: false, recovery: "external" }) }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Restore to a point in time",
+    });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "DatabaseServerConfig orders-pg does not declare point-in-time recovery, so the operator cannot restore the cluster to a point. When the database server archives its write-ahead log, set spec.pitr.enabled to true.",
+    );
+  });
+
+  it.each(["direct", "git"] as const)(
+    "after a manual rollback the action writes the exact PointInTimeRestore in %s mode",
+    async (mode) => {
+      fakeWriter.reset(mode);
+      header(context({ storage: manual() }));
+      const dialog = await openPoint();
+      pick(dialog, "2026-11-09T09:30:15");
+      await userEvent.click(rolled(dialog));
+      await userEvent.type(
+        within(dialog).getByLabelText("Type orders to confirm"),
+        "orders",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Restore" }),
+      );
+      await waitFor(() =>
+        expect(fakeWriter.applied).toEqual([
+          {
+            intent: "Restore orders to 2026-11-09T09:30:15Z",
+            apply: [
+              {
+                apiVersion: "core.camunda.io/v1",
+                kind: "PointInTimeRestore",
+                metadata: {
+                  name: "orders-pitr-20261110-143005",
+                  namespace: "team-a",
+                },
+                spec: {
+                  clusterRef: { name: "orders" },
+                  timestamp: "2026-11-09T09:30:15Z",
+                },
+              },
+            ],
+            create: ["PointInTimeRestore/team-a/orders-pitr-20261110-143005"],
+            directOnly: true,
+          },
+        ]),
+      );
+      const status = await screen.findByRole("status");
+      expect(status.textContent).toContain(
+        "Restore orders-pitr-20261110-143005 created.",
+      );
+      expect(status.textContent).not.toContain("Waiting for GitOps to apply");
+    },
+  );
+
+  it("the action is off with the reason when another Database resource uses the server, and names it", () => {
+    header(
+      context({
+        storage: manual(
+          { enabled: true, recovery: "external", retentionDays: 3 },
+          { state: "shared", other: "team-b/payments-db" },
+        ),
+      }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Restore to a point in time",
+    });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "Database team-b/payments-db also uses the server of this cluster. A rollback of the server rolls that database back too.",
+    );
+  });
+
+  it("with recovery by the operator the dialog has no rollback tick and no rollback lines", async () => {
+    header(context({ storage: archived(window) }));
+    const dialog = await openPoint();
+    pick(dialog, "2026-11-09T09:30:15");
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(within(dialog).queryByText(ROLL)).toBeNull();
+    expect(
+      within(dialog).getByLabelText("Type orders to confirm"),
+    ).toBeTruthy();
   });
 });

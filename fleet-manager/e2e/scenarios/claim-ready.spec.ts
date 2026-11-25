@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -19,4 +20,5 @@ test("the fleet page shows the cluster of a claim in its environment tab as read
     row.getByRole("img", { name: /^Secondary storage/ }),
   ).toBeVisible();
   await checkPage(page, "fleet-claim-ready");
+  await docShot(page, "fleet-view-environment-tab", { ready: row });
 });

@@ -208,17 +208,37 @@ export type ArchiveView = {
 };
 
 /**
+ * ServerUse is what the Database resources of every namespace show about
+ * the server of a cluster. dedicated: one Database resource on the server,
+ * and it holds the database that the DatabaseConfig names. unheld: no
+ * Database resource on the server holds that database. shared: more than
+ * one Database resource is on the server, and other names one of the
+ * others as namespace/name. unprobed: the DatabaseServerConfig of the
+ * cluster has no identity from a probe of its current spec. unplaced: the
+ * Database resource database reports no Ready or no collision key. unread:
+ * the page has no current read of the resources that place them.
+ */
+export type ServerUse =
+  | { state: "dedicated" }
+  | { state: "unheld"; database: string }
+  | { state: "shared"; other: string }
+  | { state: "unprobed" }
+  | { state: "unplaced"; database: string }
+  | { state: "unread" };
+
+/**
  * DatabaseView is the PostgreSQL server of a cluster. missing names the
  * first object of the chain from the SecondaryStorageConfig that is not
  * found, such as "DatabaseConfig orders-db", and then no other field is set.
  * archive is set only when a DatabaseServer of the operator publishes the
- * DatabaseServerConfig.
+ * DatabaseServerConfig. serverUse is set with serverConfig.
  */
 export type DatabaseView = {
   missing?: string;
   serverConfig?: string;
   endpoint?: string;
   pitr?: { enabled: boolean; recovery?: string; retentionDays?: number };
+  serverUse?: ServerUse;
   archive?: ArchiveView;
 };
 
@@ -243,7 +263,10 @@ export type BackupStorage =
 /**
  * BackupStorageInput holds what backupStorageOf reads. cluster is the live
  * object and spec its merged spec. The namespaced lists hold the objects of
- * the namespace of the cluster. now is the current time.
+ * the namespace of the cluster, and databases holds those of every
+ * namespace. databases is undefined when the page has no current read of
+ * the Database, DatabaseConfig, or DatabaseServerConfig resources. now is
+ * the current time.
  */
 export type BackupStorageInput = {
   cluster: Resource<"CamundaCluster">;
@@ -254,6 +277,7 @@ export type BackupStorageInput = {
   databaseServerConfigs: readonly Resource<"DatabaseServerConfig">[];
   databaseServers: readonly Resource<"DatabaseServer">[];
   databaseServerPresets: readonly Resource<"DatabaseServerPreset">[];
+  databases: readonly Resource<"Database">[] | undefined;
   schedules: readonly Resource<"BackupSchedule">[];
   now: string;
 };
@@ -358,6 +382,7 @@ function databaseOf(
       recovery: pitr?.recovery,
       retentionDays: pitr?.retentionPeriodDays,
     },
+    serverUse: serverUseOf(input, databaseConfig, serverConfig),
   };
   // The operator rejects a second server that asks for the same config
   // (contractTaken in internal/controller/databaseserver), so only the
@@ -373,6 +398,70 @@ function databaseOf(
     view.archive = archiveOf(input, server, rollback);
   }
   return view;
+}
+
+function serverUseOf(
+  input: BackupStorageInput,
+  databaseConfig: Resource<"DatabaseConfig">,
+  serverConfig: Resource<"DatabaseServerConfig">,
+): ServerUse {
+  const { databases } = input;
+  if (databases === undefined) return { state: "unread" };
+  const identity = identityOfServer(serverConfig);
+  if (!identity) return { state: "unprobed" };
+  const sorted = [...databases].sort((a, b) =>
+    nameOf(a).localeCompare(nameOf(b)),
+  );
+  const placed = sorted.filter((d) => ready(d) && d.status?.collisionKey);
+  // The operator places a Database resource on the server of its claims
+  // (dedicatedServer in internal/controller/pointintimerestore).
+  // status.collisionKey is <systemIdentifier>/<databaseName>.
+  const onServer = placed.filter(
+    (d) => d.status?.collisionKey?.split("/")[0] === identity,
+  );
+  const name = databaseConfig.spec.databaseName;
+  if (onServer.length > 1) {
+    const other =
+      onServer.find((d) => d.spec.databaseName !== name) ?? onServer[1];
+    return { state: "shared", other: nameOf(other) };
+  }
+  // The operator holds a restore while a Database resource has no claim.
+  const unplaced = sorted.find((d) => !placed.includes(d));
+  if (unplaced) return { state: "unplaced", database: nameOf(unplaced) };
+  const [only] = onServer;
+  return only !== undefined &&
+    only.spec.databaseName === name &&
+    only.status?.collisionKey === `${identity}/${name}`
+    ? { state: "dedicated" }
+    : { state: "unheld", database: name };
+}
+
+function nameOf(database: Resource<"Database">): string {
+  return `${database.metadata?.namespace ?? ""}/${database.metadata?.name ?? ""}`;
+}
+
+function ready(database: Resource<"Database">): boolean {
+  return (
+    database.status?.conditions?.some(
+      (c) => c.type === "Ready" && c.status === "True",
+    ) ?? false
+  );
+}
+
+// identityOfServer gives the system identifier of the server only when the
+// last probe reached the endpoint and the Secret that the spec names now, as
+// DatabaseServerConfig.ProbedForCurrentSpec in api/v1 says.
+function identityOfServer(
+  config: Resource<"DatabaseServerConfig">,
+): string | undefined {
+  const { spec, status } = config;
+  const ref = spec.adminCredentialsSecretRef;
+  const current =
+    status?.probedAt !== undefined &&
+    status.probedEndpoint === `${spec.host}:${spec.port}` &&
+    status.probedSecretName === ref?.name &&
+    status.probedSecretKeys === `${ref?.usernameKey}/${ref?.passwordKey}`;
+  return current ? status.systemIdentifier || undefined : undefined;
 }
 
 function archiveOf(

@@ -201,6 +201,17 @@ export function isDNSSubdomain(value: string): boolean {
   return value.length <= 253 && DNS_SUBDOMAIN_RE.test(value);
 }
 
+/**
+ * referenceNameError returns why name cannot be a name that another object
+ * refers to, such as spec.releaseRef, spec.presetRef, or
+ * spec.platformConfigRef of a CamundaClusterClaim, or undefined for a valid
+ * name. The empty name is not valid.
+ */
+export function referenceNameError(name: string): string | undefined {
+  if (name.length <= 253 && DNS_LABEL_RE.test(name)) return undefined;
+  return "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.";
+}
+
 /** LabelSelector is a metav1.LabelSelector. */
 export type LabelSelector = {
   matchLabels?: Record<string, string>;

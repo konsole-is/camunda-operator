@@ -7,6 +7,7 @@ const chart = (name: string): CatalogChart => ({
   name,
   description: `The ${name} chart.`,
   sections: ["encryption-key"],
+  controllers: [name],
   chart: `oci://example/${name}`,
   version: "0.1.0",
   repository: "https://example.com/charts",
@@ -35,6 +36,33 @@ describe("missingCharts", () => {
     expect(
       missingCharts([chart("aws-kms")], registrations).map((c) => c.name),
     ).toEqual(["aws-kms"]);
+  });
+
+  it("counts a chart as installed when a registration names any of its controllers", () => {
+    const aws = {
+      ...chart("aws"),
+      controllers: ["aws-identity", "aws-kms", "aws-s3"],
+    };
+    const registrations = [
+      pluginRegistration("aws-kms-key", {
+        controller: { name: "aws-kms", version: "0.1.0" },
+      }),
+    ];
+    expect(
+      missingCharts([aws, chart("rustfs")], registrations).map((c) => c.name),
+    ).toEqual(["rustfs"]);
+  });
+
+  it("counts a chart as not installed when only its chart name is a controller name", () => {
+    const aws = { ...chart("aws"), controllers: ["aws-identity"] };
+    const registrations = [
+      pluginRegistration("x", {
+        controller: { name: "aws", version: "0.1.0" },
+      }),
+    ];
+    expect(missingCharts([aws], registrations).map((c) => c.name)).toEqual([
+      "aws",
+    ]);
   });
 
   it("does not count a registration named after the chart without that controller", () => {

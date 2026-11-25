@@ -15,7 +15,7 @@ import {
   settingsOf,
   settingsSummary,
 } from "./editable-settings";
-import { componentSettings } from "./settings";
+import { componentSettings, type SettingsGroup } from "./settings";
 import type { Process } from "./topology";
 
 function processSettings(host: Process, process: Process, page: SettingsPage) {
@@ -598,6 +598,51 @@ describe("settingsOf claim layers", () => {
       setting(settingsOf({ group, spec: merged.spec, below }), "resources")
         .layers,
     ).toBeUndefined();
+  });
+});
+
+describe("settingsOf of a preset body", () => {
+  const elasticsearch: SettingsGroup = {
+    label: "Elasticsearch",
+    component: "elasticsearch",
+    embedded: false,
+    fields: [],
+  };
+  const server: SettingsGroup = {
+    label: "PostgreSQL",
+    component: "databaseServer",
+    embedded: false,
+    fields: [],
+  };
+
+  it("gives each field of an Elasticsearch preset body its editor and its steps under spec.cluster", () => {
+    const settings = settingsOf({
+      group: elasticsearch,
+      spec: { replicas: 3 },
+    });
+    const replicas = setting(settings, "replicas");
+    expect(replicas).toMatchObject({
+      value: 3,
+      editor: { kind: "number", integer: true, minimum: 1 },
+    });
+    expect(replicas.steps).toEqual(steps("spec", "cluster", "replicas"));
+    expect(setting(settings, "extraEnv").editor?.kind).toBe("env");
+    expect(setting(settings, "resources").editor?.kind).toBe("resources");
+  });
+
+  it("gives each field of a database server preset body its steps under spec.server", () => {
+    const settings = settingsOf({
+      group: server,
+      spec: {},
+      live: { instances: 2 },
+    });
+    const instances = setting(settings, "instances");
+    expect(instances.value).toBeUndefined();
+    expect(instances.current).toBe(2);
+    expect(instances.steps).toEqual(steps("spec", "server", "instances"));
+    expect(setting(settings, "archive.objectStorageRef").steps).toEqual(
+      steps("spec", "server", "archive", "objectStorageRef"),
+    );
   });
 });
 

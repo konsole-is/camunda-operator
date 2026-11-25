@@ -1,5 +1,6 @@
 import type { ObjectStorageConfig } from "../../src/generated/crds/objectstorageconfig";
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -19,6 +20,7 @@ test("lists a contract created by hand with its user", async ({ page }) => {
   await expect(row.getByRole("cell", { name: "1", exact: true })).toBeVisible();
   await expect(row.getByText("Ready", { exact: true })).toBeVisible();
   await checkPage(page, "connections");
+  await docShot(page, "connections-list", { ready: row, until: row });
 
   await row.getByRole("link", { name: "backups", exact: true }).click();
   await expect(page).toHaveURL(
@@ -71,9 +73,16 @@ test("saves a change of a contract created by hand after the take-over of its fi
   await expect(
     fields.getByRole("listitem").filter({ hasText: "spec.s3.region" }),
   ).toHaveText("spec.s3.region: kubectl set it. The save changes it.");
+  await expect(
+    review.getByRole("figure", { name: "Changes to the contract" }),
+  ).toContainText("region: eu-central-1");
   const save = review.getByRole("button", { name: "Save" });
   await expect(save).toBeDisabled();
   await checkPage(page, "connection-edit");
+  await docShot(page, "review-fields-another-tool-set", {
+    ready: fields,
+    target: fields,
+  });
   await review
     .getByRole("checkbox", { name: "Take over these fields" })
     .click();
@@ -90,4 +99,54 @@ test("saves a change of a contract created by hand after the take-over of its fi
   expect(
     saved.metadata.managedFields?.some((f) => f.manager === "fleet-manager"),
   ).toBe(true);
+});
+
+test("New object storage contract creates a contract by hand", async ({
+  page,
+  scenario,
+}) => {
+  await page.goto("/setup/connections?tab=object-storage");
+  await page.getByRole("link", { name: "New object storage contract" }).click();
+  await expect(page).toHaveURL(
+    /\/setup\/new-connection-contract\?tab=object-storage$/,
+  );
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "New object storage contract",
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("archive");
+  await page.getByLabel("Namespace", { exact: true }).selectOption("team-a");
+  await page.getByLabel("Bucket name").fill("acme-archive");
+  await page.getByLabel("Region").fill("eu-west-1");
+  await docShot(page, "connection-create-object-storage", {
+    ready: page.getByLabel("Region"),
+  });
+  await page.getByRole("button", { name: "Review" }).click();
+  const create = page.getByRole("button", { name: "Create" });
+  await expect(create).toBeEnabled();
+  await checkPage(page, "connection-create-review");
+  await create.click();
+  await expect(page).toHaveURL(
+    /\/setup\/connections\/object-storage\/team-a\/archive$/,
+  );
+  await expect(
+    page.getByRole("region", { name: "Writer" }).getByText("Created by hand"),
+  ).toBeVisible();
+
+  const created = await kubeRequest<ObjectStorageConfig>(
+    scenario.admin,
+    "GET",
+    "/apis/core.camunda.io/v1/namespaces/team-a/objectstorageconfigs/archive",
+  );
+  expect(created.metadata.labels).toBeUndefined();
+  expect(created.spec).toEqual({
+    type: "S3",
+    s3: {
+      bucketName: "acme-archive",
+      region: "eu-west-1",
+      auth: { type: "workloadIdentity" },
+    },
+  });
 });

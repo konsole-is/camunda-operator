@@ -91,7 +91,6 @@ export async function fillCreateForm(page: Page, name: string): Promise<void> {
   await step("Environment and name");
   await page.getByRole("radio", { name: /^Fleet harness/ }).check();
   await page.getByRole("textbox", { name: "Name" }).first().fill(name);
-  await page.getByRole("radio", { name: "Use an existing namespace" }).check();
   await page
     .getByRole("combobox", { name: "Namespace" })
     .selectOption(HARNESS_NAMESPACE);

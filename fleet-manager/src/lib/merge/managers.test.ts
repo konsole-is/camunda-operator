@@ -8,9 +8,11 @@ import {
   fieldManagers,
   isClaimManager,
   isKnownManager,
+  isOwnEntry,
   keptRemovals,
   lastChanged,
   managerKind,
+  ownerTree,
   revisionManager,
   wholeFieldManagers,
 } from "./managers";
@@ -27,6 +29,65 @@ describe("isClaimManager", () => {
     ["camundaclusterclaim/cluster/0b5c", false],
   ])("%s is a claim manager: %s", (manager, want) => {
     expect(isClaimManager(manager)).toBe(want);
+  });
+});
+
+describe("isOwnEntry", () => {
+  it("accepts the Apply and the Update entry of the fleet manager, and no subresource entry", () => {
+    expect(isOwnEntry({ manager: APP_FIELD_MANAGER, operation: "Apply" })).toBe(
+      true,
+    );
+    expect(
+      isOwnEntry({ manager: APP_FIELD_MANAGER, operation: "Update" }),
+    ).toBe(true);
+    expect(
+      isOwnEntry({
+        manager: APP_FIELD_MANAGER,
+        operation: "Update",
+        subresource: "status",
+      }),
+    ).toBe(false);
+    expect(isOwnEntry({ manager: "kubectl", operation: "Apply" })).toBe(false);
+  });
+});
+
+describe("ownerTree", () => {
+  const object = (extra: object[] = []) => ({
+    metadata: {
+      managedFields: [
+        {
+          manager: "kubectl",
+          operation: "Update",
+          fieldsV1: { "f:spec": { "f:auth": {} } },
+        },
+        ...extra,
+      ],
+    },
+  });
+  const auth = (tree: ReturnType<typeof ownerTree>) =>
+    tree.children.get("f:spec")!.children.get("f:auth")!;
+
+  it("a leaf with no child in any entry is owned whole", () => {
+    const node = auth(ownerTree(object(), () => true));
+    expect(node.whole).toEqual([{ manager: "kubectl", operation: "Update" }]);
+  });
+
+  it("a leaf that an entry left out of the tree holds a child of is owned, not whole", () => {
+    const tree = ownerTree(
+      object([
+        {
+          manager: APP_FIELD_MANAGER,
+          operation: "Apply",
+          fieldsV1: { "f:spec": { "f:auth": { "f:method": {} } } },
+        },
+      ]),
+      (entry) => entry.manager !== APP_FIELD_MANAGER,
+    );
+    expect(auth(tree).owners).toEqual([
+      { manager: "kubectl", operation: "Update" },
+    ]);
+    expect(auth(tree).whole).toEqual([]);
+    expect(auth(tree).children.size).toBe(0);
   });
 });
 
@@ -211,6 +272,37 @@ describe("lastChanged", () => {
       lastChanged({ metadata: { managedFields: [{ manager: "x" }] } }),
     ).toBeUndefined();
     expect(lastChanged({})).toBeUndefined();
+  });
+});
+
+describe("keptRemovals of a field that the Update entry of the fleet manager owns", () => {
+  const live = {
+    metadata: {
+      managedFields: [
+        {
+          manager: APP_FIELD_MANAGER,
+          operation: "Update",
+          fieldsV1: { "f:spec": { "f:color": {} } },
+        },
+      ],
+    },
+  };
+
+  it("keeps nothing when the fleet manager applies", () => {
+    expect(
+      keptRemovals(live, { spec: { color: "red" } }, { spec: {} }).kept,
+    ).toEqual([]);
+  });
+
+  it("keeps the field when a GitOps tool applies", () => {
+    expect(
+      keptRemovals(
+        live,
+        { spec: { color: "red" } },
+        { spec: {} },
+        "argocd-controller",
+      ).kept,
+    ).toEqual([{ path: "spec.color", managers: [APP_FIELD_MANAGER] }]);
   });
 });
 

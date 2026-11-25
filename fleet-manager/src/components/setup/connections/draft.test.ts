@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import {
@@ -6,16 +8,24 @@ import {
   REGISTRATION_LABEL,
   REQUEST_LABEL,
 } from "@/lib/labels";
-import type { ContractKind } from "@/lib/usage";
+import { type ContractKind, contractWriter } from "@/lib/usage";
 import { foreignFields } from "@/lib/write/ownership";
 import type { KubeObject } from "@/lib/write/types";
 import {
   type ContractDraft,
   changeCount,
+  copyDraft,
+  createChange,
   deleteChange,
   draftErrors,
   draftOf,
+  nameErrors,
+  namespaceErrors,
+  newSpec,
+  planeContractHolder,
   updateChange,
+  withAuthType,
+  withStorageType,
 } from "./draft";
 import type { ContractObject } from "./facts";
 import { connectionFixtures } from "./fixtures";
@@ -587,5 +597,298 @@ describe("draftErrors", () => {
     expect(
       draftErrors("SecondaryStorageConfig", draft).map((e) => e.path),
     ).toEqual(["spec.elasticsearch.caSecretRef"]);
+  });
+});
+
+const NAME_RULE =
+  "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.";
+
+describe("nameErrors", () => {
+  it.each([
+    ["", "Give the contract a name."],
+    ["team.a", NAME_RULE],
+    ["backups", "A contract with this name exists in this namespace."],
+  ])("refuses the object storage name %j", (name, message) => {
+    expect(nameErrors("ObjectStorageConfig", name, ["backups"])).toEqual([
+      { path: "name", message },
+    ]);
+  });
+
+  it("accepts a free name", () => {
+    expect(nameErrors("DatabaseConfig", "orders-db-2", ["orders-db"])).toEqual(
+      [],
+    );
+  });
+
+  it("refuses a Management Identity name that exists or that a management plane writes", () => {
+    expect(
+      nameErrors("ManagementAuthConfig", "keycloak-auth", ["keycloak-auth"]),
+    ).toEqual([{ path: "name", message: "A contract with this name exists." }]);
+    expect(
+      nameErrors("ManagementAuthConfig", "ops-auth", [], "platform/ops"),
+    ).toEqual([
+      {
+        path: "name",
+        message:
+          "The management plane platform/ops writes a contract with this name.",
+      },
+    ]);
+    expect(nameErrors("ManagementAuthConfig", "optimize-two", [])).toEqual([]);
+  });
+});
+
+describe("namespaceErrors", () => {
+  it("asks for the namespace of a namespaced contract", () => {
+    expect(namespaceErrors("DatabaseConfig", "")).toEqual([
+      { path: "namespace", message: "Pick the namespace of the contract." },
+    ]);
+    expect(namespaceErrors("DatabaseConfig", "team-a")).toEqual([]);
+  });
+
+  it("asks for no namespace of a Management Identity contract", () => {
+    expect(namespaceErrors("ManagementAuthConfig", "")).toEqual([]);
+  });
+});
+
+describe("planeContractHolder", () => {
+  it("finds the plane or plane claim that writes a contract of the name, else its own name", () => {
+    const planes = [
+      {
+        metadata: { namespace: "platform", name: "plane-a" },
+        spec: { managementAuthConfigName: "plane-a-optimize" },
+      },
+    ] as unknown as CamundaManagementCluster[];
+    const claims = [
+      {
+        metadata: { namespace: "platform", name: "ops" },
+        spec: { managementAuthConfigName: "ops-auth" },
+      },
+      { metadata: { namespace: "platform", name: "lab" }, spec: {} },
+    ] as unknown as CamundaManagementClusterClaim[];
+
+    expect(planeContractHolder("plane-a-optimize", planes, claims)).toBe(
+      "platform/plane-a",
+    );
+    expect(planeContractHolder("ops-auth", planes, claims)).toBe(
+      "platform/ops",
+    );
+    expect(planeContractHolder("lab", planes, claims)).toBe("platform/lab");
+    expect(planeContractHolder("ops", planes, claims)).toBeUndefined();
+  });
+});
+
+describe("createChange", () => {
+  it("creates an object storage contract with its name and namespace only", () => {
+    expect(
+      createChange("ObjectStorageConfig", "team-a", "archive", {
+        spec: {
+          type: "S3",
+          s3: {
+            bucketName: "acme-archive",
+            region: "eu-west-1",
+            endpoint: "",
+            auth: { type: "workloadIdentity" },
+          },
+        },
+      }),
+    ).toEqual({
+      intent: "Create the object storage contract archive",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "ObjectStorageConfig",
+          metadata: { name: "archive", namespace: "team-a" },
+          spec: {
+            type: "S3",
+            s3: {
+              bucketName: "acme-archive",
+              region: "eu-west-1",
+              auth: { type: "workloadIdentity" },
+            },
+          },
+        },
+      ],
+      create: ["ObjectStorageConfig/team-a/archive"],
+    });
+  });
+
+  it("creates a Management Identity contract without a namespace", () => {
+    const change = createChange("ManagementAuthConfig", "", "optimize-two", {
+      spec: {} as ContractDraft["spec"],
+    });
+    expect(change.apply[0].metadata).toEqual({ name: "optimize-two" });
+    expect(change.create).toEqual(["ManagementAuthConfig//optimize-two"]);
+  });
+
+  it("makes a copy of a contract of a registration a contract created by hand", () => {
+    const source = sources.objectStorageConfigs.find(
+      (c) => c.metadata.name === "orders-backup",
+    )!;
+    const draft = copyDraft("ObjectStorageConfig", source, {
+      name: "orders-copy",
+      namespace: "",
+      spec: newSpec("ObjectStorageConfig"),
+    });
+    const object = createChange(
+      "ObjectStorageConfig",
+      draft.namespace,
+      draft.name,
+      draft,
+    ).apply[0];
+
+    expect(object.metadata).toEqual({
+      name: "orders-copy",
+      namespace: "team-a",
+    });
+    expect(object.spec).toEqual(source.spec);
+    expect(contractWriter(object as unknown as ContractObject, [], [])).toEqual(
+      {
+        by: "hand",
+      },
+    );
+  });
+
+  it("leaves out the recovery request of a copied database server contract", () => {
+    const spec = createChange("DatabaseServerConfig", "team-a", "pg-two", {
+      spec: {
+        engine: "postgres",
+        host: "pg.team-a",
+        port: 5432,
+        adminCredentialsSecretRef: { name: "postgres-admin" },
+        recovery: {
+          requestID: "0c5f7e9a-1d2b-4c3d-8e4f-5a6b7c8d9e0f",
+          requestedBy: "team-a/orders",
+          targetTime: "2026-11-20T10:00:00Z",
+        },
+      } as unknown as ContractDraft["spec"],
+    }).apply[0].spec;
+    expect(spec).not.toHaveProperty("recovery");
+    expect(spec).toEqual({
+      engine: "postgres",
+      host: "pg.team-a",
+      port: 5432,
+      adminCredentialsSecretRef: { name: "postgres-admin" },
+    });
+  });
+});
+
+describe("newSpec", () => {
+  it.each<[ContractKind, unknown]>([
+    [
+      "ObjectStorageConfig",
+      { type: "S3", s3: { auth: { type: "workloadIdentity" } } },
+    ],
+    ["SecondaryStorageConfig", { type: "elasticsearch", elasticsearch: {} }],
+    ["DatabaseServerConfig", { engine: "postgres" }],
+    ["DatabaseConfig", {}],
+    ["ManagementAuthConfig", {}],
+  ])("starts a new %s contract", (kind, spec) => {
+    expect(newSpec(kind)).toEqual(spec);
+  });
+
+  it("gives a new object on each call", () => {
+    expect(newSpec("ObjectStorageConfig")).not.toBe(
+      newSpec("ObjectStorageConfig"),
+    );
+  });
+});
+
+describe("copyDraft", () => {
+  it("keeps the typed name and namespace, and takes the namespace of the source only while none is picked", () => {
+    expect(
+      copyDraft("ObjectStorageConfig", backups, {
+        name: "next",
+        namespace: "team-b",
+        spec: newSpec("ObjectStorageConfig"),
+      }),
+    ).toEqual({ name: "next", namespace: "team-b", spec: backups.spec });
+    expect(
+      copyDraft("ObjectStorageConfig", backups, {
+        name: "next",
+        namespace: "",
+        spec: newSpec("ObjectStorageConfig"),
+      }).namespace,
+    ).toBe("team-a");
+  });
+
+  it("starts the new spec again without a source", () => {
+    expect(
+      copyDraft("ObjectStorageConfig", undefined, {
+        name: "next",
+        namespace: "team-a",
+        spec: backups.spec,
+      }),
+    ).toEqual({
+      name: "next",
+      namespace: "team-a",
+      spec: newSpec("ObjectStorageConfig"),
+    });
+  });
+
+  it("gives a copy that a change of the draft does not write into the source", () => {
+    const copy = copyDraft("ObjectStorageConfig", backups, {
+      name: "next",
+      namespace: "",
+      spec: newSpec("ObjectStorageConfig"),
+    });
+    (copy.spec as ObjectStorageConfig["spec"]).s3!.bucketName = "changed";
+    expect(backups.spec.s3?.bucketName).toBe("acme-backups");
+  });
+});
+
+describe("withStorageType and withAuthType", () => {
+  it("starts the block of the picked storage type empty", () => {
+    expect(withStorageType("ObjectStorageConfig", "GCS")).toEqual({
+      spec: { type: "GCS", gcs: { auth: { type: "workloadIdentity" } } },
+    });
+    expect(withStorageType("ObjectStorageConfig", "AzureBlob")).toEqual({
+      spec: {
+        type: "AzureBlob",
+        azureBlob: { auth: { type: "workloadIdentity" } },
+      },
+    });
+    expect(withStorageType("SecondaryStorageConfig", "rdbms")).toEqual({
+      spec: { type: "rdbms", rdbms: {} },
+    });
+  });
+
+  it("keeps the fields of the block and drops the fields of the old auth", () => {
+    const draft = {
+      spec: {
+        type: "S3",
+        s3: {
+          bucketName: "acme",
+          auth: {
+            type: "workloadIdentity",
+            workloadIdentity: { roleArn: "arn:aws:iam::1:role/x" },
+          },
+        },
+      },
+    } as ContractDraft;
+    expect(withAuthType(draft, "credentials")).toEqual({
+      spec: {
+        type: "S3",
+        s3: { bucketName: "acme", auth: { type: "credentials" } },
+      },
+    });
+  });
+});
+
+describe("changeCount of a new contract", () => {
+  it("counts nothing on the new spec and each field set after", () => {
+    const base = { spec: newSpec("ObjectStorageConfig") };
+    expect(changeCount(base, { spec: newSpec("ObjectStorageConfig") })).toBe(0);
+    expect(
+      changeCount(base, {
+        spec: {
+          type: "S3",
+          s3: {
+            bucketName: "acme",
+            region: "eu-west-1",
+            auth: { type: "workloadIdentity" },
+          },
+        },
+      }),
+    ).toBe(2);
   });
 });

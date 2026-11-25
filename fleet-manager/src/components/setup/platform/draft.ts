@@ -1,7 +1,8 @@
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
-import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, referenceNameError } from "@/lib/labels";
 import { IMAGE_FIELDS, type ImageField } from "@/lib/merge";
 import { parseHttpUrl } from "@/lib/planes/identity";
+import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { deleteChangeOf } from "@/lib/write/delete";
 import { keepEmpty } from "@/lib/write/ownership";
@@ -19,6 +20,9 @@ const IMAGE_PATTERN =
 
 /** PlatformDraft is the spec of one platform config as the admin edits it. Its fields can be empty or incomplete. */
 export type PlatformDraft = CamundaPlatformConfig["spec"];
+
+/** PlatformCreateDraft is the form of a new platform config: its name and its spec. */
+export type PlatformCreateDraft = { name: string; spec: PlatformDraft };
 
 type Oidc = NonNullable<NonNullable<PlatformDraft["auth"]>["oidc"]>;
 
@@ -136,6 +140,53 @@ export function draftErrors(draft: PlatformDraft): ValidationError[] {
       );
   }
   return errors;
+}
+
+/**
+ * nameErrors returns the error of name for a new platform config, with
+ * the path "name", or none. taken are the names of the platform configs.
+ */
+export function nameErrors(
+  name: string,
+  taken: readonly string[],
+): ValidationError[] {
+  const error = (message: string) => [{ path: "name", message }];
+  if (name === "") return error("Give the platform config a name.");
+  const invalid = referenceNameError(name);
+  if (invalid) return error(invalid);
+  if (taken.includes(name))
+    return error("A platform config with this name exists.");
+  return [];
+}
+
+/**
+ * createChange creates the platform config name with the spec of specOf.
+ * The write fails with Stale when the platform config exists.
+ */
+export function createChange(name: string, draft: PlatformDraft): Change {
+  return {
+    intent: `Create the platform config ${name}`,
+    apply: [
+      {
+        apiVersion: API_VERSION,
+        kind: KIND,
+        metadata: { name },
+        spec: specOf(draft),
+      },
+    ],
+    create: [refKey({ kind: KIND, name })],
+  };
+}
+
+/** changeCount counts the top-level fields of the spec that differ between before and after. */
+export function changeCount(
+  before: PlatformDraft,
+  after: PlatformDraft,
+): number {
+  const a = before as Record<string, unknown>;
+  const b = after as Record<string, unknown>;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].filter((k) => !equalJSON(a[k], b[k])).length;
 }
 
 /**

@@ -3,7 +3,12 @@ import type { BackupKind } from "@/lib/policy/backups";
 import { parseVersion } from "@/lib/policy/release";
 import { refKey } from "@/lib/write/refs";
 import type { Change } from "@/lib/write/types";
-import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
+import type {
+  BackupRow,
+  BackupStorage,
+  DatabaseView,
+  RestoreInterval,
+} from "./backups";
 
 // The backup and restore kinds are all in this group and version. The kind
 // table of src/lib/k8s is server only, and this module runs in the browser.
@@ -411,17 +416,37 @@ export function restoreConfirm(
 
 /**
  * pointInTimeConfirm gives the confirm of a restore to at, the point as
- * the page shows it, with the facts of restoreConfirm.
+ * the page shows it, with the facts of restoreConfirm. With manual, it
+ * tells the admin to roll the server back first.
  */
 export function pointInTimeConfirm(
   context: BackupContext,
   at: string,
+  manual?: ManualRollback,
 ): RestoreConfirm {
+  const database = manual
+    ? [
+        // A cluster that runs writes to the database after the rollback,
+        // and Camunda restores the database only with the cluster stopped.
+        context.suspension === undefined
+          ? "The operator does not roll the database server back. Suspend the cluster, so that it writes nothing more to the database. Then roll the server back to this time before you confirm."
+          : "The operator does not roll the database server back. Roll it back to this time before you confirm.",
+        "A rollback also undoes a database on the server that no Database resource describes. Roll back only a server that holds no such database.",
+        `If the provider creates a new instance for the rollback, for example Amazon RDS, set host on DatabaseServerConfig ${manual.serverConfig} to the new instance first.`,
+        "The restore reads the database as it stands. It deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+      ]
+    : [
+        "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+      ];
   return {
     lead: `The cluster goes back to ${at}. Everything that it wrote after that time is lost.`,
     lines: [
-      "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
-      startsAgain(context.suspension),
+      ...database,
+      // The restore lifts only its own suspension, and the admin suspended
+      // a running cluster for the rollback.
+      manual && context.suspension === undefined
+        ? "A cluster that you suspend for the rollback stays suspended after the restore. Resume it when the restore is Completed."
+        : startsAgain(context.suspension),
       "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
       failed("the broker volumes"),
     ],
@@ -521,6 +546,33 @@ export function pointInTimeWindow(
 }
 
 /**
+ * manualWindow is the span that a restore after a manual rollback can
+ * reach: one interval up to now, from the later of now minus
+ * retentionDays and the start of the retention window of the Zeebe
+ * backups (P7D when unset). It gives unavailable for a retention window
+ * that is not days and time, and for retentionDays 0.
+ */
+export function manualWindow(
+  retentionDays: number,
+  retentionWindow: string | undefined,
+  now: string,
+): PointInTimeWindow {
+  if (
+    retentionDays <= 0 &&
+    retentionMs(retentionWindow ?? ZEEBE_WINDOW) !== undefined
+  ) {
+    return {
+      unavailable:
+        "spec.pitr.retentionPeriodDays of the DatabaseServerConfig is 0, so no point can be offered.",
+    };
+  }
+  const from = new Date(
+    Date.parse(now) - retentionDays * 86_400_000,
+  ).toISOString();
+  return pointInTimeWindow([{ from }], retentionWindow, now);
+}
+
+/**
  * timestampOf reads the value of a datetime-local field as a time in UTC,
  * and gives it as RFC 3339 to the second, or undefined when it is no time.
  */
@@ -554,36 +606,129 @@ export function pointInTimeError(
 }
 
 /**
+ * ManualRollback says that the admin rolls the database server back,
+ * because its DatabaseServerConfig, named serverConfig, does not have
+ * pitr.recovery operator.
+ */
+export type ManualRollback = { serverConfig: string };
+
+/**
  * PointInTime is the state of Restore to a point in time: the intervals
- * that it can reach, or the reason that it is off.
+ * that it can reach, or the reason that it is off. manual is set when the
+ * admin rolls the database server back.
  */
 export type PointInTime =
-  { intervals: RestoreInterval[] } | { disabled: string };
+  | { intervals: RestoreInterval[]; manual?: ManualRollback }
+  | { disabled: string };
 
 /**
  * pointInTime gives the state of Restore to a point in time, or undefined
- * when the cluster has no such action: it is offered only on PostgreSQL
- * whose database server the operator rolls back, which the window of the
- * archive shows. It is off when the page cannot write, while a restore of
- * the cluster has not ended, and with the reason of pointInTimeWindow.
+ * when the cluster has no such action. On PostgreSQL whose database server
+ * the operator rolls back, the window of the archive bounds the point.
+ * When the DatabaseServerConfig does not have pitr.recovery operator, the
+ * admin rolls the server back, manualWindow bounds the point, and manual
+ * is set. There is no action without a DatabaseServerConfig, and with
+ * recovery operator but no archive window. It is off when the page cannot
+ * write, while a restore of the cluster has not ended, when the
+ * DatabaseServerConfig does not enable point-in-time recovery, when the
+ * Database resources do not show that the server holds the database of the
+ * cluster alone, and when no point can be offered.
  */
 export function pointInTime(context: BackupContext): PointInTime | undefined {
   const { storage } = context;
-  const archive =
-    storage.kind === "rdbms" ? storage.database?.archive?.window : undefined;
-  if (archive === undefined) return undefined;
+  const database = storage.kind === "rdbms" ? storage.database : undefined;
+  const archive = database?.archive?.window;
+  if (archive !== undefined) {
+    const window = pointInTimeWindow(
+      archive,
+      context.retentionWindow,
+      context.now,
+    );
+    return (
+      pointInTimeBlock(context) ??
+      serverUseBlock(database) ??
+      ("unavailable" in window ? { disabled: window.unavailable } : window)
+    );
+  }
+  const manual = manualPitrOf(database);
+  if (manual === undefined) return undefined;
+  const block = pointInTimeBlock(context);
+  if (block !== undefined) return block;
+  const { serverConfig, pitr } = manual;
+  // The operator keeps a PointInTimeRestore Pending while the
+  // DatabaseServerConfig does not enable point-in-time recovery
+  // (pitrAvailable in internal/controller/pointintimerestore).
+  if (!pitr.enabled) {
+    return {
+      disabled: `DatabaseServerConfig ${serverConfig} does not declare point-in-time recovery, so the operator cannot restore the cluster to a point. When the database server archives its write-ahead log, set spec.pitr.enabled to true.`,
+    };
+  }
+  const used = serverUseBlock(database);
+  if (used !== undefined) return used;
+  const window = manualWindow(
+    pitr.retentionDays ?? 0,
+    context.retentionWindow,
+    context.now,
+  );
+  return "unavailable" in window
+    ? { disabled: window.unavailable }
+    : { ...window, manual: { serverConfig } };
+}
+
+function pointInTimeBlock(
+  context: BackupContext,
+): { disabled: string } | undefined {
   if (context.changesOff !== undefined) {
     return { disabled: context.changesOff };
   }
   if (context.restoring !== undefined) {
     return { disabled: restoringNote(context.restoring) };
   }
-  const window = pointInTimeWindow(
-    archive,
-    context.retentionWindow,
-    context.now,
-  );
-  return "unavailable" in window ? { disabled: window.unavailable } : window;
+  return undefined;
+}
+
+// The operator holds a point-in-time restore on a server that it cannot
+// show to hold the database of the cluster alone (dedicatedServer in
+// internal/controller/pointintimerestore).
+function serverUseBlock(
+  database: DatabaseView | undefined,
+): { disabled: string } | undefined {
+  const use = database?.serverUse;
+  switch (use?.state) {
+    case "dedicated":
+      return undefined;
+    case "unheld":
+      return {
+        disabled: `No Database resource holds the database ${use.database} of this cluster on its server. The operator restores to a point in time only a database that a Database resource holds.`,
+      };
+    case "shared":
+      return {
+        disabled: `Database ${use.other} also uses the server of this cluster. A rollback of the server rolls that database back too.`,
+      };
+    case "unprobed":
+      return {
+        disabled: `DatabaseServerConfig ${database?.serverConfig ?? ""} has not published the identity of its server for its current spec yet, so the fleet manager cannot tell which databases the server holds.`,
+      };
+    case "unplaced":
+      return {
+        disabled: `Database ${use.database} does not report Ready, so the fleet manager cannot tell which server it uses.`,
+      };
+    default:
+      return {
+        disabled:
+          "The fleet manager has no current read of the Database, DatabaseConfig, or DatabaseServerConfig resources, so it cannot tell which databases the server holds.",
+      };
+  }
+}
+
+function manualPitrOf(
+  database: DatabaseView | undefined,
+):
+  | { serverConfig: string; pitr: NonNullable<DatabaseView["pitr"]> }
+  | undefined {
+  const { serverConfig, pitr } = database ?? {};
+  if (serverConfig === undefined || pitr === undefined) return undefined;
+  return pitr.recovery === "operator" ? undefined : { serverConfig, pitr };
 }
 
 /**

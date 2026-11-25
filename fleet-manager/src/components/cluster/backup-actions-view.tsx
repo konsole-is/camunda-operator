@@ -6,6 +6,7 @@ import { InlineConfirm } from "@/components/fleet/inline-confirm";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import { secondText } from "@/components/fleet/units";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -243,8 +244,10 @@ function PointInTimeAction({
   reasonId: string;
 } & Write) {
   const [local, setLocal] = useState("");
+  const [rolledBack, setRolledBack] = useState(false);
   const id = useId();
   const intervals = "intervals" in state ? state.intervals : [];
+  const manual = "intervals" in state ? state.manual : undefined;
   const at = timestampOf(local);
   const error = pointInTimeError(at, intervals, context.now);
   const shown = local !== "" ? error : undefined;
@@ -259,8 +262,11 @@ function PointInTimeAction({
       context={context}
       write={(name) => pointInTimeChange(context, name, at!)}
       what="pitr"
-      ready={error === undefined}
-      onOpen={() => setLocal("")}
+      ready={error === undefined && (manual === undefined || rolledBack)}
+      onOpen={() => {
+        setLocal("");
+        setRolledBack(false);
+      }}
       apply={apply}
       show={show}
     >
@@ -284,7 +290,11 @@ function PointInTimeAction({
             value={local}
             aria-invalid={shown !== undefined || undefined}
             aria-describedby={shown ? `${id}-error` : undefined}
-            onChange={(event) => setLocal(event.target.value)}
+            onChange={(event) => {
+              setLocal(event.target.value);
+              // The tick was for the old time.
+              setRolledBack(false);
+            }}
           />
           {shown && (
             <p id={`${id}-error`} className="text-xs text-bad">
@@ -293,10 +303,27 @@ function PointInTimeAction({
           )}
         </div>
         {error === undefined && at !== undefined && (
-          <ConfirmLines
-            context={context}
-            {...pointInTimeConfirm(context, secondText(at))}
-          />
+          <>
+            <ConfirmLines
+              context={context}
+              {...pointInTimeConfirm(context, secondText(at), manual)}
+            />
+            {manual && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={`${id}-rolled`}
+                  checked={rolledBack}
+                  onCheckedChange={(on) => setRolledBack(on === true)}
+                />
+                <label
+                  htmlFor={`${id}-rolled`}
+                  className="font-medium text-text"
+                >
+                  I rolled the database server back to this time
+                </label>
+              </div>
+            )}
+          </>
         )}
       </>
     </RestoreDialog>

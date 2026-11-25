@@ -28,6 +28,7 @@ import {
   labelSelectorString,
   matchesSelector,
   presetDescription,
+  referenceNameError,
 } from ".";
 import { parseSelector } from "@/lib/k8s/selector";
 
@@ -334,5 +335,18 @@ describe("isDNSSubdomain", () => {
   it.each(["", " ", "..", ".", "a..b", "Orders", "a/b", "x".repeat(254)])(
     "refuses %j",
     (v) => expect(isDNSSubdomain(v)).toBe(false),
+  );
+});
+
+describe("referenceNameError", () => {
+  it.each(["7", "standard", "team-a2", "a".repeat(253)])("accepts %j", (v) =>
+    expect(referenceNameError(v)).toBeUndefined(),
+  );
+  it.each(["", "team.a", "Small", "-small", "small-", "a_b", "a".repeat(254)])(
+    "refuses %j",
+    (v) =>
+      expect(referenceNameError(v)).toBe(
+        "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
+      ),
   );
 });

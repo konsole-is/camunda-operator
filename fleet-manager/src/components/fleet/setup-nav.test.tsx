@@ -30,6 +30,9 @@ describe("SetupNav", () => {
     ["/setup/presets", "Presets"],
     ["/setup/presets/gold", "Presets"],
     ["/setup/new-environment", "Environments"],
+    ["/setup/new-preset", "Presets"],
+    ["/setup/new-platform-config", "Platform"],
+    ["/setup/new-connection-contract", "Connections"],
     ["/setup/settings", "Settings"],
   ])("marks the current Setup page on %s", (path, label) => {
     pathname.current = path;

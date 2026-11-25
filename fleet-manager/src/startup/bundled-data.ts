@@ -29,6 +29,11 @@ export type CatalogChart = {
   description: string;
   /** sections names the PluginSections whose options the chart brings. */
   sections: string[];
+  /**
+   * controllers names the controllers of the chart. A registration whose
+   * controller has one of these names comes from the chart.
+   */
+  controllers: string[];
   /** chart is the OCI reference of the chart, without a version. */
   chart: string;
   /** version is the chart version that installCommand installs. */
@@ -147,14 +152,14 @@ export function parseCatalog(data: unknown): Catalog {
         throw new Error(`charts[${i}].${field} is not a non-empty string`);
       }
     }
-    const sections = chart.sections;
-    if (
-      !Array.isArray(sections) ||
-      sections.length === 0 ||
-      !sections.every((s) => typeof s === "string" && s !== "")
-    ) {
+    if (!isListOfNames(chart.sections)) {
       throw new Error(
         `charts[${i}].sections is not a non-empty list of section names`,
+      );
+    }
+    if (!isListOfNames(chart.controllers)) {
+      throw new Error(
+        `charts[${i}].controllers is not a non-empty list of controller names`,
       );
     }
   });
@@ -167,6 +172,14 @@ export function describeBundledData(data: BundledData): string {
   return (
     `Read the images table ${data.imagesTablePath} (minors ${minors}) ` +
     `and the catalog ${data.catalogPath} (${data.catalog.charts.length} charts)`
+  );
+}
+
+function isListOfNames(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((v) => typeof v === "string" && v !== "")
   );
 }
 

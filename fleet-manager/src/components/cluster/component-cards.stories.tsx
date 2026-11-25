@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { fn } from "storybook/test";
+import { expect, fn } from "storybook/test";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { SectionComponent } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -218,6 +218,58 @@ export const SectionCards: Story = {
       ]),
     ],
     hrefOf: (id) => overviewHref(id as CardId),
+  },
+};
+
+export const LongSummaryLabel: Story = {
+  name: "Long summary label",
+  args: {
+    cards: [
+      ...allUsedAndReady,
+      ...sectionCards([
+        section("cloud-identity", "Cloud identity", 1, "oidc-identity", {
+          request: request("orders-cloud-identity", {
+            summary: [
+              {
+                label: "Issuer",
+                value: "https://login.example.com/realms/camunda",
+              },
+            ],
+            resources: [],
+          }),
+          condition: healthy("Ready"),
+        }),
+        section(
+          "secondary-storage",
+          "Secondary storage",
+          5,
+          "existing-secondary-storage",
+          {
+            request: request("orders-secondary-storage", {
+              summary: [
+                {
+                  label: "SecondaryStorageConfig",
+                  value: "orders-storage, Ready",
+                },
+              ],
+              resources: [],
+            }),
+            condition: healthy("Ready"),
+          },
+        ),
+      ]),
+    ],
+    hrefOf: (id) => overviewHref(id as CardId),
+  },
+  play: async ({ canvasElement }) => {
+    for (const cell of canvasElement.querySelectorAll(
+      "article dt, article dd",
+    )) {
+      await expect(
+        cell.scrollWidth,
+        `"${cell.textContent}" is wider than its column`,
+      ).toBeLessThanOrEqual(cell.clientWidth);
+    }
   },
 };
 

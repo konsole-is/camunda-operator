@@ -1,5 +1,6 @@
 import type { CamundaClusterClaim } from "../../src/generated/crds/camundaclusterclaim";
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -20,6 +21,9 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
   await page.getByRole("textbox", { name: "Name" }).nth(1).fill("team-new");
   await page.getByRole("textbox", { name: "team" }).fill("orders");
   await page.getByRole("radio", { name: /^small/ }).check();
+  await docShot(page, "create-cluster-environment-and-name", {
+    ready: page.getByRole("radio", { name: /^small/ }),
+  });
   await next.click();
 
   // Storage and access: the default option of Secondary storage stays.
@@ -28,8 +32,19 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
       .getByRole("group", { name: /Secondary storage/ })
       .getByRole("radio", { name: /New Elasticsearch cluster/ }),
   ).toBeChecked();
+  const storageStep = page.getByRole("heading", {
+    level: 2,
+    name: "Storage and access",
+  });
+  await docShot(page, "create-cluster-storage-and-access", {
+    ready: storageStep,
+    target: storageStep.locator("xpath=../.."),
+  });
   await next.click();
 
+  await docShot(page, "create-cluster-settings", {
+    ready: page.getByRole("heading", { level: 2, name: "Cluster settings" }),
+  });
   // Cluster settings and Attachments keep their defaults.
   await next.click();
   await next.click();
@@ -44,6 +59,7 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
     page.getByRole("figure", { name: "The namespace" }),
   ).toBeVisible();
   await checkPage(page, "cluster-create-review");
+  await docShot(page, "create-cluster-review", { ready: create });
   await create.click();
 
   // Progress: no controller runs, so each row stays pending.
@@ -59,6 +75,13 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
     await expect(page.getByText(row, { exact: true })).toBeVisible();
   }
   await checkPage(page, "cluster-create-progress");
+  const progress = page.getByRole("region", {
+    name: "Creating the cluster orders",
+  });
+  await docShot(page, "create-cluster-progress", {
+    ready: progress,
+    target: progress,
+  });
 
   const namespace = await kubeRequest<{
     metadata: { labels: Record<string, string> };

@@ -89,3 +89,30 @@ func TestThePlaneScenarioStartsOptimizeOnAClusterThatHoldsItsBackend(t *testing.
 		)
 	}
 }
+
+func TestTheWaitingClaimScenarioHoldsTheClaimAndNoCluster(t *testing.T) {
+	objs := readOutput(t, "claim-waiting", objectsFile)
+
+	claim := find(t, objs, "CamundaClusterClaim", "team-orders", "orders")
+	assert.Equal(t, "False", condition(t, claim, "RequestsReady")["status"])
+
+	for _, obj := range objs {
+		assert.NotEqual(t, "CamundaCluster", obj.GetKind(), "the claim waits for its storage, so it makes no cluster")
+	}
+}
+
+func TestTheStorageReadyStateHoldsTheClusterOfTheClaim(t *testing.T) {
+	objs := readOutput(t, "claim-waiting", "storage-ready.yaml")
+	find(t, objs, "CamundaCluster", "team-orders", "orders")
+}
+
+func TestTheRDBMSBackupsScenarioHoldsAServerThatTheAdminRollsBack(t *testing.T) {
+	objs := readOutput(t, "cluster-rdbms-backups", objectsFile)
+
+	find(t, objs, "CamundaCluster", "team-a", "camundacluster-sample")
+	find(t, objs, "Database", "team-a", "camundacluster-sample-db")
+	server := find(t, objs, "DatabaseServerConfig", "team-a", "postgres")
+	recovery, _, err := unstructured.NestedString(server.Object, "spec", "pitr", "recovery")
+	require.NoError(t, err)
+	assert.Equal(t, "external", recovery)
+}

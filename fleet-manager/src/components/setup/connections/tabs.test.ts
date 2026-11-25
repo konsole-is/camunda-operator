@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { ContractRef } from "@/lib/usage";
 import {
   CONNECTION_TABS,
+  connectionsHref,
   connectionTabOf,
   contractHref,
   contractRefOf,
+  newContractHref,
 } from "./tabs";
 
 describe("CONNECTION_TABS", () => {
@@ -91,4 +93,24 @@ describe("contractHref", () => {
       contractHref({ kind: "ManagementAuthConfig", name: "plane-a" }),
     ).toBe("/setup/connections/management-identity/plane-a");
   });
+});
+
+describe("connectionsHref and newContractHref", () => {
+  it.each(CONNECTION_TABS)(
+    "open the tab $value on the list and on the create page",
+    (t) => {
+      for (const href of [connectionsHref(t.value), newContractHref(t.value)])
+        expect(
+          connectionTabOf(
+            new URL(href, "http://x").searchParams.get("tab") ?? undefined,
+          ),
+        ).toBe(t.value);
+      expect(newContractHref(t.value)).toBe(
+        `/setup/new-connection-contract?tab=${t.value}`,
+      );
+      expect(connectionsHref(t.value)).toBe(
+        `/setup/connections?tab=${t.value}`,
+      );
+    },
+  );
 });

@@ -1,8 +1,11 @@
 # Back up and restore a cluster from the fleet manager
+<!-- Screenshots: make fleet-docs-screenshots, scenarios cluster-es-backups -->
 
 The **Backups** tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. A cluster that shows **Not managed** has no actions here.
 
 Backups and restores go straight to the Kubernetes API, also in Git mode. They are not in the Git repository. A restore changes `spec.suspend` and `spec.version` of the `CamundaCluster`. If your GitOps tool owns the cluster, read [A GitOps tool that owns the CamundaCluster](../guides/operations.md#a-gitops-tool-that-owns-the-camundacluster) before the restore.
+
+![The Backups tab with the backup storage, the schedule, Back up now, and a new backup in the table.](images/cluster-backups-tab.png)
 
 ## Back up now
 
@@ -81,12 +84,41 @@ A backup that is more than one minor newer than the brokers of the cluster canno
 
 ## Restore to a point in time
 
-A cluster on PostgreSQL has **Restore to a point in time** when the operator rolls its database server back. Its `DatabaseServerConfig` then has `pitr.recovery: operator`. See [PointInTimeRestore](../crds/pointintimerestore.md#who-rolls-the-database-back).
+A cluster on PostgreSQL has **Restore to a point in time**. `pitr.recovery` on the `DatabaseServerConfig` of the cluster says who rolls the database server back. See [PointInTimeRestore](../crds/pointintimerestore.md#who-rolls-the-database-back).
 
-1. Select **Restore to a point in time**. The confirm shows the restore window in UTC.
-2. Enter a time inside the window in **Time (UTC)**.
-3. Read the confirm. The restore loses everything that the cluster wrote after that time.
-4. Type the name of the cluster, and select **Restore**.
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    retentionPeriodDays: 7
+    recovery: external
+  # ... the rest of your server config
+```
+
+The confirm shows the restore window in UTC. With `operator`, the operator rolls the server back, and the window comes from the archive of the server. With `external`, the default, you roll the server back to the point before you confirm. The window then reaches back as far as the cluster keeps its Zeebe backups, and not more than `retentionPeriodDays`.
+
+**Restore to a point in time** is off in these cases, and the reason shows under it:
+
+- With `external`, `pitr.enabled` is false.
+- No [Database](../crds/database.md) resource on the server holds the database that the `DatabaseConfig` of the cluster names. The operator restores to a point in time only a database that a `Database` resource holds.
+- Another `Database` resource, in any namespace, uses the same server. A rollback of the server rolls that database back too.
+- The `DatabaseServerConfig` of the cluster has not published the identity of its server, or a `Database` resource does not report `Ready`. The fleet manager then cannot tell which databases the server holds.
+
+CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
+
+1. With `external`, select **Suspend the cluster** in **Basics** on the **Claim** tab. See [Change the claim in the Claim tab](change-a-cluster.md#change-the-claim-in-the-claim-tab). A cluster that runs writes to the database after the rollback.
+2. Select **Restore to a point in time**.
+3. Enter the time in **Time (UTC)**. The field refuses a time outside the restore window.
+4. With `external`, roll the database server back to that time. Roll back only a server that holds no other database. A rollback also undoes a database that no `Database` resource describes. If the provider creates a new instance for the rollback, set `host` on the `DatabaseServerConfig` to that instance. Amazon RDS is one such provider.
+5. Read the confirm. The restore loses everything that the cluster wrote after that time.
+6. With `external`, select **I rolled the database server back to this time**.
+7. Type the name of the cluster, and select **Restore**.
+8. With `external`, clear **Suspend the cluster** on the **Claim** tab when the restore is `Completed`. A cluster that you suspended stays suspended after the restore.
 
 The fleet manager creates a [PointInTimeRestore](../crds/pointintimerestore.md):
 
@@ -101,8 +133,6 @@ spec:
     name: my-cluster
   timestamp: "2026-11-09T09:30:15Z"
 ```
-
-CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
 
 ## Change the schedule
 

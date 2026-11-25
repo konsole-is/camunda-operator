@@ -58,7 +58,7 @@ export const UsedClusterPresetWithAnEditUnderReview: Story = {
 };
 
 export const UnusedElasticsearchPresetWithDelete: Story = {
-  name: "Unused Elasticsearch preset as YAML, with delete",
+  name: "Unused Elasticsearch preset, with delete",
   args: { kind: "ElasticsearchClusterPreset", name: "standard" },
 };
 

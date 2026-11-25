@@ -4,12 +4,14 @@ import { CircleAlert } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { byCodeUnit, equalJSON, isObject } from "@/lib/policy";
 import { withTakeOver } from "@/lib/write/ownership";
+import { refKey, refOf } from "@/lib/write/refs";
 import type {
   ApiError,
   Change,
   KubeObject,
   ObjectOwnership,
   Preview,
+  PreviewObject,
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
@@ -24,9 +26,10 @@ import {
 
 /**
  * ChangeReview previews change once for each change object and shows the
- * diff of each previewed object, the first under diffLabel, with the
- * effects and the caution. The confirm stays disabled until the preview is
- * clean and writes something, and while hold is set.
+ * diff of each object of the preview, also of each object that a field of
+ * another tool stops, the first under diffLabel, with the effects and the
+ * caution. The confirm stays disabled until the preview is clean and
+ * writes something, and while hold is set.
  *
  * In direct mode, unless offerTakeOver is false, it asks in TakeOverChoice
  * before the save takes over a field of another tool. The choice starts off
@@ -142,11 +145,12 @@ export function ChangeReview({
     ? withoutTakeOverConflicts(checked?.errors ?? [], ownership)
     : (checked?.errors ?? []);
   const writeErrors = refused?.change === change ? refused.errors : [];
+  const shown = useMemo(() => inOrderOf(change, checked), [change, checked]);
   const changesNothing =
     checked !== undefined &&
     previewErrors.length === 0 &&
-    checked.objects.length > 0 &&
-    checked.objects.every((o) => o.diff.every((line) => line.op === "same"));
+    shown.length > 0 &&
+    shown.every((o) => o.diff.every((line) => line.op === "same"));
   const blocked =
     hold ||
     !checked ||
@@ -157,7 +161,7 @@ export function ChangeReview({
   const alerts = [...previewErrors, ...writeErrors].map(textOf);
   const kept = choosing
     ? []
-    : (checked?.objects ?? []).flatMap((object) => {
+    : shown.flatMap((object) => {
         const sent = change.apply.find(
           (o) =>
             o.kind === object.ref.kind &&
@@ -166,7 +170,7 @@ export function ChangeReview({
         );
         return sent ? keptPaths(sent, object.after) : [];
       });
-  const [first, ...others] = checked?.objects ?? [];
+  const [first, ...others] = shown;
 
   async function confirm() {
     if (writingNow.current || blocked) return;
@@ -332,6 +336,25 @@ function previewOnce(
   return () => {
     current = false;
   };
+}
+
+// inOrderOf returns the objects of preview, each blocked object before the
+// first object that comes after it in the apply list of change.
+function inOrderOf(
+  change: Change,
+  preview: Preview | undefined,
+): PreviewObject[] {
+  const order = change.apply.map((o) => refKey(refOf(o)));
+  const rank = (object: PreviewObject) => {
+    const index = order.indexOf(refKey(object.ref));
+    return index < 0 ? order.length : index;
+  };
+  const shown = [...(preview?.objects ?? [])];
+  for (const object of preview?.blocked ?? []) {
+    const at = shown.findIndex((o) => rank(o) > rank(object));
+    shown.splice(at < 0 ? shown.length : at, 0, object);
+  }
+  return shown;
 }
 
 function textOf(error: ApiError): string {

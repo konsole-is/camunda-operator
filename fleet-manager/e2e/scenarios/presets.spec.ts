@@ -1,7 +1,12 @@
+import type { ElasticsearchClusterPreset } from "../../src/generated/crds/elasticsearchclusterpreset";
+import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
 test.use({ scenarioName: "claim-ready" });
+
+// The tests of this file share one envtest, so they run in this order.
 
 test("the Presets page shows the preset of a claim as used and offers no delete", async ({
   page,
@@ -58,5 +63,48 @@ test("an edit of the preset of a claim previews a roll of its cluster", async ({
       "The brokers restart one at a time. The other processes restart.",
     ),
   ).toBeVisible();
+  // kubectl applied the preset, so the replicas are a field of kubectl.
+  await expect(
+    review.getByRole("figure", { name: "Changes to the preset" }),
+  ).toContainText("replicas: 5");
+  await expect(
+    review.getByRole("group", { name: "Fields that another tool set" }),
+  ).toContainText("spec.cluster.zeebe.replicas: kubectl set it.");
   await checkPage(page, "presets-edit-review");
+});
+
+test("New preset creates an Elasticsearch preset with one field", async ({
+  page,
+  scenario,
+}) => {
+  await page.goto("/setup/presets");
+  await page.getByRole("link", { name: "New preset" }).click();
+  await expect(page).toHaveURL(/\/setup\/new-preset$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "New preset" }),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: "Elasticsearch" }).check();
+  await page.getByLabel("Name", { exact: true }).fill("search-lab");
+  await docShot(page, "preset-create-elasticsearch", {
+    ready: page.getByLabel("Name", { exact: true }),
+  });
+  await page
+    .getByRole("region", { name: "Elasticsearch settings" })
+    .getByRole("group", { name: "replicas" })
+    .getByRole("spinbutton")
+    .fill("2");
+  await checkPage(page, "presets-create");
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  const create = page.getByRole("button", { name: "Create" });
+  await expect(create).toBeEnabled();
+  await checkPage(page, "presets-create-review");
+  await create.click();
+  await expect(page).toHaveURL(/\/setup\/presets\/elasticsearch\/search-lab$/);
+
+  const created = await kubeRequest<ElasticsearchClusterPreset>(
+    scenario.admin,
+    "GET",
+    "/apis/core.camunda.io/v1/elasticsearchclusterpresets/search-lab",
+  );
+  expect(created.spec).toEqual({ cluster: { replicas: 2 } });
 });

@@ -9,6 +9,7 @@ import {
 import { CLAIM_PLACEMENT, placementOf } from "@/lib/conditions";
 import { type ClusterField, parameterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import { CLAIM_LABEL } from "@/lib/labels";
 import type { Merged } from "@/lib/merge";
 import { deletionPolicyOf } from "@/lib/policy";
 import type { ClaimObject } from "@/lib/session";
@@ -175,6 +176,18 @@ function ref(own: string | undefined, resolved: string | undefined): ClaimRef {
   return own
     ? { value: own, fromEnvironment: false }
     : { value: resolved || undefined, fromEnvironment: true };
+}
+
+/**
+ * claimNameOf returns the name of the claim of the cluster page of name:
+ * the CLAIM_LABEL of cluster, undefined for a cluster without that label,
+ * and name while no cluster exists.
+ */
+export function claimNameOf(
+  cluster: Resource<"CamundaCluster"> | undefined,
+  name: string,
+): string | undefined {
+  return cluster ? cluster.metadata?.labels?.[CLAIM_LABEL] : name;
 }
 
 const GENERATED_ORDER: readonly string[] =

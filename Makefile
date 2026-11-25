@@ -760,6 +760,16 @@ fleet-app-test: fleet-build fleet-build-envtest fleet-playwright setup-envtest #
 fleet-scenarios-test: fleet-build-envtest fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in the dark and the light theme in fleet-manager/ui-pages. Fails on a serious or critical axe violation in either theme.
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run scenarios
 
+FLEET_DOCS_IMAGES := docs/fleet-manager/images
+
+.PHONY: fleet-docs-screenshots
+fleet-docs-screenshots: fleet-build-envtest fleet-playwright setup-envtest ## Take the screenshots of the fleet manager guide from the page scenarios on envtest, in the light theme at 1440 px, and replace docs/fleet-manager/images with them. Run it before a release. Fails when a page stalls, or when the guide pages, the tests that take the images, and the images disagree.
+	rm -rf $(FLEET_DIR)/docs-images
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && \
+		$(FLEET_PNPM) exec playwright test -c playwright.docs.config.ts
+	rm -rf $(FLEET_DOCS_IMAGES) && mv $(FLEET_DIR)/docs-images $(FLEET_DOCS_IMAGES)
+	$(FLEET_PNPM) exec vitest run --project unit e2e/docs-images.test.ts
+
 .PHONY: fleet-build-stories
 fleet-build-stories: fleet-install ## Build the Storybook of the fleet manager into fleet-manager/storybook-static.
 	$(FLEET_PNPM) run build-storybook

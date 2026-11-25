@@ -1,10 +1,11 @@
 # Platform config and connections
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, cluster-es-backups -->
 
 ## Platform config
 
 A platform config holds the authentication, the license, and the image repositories of the clusters, management planes, and database servers that use it. The page **Setup > Platform** lists each `CamundaPlatformConfig` with its authentication method, its users, and its status. The [CamundaPlatformConfig](../crds/camundaplatformconfig.md) reference lists the fields.
 
-The fleet manager does not create a platform config. Apply one with `kubectl apply` or your GitOps tool:
+You can also apply a platform config with `kubectl apply` or your GitOps tool:
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -32,6 +33,16 @@ spec:
 ```
 
 **Used by** on the page of a platform config lists each cluster, management plane, database server, and environment that uses it.
+
+### Create a platform config
+
+Select **New platform config** on the page **Setup > Platform**. Type the **Name**. Clusters, management planes, database servers, claims, and environments use this name to refer to the config. You cannot change it later. To start from a config that exists, select it in **Copy from**. The new config then gets the authentication, the license Secret, and the image repositories of that config.
+
+Select the authentication method. Then complete the fields, the license Secret, and the image repositories, as on the page of a config. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new config opens.
+
+![The New platform config page with the name, the Basic authentication, and the license Secret.](images/platform-config-create.png)
+
+A Secret that does not exist shows as `(not found)`. You can create the config anyway, but it is not ready until the Secret exists.
 
 ### Change a platform config
 
@@ -78,6 +89,8 @@ A connection contract tells a cluster where its storage or its identity provider
 
 Select the name of a contract to open its page, with the panels **Status**, **Writer**, **Settings**, and **Used by**.
 
+![The Connections page on the Object storage tab, with the writer, the users, and the status of each contract.](images/connections-list.png)
+
 ### Who wrote a contract
 
 The column **Writer** says who wrote the contract:
@@ -88,13 +101,25 @@ The column **Writer** says who wrote the contract:
 | `Management plane <namespace>/<plane>` | A management plane wrote it. |
 | `<Kind> <name>` | The object that owns it, for example `ElasticsearchCluster orders-es`. |
 | `Kept from <registration>` | An option wrote it, and its cluster was deleted with **Keep the resources**. |
-| `Created by hand` | You or a tool applied it. |
+| `Created by hand` | You created it on this page, or you or a tool applied it. |
 
 You can change and delete only a contract that is `Created by hand` or `Kept from <registration>`. Any other contract shows `Managed by <writer>. Change it there.`
 
 ### Who uses a contract
 
 **Used by** lists each object that uses the contract, with its own status. These are clusters, Optimize, management planes, database servers, Elasticsearch clusters, and backups and restores that still need the contract. A backup counts, because a restore reads from its bucket.
+
+### Create a contract
+
+Open the tab of the kind, and select its **New** button, for example **New object storage contract**. Type the **Name**. Clusters and other resources use this name to refer to the contract. You cannot change it later.
+
+Select the **Namespace**. Only resources in that namespace can use the contract. A Management Identity contract has no namespace. To start from a contract of the same kind, select it in **Copy from**. The new contract gets its settings.
+
+For a storage contract, select the storage type. For an object storage contract, also select the auth type. Then complete the fields and the Secrets, as in [Change a contract](#change-a-contract). Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new contract opens, with the writer `Created by hand`.
+
+![The New object storage contract page with the name, the namespace, the storage type, and the bucket.](images/connection-create-object-storage.png)
+
+The page refuses a name that a contract of the same kind has in the namespace. It also refuses a Management Identity name that a management plane uses.
 
 ### Change a contract
 

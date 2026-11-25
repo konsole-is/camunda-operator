@@ -6,8 +6,8 @@ import {
   type ManagedObject,
   type OwnedStep,
   type OwnerTree,
-  isApplyOf,
   isKnownManager,
+  isOwnEntry,
   itemOwners,
   managerKind,
   ownerTree,
@@ -32,16 +32,12 @@ type JsonMap = Record<string, unknown>;
 const PARTIAL_SAVE = "The fleet manager saved the ";
 
 /**
- * partialSaveMessage is the message of an error of a save that applied ref
- * and did not remove the fields of paths. message is the error of the
- * removal.
+ * partialSaveMessage is the message of an error of a save that updated ref
+ * and did not record the fields of the fleet manager. message is the error
+ * of that step.
  */
-export function partialSaveMessage(
-  ref: ObjectRef,
-  paths: readonly FieldPath[],
-  message: string,
-): string {
-  return `${PARTIAL_SAVE}${ref.kind} ${ref.name}, but did not remove ${paths.join(", ")}. ${message}`;
+export function partialSaveMessage(ref: ObjectRef, message: string): string {
+  return `${PARTIAL_SAVE}${ref.kind} ${ref.name}, but did not record its fields. The next save of the ${ref.kind} records them. ${message}`;
 }
 
 /** isPartialSave reports whether error has a message of partialSaveMessage. */
@@ -53,9 +49,8 @@ export function isPartialSave(error: ApiError): boolean {
  * foreignFields returns the fields of spec, metadata.labels, and
  * metadata.annotations of live that a server-side apply of applied by the
  * fleet manager changes or clears while another field manager owns them.
- * Every managedFields entry other than the Apply entry of the fleet
- * manager is another manager, also an Update entry of the fleet manager.
- * An entry of a subresource is not another manager.
+ * Every managedFields entry other than an entry of the fleet manager is
+ * another manager. An entry of a subresource is not another manager.
  *
  * changed holds each field that applied sets to another value than live.
  * The apply fails on such a field unless it forces. cleared holds the
@@ -75,11 +70,92 @@ export function foreignFields(
 ): { changed: ForeignField[]; cleared: ForeignField[] } {
   const tree = ownerTree(
     live as ManagedObject,
-    (entry) => !entry.subresource && !isApplyOf(entry, APP_FIELD_MANAGER),
+    (entry) => !entry.subresource && !isOwnEntry(entry),
   );
   const changed: ForeignField[] = [];
   const cleared: ForeignField[] = [];
-  const managersOf = (owners: FieldOwner[]) => foreignManagers(owners, live);
+  walkApplied(tree, live, applied, keep, {
+    leftOut: (node, path, steps) => {
+      const owners = ownersBelow(node);
+      if (owners.length > 0)
+        cleared.push({ path, steps, managers: foreignManagers(owners, live) });
+    },
+    changed: (node, path, steps) =>
+      changed.push({
+        path,
+        steps,
+        managers: foreignManagers(node.whole, live),
+      }),
+  });
+  return { changed: byPath(changed), cleared: byPath(cleared) };
+}
+
+/**
+ * prunedFields returns the topmost fields of spec, metadata.labels, and
+ * metadata.annotations that live holds and applied leaves out, and that
+ * only entries of the fleet manager own, at them and below: the fields
+ * that the fleet manager set and the change drops. Under a left-out field
+ * that another manager also owns, it names such fields below it. keep is as in
+ * foreignFields. The fields are in the code-unit order of their paths.
+ */
+export function prunedFields(
+  live: KubeObject,
+  applied: KubeObject,
+  keep: readonly FieldPath[] = [],
+): ForeignField[] {
+  const tree = ownerTree(live as ManagedObject, (entry) => !entry.subresource);
+  const pruned: ForeignField[] = [];
+  walkApplied(tree, live, applied, keep, {
+    leftOut: (node, path, steps) => {
+      const owners = ownersBelow(node);
+      if (owners.length === 0) return false;
+      if (owners.every((o) => o.manager === APP_FIELD_MANAGER)) {
+        pruned.push({ path, steps, managers: foreignManagers(owners, live) });
+        return false;
+      }
+      return node.whole.length === 0;
+    },
+  });
+  return byPath(pruned);
+}
+
+/**
+ * removedFields returns each topmost field of spec, metadata.labels, and
+ * metadata.annotations that before holds and after does not hold, and that
+ * an entry of before other than an entry of the fleet manager or of a
+ * subresource owns, at it or below, with each such manager.
+ * LAST_APPLIED_ANNOTATION is never named. The fields are in the code-unit
+ * order of their paths.
+ */
+export function removedFields(
+  before: KubeObject,
+  after: KubeObject,
+): ForeignField[] {
+  return foreignFields(before, after).cleared;
+}
+
+// walkApplied walks the fields of spec, metadata.labels, and
+// metadata.annotations of live that tree has a node for, against applied.
+// leftOut gets each topmost field that applied leaves out, and changed each
+// field that a node of tree owns whole and that applied sets to another
+// value. Neither gets a field at, under, or holding a path of keep, which
+// names paths through maps only. In place of a left-out field that holds a
+// kept path, leftOut gets the topmost fields under it that hold none. When
+// leftOut returns true, the walk goes on below that field as left out.
+function walkApplied(
+  tree: OwnerTree,
+  live: KubeObject,
+  applied: KubeObject,
+  keep: readonly FieldPath[],
+  on: {
+    leftOut: (
+      node: OwnerTree,
+      path: FieldPath,
+      steps: OwnedStep[],
+    ) => boolean | void;
+    changed?: (node: OwnerTree, path: FieldPath, steps: OwnedStep[]) => void;
+  },
+): void {
   const keeps = new Set(keep);
 
   const visit = (
@@ -97,14 +173,20 @@ export function foreignFields(
         visitChildren(node, before, {}, path, steps, false);
         return;
       }
-      const owners = ownersBelow(node);
-      if (owners.length > 0)
-        cleared.push({ path, steps, managers: managersOf(owners) });
+      if (on.leftOut(node, path, steps))
+        visitChildren(
+          node,
+          before,
+          Array.isArray(before) ? [] : {},
+          path,
+          steps,
+          false,
+        );
       return;
     }
     if (node.whole.length > 0) {
       if (!equalJSON(before, after) && !kept && !holdsKept(before, path))
-        changed.push({ path, steps, managers: managersOf(node.whole) });
+        on.changed?.(node, path, steps);
       return;
     }
     visitChildren(node, before, after, path, steps, kept);
@@ -186,7 +268,79 @@ export function foreignFields(
       name === "annotations" ? LAST_APPLIED_ANNOTATION : undefined,
     );
   }
-  return { changed: byPath(changed), cleared: byPath(cleared) };
+}
+
+/**
+ * laidOver returns live without each field of removed, with applied laid
+ * over it. A map of applied goes into the map of live key by key. A list
+ * and a scalar replace the value of live, and so does a map that a
+ * managedFields entry of live owns whole, other than a top-level field,
+ * metadata.labels, or metadata.annotations. It lays over spec,
+ * metadata.labels, metadata.annotations, and each other top-level field
+ * of applied but apiVersion, kind, metadata, and status. Neither input
+ * changes, and a key __proto__ stays a key.
+ */
+export function laidOver(
+  live: KubeObject,
+  applied: KubeObject,
+  removed: readonly ForeignField[],
+): KubeObject {
+  const result = withoutFields(live, removed) as KubeObject & JsonMap;
+  const tree = ownerTree(live as ManagedObject, () => true);
+  // The roots are containers, as in walkApplied: an owner of a root owns
+  // no value of it.
+  const lay = (
+    under: unknown,
+    over: unknown,
+    node: OwnerTree | undefined,
+    root = false,
+  ): unknown => {
+    if (
+      !isRecord(over) ||
+      !isRecord(under) ||
+      (!root && (node?.whole.length ?? 0) > 0)
+    )
+      return copyJSON(over);
+    for (const [key, value] of Object.entries(over))
+      setKey(
+        under,
+        key,
+        lay(
+          Object.hasOwn(under, key) ? under[key] : undefined,
+          value,
+          node?.children.get(`f:${key}`),
+        ),
+      );
+    return under;
+  };
+  for (const [key, value] of Object.entries(applied)) {
+    if (["apiVersion", "kind", "metadata", "status"].includes(key)) continue;
+    setKey(
+      result,
+      key,
+      lay(
+        Object.hasOwn(result, key) ? result[key] : undefined,
+        value,
+        tree.children.get(`f:${key}`),
+        true,
+      ),
+    );
+  }
+  const metadata = result.metadata as JsonMap;
+  for (const name of ["labels", "annotations"]) {
+    if (applied.metadata[name] === undefined) continue;
+    setKey(
+      metadata,
+      name,
+      lay(
+        Object.hasOwn(metadata, name) ? metadata[name] : undefined,
+        applied.metadata[name],
+        tree.children.get("f:metadata")?.children.get(`f:${name}`),
+        true,
+      ),
+    );
+  }
+  return result;
 }
 
 /** MAX_KEEP_PATHS is the most paths that the keep list of a change holds for one object. */
@@ -332,7 +486,7 @@ export function withTakeOver(
 
 /**
  * takenFields returns each field that a managedFields entry of before
- * other than the Apply entry of the fleet manager owns, that no entry of
+ * other than an entry of the fleet manager owns, that no entry of
  * the same manager and operation owns in after, and whose value after
  * still holds: the fields that a write from before to after took from
  * their managers. Each field names the managers that lost it. The fields
@@ -344,7 +498,7 @@ export function takenFields(
 ): ForeignField[] {
   const lost = ownerTree(
     before as ManagedObject,
-    (entry) => !isApplyOf(entry, APP_FIELD_MANAGER),
+    (entry) => !isOwnEntry(entry),
   );
   const kept = ownerTree(after as ManagedObject, () => true);
   const taken: ForeignField[] = [];
@@ -440,6 +594,36 @@ export function withValuesOf<T extends object>(
   return copy;
 }
 
+/**
+ * withKeptFields returns withValuesOf of object, fields, and from, with each
+ * keyed or set list item of fields that from holds and the list of object
+ * lacks. Such an item goes in at its index in from, or at the end of a
+ * shorter list. A list item by index is skipped.
+ */
+export function withKeptFields<T extends object>(
+  object: T,
+  fields: readonly ForeignField[],
+  from: unknown,
+): T {
+  const copy = withValuesOf(object, fields, from);
+  const missing: { list: unknown[]; at: number; item: unknown }[] = [];
+  for (const field of fields) {
+    const last = field.steps.at(-1);
+    if (last === undefined || "field" in last || "index" in last) continue;
+    const parent = field.steps.slice(0, -1);
+    const list = valueAt(copy, parent);
+    const source = valueAt(from, parent);
+    if (!Array.isArray(list) || !Array.isArray(source)) continue;
+    const at = indexIn(source, last);
+    if (at < 0 || indexIn(list, last) >= 0) continue;
+    missing.push({ list, at, item: source[at] });
+  }
+  // An item can go in at its index only after the items before it.
+  for (const { list, at, item } of missing.sort((a, b) => a.at - b.at))
+    list.splice(Math.min(at, list.length), 0, copyJSON(item));
+  return copy;
+}
+
 function valueAt(object: unknown, steps: readonly OwnedStep[]): unknown {
   let at: unknown = object;
   for (const step of steps) {
@@ -523,16 +707,19 @@ function copyJSON(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(copyJSON);
   if (!isRecord(value)) return value;
   const copy: JsonMap = {};
-  for (const [key, inner] of Object.entries(value)) {
-    // A plain assignment of the key __proto__ sets the prototype, not a field.
-    Object.defineProperty(copy, key, {
-      value: copyJSON(inner),
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
-  }
+  for (const [key, inner] of Object.entries(value))
+    setKey(copy, key, copyJSON(inner));
   return copy;
+}
+
+function setKey(map: JsonMap, key: string, value: unknown): void {
+  // A plain assignment of the key __proto__ sets the prototype, not a field.
+  Object.defineProperty(map, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function isRecord(value: unknown): value is JsonMap {
