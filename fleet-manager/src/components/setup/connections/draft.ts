@@ -5,7 +5,7 @@ import type { DatabaseServerConfig } from "@/generated/crds/databaseserverconfig
 import type { ManagementAuthConfig } from "@/generated/crds/managementauthconfig";
 import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
-import { LAST_APPLIED_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, referenceNameError } from "@/lib/labels";
 import { child } from "@/lib/merge";
 import { equalJSON, isObject } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
@@ -26,12 +26,6 @@ export type ContractCreateDraft = ContractDraft & {
   name: string;
   namespace: string;
 };
-
-// The pattern and the length of spec.managementAuthConfigName of a
-// CamundaManagementClusterClaim, which the create flow of a management
-// plane uses for every contract name.
-const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const NAME_MAX = 253;
 
 const OBJECT_STORAGE_BLOCK = {
   S3: "s3",
@@ -381,10 +375,11 @@ export function nameErrors(
 ): ValidationError[] {
   const error = (message: string) => [{ path: "name", message }];
   if (name === "") return error("Give the contract a name.");
-  if (!NAME.test(name) || name.length > NAME_MAX)
-    return error(
-      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
-    );
+  // The create flow of a management plane uses the rule of
+  // spec.managementAuthConfigName of a CamundaManagementClusterClaim for
+  // every contract name.
+  const invalid = referenceNameError(name);
+  if (invalid) return error(invalid);
   const clusterScoped = kind === "ManagementAuthConfig";
   if (taken.includes(name))
     return error(

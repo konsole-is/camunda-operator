@@ -270,6 +270,22 @@ describe("PlatformCreate", () => {
     expect(secretOf("License key")).toBeNull();
   });
 
+  it("Discard after a copy goes back to the copy and keeps Copy from", async () => {
+    const u = user();
+    setup();
+    await u.selectOptions(copyFrom(), "oidc-prod");
+    await u.type(nameInput(), "next-config");
+    await u.type(screen.getByLabelText("Issuer URL"), "/next");
+
+    await u.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(copyFrom().value).toBe("oidc-prod");
+    expect(nameInput().value).toBe("");
+    expect(
+      (screen.getByLabelText("Issuer URL") as HTMLInputElement).value,
+    ).toBe("https://login.example.com/realms/camunda");
+  });
+
   it("writes no oidc block when a copy of an OIDC config switches to basic", async () => {
     const u = user();
     setup();

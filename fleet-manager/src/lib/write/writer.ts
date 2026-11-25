@@ -172,15 +172,15 @@ export function diffView(
  * Conflict errors stop.
  *
  * When remove lists a field, or an object with a precondition holds an
- * Update entry of the fleet manager, apply writes the object as one
- * update: a JSON patch at the precondition to laidOver of the live object,
- * the applied object, the listed fields, and prunedFields. When remove
- * lists a field, the preview is the dry run of that patch. Both writes refuse the object with Conflict when the update takes
- * or removes a field of another manager that the lists do not name. A
- * field of remove can come back with its default value. When an apply of
- * the change sets other values than the update, or apply cannot record the
- * fields after the update, apply stops, the update stays, and the error
- * says that the next save records the fields.
+ * Update entry of the fleet manager, apply writes the object as one update: a
+ * JSON patch at the precondition to laidOver of the live object, the applied
+ * object, the listed fields, and prunedFields. When remove lists a field, the
+ * preview is the dry run of that patch. Both writes refuse the object with
+ * Conflict when the update takes or removes a field of another manager that the
+ * lists do not name. A field of remove can come back with its default value.
+ * When an apply of the change sets other values than the update, or apply
+ * cannot record the fields after the update, apply stops, the update stays, and
+ * the error says that the next save records the fields.
  *
  * Any other object with a take-over list is applied with force only when
  * takeOver lists a field. A dry run with force must then take no field

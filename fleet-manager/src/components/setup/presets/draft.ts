@@ -2,6 +2,7 @@ import {
   DESCRIPTION_ANNOTATION,
   LAST_APPLIED_ANNOTATION,
   presetDescription,
+  referenceNameError,
 } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
@@ -95,10 +96,6 @@ export function presetChangeCount(
 /** PresetCreateDraft is the form of a new preset: its name, and its body and description. */
 export type PresetCreateDraft = { name: string; preset: PresetDraft };
 
-// The pattern and the length of spec.presetRef of a CamundaClusterClaim.
-const NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-const NAME_MAX = 253;
-
 /**
  * nameErrors returns the error of name for a new preset, with the path
  * "name", or none. taken are the names of the presets of the same kind.
@@ -109,10 +106,8 @@ export function nameErrors(
 ): ValidationError[] {
   const error = (message: string) => [{ path: "name", message }];
   if (name === "") return error("Give the preset a name.");
-  if (!NAME.test(name) || name.length > NAME_MAX)
-    return error(
-      "The name has only lowercase letters, digits, and hyphens. It starts and ends with a letter or a digit, and has at most 253 characters.",
-    );
+  const invalid = referenceNameError(name);
+  if (invalid) return error(invalid);
   if (taken.includes(name))
     return error("A preset of this kind with this name exists.");
   return [];

@@ -19,6 +19,10 @@ import {
 
 const EXTRA_ENV_FROM = fullSchemaOf("extraEnvFrom");
 
+/** OTHER_SOURCE_REASON is the lock reason of a variable from another source on a page that has no editor for it. */
+export const OTHER_SOURCE_REASON =
+  "Edit this variable with kubectl or through your Git repository";
+
 /**
  * EnvScopes edits the env lists of each scope of spec, a release or the
  * body of a cluster preset: extraEnv as rows of a name with a value or a

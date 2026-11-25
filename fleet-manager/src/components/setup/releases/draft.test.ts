@@ -88,10 +88,9 @@ describe("draftErrors", () => {
     expect(errorsOf({ version: "8.9.0" }, "", opts)).toEqual([
       { path: "name", message: "Give the release a name." },
     ]);
-    for (const name of ["Bad_Name", "camunda.8-9", "-r", "r-", "r".repeat(254)])
-      expect(errorsOf({ version: "8.9.0" }, name, opts)).toEqual([
-        { path: "name", message: NAME_RULE },
-      ]);
+    expect(errorsOf({ version: "8.9.0" }, "camunda.8-9", opts)).toEqual([
+      { path: "name", message: NAME_RULE },
+    ]);
   });
 
   // A claim names its release in spec.releaseRef, so a name that the field

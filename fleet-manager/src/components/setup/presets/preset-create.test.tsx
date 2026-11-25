@@ -343,6 +343,22 @@ describe("PresetCreate", () => {
     ).toBe("For databases.");
   });
 
+  it("Discard after a copy goes back to the copy and keeps Copy from", async () => {
+    const u = user();
+    setup();
+    await u.click(screen.getByRole("radio", { name: "PostgreSQL" }));
+    await u.selectOptions(copyFrom(), "standard");
+    await u.type(nameField(), "next-db");
+    await u.clear(spinbutton("PostgreSQL settings", "instances"));
+    await u.type(spinbutton("PostgreSQL settings", "instances"), "12");
+
+    await u.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(copyFrom().value).toBe("standard");
+    expect(nameField().value).toBe("");
+    expect(spinbutton("PostgreSQL settings", "instances").value).toBe("2");
+  });
+
   it("starts empty when the kind changes after a copy", async () => {
     const u = user();
     setup();

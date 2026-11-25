@@ -15,7 +15,10 @@ import {
 } from "@/components/fleet/secret-refs-union";
 import { EditorSection, TextField } from "@/components/setup/form-parts";
 import { type EnvSpec, namedSecretRefs } from "@/components/setup/releases/env";
-import { EnvScopes } from "@/components/setup/releases/env-scopes";
+import {
+  EnvScopes,
+  OTHER_SOURCE_REASON,
+} from "@/components/setup/releases/env-scopes";
 import { COMPONENTS, type SchemaGroup, type Step } from "@/lib/fields";
 import { without, withValue } from "@/lib/session";
 import type { PresetKind } from "@/lib/usage";
@@ -28,10 +31,6 @@ import { missingSecrets } from "./secrets";
 const BODY_STEPS = 2;
 
 const ENV_LISTS = new Set(["extraEnv", "extraEnvFrom"]);
-
-// A preset page has no YAML editor, as the presets guide says.
-const OTHER_SOURCE_REASON =
-  "Edit this variable with kubectl or through your Git repository";
 
 const GROUPS: Readonly<Record<PresetKind, readonly SettingsGroup[]>> = {
   CamundaClusterPreset: [

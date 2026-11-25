@@ -2519,6 +2519,36 @@ describe("Before the cluster exists", () => {
     ]);
   });
 
+  it("shows the Ready state of the claim in the header and the state of the request on its card", () => {
+    const pending = {
+      ...request,
+      status: { conditions: [condition("Ready", "WaitingForEndpoints")] },
+    } as unknown as Resource<"PluginRequest">;
+    render(
+      view({
+        initial: data({
+          cluster: undefined,
+          claims: [waitingClaim],
+          sections: [section],
+          requests: [pending],
+          pods: [],
+        }),
+      }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "orders" }).parentElement
+        ?.textContent,
+    ).toContain("Not ready · PrerequisiteNotMet");
+    const card = within(
+      screen.getByRole("region", { name: "Components" }),
+    ).getByRole("article", { name: "Secondary storage" });
+    expect(
+      within(card).getByRole("img", {
+        name: "Secondary storage: Not ready (WaitingForEndpoints)",
+      }).className,
+    ).toContain("bg-bad");
+  });
+
   it("watches the requests of the claim by the page name", () => {
     render(view({ initial: waiting }));
     expect(live.calls.find((c) => c.kind === "PluginRequest")?.opts).toEqual({
