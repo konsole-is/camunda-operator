@@ -110,7 +110,7 @@ function ComponentCard<Id extends string>({
         <dl className="mt-auto grid grid-cols-2 gap-3">
           {card.numbers.map((n, i) => (
             <div key={i} className="flex min-w-0 flex-col-reverse gap-0.5">
-              <dt className="text-xs text-muted">{n.label}</dt>
+              <dt className="text-xs break-words text-muted">{n.label}</dt>
               <dd className={numberClass(n)}>
                 {n.severity && <SeverityMark severity={n.severity} />}
                 {n.value}
