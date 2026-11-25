@@ -414,7 +414,14 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           previewObject(
             ref,
             before,
-            withKeptFields(shown, stays, withoutFields(before, pruned)),
+            withKeptFields(
+              shown,
+              stays,
+              withoutFields(
+                before,
+                pruned.filter((f) => !isItemKey(f)),
+              ),
+            ),
           ),
         );
       };
@@ -681,6 +688,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 }
 
 type DeletePreconditions = { resourceVersion?: string; uid?: string };
+
+// The API server keeps the key fields of a list item that stays.
+function isItemKey(field: ForeignField): boolean {
+  const [item, key] = field.steps.slice(-2);
+  return (
+    item !== undefined &&
+    "item" in item &&
+    key !== undefined &&
+    "field" in key &&
+    Object.hasOwn(item.item, key.field)
+  );
+}
 
 function isConflict(error: unknown): boolean {
   return error instanceof KubernetesRequestError && error.statusCode === 409;
