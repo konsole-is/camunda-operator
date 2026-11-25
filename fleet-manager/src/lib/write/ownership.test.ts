@@ -1612,6 +1612,21 @@ describe("withKeptFields", () => {
     expect(from).toEqual(fromCopy);
   });
 
+  it("keeps the order of from for several items that object lacks, whatever the order of fields", () => {
+    const listed = {
+      spec: { allowed: [{ name: "c" }, { name: "b" }, { name: "a" }] },
+    };
+    const item = (name: string) =>
+      fieldAt({ field: "spec" }, { field: "allowed" }, { item: { name } });
+    expect(
+      withKeptFields(
+        { spec: { allowed: [] as unknown[] } },
+        [item("a"), item("b"), item("c")],
+        listed,
+      ),
+    ).toEqual(listed);
+  });
+
   it("adds an item at the end when object holds fewer items than its index in from", () => {
     expect(
       withKeptFields(

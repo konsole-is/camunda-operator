@@ -606,6 +606,7 @@ export function withKeptFields<T extends object>(
   from: unknown,
 ): T {
   const copy = withValuesOf(object, fields, from);
+  const missing: { list: unknown[]; at: number; item: unknown }[] = [];
   for (const field of fields) {
     const last = field.steps.at(-1);
     if (last === undefined || "field" in last || "index" in last) continue;
@@ -615,8 +616,11 @@ export function withKeptFields<T extends object>(
     if (!Array.isArray(list) || !Array.isArray(source)) continue;
     const at = indexIn(source, last);
     if (at < 0 || indexIn(list, last) >= 0) continue;
-    list.splice(Math.min(at, list.length), 0, copyJSON(source[at]));
+    missing.push({ list, at, item: source[at] });
   }
+  // An item can go in at its index only after the items before it.
+  for (const { list, at, item } of missing.sort((a, b) => a.at - b.at))
+    list.splice(Math.min(at, list.length), 0, copyJSON(item));
   return copy;
 }
 
