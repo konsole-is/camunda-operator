@@ -37,10 +37,10 @@ test("creates a cluster with a new namespace and a new Elasticsearch", async ({
   });
   await next.click();
 
-  // Cluster settings and Attachments keep their defaults.
   await docShot(page, "create-cluster-settings", {
     ready: page.getByRole("heading", { level: 2, name: "Cluster settings" }),
   });
+  // Cluster settings and Attachments keep their defaults.
   await next.click();
   await next.click();
 
