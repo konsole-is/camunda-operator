@@ -35,6 +35,7 @@ import {
   prunedFields,
   removedFields,
   takenFields,
+  withKeptFields,
 } from "./ownership";
 import { refKey, refOf } from "./refs";
 import type {
@@ -166,8 +167,8 @@ export function diffView(
  * path that names more than one field of the object in ownership, and with
  * Invalid when the lists are not the offered fields of ownership at the
  * precondition.
- * The preview also names in blocked each object of ownership that only a
- * Conflict stops, without a forced request.
+ * The preview also names in blocked each object of ownership that only
+ * Conflict errors stop. It sends no extra request for it.
  *
  * When remove lists a field, or an object with a precondition holds an
  * Update entry of the fleet manager, apply writes the object as one
@@ -391,6 +392,30 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const resourceVersion = change.preconditions?.[key];
       let before: KubeObject | undefined;
       let foreign: ReturnType<typeof foreignFields> | undefined;
+      let lists: TakeOverLists | undefined;
+      const refuse = (refused: ApiError[], after?: KubeObject) => {
+        errors.push(...refused);
+        if (
+          before === undefined ||
+          foreign === undefined ||
+          foreign.changed.length + foreign.cleared.length === 0 ||
+          !refused.every((e) => e.code === "Conflict")
+        )
+          return;
+        const removed = lists ? foreign.cleared.filter(offered) : [];
+        const shown =
+          after ??
+          laidOver(before, object, [
+            ...removed,
+            ...prunedFields(before, object, change.keep?.[key]),
+          ]);
+        // Server-side apply keeps each field of another manager that the
+        // save leaves out and does not remove.
+        const stays = foreign.cleared.filter((f) => !removed.includes(f));
+        blocked.push(
+          previewObject(ref, before, withKeptFields(shown, stays, before)),
+        );
+      };
       try {
         before = await read(ref);
         // The API server creates a missing object even when the applied
@@ -422,7 +447,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             : undefined;
         if (foreign && foreign.changed.length + foreign.cleared.length > 0)
           ownership.push({ ref, ...foreign });
-        const lists = listsOf(change, key);
+        lists = listsOf(change, key);
         if (lists !== undefined) {
           const refused = takeOverRefusals(
             ref,
@@ -432,7 +457,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             lists,
           );
           if (refused.length > 0) {
-            errors.push(...refused);
+            refuse(refused);
             continue;
           }
         }
@@ -466,7 +491,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
             ...unlistedRemovals(ref, before!, after, cleared),
           ];
           if (refused.length > 0) {
-            errors.push(...refused);
+            refuse(refused, after);
             continue;
           }
           plans.set(key, { write: "update", before: before!, target });
@@ -474,17 +499,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           continue;
         }
         if (lists !== undefined) {
-          const force = lists.takeOver.length > 0;
+          const { takeOver } = lists;
+          const force = takeOver.length > 0;
           const after = await applyObject(object, resourceVersion, force, true);
           if (force) {
             const unlisted = unlistedTakes(
               ref,
               before!,
               after,
-              foreign!.changed.filter((f) => lists.takeOver.includes(f.path)),
+              foreign!.changed.filter((f) => takeOver.includes(f.path)),
             );
             if (unlisted.length > 0) {
-              errors.push(...unlisted);
+              refuse(unlisted, after);
               continue;
             }
           }
@@ -518,28 +544,13 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
               );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
-        const refused = await staleFirst(
-          apiErrorsOf(error, ref, resourceVersion !== undefined),
-          ref,
-          resourceVersion,
+        refuse(
+          await staleFirst(
+            apiErrorsOf(error, ref, resourceVersion !== undefined),
+            ref,
+            resourceVersion,
+          ),
         );
-        errors.push(...refused);
-        if (
-          before !== undefined &&
-          (foreign?.changed.length ?? 0) > 0 &&
-          refused.every((e) => e.code === "Conflict")
-        )
-          blocked.push(
-            previewObject(
-              ref,
-              before,
-              laidOver(
-                before,
-                object,
-                prunedFields(before, object, change.keep?.[key]),
-              ),
-            ),
-          );
       }
     }
     for (const ref of change.delete ?? []) {

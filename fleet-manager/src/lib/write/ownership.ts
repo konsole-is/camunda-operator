@@ -594,6 +594,32 @@ export function withValuesOf<T extends object>(
   return copy;
 }
 
+/**
+ * withKeptFields returns withValuesOf of object, fields, and from, with each
+ * keyed or set list item of fields that from holds and the list of object
+ * lacks. Such an item goes in at its index in from, or at the end of a
+ * shorter list. A list item by index is skipped.
+ */
+export function withKeptFields<T extends object>(
+  object: T,
+  fields: readonly ForeignField[],
+  from: unknown,
+): T {
+  const copy = withValuesOf(object, fields, from);
+  for (const field of fields) {
+    const last = field.steps.at(-1);
+    if (last === undefined || "field" in last || "index" in last) continue;
+    const parent = field.steps.slice(0, -1);
+    const list = valueAt(copy, parent);
+    const source = valueAt(from, parent);
+    if (!Array.isArray(list) || !Array.isArray(source)) continue;
+    const at = indexIn(source, last);
+    if (at < 0 || indexIn(list, last) >= 0) continue;
+    list.splice(Math.min(at, list.length), 0, copyJSON(source[at]));
+  }
+  return copy;
+}
+
 function valueAt(object: unknown, steps: readonly OwnedStep[]): unknown {
   let at: unknown = object;
   for (const step of steps) {

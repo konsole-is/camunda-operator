@@ -806,6 +806,81 @@ describe("directWriter with a take-over", () => {
       });
     });
 
+    it("keeps in blocked a list item that another tool set and the change leaves out", async () => {
+      const listed = environment(
+        { displayName: "Stage", allowed: [{ name: "x" }, { name: "y" }] },
+        [
+          {
+            manager: "kubectl-client-side-apply",
+            operation: "Update",
+            fieldsV1: {
+              "f:spec": {
+                "f:displayName": {},
+                "f:allowed": { 'k:{"name":"y"}': { ".": {}, "f:name": {} } },
+              },
+            },
+          },
+          {
+            manager: "fleet-manager",
+            operation: "Apply",
+            fieldsV1: {
+              "f:spec": {
+                "f:allowed": { 'k:{"name":"x"}': { ".": {}, "f:name": {} } },
+              },
+            },
+          },
+        ],
+      );
+      answer = (r) =>
+        r.method === "GET"
+          ? { status: 200, body: listed }
+          : { status: 409, body: fieldConflict };
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [
+          environment({
+            displayName: "Prod",
+            allowed: [{ name: "x", label: "X" }],
+          }),
+        ],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        allowed: [{ name: "x", label: "X" }, { name: "y" }],
+      });
+    });
+
+    it("shows the update of a save that stopped after its update", async () => {
+      const unfinished = environment({ displayName: "Stage", color: "red" }, [
+        kubectlOwns("displayName"),
+        fleetOwns("Update", "color"),
+      ]);
+      answer = removalAnswers(
+        unfinished,
+        environment({ displayName: "Prod", color: "red" }, [
+          fleetOwns("Update", "displayName", "color"),
+        ]),
+        probed,
+      );
+
+      const preview = await directWriter(apiConfig).preview({
+        intent: "Rename",
+        apply: [environment({ displayName: "Prod", color: "red" })],
+        preconditions: { [key]: "7" },
+      });
+
+      expect(preview.errors).toEqual([
+        expect.objectContaining({ code: "Conflict", path: "spec.displayName" }),
+      ]);
+      expect(preview.blocked?.[0].after?.spec).toEqual({
+        displayName: "Prod",
+        color: "red",
+      });
+    });
+
     it("sends no forced request", async () => {
       answer = (r) =>
         r.method === "GET"
