@@ -18,7 +18,7 @@ A cluster that has a claim also has **Change topology**, as [Change the topology
 
 ## Before the cluster exists
 
-The operator makes the cluster when each storage and access option of the claim gives its values, as the **Outputs** box of the option shows. For a built-in option, this takes seconds. For a cloud option, it can take minutes.
+The cluster appears when each option that fills a setting of the cluster gives its values, as the **Outputs** box of that option shows. For a built-in option, this takes seconds. For a cloud option, it can take minutes.
 
 Until then, the page shows the claim and its options. The box **The cluster does not exist yet** names each option that the claim waits for, with the name of its request. The **Overview** tab shows a card for each option and the conditions of the claim. Select a card to see why its option waits.
 
