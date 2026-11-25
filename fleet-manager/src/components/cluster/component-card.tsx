@@ -1,6 +1,7 @@
 import { CircleAlert, TriangleAlert } from "lucide-react";
-import type { MouseEvent } from "react";
+import { Fragment, type MouseEvent } from "react";
 import { StatusDot } from "@/components/fleet/status-dot";
+import { breakParts } from "@/lib/text";
 import { cn } from "@/lib/utils";
 import type { CardId, CardNumber, ComponentCardModel } from "./cards";
 import { statValueClass } from "./stat-tile";
@@ -107,13 +108,15 @@ function ComponentCard<Id extends string>({
         </ul>
       )}
       {card.used ? (
-        <dl className="mt-auto grid grid-cols-2 gap-3">
+        <dl className="mt-auto grid grid-cols-[minmax(0,max-content)_minmax(0,max-content)] justify-between gap-x-2 gap-y-3">
           {card.numbers.map((n, i) => (
             <div key={i} className="flex min-w-0 flex-col-reverse gap-0.5">
-              <dt className="text-xs break-words text-muted">{n.label}</dt>
+              <dt className="text-xs break-words text-muted">
+                <Breakable text={n.label} />
+              </dt>
               <dd className={numberClass(n)}>
                 {n.severity && <SeverityMark severity={n.severity} />}
-                {n.value}
+                <Breakable text={n.value} />
               </dd>
             </div>
           ))}
@@ -137,6 +140,17 @@ export function SeverityMark({ severity }: { severity: "Warning" | "Error" }) {
       <span className="sr-only">{severity}: </span>
     </>
   );
+}
+
+// Breakable lets a long name or URL wrap at a / or a . or between the words
+// of a CamelCase name, so a break inside a word is the last resort.
+function Breakable({ text }: { text: string }) {
+  return breakParts(text).map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
 }
 
 // numberClass keeps the style of a stat, and shows a value with a severity

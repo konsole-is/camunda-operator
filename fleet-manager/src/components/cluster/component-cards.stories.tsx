@@ -227,6 +227,18 @@ export const LongSummaryLabel: Story = {
     cards: [
       ...allUsedAndReady,
       ...sectionCards([
+        section("cloud-identity", "Cloud identity", 1, "oidc-identity", {
+          request: request("orders-cloud-identity", {
+            summary: [
+              {
+                label: "Issuer",
+                value: "https://login.example.com/realms/camunda",
+              },
+            ],
+            resources: [],
+          }),
+          condition: healthy("Ready"),
+        }),
         section(
           "secondary-storage",
           "Secondary storage",
