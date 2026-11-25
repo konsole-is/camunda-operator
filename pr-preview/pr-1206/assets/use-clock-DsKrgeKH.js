@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./react-DZrhAQ_7.js";function n(e,t,n=1e3){let[i,a]=(0,r.useState)(e);return(0,r.useEffect)(()=>{if(!t)return;let e=setInterval(()=>a(new Date().toISOString()),n);return()=>clearInterval(e)},[t,n]),i}var r;function i(){return(i=e((()=>{r=t()})))()}export{n,i as t};
