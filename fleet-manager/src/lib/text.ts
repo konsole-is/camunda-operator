@@ -10,3 +10,12 @@ export function listOf(items: readonly string[]): string {
   if (items.length <= 2) return items.join(" and ");
   return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
+
+/**
+ * breakParts splits text where a line can break before it breaks inside a
+ * word: after a / or a . that is not the last character, and between the
+ * words of a CamelCase name. The parts joined are text.
+ */
+export function breakParts(text: string): string[] {
+  return text.split(/(?<=[/.])(?=.)|(?<=[a-z])(?=[A-Z])/);
+}

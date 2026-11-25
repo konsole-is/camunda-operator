@@ -1,8 +1,11 @@
 # The fleet view
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready -->
 
 The **Fleet** page lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. **New cluster** opens the create form, as [Create a cluster](create-a-cluster.md) shows. The page updates live, without a reload.
 
 When the fleet manager cannot read a list, each page says so, and never shows that list as empty.
+
+![The Fleet page on the Production tab, with Needs attention and the cluster orders shown as Ready.](images/fleet-view-environment-tab.png)
 
 ## Needs attention
 

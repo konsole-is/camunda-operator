@@ -1,8 +1,11 @@
 # Back up and restore a cluster from the fleet manager
+<!-- Screenshots: make fleet-docs-screenshots, scenarios cluster-es-backups -->
 
 The **Backups** tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. A cluster that shows **Not managed** has no actions here.
 
 Backups and restores go straight to the Kubernetes API, also in Git mode. They are not in the Git repository. A restore changes `spec.suspend` and `spec.version` of the `CamundaCluster`. If your GitOps tool owns the cluster, read [A GitOps tool that owns the CamundaCluster](../guides/operations.md#a-gitops-tool-that-owns-the-camundacluster) before the restore.
+
+![The Backups tab with the backup storage, the schedule, Back up now, and a new backup in the table.](images/cluster-backups-tab.png)
 
 ## Back up now
 

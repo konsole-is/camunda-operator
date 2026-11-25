@@ -1,4 +1,5 @@
 import { kubeRequest } from "../../test/scenarios/kube";
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -15,6 +16,13 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
   scenario,
 }) => {
   await page.goto("/setup/environments/production");
+  await docShot(page, "environment-storage-and-access-options", {
+    ready: page.getByRole("group", { name: "Allowed releases" }),
+    target: page.getByRole("group", {
+      name: "Secondary storage",
+      exact: true,
+    }),
+  });
   await page
     .getByRole("group", { name: "Allowed releases" })
     .getByRole("checkbox", { name: "camunda-8-9-1" })
@@ -43,6 +51,10 @@ test("an Environment that allows a release lets the Rollout tab move a claim to 
     row.getByRole("checkbox", { name: "Select team-orders/orders" }),
   ).not.toBeChecked();
   await checkPage(page, "release-rollout");
+  await docShot(page, "release-rollout", {
+    ready: row,
+    until: page.getByRole("button", { name: "Move selected" }),
+  });
 
   await row.getByRole("button", { name: "Move" }).click();
   await expect(

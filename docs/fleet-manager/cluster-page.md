@@ -1,4 +1,5 @@
 # The cluster page
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, claim-waiting -->
 
 The cluster page shows one Camunda cluster: its processes and pods, their logs and events, its backups, its addresses, and its [claim](install.md#what-the-fleet-manager-writes). To open it, select the name of the cluster in [the fleet view](fleet-view.md).
 
@@ -13,6 +14,8 @@ The cluster page shows one Camunda cluster: its processes and pods, their logs a
 
 A cluster that has a claim also has **Change topology**, as [Change the topology](change-a-cluster.md#change-the-topology) shows, and **Delete** in its header.
 
+![The Overview tab of the cluster orders with the topology, the component cards, and the Secondary storage card.](images/cluster-page-overview.png)
+
 ## Before the cluster exists
 
 The operator makes the cluster when each storage and access option of the claim gives its values, as the **Outputs** box of the option shows. For a built-in option, this takes seconds. For a cloud option, it can take minutes.
@@ -22,6 +25,8 @@ Until then, the page shows the claim and its options. The box **The cluster does
 The **Backups** and **Endpoints** tabs say that the cluster does not exist yet. The **Claim** tab and **Delete** in the header work as for a running cluster. When the cluster appears, the page shows it. You do not reload the page.
 
 When the operator refuses the claim, the page shows the reason and the message above the tabs. The refusal shows also on a cluster that runs and is ready. Select **Open the Claim tab**, and change the value that the message names.
+
+![The page of a claim whose cluster does not exist yet, with the request that it waits for.](images/cluster-page-waiting-for-options.png)
 
 ## The tabs of a component
 
@@ -58,6 +63,8 @@ The **Settings** tab lists the parameters of the option. **Edit settings** opens
 
 The options **New Elasticsearch cluster** and **New PostgreSQL server** also show the version, the volumes, and the conditions of the storage that they made.
 
+![The page of the Secondary storage option with its conditions, its summary, and the Connected box.](images/cluster-option-connected.png)
+
 ### Grants
 
 A Grant asks the cloud identity of the cluster for one permission, for example access to a bucket. The **Grants** box shows each Grant with its state. While a Grant is refused, the card of the option shows **Not ready (GrantRejected)**. Read the message of the Grant. For `OverCeiling` or `OverSizeLimit`, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. A Grant that shows **Not applied yet** needs no action.
@@ -74,6 +81,8 @@ The tab shows the time, the level, the logger, and the message of a JSON line in
 
 The tab shows the log of the container as it runs now. For the log before the last restart, use `kubectl logs --previous`. When the tab cannot read a log, it names the pod and the cause below the lines. Reload the page to read it again.
 
+![The Logs tab of the brokers with the time, level, logger, and message of each line of one pod.](images/cluster-component-logs.png)
+
 ## Events
 
 The **Events** tab lists the Kubernetes events of the component, newest first. These are the events of its pods, Services, volumes, and workloads, and of the cluster itself. Kubernetes keeps an event for one hour by default, so an older event does not show.
@@ -81,6 +90,8 @@ The **Events** tab lists the Kubernetes events of the component, newest first. T
 ## Delete the cluster
 
 Select **Delete** in the header of the cluster. Only a cluster that has a claim has **Delete**.
+
+![The delete page of the cluster orders with Keep the resources, Delete the resources, and the claim that goes.](images/cluster-delete-page.png)
 
 ### Keep or delete the resources
 

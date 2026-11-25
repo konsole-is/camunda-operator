@@ -1,4 +1,5 @@
 # Presets and releases
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, release-rollout -->
 
 A preset holds the shared settings of the clusters that use it, such as the number of brokers, the CPU, and the memory. A release says what a cluster runs: the versions, the pinned images, and the environment variables. The pages **Setup > Presets** and **Setup > Releases** show and edit them.
 
@@ -32,6 +33,8 @@ spec:
 Select **New preset** on the page **Setup > Presets**. Pick the **Kind**: **Cluster**, **Elasticsearch**, or **PostgreSQL**. **Copy from** lists the presets of that kind. Pick one to start from its fields, or keep **Nothing, start empty**. Type the **Name**. Resources name the preset by it, and it cannot change later.
 
 Set the fields as on the page of a preset. Select **Review**, then **Create**, or **Push to Git** in Git mode. The page of the new preset opens.
+
+![The New preset page for an Elasticsearch preset, with the kind, Copy from, and the name.](images/preset-create-elasticsearch.png)
 
 An environment allows a new preset only when it lists the name of the preset already. To offer the preset to new clusters, allow it on the [Environments](environments.md) page.
 
@@ -120,6 +123,8 @@ spec:
 
 A change reaches every cluster, Elasticsearch cluster, and database server that uses the release, and their pods roll. A resource that sets its own version keeps it. The review names the users and each version that changes.
 
+![The Settings tab of a release with the versions, the images, and the Environments that use it.](images/release-settings.png)
+
 ### Move clusters to a release
 
 The **Rollout** tab of a release page lists every cluster with its current release, its running version, and if it can move:
@@ -134,6 +139,8 @@ The **Rollout** tab of a release page lists every cluster with its current relea
 | Not managed by the fleet manager | Change the `CamundaCluster` itself. |
 | Runs this release | Nothing. |
 | Refused by the operator | Read the message on the row. |
+
+![The Rollout tab of a release, with the cluster orders marked Can move.](images/release-rollout.png)
 
 To move many clusters, select their checkboxes, or **Select all that can move**, and then **Move selected**. The review shows each cluster and what the move does to it. A move restarts the cluster, and a built-in Elasticsearch cluster or database server of the cluster moves too. The move sets `spec.releaseRef` of each claim:
 

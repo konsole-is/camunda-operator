@@ -22,14 +22,15 @@ No secrets are necessary. The workflows use `GITHUB_TOKEN` and cosign keyless si
 ## Publish a release
 
 1. Make sure that the CI on main is green.
-2. In the **Actions** tab, run the **Prepare release** workflow from main. Enter the release tag, for example `v0.2.0`.
-3. Open the job summary of the run. Use its link to open the pull request.
-4. Merge the pull request when CI passes.
-5. Draft a new GitHub Release. Set the tag to `v0.2.0` and the target to main.
-6. Write the release notes, then publish the release.
-7. Make sure that the **Release** workflow passes.
+2. Run `make fleet-docs-screenshots` on main. If `git status docs/fleet-manager/images` lists a change, open a pull request with the images. Merge it before you continue.
+3. In the **Actions** tab, run the **Prepare release** workflow from main. Enter the release tag, for example `v0.2.0`.
+4. Open the job summary of the run. Use its link to open the pull request.
+5. Merge the pull request when CI passes.
+6. Draft a new GitHub Release. Set the tag to `v0.2.0` and the target to main.
+7. Write the release notes, then publish the release.
+8. Make sure that the **Release** workflow passes.
 
-If the summary says that `go.mod` and `conformance/go.mod` already pin the version, there is no pull request to merge. Continue at step 5.
+If the summary says that `go.mod` and `conformance/go.mod` already pin the version, there is no pull request to merge. Continue at step 6.
 
 The Prepare release workflow pins the api module in the root `go.mod` and in `conformance/go.mod`, and the conformance module in the root `go.mod`. Users of each module then get the modules of the same release. The Release workflow stops if a pin does not match the tag.
 

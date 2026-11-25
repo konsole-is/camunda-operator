@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -13,6 +14,7 @@ test("the section card shows the summary headline of its request", async ({
     card.getByRole("img", { name: "Secondary storage: Ready" }),
   ).toBeVisible();
   await checkPage(page, "cluster-section-cards");
+  await docShot(page, "cluster-page-overview", { ready: card });
 });
 
 test("an existing secondary storage shows as connected", async ({ page }) => {
@@ -34,4 +36,5 @@ test("an existing secondary storage shows as connected", async ({ page }) => {
   await expect(page.getByText("This component runs no pods.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Resources" })).toHaveCount(0);
   await checkPage(page, "cluster-section-connected");
+  await docShot(page, "cluster-option-connected", { ready: connected });
 });

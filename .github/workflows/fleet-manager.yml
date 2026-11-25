@@ -20,6 +20,10 @@ on:
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
+      - docs/fleet-manager/**
+      - docs/crds/pluginsection.md
+      - docs/crds/pluginregistration.md
+      - mkdocs.yml
   pull_request:
     paths:
       - fleet-manager/**
@@ -38,6 +42,10 @@ on:
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
+      - docs/fleet-manager/**
+      - docs/crds/pluginsection.md
+      - docs/crds/pluginregistration.md
+      - mkdocs.yml
   workflow_dispatch:
 
 concurrency:

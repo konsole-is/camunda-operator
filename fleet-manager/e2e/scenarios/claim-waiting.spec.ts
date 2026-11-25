@@ -1,3 +1,4 @@
+import { docShot } from "./docs-shot";
 import { expect, test } from "./fixture";
 import { checkPage } from "./themes";
 
@@ -26,6 +27,7 @@ test("the page of a waiting claim opens and names the request it waits for", asy
       .getByRole("rowheader", { name: "RequestsReady" }),
   ).toBeVisible();
   await checkPage(page, "cluster-claim-waiting");
+  await docShot(page, "cluster-page-waiting-for-options", { ready: block });
 });
 
 test("the Claim tab of a waiting claim opens with its editors", async ({
