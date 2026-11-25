@@ -109,3 +109,14 @@ test("the target check skips a control without pointer events whose only child t
   const lines = await smallTargets(page);
   expect(lines.filter((l) => l.includes('"hidden child"'))).toEqual([]);
 });
+
+test("the target check skips a control without pointer events whose only child that takes the pointer is empty", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<button aria-label="empty child" style="pointer-events: none; font-size: 8px">' +
+      'Go<span style="pointer-events: auto"></span></button>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"empty child"'))).toEqual([]);
+});
