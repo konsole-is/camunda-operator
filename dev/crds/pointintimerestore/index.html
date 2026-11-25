@@ -3118,7 +3118,7 @@
 <p><code>PointInTimeRestore</code> rolls a relational <code>CamundaCluster</code> back to a point in time. The database server rolls back to that point, and the operator aligns the Zeebe primary storage with it. It needs no <a href="../logicalbackuprdbms/">LogicalBackupRDBMS</a>. It uses two continuous sources instead: point-in-time recovery of the database server, and the continuous primary-storage backups of Zeebe.</p>
 <p>For an Elasticsearch cluster, use a <a href="../logicalrestoreelasticsearch/">LogicalRestoreElasticsearch</a>. Elasticsearch has no point-in-time recovery.</p>
 <p>One resource is one restore. The spec is immutable, and the restore runs once. To retry, create a new resource. <code>kubectl get pitr</code> lists the restores with their phase, cluster, and timestamp.</p>
-<p>You do not suspend the cluster first. The restore does it, as <a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a> describes. That section also holds what every restore kind shares: when the cluster starts again, one operation at a time, failed restores, and GitOps. This kind writes no version on the cluster.</p>
+<p>With <code>pitr.recovery: operator</code>, you do not suspend the cluster first. The restore does it, as <a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a> describes. That section also holds what every restore kind shares: when the cluster starts again, one operation at a time, failed restores, and GitOps. This kind writes no version on the cluster.</p>
 <p>The smallest restore names the cluster and the point:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PointInTimeRestore</span>
@@ -3173,7 +3173,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>external</code> (default)</td>
 <td>You, before you create the restore.</td>
-<td>Roll the database back to the point. Then create the restore.</td>
+<td>Suspend the cluster, so that it writes nothing more to the database. Roll the database back to the point. Then create the restore.</td>
 </tr>
 <tr>
 <td><code>operator</code></td>

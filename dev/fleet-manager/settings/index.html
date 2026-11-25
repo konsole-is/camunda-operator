@@ -3091,6 +3091,8 @@
 
 
 <h1 id="fleet-manager-settings">Fleet manager settings<a class="headerlink" href="#fleet-manager-settings" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, cluster-es-backups -->
+
 <p>The settings of the fleet manager name this Kubernetes cluster, the Git repository for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap <code>fleet-manager-settings</code> in the release namespace, <code>camunda-operator-system</code> in the examples on this page.</p>
 <p>The fleet manager works in one of two modes:</p>
 <ul>
@@ -3156,6 +3158,7 @@
 <h2 id="settings-page">Settings page<a class="headerlink" href="#settings-page" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Setup &gt; Settings</strong>. The page has a field for each setting, with its key in the ConfigMap under it. The page shows only the names of Secrets, never a value.</p>
 <p>Select <strong>Git mode</strong> to show the Git settings. Clear it to turn Git mode off. The other Git settings stay for the next time.</p>
+<p><img alt="The Settings page with Git mode on and the fields of the repository, the branch, the path, and the credentials." src="../images/settings-page-git-mode.png" /></p>
 <p><strong>Test the connection</strong> tests the Git repository, and <strong>Test the query</strong> tests Prometheus. Both use the saved settings, so save a change before you test it.</p>
 <p>If someone changed the ConfigMap after you opened the page, <strong>Save</strong> writes nothing. Select <strong>Reload</strong>, then make your change again.</p>
 <p>The page also shows if metrics-server is found, and the <code>kubectl port-forward</code> command that opens the fleet manager. It lists the permissions that the chart gives the fleet manager.</p>
@@ -3171,6 +3174,7 @@
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>[ ] Take over these fields
 </span></code></pre></div>
 <p>Without <strong>Take over these fields</strong>, a changed field stops the save, and <strong>Save</strong> stays off. A field that the save removes stays on the object. Go back and leave the fields as they are, or take them over. With the take-over, the save writes your values, and the fields belong to the fleet manager from then on. The review asks again on each save.</p>
+<p><img alt="The box Fields that another tool set, with a field that kubectl set and Take over these fields not ticked." src="../images/review-fields-another-tool-set.png" /></p>
 <p>After a take-over, the other tool can set its value again:</p>
 <ul>
 <li><code>kubectl apply --server-side</code> of an older file fails with a conflict on each field. Remove the field from the file, or add <code>--force-conflicts</code>.</li>

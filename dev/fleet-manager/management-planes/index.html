@@ -3047,6 +3047,8 @@
 
 
 <h1 id="management-planes">Management planes<a class="headerlink" href="#management-planes" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios plane-create, plane-ready -->
+
 <p>A management plane runs Management Identity, Console, and Web Modeler for the clusters of one or more environments. The fleet manager writes a claim for the plane, a <a href="../../crds/camundamanagementclusterclaim/">CamundaManagementClusterClaim</a>, and the operator builds the plane from it. <a href="../install/#what-the-fleet-manager-writes">What the fleet manager writes</a> explains claims.</p>
 <h2 id="create-a-management-plane">Create a management plane<a class="headerlink" href="#create-a-management-plane" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Management planes</strong> at <code>/fleet/planes</code> and select <strong>New management plane</strong>. The form has five steps. As in the cluster form, <strong>Next</strong> stays off while a step has an error, and the errors show at the bottom of the form.</p>
@@ -3058,6 +3060,7 @@
 <li><strong>External Keycloak</strong>: the plane uses a Keycloak that you run. Enter its URL, the realm, and the Secret with the administrator credentials.</li>
 <li><strong>OIDC from the platform config</strong>: users sign in at the OIDC provider of the platform config. This option is off while the platform config uses basic authentication.</li>
 </ul>
+<p><img alt="The Basics step of the plane form with the environment, the name, the namespace, and Where users sign in." src="../images/plane-create-basics.png" /></p>
 <h3 id="environments-served">Environments served<a class="headerlink" href="#environments-served" title="Permanent link">&para;</a></h3>
 <p>The plane serves the clusters of the environments that you select. <strong>Cluster labels</strong> narrow the clusters. Leave them empty to serve every cluster in these environments. <strong>Expected clusters</strong> shows what each cluster can expect.</p>
 <h3 id="components-and-versions">Components and versions<a class="headerlink" href="#components-and-versions" title="Permanent link">&para;</a></h3>
@@ -3143,6 +3146,7 @@
 </span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="nt">keycloak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">26.6.4</span>
 </span></code></pre></div>
 <p>Select <strong>Create</strong>, or <strong>Push to Git</strong> in Git mode.</p>
+<p><img alt="The Review step of the plane form with the claim as YAML." src="../images/plane-create-review.png" /></p>
 <h3 id="progress">Progress<a class="headerlink" href="#progress" title="Permanent link">&para;</a></h3>
 <p>After <strong>Create</strong>, the page shows one row for each part of the plane: <strong>Environment and policy</strong>, <strong>Databases</strong>, <strong>Access</strong>, and <strong>Management cluster</strong>. If the operator refuses the claim, the page shows the reason and the message:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">status</span><span class="p">:</span>
@@ -3193,6 +3197,7 @@
 </table>
 <p>In OIDC mode, the plane registers no Optimize callback. The <strong>Optimize</strong> tab then says <code>Add the callbacks to your identity provider.</code> Add each callback URL of the tab to the Optimize application of your identity provider.</p>
 <p>In OIDC mode, <code>KeycloakReady</code>, <code>SecretsReady</code>, and <code>OptimizeCallbacksReady</code> show <code>True</code> with the reason <code>Disabled</code>. This is expected, and it does not hold <code>Ready</code> back. The <a href="../../crds/camundamanagementcluster/#status">Status</a> section of <code>CamundaManagementCluster</code> lists each reason and what to do.</p>
+<p><img alt="The Overview tab of plane-a with a card for each component and the conditions of the plane." src="../images/plane-overview.png" /></p>
 <h3 id="planes-without-a-claim">Planes without a claim<a class="headerlink" href="#planes-without-a-claim" title="Permanent link">&para;</a></h3>
 <p>A plane without a claim shows <code>Not managed by the fleet manager. You can read this management plane but not change it here.</code> Change such a plane where you manage it, for example in your GitOps repository.</p>
 <h2 id="change-a-management-plane">Change a management plane<a class="headerlink" href="#change-a-management-plane" title="Permanent link">&para;</a></h2>

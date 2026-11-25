@@ -3013,6 +3013,8 @@
 
 
 <h1 id="create-a-cluster">Create a cluster<a class="headerlink" href="#create-a-cluster" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios cluster-create -->
+
 <p>The create form asks for the environment, the preset, the release, and the storage and access options of a new cluster. It then writes the claim of the cluster, and the operator builds the cluster from it. <a href="../install/#what-the-fleet-manager-writes">What the fleet manager writes</a> explains these words.</p>
 <h2 id="open-the-form">Open the form<a class="headerlink" href="#open-the-form" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Fleet</strong> and select <strong>New cluster</strong>. The form has five steps: <strong>Environment and name</strong>, <strong>Storage and access</strong>, <strong>Cluster settings</strong>, <strong>Attachments</strong>, and <strong>Review</strong>.</p>
@@ -3025,14 +3027,17 @@
 <li>Pick the <strong>Preset</strong>. Each preset shows its brokers, partitions, CPU, and memory.</li>
 </ol>
 <p>Under the name, the step shows the hosts that the cluster gets from its access option.</p>
+<p><img alt="The Environment and name step with the Apps environment, the name orders, a new namespace, and the small preset." src="../images/create-cluster-environment-and-name.png" /></p>
 <h2 id="storage-and-access">Storage and access<a class="headerlink" href="#storage-and-access" title="Permanent link">&para;</a></h2>
 <p>The step has one group for each storage and access choice that the environment allows, for example <strong>Secondary storage</strong>, <strong>Backup storage</strong>, and <strong>Access</strong>. Each option is a card. The form picks the card with the <strong>Default</strong> label for you. Under the picked card, the step shows the parameters that you can set.</p>
 <p>If another cluster already uses a host of the access option, the step says so. Go back and pick another name.</p>
 <p><strong>When the cluster is deleted</strong> says what happens to the resources of these options, for example a bucket. Pick <strong>Keep the resources</strong> or <strong>Delete the resources</strong>. The default comes from the environment.</p>
+<p><img alt="The Storage and access step with a group for each choice, and New Elasticsearch cluster picked as the default." src="../images/create-cluster-storage-and-access.png" /></p>
 <h2 id="cluster-settings">Cluster settings<a class="headerlink" href="#cluster-settings" title="Permanent link">&para;</a></h2>
 <p>Pick the <strong>Release</strong> and the <strong>Platform config</strong>. Both start at the default of the environment.</p>
 <p>Below them, the settings of the cluster come in groups: one for the whole cluster and one for each process, such as <strong>Brokers</strong>. Select the name of a group to open it. Each setting shows where its value comes from, for example <strong>From preset</strong>. A change applies to this cluster only, and does not change the preset. The number next to a group counts the settings that you changed.</p>
 <p>A setting that an option fills, for example the storage class of an encrypted volume, shows locked with the name of its choice.</p>
+<p><img alt="The Cluster settings step with the release, the platform config, and a closed group of settings for each process." src="../images/create-cluster-settings.png" /></p>
 <h3 id="errors-in-the-settings">Errors in the settings<a class="headerlink" href="#errors-in-the-settings" title="Permanent link">&para;</a></h3>
 <p>A group with an error opens, and a red count next to its name says how many settings have an error. The most common error is a CPU or memory limit below its request. A request or a limit that you leave empty keeps the value of the preset, so the error can name the preset:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>The CPU limit of 1 comes from the preset and is below the CPU request of 2
@@ -3067,14 +3072,16 @@
 </span></code></pre></div>
 <p>The Kubernetes API checks the claim before you create it. If it refuses the claim, the review shows the message, and <strong>Create</strong> stays off. The API cannot check a claim in a namespace that does not exist yet, so for a new namespace the check comes at <strong>Create</strong>.</p>
 <p><strong>Permissions the options ask for</strong> lists the cloud permissions of the options, for example an IAM policy for a bucket. A value that does not exist yet shows as a placeholder, such as <code>&lt;bucket ARN from Backup storage&gt;</code>.</p>
+<p><img alt="The Review step with the claim as YAML and the values of each step." src="../images/create-cluster-review.png" /></p>
 <h2 id="create-the-cluster">Create the cluster<a class="headerlink" href="#create-the-cluster" title="Permanent link">&para;</a></h2>
 <p>Select <strong>Create</strong>. The page then shows the progress of the cluster, and <code>Created the cluster &lt;name&gt;.</code></p>
 <p>In Git mode, the button is <strong>Push to Git</strong>. The fleet manager commits the claim, and the new namespace when the cluster needs one. The page shows <code>Waiting for GitOps to apply</code> until your GitOps tool applies the commit. <a href="../settings/#git-mode">Git mode</a> shows how to turn it on.</p>
 <p>If the create fails, the form keeps your values and shows the message. Correct the cause and select <strong>Create</strong> again. A new namespace that the fleet manager already created stays, and the form uses it.</p>
 <h2 id="follow-the-creation">Follow the creation<a class="headerlink" href="#follow-the-creation" title="Permanent link">&para;</a></h2>
-<p>After <strong>Create</strong>, the page shows the <code>Ready</code> condition of the claim and its message. Then it shows one row for each option, and the rows <strong>Requests</strong>, <strong>Cluster</strong>, and <strong>Attachments</strong>. A request, a <code>PluginRequest</code>, is what the operator writes for each option so that the option builds its resources. When the cluster is ready, the link <strong>Open the cluster page</strong> shows.</p>
+<p>After <strong>Create</strong>, the page shows the <code>Ready</code> condition of the claim and its message. Then it shows one row for each option, and the rows <strong>Requests</strong>, <strong>Cluster</strong>, and <strong>Attachments</strong>. A request, a <code>PluginRequest</code>, is what the operator writes for each option so that the option builds its resources. <strong>Open the Claim tab</strong> opens the claim on the cluster page at once. When the cluster is ready, the link <strong>Open the cluster page</strong> shows.</p>
 <p>While an option waits for another option, the message names the choice that it waits for.</p>
 <p>If the operator refuses the claim, the page shows the reason, for example <code>NotAllowed</code>, and the message. Correct the cause, for example in the environment. The operator then checks the claim again. The <a href="../../crds/camundaclusterclaim/#status">Status</a> section of <code>CamundaClusterClaim</code> lists each reason and what to do.</p>
+<p><img alt="The progress of the cluster orders with a row for the secondary storage, the requests, the cluster, and the attachments." src="../images/create-cluster-progress.png" /></p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../change-a-cluster/">Change a cluster</a></li>

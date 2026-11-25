@@ -2847,6 +2847,8 @@
 
 
 <h1 id="plugins">Plugins<a class="headerlink" href="#plugins" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready -->
+
 <p>The page <strong>Setup &gt; Plugins</strong> lists the storage and access options of clusters and management planes, for example <strong>Existing bucket</strong> for <strong>Backup storage</strong>. An option is a <a href="../../crds/pluginregistration/">PluginRegistration</a>, also called a registration. The operator brings the built-in options, and each plugin, a Helm chart, adds more. The page also lists the official plugin charts that are not installed.</p>
 <p>The page is read only. You install, upgrade, and remove a plugin chart with Helm. Each environment sets which options its clusters can use, on the <a href="../environments/#storage-and-access-options">Environments</a> page.</p>
 <h2 id="the-list-of-options">The list of options<a class="headerlink" href="#the-list-of-options" title="Permanent link">&para;</a></h2>
@@ -2880,11 +2882,16 @@
 <td>How many clusters and planes use the option.</td>
 </tr>
 <tr>
+<td>Operator versions</td>
+<td>The operator versions that the option supports, such as <code>&gt;=0.3.0 &lt;1.0.0</code>. <code>Any</code> means every version.</td>
+</tr>
+<tr>
 <td>Orphan</td>
 <td><code>Supported</code> when the option can keep its resources after a delete.</td>
 </tr>
 </tbody>
 </table>
+<p><img alt="The Secondary storage group of the Plugins page with its options, their controller, and their state." src="../images/plugins-options-by-section.png" /></p>
 <h2 id="status-of-an-option">Status of an option<a class="headerlink" href="#status-of-an-option" title="Permanent link">&para;</a></h2>
 <p><code>Accepted</code> says that the operator accepted the option. <code>Ready</code> says that the controller of the option is healthy. A cluster can pick an option only while both are <code>True</code>.</p>
 <table>
@@ -2952,8 +2959,9 @@
 </table>
 <p>A limit that the chart sets, for example a permissions boundary, cannot change in an environment or a cluster. Change the values of the chart and upgrade it with Helm.</p>
 <h2 id="install-an-official-chart">Install an official chart<a class="headerlink" href="#install-an-official-chart" title="Permanent link">&para;</a></h2>
-<p>The panel <strong>Charts you can install</strong> lists the official plugin charts that are not installed. Each chart shows what it does and the Helm command that installs it. Select <strong>Copy the command</strong>, then run the command with access to the cluster.</p>
+<p>The panel <strong>Charts you can install</strong> lists the official plugin charts that are not installed. A chart counts as installed when one of its options exists. Each chart shows what it does and the Helm command that installs it. Select <strong>Copy the command</strong>, then run the command with access to the cluster.</p>
 <p>Keep the default controller name when you install a chart, or the panel still lists the chart as not installed.</p>
+<p><img alt="The panel Charts you can install with the description and the Helm command of each chart." src="../images/plugins-charts-to-install.png" /></p>
 
 
 

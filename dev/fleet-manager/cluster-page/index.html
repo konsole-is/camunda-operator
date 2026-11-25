@@ -744,6 +744,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#before-the-cluster-exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before the cluster exists
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-tabs-of-a-component" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2883,6 +2894,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#before-the-cluster-exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before the cluster exists
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-tabs-of-a-component" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3025,6 +3047,8 @@
 
 
 <h1 id="the-cluster-page">The cluster page<a class="headerlink" href="#the-cluster-page" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, claim-waiting -->
+
 <p>The cluster page shows one Camunda cluster: its processes and pods, their logs and events, its backups, its addresses, and its <a href="../install/#what-the-fleet-manager-writes">claim</a>. To open it, select the name of the cluster in <a href="../fleet-view/">the fleet view</a>.</p>
 <h2 id="the-tabs-of-the-cluster">The tabs of the cluster<a class="headerlink" href="#the-tabs-of-the-cluster" title="Permanent link">&para;</a></h2>
 <table>
@@ -3054,6 +3078,13 @@
 </tbody>
 </table>
 <p>A cluster that has a claim also has <strong>Change topology</strong>, as <a href="../change-a-cluster/#change-the-topology">Change the topology</a> shows, and <strong>Delete</strong> in its header.</p>
+<p><img alt="The Overview tab of the cluster orders with the topology, the component cards, and the Secondary storage card." src="../images/cluster-page-overview.png" /></p>
+<h2 id="before-the-cluster-exists">Before the cluster exists<a class="headerlink" href="#before-the-cluster-exists" title="Permanent link">&para;</a></h2>
+<p>The cluster appears when each option that fills a setting of the cluster gives its values, as the <strong>Outputs</strong> box of that option shows. For a built-in option, this takes seconds. For a cloud option, it can take minutes.</p>
+<p>Until then, the page shows the claim and its options. The box <strong>The cluster does not exist yet</strong> names each option that the claim waits for, with the name of its request. The <strong>Overview</strong> tab shows a card for each option and the conditions of the claim. Select a card to see why its option waits.</p>
+<p>The <strong>Backups</strong> and <strong>Endpoints</strong> tabs say that the cluster does not exist yet. The <strong>Claim</strong> tab and <strong>Delete</strong> in the header work as for a running cluster. When the cluster appears, the page shows it. You do not reload the page.</p>
+<p>When the operator refuses the claim, the page shows the reason and the message above the tabs. The refusal shows also on a cluster that runs and is ready. Select <strong>Open the Claim tab</strong>, and change the value that the message names.</p>
+<p><img alt="The page of a claim whose cluster does not exist yet, with the request that it waits for." src="../images/cluster-page-waiting-for-options.png" /></p>
 <h2 id="the-tabs-of-a-component">The tabs of a component<a class="headerlink" href="#the-tabs-of-a-component" title="Permanent link">&para;</a></h2>
 <p>On the <strong>Overview</strong> tab, select a card, for example <strong>Brokers</strong>, to open that component. <strong>All components</strong> goes back to the cards. A component has five tabs:</p>
 <table>
@@ -3127,6 +3158,7 @@
 </table>
 <p>The <strong>Settings</strong> tab lists the parameters of the option. <strong>Edit settings</strong> opens the same editor as on the <strong>Claim</strong> tab.</p>
 <p>The options <strong>New Elasticsearch cluster</strong> and <strong>New PostgreSQL server</strong> also show the version, the volumes, and the conditions of the storage that they made.</p>
+<p><img alt="The page of the Secondary storage option with its conditions, its summary, and the Connected box." src="../images/cluster-option-connected.png" /></p>
 <h3 id="grants">Grants<a class="headerlink" href="#grants" title="Permanent link">&para;</a></h3>
 <p>A Grant asks the cloud identity of the cluster for one permission, for example access to a bucket. The <strong>Grants</strong> box shows each Grant with its state. While a Grant is refused, the card of the option shows <strong>Not ready (GrantRejected)</strong>. Read the message of the Grant. For <code>OverCeiling</code> or <code>OverSizeLimit</code>, pick an option that asks for less, or ask the admin of the identity for a larger ceiling. A Grant that shows <strong>Not applied yet</strong> needs no action.</p>
 <h2 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h2>
@@ -3138,10 +3170,12 @@
 <li>Type a text in <strong>Filter</strong> to show only the lines that hold it.</li>
 </ul>
 <p>The tab shows the log of the container as it runs now. For the log before the last restart, use <code>kubectl logs --previous</code>. When the tab cannot read a log, it names the pod and the cause below the lines. Reload the page to read it again.</p>
+<p><img alt="The Logs tab of the brokers with the time, level, logger, and message of each line of one pod." src="../images/cluster-component-logs.png" /></p>
 <h2 id="events">Events<a class="headerlink" href="#events" title="Permanent link">&para;</a></h2>
 <p>The <strong>Events</strong> tab lists the Kubernetes events of the component, newest first. These are the events of its pods, Services, volumes, and workloads, and of the cluster itself. Kubernetes keeps an event for one hour by default, so an older event does not show.</p>
 <h2 id="delete-the-cluster">Delete the cluster<a class="headerlink" href="#delete-the-cluster" title="Permanent link">&para;</a></h2>
 <p>Select <strong>Delete</strong> in the header of the cluster. Only a cluster that has a claim has <strong>Delete</strong>.</p>
+<p><img alt="The delete page of the cluster orders with Keep the resources, Delete the resources, and the claim that goes." src="../images/cluster-delete-page.png" /></p>
 <h3 id="keep-or-delete-the-resources">Keep or delete the resources<a class="headerlink" href="#keep-or-delete-the-resources" title="Permanent link">&para;</a></h3>
 <p>The page asks what happens to the resources of the storage and access options, for example a bucket or a database server:</p>
 <ul>

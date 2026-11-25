@@ -2959,6 +2959,8 @@
 
 
 <h1 id="change-a-cluster">Change a cluster<a class="headerlink" href="#change-a-cluster" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready -->
+
 <p>You change a cluster on its <a href="../cluster-page/">cluster page</a>. Each change goes into the <a href="../install/#what-the-fleet-manager-writes">claim</a> of the cluster, and the operator then changes the cluster. A cluster that shows <strong>Not managed</strong> has no editors.</p>
 <p>Your changes collect as unsaved changes until you save them, as <a href="#save-or-discard-the-changes">Save or discard the changes</a> shows.</p>
 <h2 id="change-the-settings-of-a-component">Change the settings of a component<a class="headerlink" href="#change-the-settings-of-a-component" title="Permanent link">&para;</a></h2>
@@ -2969,6 +2971,7 @@
 <li>Change the values.</li>
 </ol>
 <p>Each editor fits its setting. For example, <code>replicas</code> is a number, <code>resources</code> is a request and a limit, and <code>podLabels</code> has one row for each key. A list such as <code>scheduling.nodeAffinity</code> is YAML, checked against the schema of the field. <strong>From a Secret</strong> lists the Secrets of the namespace by name, never their values.</p>
+<p><img alt="The editors of the broker settings, with partitions changed in the claim and Reset to preset under it." src="../images/cluster-component-settings-editor.png" /></p>
 <h3 id="where-a-value-comes-from">Where a value comes from<a class="headerlink" href="#where-a-value-comes-from" title="Permanent link">&para;</a></h3>
 <p>Below each editor, the page says where the value comes from, for example <strong>From preset</strong> or <strong>Changed in the claim</strong>. <strong>Reset to preset</strong> removes your value, so the value of the preset applies again.</p>
 <p>Some settings show their value and a reason, with no editor:</p>
@@ -3024,6 +3027,7 @@
 <li>Gateway pods restart.</li>
 </ul>
 <p>The number of brokers and partitions is on the <strong>Settings</strong> tab of the brokers, not in this dialog.</p>
+<p><img alt="The Change topology dialog with Operate made standalone, the topology now and after the change, and what happens." src="../images/cluster-topology-dialog.png" /></p>
 <h3 id="a-running-backup">A running backup<a class="headerlink" href="#a-running-backup" title="Permanent link">&para;</a></h3>
 <p>A change that restarts the brokers can make a running backup fail. A change of the Camunda version or of the gateway mode restarts the brokers. The review then warns, and the save button reads <strong>Change anyway</strong>, or <strong>Push anyway</strong> in Git mode:</p>
 <blockquote>
@@ -3065,6 +3069,7 @@
 <li><strong>Back up on a schedule</strong> adds a schedule with the cron <code>0 2 * * *</code>. You can change the <strong>Schedule (cron, UTC)</strong>, <strong>Completed backups to keep</strong>, and <strong>Failed backups to keep</strong>.</li>
 </ul>
 <p><strong>Deletion policy</strong> says if the resources of the storage and access options stay when the cluster is deleted: <strong>Keep the resources</strong> or <strong>Delete the resources</strong>. When an option always deletes what it made, the panel shows it with <strong>Always deleted</strong>, and <strong>Keep the resources</strong> is off.</p>
+<p><img alt="The Claim tab with the panels Basics, Release and preset, Secondary storage, Attachments, and Deletion policy." src="../images/cluster-claim-tab.png" /></p>
 <h2 id="save-or-discard-the-changes">Save or discard the changes<a class="headerlink" href="#save-or-discard-the-changes" title="Permanent link">&para;</a></h2>
 <p>The bar at the bottom of the page counts your unsaved changes:</p>
 <ol>

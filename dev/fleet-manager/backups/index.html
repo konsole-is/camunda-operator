@@ -2891,8 +2891,11 @@
 
 
 <h1 id="back-up-and-restore-a-cluster-from-the-fleet-manager">Back up and restore a cluster from the fleet manager<a class="headerlink" href="#back-up-and-restore-a-cluster-from-the-fleet-manager" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios cluster-es-backups -->
+
 <p>The <strong>Backups</strong> tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. A cluster that shows <strong>Not managed</strong> has no actions here.</p>
 <p>Backups and restores go straight to the Kubernetes API, also in Git mode. They are not in the Git repository. A restore changes <code>spec.suspend</code> and <code>spec.version</code> of the <code>CamundaCluster</code>. If your GitOps tool owns the cluster, read <a href="../../guides/operations/#a-gitops-tool-that-owns-the-camundacluster">A GitOps tool that owns the CamundaCluster</a> before the restore.</p>
+<p><img alt="The Backups tab with the backup storage, the schedule, Back up now, and a new backup in the table." src="../images/cluster-backups-tab.png" /></p>
 <h2 id="back-up-now">Back up now<a class="headerlink" href="#back-up-now" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Select <strong>Back up now</strong> at the top of the <strong>Backups</strong> tab.</li>
@@ -2989,37 +2992,61 @@
 </span></code></pre></div>
 <p>A backup that is more than one minor newer than the brokers of the cluster cannot restore. The restore then fails at once with <code>IncompatibleTarget</code>, and the cluster stays as it was. <a href="../../guides/operations/#restore-a-cluster">Operations: Restore a cluster</a> says more about a restore.</p>
 <h2 id="restore-to-a-point-in-time">Restore to a point in time<a class="headerlink" href="#restore-to-a-point-in-time" title="Permanent link">&para;</a></h2>
-<p>A cluster on PostgreSQL has <strong>Restore to a point in time</strong> when the operator rolls its database server back. Its <code>DatabaseServerConfig</code> then has <code>pitr.recovery: operator</code>. See <a href="../../crds/pointintimerestore/#who-rolls-the-database-back">PointInTimeRestore</a>.</p>
-<ol>
-<li>Select <strong>Restore to a point in time</strong>. The confirm shows the restore window in UTC.</li>
-<li>Enter a time inside the window in <strong>Time (UTC)</strong>.</li>
-<li>Read the confirm. The restore loses everything that the cluster wrote after that time.</li>
-<li>Type the name of the cluster, and select <strong>Restore</strong>.</li>
-</ol>
-<p>The fleet manager creates a <a href="../../crds/pointintimerestore/">PointInTimeRestore</a>:</p>
+<p>A cluster on PostgreSQL has <strong>Restore to a point in time</strong>. <code>pitr.recovery</code> on the <code>DatabaseServerConfig</code> of the cluster says who rolls the database server back. See <a href="../../crds/pointintimerestore/#who-rolls-the-database-back">PointInTimeRestore</a>.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PointInTimeRestore</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DatabaseServerConfig</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-pitr-20261110-143005</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-db-server</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-11-09T09:30:15Z"</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">pitr</span><span class="p">:</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">retentionPeriodDays</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">recovery</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">external</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="c1"># ... the rest of your server config</span>
 </span></code></pre></div>
+<p>The confirm shows the restore window in UTC. With <code>operator</code>, the operator rolls the server back, and the window comes from the archive of the server. With <code>external</code>, the default, you roll the server back to the point before you confirm. The window then reaches back as far as the cluster keeps its Zeebe backups, and not more than <code>retentionPeriodDays</code>.</p>
+<p><strong>Restore to a point in time</strong> is off in these cases, and the reason shows under it:</p>
+<ul>
+<li>With <code>external</code>, <code>pitr.enabled</code> is false.</li>
+<li>No <a href="../../crds/database/">Database</a> resource on the server holds the database that the <code>DatabaseConfig</code> of the cluster names. The operator restores to a point in time only a database that a <code>Database</code> resource holds.</li>
+<li>Another <code>Database</code> resource, in any namespace, uses the same server. A rollback of the server rolls that database back too.</li>
+<li>The <code>DatabaseServerConfig</code> of the cluster has not published the identity of its server, or a <code>Database</code> resource does not report <code>Ready</code>. The fleet manager then cannot tell which databases the server holds.</li>
+</ul>
 <p>CAUTION: Choose a point at least one period of <code>spec.backup.primaryStorage.schedule</code> before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. <a href="../../crds/pointintimerestore/#choose-the-point-to-restore-to">Choose the point to restore to</a> shows how to read the real window.</p>
-<h2 id="change-the-schedule">Change the schedule<a class="headerlink" href="#change-the-schedule" title="Permanent link">&para;</a></h2>
-<p><strong>Change schedule</strong> opens the attachments on the <strong>Claim</strong> tab of the cluster. The schedule is a five-field cron expression in UTC:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+<ol>
+<li>With <code>external</code>, select <strong>Suspend the cluster</strong> in <strong>Basics</strong> on the <strong>Claim</strong> tab. See <a href="../change-a-cluster/#change-the-claim-in-the-claim-tab">Change the claim in the Claim tab</a>. A cluster that runs writes to the database after the rollback.</li>
+<li>Select <strong>Restore to a point in time</strong>.</li>
+<li>Enter the time in <strong>Time (UTC)</strong>. The field refuses a time outside the restore window.</li>
+<li>With <code>external</code>, roll the database server back to that time. Roll back only a server that holds no other database. A rollback also undoes a database that no <code>Database</code> resource describes. If the provider creates a new instance for the rollback, set <code>host</code> on the <code>DatabaseServerConfig</code> to that instance. Amazon RDS is one such provider.</li>
+<li>Read the confirm. The restore loses everything that the cluster wrote after that time.</li>
+<li>With <code>external</code>, select <strong>I rolled the database server back to this time</strong>.</li>
+<li>Type the name of the cluster, and select <strong>Restore</strong>.</li>
+<li>With <code>external</code>, clear <strong>Suspend the cluster</strong> on the <strong>Claim</strong> tab when the restore is <code>Completed</code>. A cluster that you suspended stays suspended after the restore.</li>
+</ol>
+<p>The fleet manager creates a <a href="../../crds/pointintimerestore/">PointInTimeRestore</a>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PointInTimeRestore</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-pitr-20261110-143005</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">attachments</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">backupSchedule</span><span class="p">:</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">      </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-11-09T09:30:15Z"</span>
+</span></code></pre></div>
+<h2 id="change-the-schedule">Change the schedule<a class="headerlink" href="#change-the-schedule" title="Permanent link">&para;</a></h2>
+<p><strong>Change schedule</strong> opens the attachments on the <strong>Claim</strong> tab of the cluster. The schedule is a five-field cron expression in UTC:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">attachments</span><span class="p">:</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">backupSchedule</span><span class="p">:</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">      </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
 <p>A change of the schedule is a change of the cluster, so in Git mode it goes to the repository as a commit.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>

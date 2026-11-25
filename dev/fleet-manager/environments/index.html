@@ -3013,6 +3013,8 @@
 
 
 <h1 id="environments">Environments<a class="headerlink" href="#environments" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios release-rollout -->
+
 <p>An environment sets the rules for the clusters and management planes in its namespaces. It names the platform config, the presets, and the releases that they can use. It sets the storage and access options that they can pick, and the values of the parameters of these options. It also sets what happens to the resources on delete, and the rules for a new namespace. The <a href="../../crds/environment/">Environment</a> reference lists the fields.</p>
 <p>The page <strong>Setup &gt; Environments</strong> lists the environments with their color, their namespaces, their clusters, their management planes, and their status. Select an environment to open its editor, or select <strong>New environment</strong>.</p>
 <h2 id="namespaces">Namespaces<a class="headerlink" href="#namespaces" title="Permanent link">&para;</a></h2>
@@ -3075,6 +3077,7 @@
 <li><strong>Default option</strong>: the option that the create form picks first. It must be one of the allowed options.</li>
 <li><strong>Required</strong>: a cluster must pick an allowed option. The create form then does not offer the empty option.</li>
 </ul>
+<p><img alt="The Secondary storage row of the environment editor with its allowed options, its default option, and Required." src="../images/environment-storage-and-access-options.png" /></p>
 <p>The row offers only the options that the operator accepted. An option that is not ready shows <code>Not ready:</code> and its message. You can allow it, and the create form offers it when it is ready.</p>
 <p>Some options need a value from another choice, for example encrypted volumes need an <strong>Encryption key</strong>. Set a default in that other choice, so that the create form picks one.</p>
 <h2 id="settings-of-the-options">Settings of the options<a class="headerlink" href="#settings-of-the-options" title="Permanent link">&para;</a></h2>

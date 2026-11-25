@@ -829,6 +829,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#create-a-platform-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a platform config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-a-platform-config" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -894,6 +905,17 @@
     <span class="md-ellipsis">
       
         Who uses a contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-a-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a contract
       
     </span>
   </a>
@@ -2873,6 +2895,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#create-a-platform-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a platform config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-a-platform-config" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2945,6 +2978,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#create-a-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-a-contract" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3003,9 +3047,11 @@
 
 
 <h1 id="platform-config-and-connections">Platform config and connections<a class="headerlink" href="#platform-config-and-connections" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, cluster-es-backups -->
+
 <h2 id="platform-config">Platform config<a class="headerlink" href="#platform-config" title="Permanent link">&para;</a></h2>
 <p>A platform config holds the authentication, the license, and the image repositories of the clusters, management planes, and database servers that use it. The page <strong>Setup &gt; Platform</strong> lists each <code>CamundaPlatformConfig</code> with its authentication method, its users, and its status. The <a href="../../crds/camundaplatformconfig/">CamundaPlatformConfig</a> reference lists the fields.</p>
-<p>The fleet manager does not create a platform config. Apply one with <code>kubectl apply</code> or your GitOps tool:</p>
+<p>You can also apply a platform config with <code>kubectl apply</code> or your GitOps tool:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaPlatformConfig</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -3030,6 +3076,11 @@
 </span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="nt">optimize</span><span class="p">:</span><span class="w"> </span><span class="s">"registry.example.com/camunda/optimize"</span>
 </span></code></pre></div>
 <p><strong>Used by</strong> on the page of a platform config lists each cluster, management plane, database server, and environment that uses it.</p>
+<h3 id="create-a-platform-config">Create a platform config<a class="headerlink" href="#create-a-platform-config" title="Permanent link">&para;</a></h3>
+<p>Select <strong>New platform config</strong> on the page <strong>Setup &gt; Platform</strong>. Type the <strong>Name</strong>. Clusters, management planes, database servers, claims, and environments use this name to refer to the config. You cannot change it later. To start from a config that exists, select it in <strong>Copy from</strong>. The new config then gets the authentication, the license Secret, and the image repositories of that config.</p>
+<p>Select the authentication method. Then complete the fields, the license Secret, and the image repositories, as on the page of a config. Select <strong>Review</strong>, then <strong>Create</strong>, or <strong>Push to Git</strong> in Git mode. The page of the new config opens.</p>
+<p><img alt="The New platform config page with the name, the Basic authentication, and the license Secret." src="../images/platform-config-create.png" /></p>
+<p>A Secret that does not exist shows as <code>(not found)</code>. You can create the config anyway, but it is not ready until the Secret exists.</p>
 <h3 id="change-a-platform-config">Change a platform config<a class="headerlink" href="#change-a-platform-config" title="Permanent link">&para;</a></h3>
 <p>The page edits the authentication method, the OIDC fields, the clients of the management plane, the license Secret, and the image repositories. A note above the form says what a change does:</p>
 <p><code>A change rolls the pods of every cluster and management plane that uses this config, and of the Optimize of each such cluster. A database server changes only when the postgres image changes.</code></p>
@@ -3087,6 +3138,7 @@
 </tbody>
 </table>
 <p>Select the name of a contract to open its page, with the panels <strong>Status</strong>, <strong>Writer</strong>, <strong>Settings</strong>, and <strong>Used by</strong>.</p>
+<p><img alt="The Connections page on the Object storage tab, with the writer, the users, and the status of each contract." src="../images/connections-list.png" /></p>
 <h3 id="who-wrote-a-contract">Who wrote a contract<a class="headerlink" href="#who-wrote-a-contract" title="Permanent link">&para;</a></h3>
 <p>The column <strong>Writer</strong> says who wrote the contract:</p>
 <table>
@@ -3115,13 +3167,19 @@
 </tr>
 <tr>
 <td><code>Created by hand</code></td>
-<td>You or a tool applied it.</td>
+<td>You created it on this page, or you or a tool applied it.</td>
 </tr>
 </tbody>
 </table>
 <p>You can change and delete only a contract that is <code>Created by hand</code> or <code>Kept from &lt;registration&gt;</code>. Any other contract shows <code>Managed by &lt;writer&gt;. Change it there.</code></p>
 <h3 id="who-uses-a-contract">Who uses a contract<a class="headerlink" href="#who-uses-a-contract" title="Permanent link">&para;</a></h3>
 <p><strong>Used by</strong> lists each object that uses the contract, with its own status. These are clusters, Optimize, management planes, database servers, Elasticsearch clusters, and backups and restores that still need the contract. A backup counts, because a restore reads from its bucket.</p>
+<h3 id="create-a-contract">Create a contract<a class="headerlink" href="#create-a-contract" title="Permanent link">&para;</a></h3>
+<p>Open the tab of the kind, and select its <strong>New</strong> button, for example <strong>New object storage contract</strong>. Type the <strong>Name</strong>. Clusters and other resources use this name to refer to the contract. You cannot change it later.</p>
+<p>Select the <strong>Namespace</strong>. Only resources in that namespace can use the contract. A Management Identity contract has no namespace. To start from a contract of the same kind, select it in <strong>Copy from</strong>. The new contract gets its settings.</p>
+<p>For a storage contract, select the storage type. For an object storage contract, also select the auth type. Then complete the fields and the Secrets, as in <a href="#change-a-contract">Change a contract</a>. Select <strong>Review</strong>, then <strong>Create</strong>, or <strong>Push to Git</strong> in Git mode. The page of the new contract opens, with the writer <code>Created by hand</code>.</p>
+<p><img alt="The New object storage contract page with the name, the namespace, the storage type, and the bucket." src="../images/connection-create-object-storage.png" /></p>
+<p>The page refuses a name that a contract of the same kind has in the namespace. It also refuses a Management Identity name that a management plane uses.</p>
 <h3 id="change-a-contract">Change a contract<a class="headerlink" href="#change-a-contract" title="Permanent link">&para;</a></h3>
 <p>On the page of a contract that you can change, <strong>Settings</strong> is a form. You can change, for example, a bucket, a region, an endpoint, the credentials, or the host and port of a server. To change the storage type or the auth type, apply the contract again with <code>kubectl</code> or your GitOps tool.</p>
 <p><strong>Review</strong> names each user of the contract and what it does after the save, for example:</p>

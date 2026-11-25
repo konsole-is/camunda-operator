@@ -857,6 +857,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#create-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-a-preset" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2862,6 +2873,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#create-a-preset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a preset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-a-preset" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2981,6 +3003,8 @@
 
 
 <h1 id="presets-and-releases">Presets and releases<a class="headerlink" href="#presets-and-releases" title="Permanent link">&para;</a></h1>
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, release-rollout -->
+
 <p>A preset holds the shared settings of the clusters that use it, such as the number of brokers, the CPU, and the memory. A release says what a cluster runs: the versions, the pinned images, and the environment variables. The pages <strong>Setup &gt; Presets</strong> and <strong>Setup &gt; Releases</strong> show and edit them.</p>
 <h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
 <p>The page <strong>Setup &gt; Presets</strong> lists the presets of three kinds:</p>
@@ -3010,7 +3034,7 @@
 </tr>
 </tbody>
 </table>
-<p>Each row shows the key facts of the preset, the environments that allow it in <strong>Allowed in</strong>, and its users in <strong>Used by</strong>. The fleet manager does not create a preset. Apply a new preset with <code>kubectl</code> or through your Git repository.</p>
+<p>Each row shows the key facts of the preset, the environments that allow it in <strong>Allowed in</strong>, and its users in <strong>Used by</strong>. You can also apply a preset with <code>kubectl</code> or through your Git repository.</p>
 <p>The description of a preset comes from its annotation <code>kubernetes.io/description</code>. The create form shows it on the card of the preset:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
@@ -3021,6 +3045,11 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="c1"># ... the rest of your preset</span>
 </span></code></pre></div>
+<h3 id="create-a-preset">Create a preset<a class="headerlink" href="#create-a-preset" title="Permanent link">&para;</a></h3>
+<p>Select <strong>New preset</strong> on the page <strong>Setup &gt; Presets</strong>. Pick the <strong>Kind</strong>: <strong>Cluster</strong>, <strong>Elasticsearch</strong>, or <strong>PostgreSQL</strong>. <strong>Copy from</strong> lists the presets of that kind. Pick one to start from its fields, or keep <strong>Nothing, start empty</strong>. Type the <strong>Name</strong>. Resources name the preset by it, and it cannot change later.</p>
+<p>Set the fields as on the page of a preset. Select <strong>Review</strong>, then <strong>Create</strong>, or <strong>Push to Git</strong> in Git mode. The page of the new preset opens.</p>
+<p><img alt="The New preset page for an Elasticsearch preset, with the kind, Copy from, and the name." src="../images/preset-create-elasticsearch.png" /></p>
+<p>An environment allows a new preset only when it lists the name of the preset already. To offer the preset to new clusters, allow it on the <a href="../environments/">Environments</a> page.</p>
 <h3 id="change-a-preset">Change a preset<a class="headerlink" href="#change-a-preset" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Select the preset in the list to open its page.</li>
@@ -3029,7 +3058,7 @@
 <li>Read the diff and the clusters that the change reaches.</li>
 <li>Select <strong>Save</strong>, or <strong>Push to Git</strong> in Git mode.</li>
 </ol>
-<p>A field that the preset sets shows <strong>From preset</strong>. <strong>Remove from the preset</strong> takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one YAML editor in place of the groups.</p>
+<p>A field that the preset sets shows <strong>From preset</strong>. <strong>Remove from the preset</strong> takes the field out of the preset. An Elasticsearch preset and a PostgreSQL preset have one group, <strong>Elasticsearch</strong> or <strong>PostgreSQL</strong>, with each field that the preset can set.</p>
 <p>The review lists each cluster that uses the preset, with one mark:</p>
 <table>
 <thead>
@@ -3062,7 +3091,7 @@
 </tbody>
 </table>
 <p>A change with the mark <code>Pods roll</code> rolls every cluster that uses the preset, also a cluster that sets the changed field itself. A smaller storage size does not shrink a volume.</p>
-<p>A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example <strong>Merged by key</strong> for labels. The <a href="../../crds/camundaclusterpreset/#merge-rules">Merge rules</a> of <code>CamundaClusterPreset</code> list the rules.</p>
+<p>A cluster that sets a field itself keeps its own value. Each field of the preset shows how the cluster value and the preset value join, for example <strong>Merged by key</strong> for labels. The merge rules of <a href="../../crds/camundaclusterpreset/#merge-rules">CamundaClusterPreset</a>, <a href="../../crds/elasticsearchclusterpreset/#merge-rules">ElasticsearchClusterPreset</a>, and <a href="../../crds/databaseserverpreset/#merge-rules">DatabaseServerPreset</a> list the rules.</p>
 <h3 id="rotate-the-admin-password">Rotate the admin password<a class="headerlink" href="#rotate-the-admin-password" title="Permanent link">&para;</a></h3>
 <p>The page of a cluster preset has the part <strong>Admin password</strong>. Its button rotates the admin password of each cluster that uses the preset with basic authentication, for example <strong>Rotate the admin password of 3 clusters</strong>. A cluster that sets its own <code>auth.basic</code> does not count. The review names each cluster whose password changes. Select <strong>Rotate</strong>, or <strong>Push to Git</strong> in Git mode. A cluster that runs Connectors restarts its Connectors pods. See <a href="../../guides/authentication/#rotate-the-password">Authentication: Rotate the password</a>.</p>
 <h3 id="delete-a-preset">Delete a preset<a class="headerlink" href="#delete-a-preset" title="Permanent link">&para;</a></h3>
@@ -3130,6 +3159,7 @@
 <li><strong>Environment variables</strong>: one group for every workload, and one for each process. A variable takes a value, or a key of a Secret.</li>
 </ul>
 <p>A change reaches every cluster, Elasticsearch cluster, and database server that uses the release, and their pods roll. A resource that sets its own version keeps it. The review names the users and each version that changes.</p>
+<p><img alt="The Settings tab of a release with the versions, the images, and the Environments that use it." src="../images/release-settings.png" /></p>
 <h3 id="move-clusters-to-a-release">Move clusters to a release<a class="headerlink" href="#move-clusters-to-a-release" title="Permanent link">&para;</a></h3>
 <p>The <strong>Rollout</strong> tab of a release page lists every cluster with its current release, its running version, and if it can move:</p>
 <table>
@@ -3174,6 +3204,7 @@
 </tr>
 </tbody>
 </table>
+<p><img alt="The Rollout tab of a release, with the cluster orders marked Can move." src="../images/release-rollout.png" /></p>
 <p>To move many clusters, select their checkboxes, or <strong>Select all that can move</strong>, and then <strong>Move selected</strong>. The review shows each cluster and what the move does to it. A move restarts the cluster, and a built-in Elasticsearch cluster or database server of the cluster moves too. The move sets <code>spec.releaseRef</code> of each claim:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
