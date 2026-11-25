@@ -446,6 +446,22 @@ describe("ContractCreate", () => {
     expect(field("Namespace").value).toBe("team-a");
   });
 
+  it("Discard after a copy goes back to the copy and keeps Copy from", async () => {
+    const u = user();
+    setup("object-storage");
+
+    select("Copy from", "team-a/backups");
+    await u.type(field("Name"), "next-bucket");
+    select("Namespace", "team-b");
+    await u.type(field("Bucket name"), "-two");
+    await u.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(field("Copy from").value).toBe("team-a/backups");
+    expect(field("Name").value).toBe("");
+    expect(field("Namespace").value).toBe("team-a");
+    expect(field("Bucket name").value).toBe("acme-backups");
+  });
+
   it("reads no Secret before a namespace is picked", async () => {
     const read = vi.fn(SECRETS);
     render(

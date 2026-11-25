@@ -79,6 +79,12 @@ export function ContractCreate({
       .filter((c) => !namespaced || c.metadata.namespace === namespace)
       .map((c) => c.metadata.name ?? "");
   const [copy, setCopy] = useState("");
+  const copied = () =>
+    copyDraft(
+      kind,
+      contracts.find((c) => keyOf(c) === copy),
+      { name: "", namespace: "", spec: newSpec(kind) },
+    );
   // The namespace is state of its own: listed must know it before the
   // editor gives the draft.
   const [namespace, setNamespace] = useState("");
@@ -89,13 +95,10 @@ export function ContractCreate({
     live: undefined,
     isNew: true,
     listed: namesIn(namespace),
-    draftOf: () => ({ name: "", spec: newSpec(kind) }),
+    draftOf: () => ({ name: "", spec: copied().spec }),
     listHref: connectionsHref(tab.value),
     hrefOf: (name, ns) => contractHref({ kind, namespace: ns, name }),
-    onReset: () => {
-      setCopy("");
-      setNamespace("");
-    },
+    onReset: () => setNamespace(copied().namespace),
   });
   const { reviewing, locked } = editor;
   const draft: ContractCreateDraft = { ...editor.draft, namespace };
