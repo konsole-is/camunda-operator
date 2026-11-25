@@ -42,14 +42,48 @@ test("the target check skips a control inside a closed details and counts its su
   expect(lines.filter((l) => l.includes('"Brokers"'))).toHaveLength(1);
 });
 
-test("the target check skips a control that a modal dialog hides behind it", async ({
+test("the target check skips the controls behind an open modal dialog and counts the dialog", async ({
   page,
 }) => {
+  // A modal Radix dialog turns pointer events off on the body and on again
+  // on the dialog, and hides the rest of the page with aria-hidden.
   await page.setContent(
-    '<div aria-hidden="true"><button style="width: 10px">Behind</button></div>' +
-      '<div role="dialog"><button style="font-size: 8px">Close</button></div>',
+    '<body style="pointer-events: none">' +
+      '<div aria-hidden="true"><button style="width: 10px">Behind</button></div>' +
+      '<div role="dialog" style="pointer-events: auto">' +
+      '<button style="font-size: 8px">Close</button></div></body>',
   );
   const lines = await smallTargets(page);
   expect(lines.filter((l) => l.includes('"Behind"'))).toEqual([]);
   expect(lines.filter((l) => l.includes('"Close"'))).toHaveLength(1);
+});
+
+test("the target check skips a control inside inert content", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<div inert><button style="width: 10px">Inert</button></div>',
+  );
+  expect(await smallTargets(page)).toEqual([]);
+});
+
+test("the target check counts a control that a pointer can click under aria-hidden", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<div aria-hidden="true"><button style="width: 10px">Hidden</button></div>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"Hidden"'))).toHaveLength(1);
+});
+
+test("the target check counts a control without pointer events whose label takes the pointer", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<label style="font-size: 8px">Pick <input type="checkbox" aria-label="pick"' +
+      ' style="pointer-events: none; width: 8px; height: 8px"></label>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"pick"'))).toHaveLength(1);
 });
