@@ -98,3 +98,14 @@ test("the target check counts a control without pointer events whose child takes
   const lines = await smallTargets(page);
   expect(lines.filter((l) => l.includes('"Go"'))).toHaveLength(1);
 });
+
+test("the target check skips a control without pointer events whose only child that takes the pointer is hidden", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<button aria-label="hidden child" style="pointer-events: none; font-size: 8px">' +
+      'Go<span style="pointer-events: auto; visibility: hidden">x</span></button>',
+  );
+  const lines = await smallTargets(page);
+  expect(lines.filter((l) => l.includes('"hidden child"'))).toEqual([]);
+});

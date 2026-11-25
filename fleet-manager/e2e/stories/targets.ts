@@ -35,7 +35,7 @@ export async function smallTargets(page: Page): Promise<string[]> {
       [box, ...box.querySelectorAll("*")].some(
         (n) =>
           !n.closest("[inert]") &&
-          n.checkVisibility() &&
+          n.checkVisibility({ visibilityProperty: true }) &&
           getComputedStyle(n).pointerEvents !== "none",
       );
     const reachable = (el: Element) =>
