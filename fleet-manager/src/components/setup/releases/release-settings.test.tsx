@@ -219,6 +219,20 @@ describe("ReleaseSettings", () => {
     );
   });
 
+  it("says where to change a variable from a ConfigMap, with no claim on the page", () => {
+    const sources = releaseFixtures();
+    sources.releases[0].spec.extraEnv?.push({
+      name: "LOG_LEVEL",
+      valueFrom: { configMapKeyRef: { name: "app", key: "level" } },
+    });
+    setup({ sources });
+    const row = screen.getByRole("group", { name: "LOG_LEVEL" });
+    expect(row.textContent).toContain(
+      "Edit this variable with kubectl or through your Git repository",
+    );
+    expect(row.textContent).not.toContain("claim");
+  });
+
   it("shows the Stale error and Discard loads the live release", async () => {
     setup({
       result: {
@@ -403,6 +417,26 @@ describe("ReleaseSettings", () => {
       target: { value: "camunda-8-8-5" },
     });
     expect(field("Release name").value).toBe("next");
+    expect(field("Camunda version").value).toBe("8.8.5");
+  });
+
+  it("Discard on a new release goes back to the copy and keeps Copy from", async () => {
+    setup({ name: undefined, copyFrom: "camunda-8-9-0", secrets: {} });
+    const user = userEvent.setup();
+    await user.selectOptions(
+      screen.getByLabelText("Copy from"),
+      "camunda-8-8-5",
+    );
+    await user.type(field("Release name"), "camunda-8-8-9");
+    await user.clear(field("Camunda version"));
+    await user.type(field("Camunda version"), "8.8.9");
+
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(
+      (screen.getByLabelText("Copy from") as HTMLSelectElement).value,
+    ).toBe("camunda-8-8-5");
+    expect(field("Release name").value).toBe("");
     expect(field("Camunda version").value).toBe("8.8.5");
   });
 

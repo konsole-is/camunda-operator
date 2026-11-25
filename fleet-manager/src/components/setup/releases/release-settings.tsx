@@ -44,7 +44,7 @@ import {
   updateChange,
 } from "./draft";
 import { namedSecretRefs } from "./env";
-import { EnvScopes } from "./env-scopes";
+import { EnvScopes, OTHER_SOURCE_REASON } from "./env-scopes";
 import { releaseImages } from "./images";
 import { ImagesPanel } from "./images-panel";
 import type { ReleaseActions } from "./release-detail";
@@ -236,6 +236,7 @@ export function ReleaseSettings({
             spec={draft.spec}
             secrets={refs}
             missingIn={union.missingIn}
+            otherSourceReason={OTHER_SOURCE_REASON}
             onChange={(update, scopeErrors) => {
               setSpec(update);
               setEnvErrors(scopeErrors);
