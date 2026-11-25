@@ -169,7 +169,7 @@ export function diffView(
  * Invalid when the lists are not the offered fields of ownership at the
  * precondition.
  * The preview also names in blocked each object of ownership that only
- * Conflict errors stop. It sends no extra request for it.
+ * Conflict errors stop.
  *
  * When remove lists a field, or an object with a precondition holds an
  * Update entry of the fleet manager, apply writes the object as one
