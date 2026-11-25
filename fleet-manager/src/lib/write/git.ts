@@ -99,28 +99,26 @@ type Remote = {
  * no commit and returns the head commit.
  *
  * apply makes no commit when the fleet manager does not write a ref, a
- * Secret is in the change (Invalid), an object with a precondition changed
- * or was deleted in the cluster (Stale) or has a file that GitOps has not
- * applied yet (Conflict), an object to delete with a UID or a generation
- * is gone from the cluster or has another one there (Stale), an object to
- * delete with a generation has a file that GitOps has not applied yet
- * (Conflict), an object of create exists in
- * the cluster or has a file in the repository (Stale), or the dry run
- * against the cluster fails. The dry run skips an ExternalSecret and an
- * object in a namespace that the same change creates. The preview shows them as rendered. The
- * dry run of an object that GitOps applied with server-side apply, or of a
- * custom resource that GitOps applied with client-side apply, drops each
- * field of GitOps that the change leaves out, except the revision
- * annotation. Any other object is dry-run as the app. A delete of an
- * object without a file, and a file behind a symbolic link of the
- * repository, are Invalid, in the preview too for an object to delete. A
- * name whose file name has more than 255 bytes is Invalid, in the preview
- * too. The
- * UID is checked only before the push: GitOps later deletes the object of
- * that name, whatever its UID. A change with takeOver or remove and
- * without directOnly is Invalid in the preview and in apply: GitOps applies
- * the file under its own field manager, so a take-over by the fleet
- * manager has no meaning there. A preview has no ownership.
+ * Secret is in the change (Invalid), an object with a precondition changed or
+ * was deleted in the cluster (Stale) or has a file that GitOps has not applied
+ * yet (Conflict), an object to delete with a UID or a generation is gone from
+ * the cluster or has another one there (Stale), an object to delete with a
+ * generation has a file that GitOps has not applied yet (Conflict), an object
+ * of create exists in the cluster or has a file in the repository (Stale), or
+ * the dry run against the cluster fails. The dry run skips an ExternalSecret
+ * and an object in a namespace that the same change creates. The preview shows
+ * them as rendered. The dry run of an object that GitOps applied with
+ * server-side apply, or of a custom resource that GitOps applied with
+ * client-side apply, drops each field of GitOps that the change leaves out,
+ * except the revision annotation. Any other object is dry-run as the app. A
+ * delete of an object without a file, and a file behind a symbolic link of the
+ * repository, are Invalid, in the preview too for an object to delete. A name
+ * whose file name has more than 255 bytes is Invalid, in the preview too. The
+ * UID is checked only before the push: GitOps later deletes the object of that
+ * name, whatever its UID. A change with takeOver or remove and without
+ * directOnly is Invalid in the preview and in apply: GitOps applies the file
+ * under its own field manager, so a take-over by the fleet manager has no
+ * meaning there. A preview has no ownership.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
