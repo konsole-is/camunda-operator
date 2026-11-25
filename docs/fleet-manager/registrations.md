@@ -16,6 +16,7 @@ The page has one group for each storage and access choice, such as **Backup stor
 | Mode | `Default`: a new cluster picks the option when no environment applies. `Optional`: a person picks it. |
 | Accepted, Ready | The conditions of the option, as [Status of an option](#status-of-an-option) shows. |
 | Requests | How many clusters and planes use the option. |
+| Operator versions | The operator versions that the option supports, such as `>=0.3.0 <1.0.0`. `Any` means every version. |
 | Orphan | `Supported` when the option can keep its resources after a delete. |
 
 ![The Secondary storage group of the Plugins page with its options, their controller, and their state.](images/plugins-options-by-section.png)
