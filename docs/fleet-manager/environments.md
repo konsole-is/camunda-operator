@@ -79,7 +79,7 @@ Each row has three settings:
 - **Default option**: the option that the create form picks first. It must be one of the allowed options.
 - **Required**: a cluster must pick an allowed option. The create form then does not offer the empty option.
 
-![The Sections part of the environment editor with the allowed options, the default option, and Required for each choice.](images/environment-storage-and-access-options.png)
+![The Secondary storage row of the environment editor with its allowed options, its default option, and Required.](images/environment-storage-and-access-options.png)
 
 The row offers only the options that the operator accepted. An option that is not ready shows `Not ready:` and its message. You can allow it, and the create form offers it when it is ready.
 

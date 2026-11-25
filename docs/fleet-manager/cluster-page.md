@@ -1,5 +1,5 @@
 # The cluster page
-<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, claim-waiting, cluster-ready -->
+<!-- Screenshots: make fleet-docs-screenshots, scenarios claim-ready, claim-waiting -->
 
 The cluster page shows one Camunda cluster: its processes and pods, their logs and events, its backups, its addresses, and its [claim](install.md#what-the-fleet-manager-writes). To open it, select the name of the cluster in [the fleet view](fleet-view.md).
 
@@ -81,7 +81,7 @@ The tab shows the time, the level, the logger, and the message of a JSON line in
 
 The tab shows the log of the container as it runs now. For the log before the last restart, use `kubectl logs --previous`. When the tab cannot read a log, it names the pod and the cause below the lines. Reload the page to read it again.
 
-![The Logs tab of the brokers with the lines of the pod camundacluster-sample-zeebe-0.](images/cluster-component-logs.png)
+![The Logs tab of the brokers with the time, level, logger, and message of each line of one pod.](images/cluster-component-logs.png)
 
 ## Events
 

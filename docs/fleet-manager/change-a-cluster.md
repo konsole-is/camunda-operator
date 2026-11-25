@@ -14,7 +14,7 @@ Your changes collect as unsaved changes until you save them, as [Save or discard
 
 Each editor fits its setting. For example, `replicas` is a number, `resources` is a request and a limit, and `podLabels` has one row for each key. A list such as `scheduling.nodeAffinity` is YAML, checked against the schema of the field. **From a Secret** lists the Secrets of the namespace by name, never their values.
 
-![The Settings tab of the brokers in edit mode, with replicas changed in the claim and one unsaved change.](images/cluster-component-settings-editor.png)
+![The editors of the broker settings, with partitions changed in the claim and Reset to preset under it.](images/cluster-component-settings-editor.png)
 
 ### Where a value comes from
 
